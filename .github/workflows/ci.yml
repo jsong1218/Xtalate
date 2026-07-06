@@ -12,12 +12,19 @@ concurrency:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the supported floor (catches use of newer syntax); 3.13 is the
+        # local dev interpreter (DECISIONS.md D11) — testing both keeps dev and CI
+        # from drifting.
+        python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install

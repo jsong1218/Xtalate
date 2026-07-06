@@ -63,3 +63,13 @@
 ## D10 — Commit authorship: no AI attribution
 
 **Decision.** Commits are authored by the human maintainer. No `Co-Authored-By: Claude`, no "Generated with Claude Code" trailer, and no AI listed as author or contributor in commit metadata, `CITATION.cff`, or release notes. Recorded in `MASTER_SPEC` (Preface, "Working conventions") so it governs every agent session that reads the spec as its brief.
+
+## D11 — Development environment: project-local `.venv` (stdlib), not conda
+
+**Decision.** Development uses a project-local virtual environment at `.venv/` created with the standard library (`python -m venv .venv`), then `pip install -e ".[dev]"`. `.venv/` is already gitignored and is never committed. This matches how CI provisions its environment (pip + `actions/setup-python`) and how Persona 2 consumes the project (`pip install chembridge` from PyPI, Part 9 §3).
+
+**Rejected — conda.** The maintainer uses conda for other projects but deliberately not this one. The usual computational-chemistry reason to reach for conda is painful compiled dependencies (spglib, RDKit, MKL); ChemBridge's dependency surface is pydantic + numpy + (later) ASE — all pure-Python with reliable pip wheels, and pymatgen was rejected (D7) — so conda buys nothing here while adding environment-resolution overhead and a dev/CI toolchain split (CI is pip-based). A project-local `.venv` also shadows an active conda `base` cleanly, so the maintainer need not `conda deactivate` to work on this repo.
+
+**Rejected (for now) — uv.** `uv` is a fine faster alternative and stays entirely in the pip/PyPI world, but it is not currently installed on the machine (adopting it means a global install first), and the speed benefit is marginal for a three-package dependency surface. `uv venv && uv pip install -e ".[dev]"` remains a drop-in swap later — it reads the same `pyproject.toml` unchanged — if install/resolve time ever becomes a friction point.
+
+**Python version.** The `.venv` is built from the machine's available interpreter, **Python 3.13** (conda `base`); no 3.11 is installed locally, and installing one via conda would contradict this decision. Since CI pins the supported floor (3.11), the `.venv`'s 3.13 would otherwise be untested — so CI was changed to a matrix over **3.11 (floor) and 3.13 (dev)** (`.github/workflows/ci.yml`), and 3.13 was added to the `pyproject.toml` classifiers (it was already permitted by `requires-python = ">=3.11"`). Dev and CI therefore share both endpoints; the M0 gate suite passed identically on 3.13 locally and is exercised on 3.11 in CI.
