@@ -1,0 +1,11 @@
+ChemBridge
+Copyright 2026 jsong1218 and the ChemBridge contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This NOTICE file is the attribution home required by the golden-corpus
+sourcing policy (MASTER_SPEC Part 8 §3.2 and Part 10 §4.1): third-party
+test data admitted under CC0 / CC-BY / contributor grants carries its
+attribution here (aggregated from per-fixture manifests into
+tests/golden/ATTRIBUTIONS.md, then surfaced in this file) once such data
+is added. No third-party data is vendored yet.

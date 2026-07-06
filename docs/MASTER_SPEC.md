@@ -4,9 +4,9 @@
 
 ## Preface
 
-This document is the project's **constitution**: the complete engineering specification for ChemBridge, assembled from the eleven standalone documents in `docs/` (`00_Project_Overview.md` through `10_Roadmap.md`). It is intended to be committed at the root of the repository and is suitable as direct input to **Claude Code's Plan Mode**: it defines binding vocabulary, component boundaries, normative schemas, explicit "must / must not" rules, and the rationale (with rejected alternatives) behind every nontrivial decision — enough for an implementation plan to be derived without re-litigating the architecture.
+This document is the project's **constitution**: the complete engineering specification for ChemBridge, organized as eleven numbered Parts (Part 0 through Part 10) that trace back to eleven originally separate drafting documents (`00_Project_Overview.md` through `10_Roadmap.md`). It is committed at `docs/MASTER_SPEC.md` and is suitable as direct input to **Claude Code's Plan Mode**: it defines binding vocabulary, component boundaries, normative schemas, explicit "must / must not" rules, and the rationale (with rejected alternatives) behind every nontrivial decision — enough for an implementation plan to be derived without re-litigating the architecture.
 
-**How this file maps to the standalone set.** Each numbered document appears here as a correspondingly numbered Part, content preserved in full — every table, Mermaid diagram, schema block, worked example, and tradeoff discussion carries over verbatim (headings are demoted one level; each document's original H1 is replaced by the Part heading). Contributors who prefer focused files should edit the standalone documents in `docs/`, which remain the editable source of truth; this merged file is regenerated from them.
+**How this file maps to the original document set.** Each numbered document appears here as a correspondingly numbered Part, content preserved in full — every table, Mermaid diagram, schema block, worked example, and tradeoff discussion carries over verbatim (headings are demoted one level; each document's original H1 is replaced by the Part heading). **`docs/MASTER_SPEC.md` is the single, editable source of truth** (Revision 1.2, item 7 below): the standalone `00`–`10` files named in the table below and formerly listed in Part 1 §5's repository tree do not exist as separate committed files, and none should be created or assumed — this file is edited directly, in place. The Part numbering is retained purely as a stable citation scheme (e.g. `04 §3.3` still means "Part 4 §3.3").
 
 | Part | Source document | Role |
 |---|---|---|
@@ -35,7 +35,8 @@ The following editorial actions were taken while assembling this file; no techni
 3. **Terminology audit result.** The three report names — `DiscoveryReport`, `ConversionReport`, `ValidationReport` — and all canonical field paths, recovery `scenario`/`choice` codes, job states, and request option names were verified identical across all Parts. The only occurrence of the synonym "Conversion Summary" is Part 0 §6's explicit prohibition of it. No renames were required.
 4. **Refinements, not contradictions (recorded for readers of Part 1).** Part 1 §3's end-to-end sequence shows the *logical* flow; Part 6 §3 binds it to the async job model — a refinement Part 6 itself flags. The job framework, formerly left open in Part 1 §4 as "Celery/RQ or FastAPI background + broker," is now **decided as RQ on Redis** in Part 1 §4.1–§4.2 with rejected alternatives, and Part 9 §1.2 configures it. Part 5 §4.2 extends `FormatCapabilities` additively with `numeric_precision`, as flagged in Part 5 §8. Part 10 §2 scopes the MVP to four of the seven Phase 1 formats; Phase 1 as defined in Part 0 remains the seven-format set, completed in v0.2 (now stated at the point of definition, Part 0 §3.1).
 5. **Supplements (a recorded deviation from the assembly instruction).** The assembly brief directed merging without new content. Two appendices nevertheless add material: Appendix A specifies the CLI surface that Part 10 §2 ships in the MVP but that no standalone document defined — leaving it unspecified would have shipped an MVP deliverable with no design authority; Appendix B is a non-normative requirements-traceability matrix for reviewers and planning agents. The deviation is deliberate and disclosed here; if the standalone set later gains a CLI document, Appendix A should be regenerated from it like every other Part.
-6. **Revision 1.1 — post-assembly consistency pass.** A review of this file against the original brief and the generation prompts found items that note 3 (as originally written) had overclaimed as clean. This revision corrects them in three tranches. **Brief/prompt alignment:** the MVP format-staging contradiction between Part 0 §3.1 and Part 10 §2 is now stated where the MVP is defined (Part 0 §3.1); three deliberate deviations from the brief are named and justified in place (`source_code` in Simulation Metadata not Provenance, Part 2 §3.8; the Download page and report views consolidated into the conversion record, Part 7 §2.5; the project name retained, Part 0 §1); a CIF asymmetric-unit expansion policy is specified (Part 3 §3 n.13; Part 2 §3.4); the "no default for fabricative scenarios" stance is stated categorically (Part 4 §3.2); the domain strategy is expanded to a recommendation with a rejected alternative (Part 9 §5.4); a documentation policy joins the open-source mechanics (Part 10 §4.6); and `GET /v1/limits` plus the auxiliary response schemas are made normative (Part 6 §2, §2.2). **Internal consistency:** `field_presence()` and its `PresenceMap` return type are now defined (Part 2 §3.11) and all citations repointed off the Provenance section, with the `present`/`absent`/`mixed` trichotomy resolving the dual-appearance path case; the extXYZ `cell.lattice_vectors`/`cell.pbc` capability cells are corrected to partial to match their declaration (Part 3 §3); recovery-fabricated fields now file under a new `supplied` report list rather than `preserved`, threaded through the schema, worked examples, UI panel, and validation (Parts 4, 5, 7); `ConversionRecord.operation` gains `"migrate"` (Part 2 §3.9); the validation trigger is assigned to the Conversion Engine and the Recovery→UI layer violation removed (Part 1 §3); the two-class hazard model gains an explicit "selective reductive" case for frame selection (Part 4 §3.1); the variable-atom-count claim is scoped by a constant-N invariant (Part 2 §3.2); a carry-through routing rule fixes inconsistent metadata placement (Part 2 §6.1); the Discovery worked example is completed to honor its one-entry-per-path guarantee (Part 3 §6.2); the entity diagram gains `calculator`/`temperature` (Part 2 §7); the job framework is decided as RQ (Part 1 §4); and the CLI `--json`/report-flag drift is unified (Appendix A). **Scientific correctness:** sign/quantity conventions are fixed for stress, charges, magnetic moments, and `total_spin` (the last no longer "carried verbatim") (Part 2 §3.7.1); the GPa stress rendering is made a concrete derived display value (Part 2 §3.1.1); the POSCAR⇄CONTCAR byte-identical sniff case gets an explicit resolution (Part 3 §6.1); `frame_count` becomes a computed property, not stored state (Part 2 §3.5); re-validation is split into always-available re-thresholding vs. inputs-bounded re-parse, making the "self-contained" claim precise (Part 5 §4.5); and persistence of parsed Canonical Objects is specified (Part 1 §4.3). **Supplements (completing the review's final tranche):** a normative PostgreSQL relational model with Alembic migrations (Part 1 §4.4); observability, backup, and disaster-recovery policy with a `/v1/health` endpoint and a drilled restore (Part 9 §6; Part 10 §6 item 5); first-class job cancellation with a `cancelled` state, best-effort running-job semantics, and no fabricated report for withdrawn work (Part 6 §2, §3.2; Part 7 §2.4); the hosted-instance auth surface — signup/login/logout, API-key issue/list/revoke, and a double-submit CSRF policy for the cookie path (Part 6 §2, §4); quantified sniff acceptance threshold (0.5) and ambiguity margin (0.2), CI-pinned via the golden corpus (Part 3 §6.1); a documented `awaiting_recovery` TTL in the limits table (Part 6 §5); and inspect idempotency keyed by `(file_id, format_override, parser-registry version)` (Part 6 §2 notes). A closing consistency pass propagated these into their consumers: the error envelope gains the new codes (`JOB_ALREADY_TERMINAL`, `CSRF_TOKEN_MISSING`, `NOT_ENABLED`, `NOT_READY`, credential codes), the job state diagram gains `cancelled` and a `queued → failed` dequeue-precondition transition, the Part 8-facing lifecycle tests cover cancellation, the binding glossary's Conversion Report entry explicitly acknowledges the `supplied` addition rather than extending a binding term silently, the property-test statement of `08 §1.2` now matches the full two-direction invariant including `mixed` paths, and Appendix B's endpoint traceability row names the added surface. **No known open items remain**; future findings should append a Revision 1.2 note rather than editing this one — the record of what was wrong and when it was fixed is itself provenance, and this file practices what it specifies.
+6. **Revision 1.1 — post-assembly consistency pass (historical).** A review of this file against the original brief and the generation prompts found items that note 3 (as originally written) had overclaimed as clean. This revision corrects them in three tranches. **Brief/prompt alignment:** the MVP format-staging contradiction between Part 0 §3.1 and Part 10 §2 is now stated where the MVP is defined (Part 0 §3.1); three deliberate deviations from the brief are named and justified in place (`source_code` in Simulation Metadata not Provenance, Part 2 §3.8; the Download page and report views consolidated into the conversion record, Part 7 §2.5; the project name retained, Part 0 §1); a CIF asymmetric-unit expansion policy is specified (Part 3 §3 n.13; Part 2 §3.4); the "no default for fabricative scenarios" stance is stated categorically (Part 4 §3.2); the domain strategy is expanded to a recommendation with a rejected alternative (Part 9 §5.4); a documentation policy joins the open-source mechanics (Part 10 §4.6); and `GET /v1/limits` plus the auxiliary response schemas are made normative (Part 6 §2, §2.2). **Internal consistency:** `field_presence()` and its `PresenceMap` return type are now defined (Part 2 §3.11) and all citations repointed off the Provenance section, with the `present`/`absent`/`mixed` trichotomy resolving the dual-appearance path case; the extXYZ `cell.lattice_vectors`/`cell.pbc` capability cells are corrected to partial to match their declaration (Part 3 §3); recovery-fabricated fields now file under a new `supplied` report list rather than `preserved`, threaded through the schema, worked examples, UI panel, and validation (Parts 4, 5, 7); `ConversionRecord.operation` gains `"migrate"` (Part 2 §3.9); the validation trigger is assigned to the Conversion Engine and the Recovery→UI layer violation removed (Part 1 §3); the two-class hazard model gains an explicit "selective reductive" case for frame selection (Part 4 §3.1); the variable-atom-count claim is scoped by a constant-N invariant (Part 2 §3.2); a carry-through routing rule fixes inconsistent metadata placement (Part 2 §6.1); the Discovery worked example is completed to honor its one-entry-per-path guarantee (Part 3 §6.2); the entity diagram gains `calculator`/`temperature` (Part 2 §7); the job framework is decided as RQ (Part 1 §4); and the CLI `--json`/report-flag drift is unified (Appendix A). **Scientific correctness:** sign/quantity conventions are fixed for stress, charges, magnetic moments, and `total_spin` (the last no longer "carried verbatim") (Part 2 §3.7.1); the GPa stress rendering is made a concrete derived display value (Part 2 §3.1.1); the POSCAR⇄CONTCAR byte-identical sniff case gets an explicit resolution (Part 3 §6.1); `frame_count` becomes a computed property, not stored state (Part 2 §3.5); re-validation is split into always-available re-thresholding vs. inputs-bounded re-parse, making the "self-contained" claim precise (Part 5 §4.5); and persistence of parsed Canonical Objects is specified (Part 1 §4.3). **Supplements (completing the review's final tranche):** a normative PostgreSQL relational model with Alembic migrations (Part 1 §4.4); observability, backup, and disaster-recovery policy with a `/v1/health` endpoint and a drilled restore (Part 9 §6; Part 10 §6 item 5); first-class job cancellation with a `cancelled` state, best-effort running-job semantics, and no fabricated report for withdrawn work (Part 6 §2, §3.2; Part 7 §2.4); the hosted-instance auth surface — signup/login/logout, API-key issue/list/revoke, and a double-submit CSRF policy for the cookie path (Part 6 §2, §4); quantified sniff acceptance threshold (0.5) and ambiguity margin (0.2), CI-pinned via the golden corpus (Part 3 §6.1); a documented `awaiting_recovery` TTL in the limits table (Part 6 §5); and inspect idempotency keyed by `(file_id, format_override, parser-registry version)` (Part 6 §2 notes). A closing consistency pass propagated these into their consumers: the error envelope gains the new codes (`JOB_ALREADY_TERMINAL`, `CSRF_TOKEN_MISSING`, `NOT_ENABLED`, `NOT_READY`, credential codes), the job state diagram gains `cancelled` and a `queued → failed` dequeue-precondition transition, the Part 8-facing lifecycle tests cover cancellation, the binding glossary's Conversion Report entry explicitly acknowledges the `supplied` addition rather than extending a binding term silently, the property-test statement of `08 §1.2` now matches the full two-direction invariant including `mixed` paths, and Appendix B's endpoint traceability row names the added surface. **No known open items remain** as of Revision 1.1; future findings should append a Revision 1.2 note rather than editing this one — the record of what was wrong and when it was fixed is itself provenance, and this file practices what it specifies.
+7. **Revision 1.2 — pre-implementation architecture review.** A lead-architect review conducted before any code was written (recorded in full in `docs/ARCHITECTURE_REVIEW.md`, alongside `docs/IMPLEMENTATION_PLAN.md`) found a further set of internal inconsistencies and omissions, corrected here in four tranches. **Source-of-truth correction:** the split-vs-merged framing from the original drafting stage — the claim that eleven standalone `00`–`10` files are "the editable source of truth" and this file "is regenerated from them" — is retired (Preface); `docs/MASTER_SPEC.md` is now edited directly as the single source of truth, and Part 1 §5's repository tree no longer lists the nonexistent standalone files. **Worked-example correction:** Part 2 §8.2's POSCAR title line and Part 5 §6's corresponding `metadata_preservation` check are moved to `user_metadata.custom_global["poscar:comment"]`, matching the carry-through routing rule exactly as Part 2 §6.1 already states it (both previously and inconsistently showed `simulation.extra["poscar:comment_line"]`, contradicting §6.1's own worked distinction between free text and structural parameters). **Schema pre-release versioning:** worked examples now carry `schema_version: "0.1.0"` rather than `"1.0.0"` (Part 2 §5) — the schema reaching `1.0.0` is itself a v1.0 deliverable (`10 §6` item 3), so no pre-1.0 object should claim it; the generic illustrative mentions of "e.g. `1.0.0`" as a semver *shape* (Part 2 §§3.2, 5) are left as shape examples, not version claims. **Discovery Report presence trichotomy:** `FieldPresenceEntry.status` (Part 3 §6.2) gains `"mixed"` and an optional `present_frames`, matching the trichotomy `field_presence()` already defines (Part 2 §3.11) — a per-frame field present in only some frames of a trajectory was previously unrepresentable in a Discovery Report. **Capability Matrix:** the `fields` key convention now states the `"<category>.*"` wildcard's meaning explicitly (Part 3 §4.1), and the Part 3 §3 format table gains its missing `electronic.total_spin` row. **Dependency graph:** Part 1 §5.1's acyclic rule now names `plugin-sdk` explicitly, states that `FormatCapabilities`/`FieldCapability`/`CapabilityLevel` are defined in `plugin-sdk` (so every parser/exporter can return them without depending on the matrix package) and merely assembled and queried by `capability-matrix`, and gives the Information Discovery Engine/Format Sniffer (`packages/discovery`) and the CLI (`packages/cli`) their previously unplaced homes in the repository tree — both fully specified elsewhere (Part 3 §6, Appendix A) but absent from Part 1 §5 until now. **Packaging:** a clarifying note (Part 1 §5.2) states that `packages/*` are subpackages of one publishable distribution, `chembridge`, not separate PyPI distributions — resolving an ambiguity between Part 1 §5.1's "standalone, importable" language and Part 9 §3's singular "the `chembridge` distribution." **Version-ladder terminology:** Part 10 §1 gains a note acknowledging that `docs/Incremental_Roadmap.md` re-slices this Part's v0.1–v1.0 labels into v0.1–v0.7, and disambiguating what "MVP" means across the two documents. **Design-intent scoping:** Parts 6, 7, and 9's status headers now distinguish contracts and vocabulary (binding) from implementation detail specified many versions ahead of when it will be built (design intent, re-validated when that version's work begins) — reducing the drift surface Part 10 §6 item 7 treats as a release blocker. **Minor clarifications:** `Constraint.parameters` must be JSON-serializable (Part 2 §3.6); `TrajectoryMetadata`'s single-field shape is an intentional seam for future trajectory-level metadata, not an oversight (Part 2 §3.5); sniff confidence values are ordinal signals pinned by the golden corpus, not calibrated probabilities (Part 3 §6.1); entry-point-based plugin discovery (Part 3 §7.1) is a mechanism for when third-party plugins exist — an explicit first-party registration list is sufficient before then and does not require this section's machinery. **Flagged, deliberately not resolved:** the repository's `LICENSE` file (MIT) still conflicts with Part 10 §4.1's binding Apache-2.0 decision. This revision does not resolve it, because the choice belongs to the project owner, not to an editorial pass — it is recorded here as the one open item pending that decision, exactly the discipline this note itself asks future findings to follow. **Addendum (M0 scaffolding pass, following the review's acceptance):** (item 8) the previously-flagged license item is now **resolved — Apache-2.0**: the `LICENSE` file carries the Apache-2.0 text and a `NOTICE` file was added as the golden-corpus attribution home (Part 8 §3.2). (item 9) Part 1 §5's repository tree now shows the concrete realization of the single distribution: `src/chembridge/` with subpackages `schema`/`sdk`/`parsers`/`exporters`/`capabilities`/`discovery`/`conversion`/`recovery`/`validation`/`cli`, replacing the earlier `packages/<hyphenated-name>/` sketch whose directory names could not be Python import names; the descriptive component names (`canonical-schema`, `plugin-sdk`, `capability-matrix`) are retained in prose, with the tree stating the mapping. Parsers and exporters remain separate subpackages (not a combined `formats/`) to honor their distinct Part 1 §2 contracts. (item 10) the concrete build-time decisions the review left open — packaging, Python floor, build backend, tooling, CLI framework, per-format strategy, array-serialization/golden-equality — are recorded in `docs/DECISIONS.md` (D1–D10), each with a rejected alternative. (item 11) the Preface gains a "Working conventions for AI coding agents" note: commits must not attribute authorship to an AI, and the standing rules of `docs/DECISIONS.md` / `docs/IMPLEMENTATION_PLAN.md` §4 govern agent-written code.
 
 ## Table of Contents
 
@@ -192,6 +193,8 @@ For a new contributor (or a planning agent), the intended path through the docum
 7. `10_Roadmap.md` — sequencing, risks, and the definition of done.
 
 One sentence to carry forward into all of them: **a conversion you can't audit is a conversion you can't trust.**
+
+**Working conventions for AI coding agents.** This file doubles as the repository's standing brief for AI coding agents (it is the `CLAUDE.md`-equivalent). Two conventions bind every agent session: (1) **Commits must not attribute authorship to an AI** — no `Co-Authored-By` AI trailer, no "Generated with …" line, and no AI listed as author or contributor in commit metadata, `CITATION.cff`, or release notes; the human maintainer is the author of record. (2) The engineering decisions and standing rules in `docs/DECISIONS.md` and `docs/IMPLEMENTATION_PLAN.md` §4 govern any code an agent writes — in particular, no parser defaulting (Part 2 §2), and spec drift found while coding is recorded in the appropriate Revision note in the same change, never fixed silently in code alone.
 
 
 ---
@@ -426,13 +429,17 @@ Integrity rules worth stating once: every FK is `ON DELETE RESTRICT` except `fil
 ```text
 chembridge/
 ├── README.md                     # One-paragraph pitch + quickstart; links into docs/.
-├── LICENSE                       # See 10_Roadmap.md for license choice + rationale.
-├── CONTRIBUTING.md               # Contribution guide (outlined in 10_Roadmap.md).
-├── docker-compose.yml            # Local dev: backend + frontend + postgres + minio.
+├── LICENSE                       # Apache-2.0 (Part 10 §4.1).
+├── NOTICE                        # Apache-2.0 attribution home; golden-corpus credits (08 §3.2).
+├── pyproject.toml                # The single distribution `chembridge` (§5.2): build, deps, ruff/
+│                                 #   mypy/pytest/import-linter config. Python ≥ 3.11.
+├── CONTRIBUTING.md               # Contribution guide (outlined in 10_Roadmap.md). [v0.2]
+├── docker-compose.yml            # Local dev: backend + frontend + postgres + minio. [v0.5]
 ├── .github/                      # CI/CD workflows, issue & PR templates (08/10).
-│   └── workflows/
+│   └── workflows/                #   ci.yml runs ruff + mypy + import-linter + pytest on every PR.
 │
-├── docs/                         # THE source of truth. This spec set (00–10) + MASTER_SPEC.md.
+├── docs/                         # THE source of truth: MASTER_SPEC.md (single editable file, Preface),
+│                                 #   ARCHITECTURE_REVIEW.md, IMPLEMENTATION_PLAN.md, DECISIONS.md.
 │
 ├── frontend/                     # Next.js + React + Tailwind web app (07_Web_UI.md).
 │   ├── app/                      # Routes: landing, upload, inspect, convert, report, history, docs.
@@ -448,15 +455,26 @@ chembridge/
 │   │   └── deps.py               # Dependency wiring into packages/*.
 │   └── tests/                    # API-level integration tests.
 │
-├── packages/                     # THE scientific core. Framework-agnostic, importable standalone.
-│   ├── canonical-schema/         # 02: the Canonical Model. Depends on nothing else in packages/.
-│   ├── parsers/                  # 03: one Parser per format; depends only on canonical-schema.
-│   ├── exporters/                # one Exporter per format; depends only on canonical-schema.
-│   ├── capability-matrix/        # 03/04: format→capability data + query API.
+├── src/chembridge/               # THE scientific core: subpackages of the one distribution (§5.2),
+│   │                             #   importable without FastAPI. Component-name → subpackage:
+│   │                             #   canonical-schema→schema, plugin-sdk→sdk, capability-matrix→
+│   │                             #   capabilities (the prose keeps the descriptive names).
+│   ├── schema/                   # 02: the Canonical Model. Depends on nothing else in the package.
+│   ├── sdk/                      # 03 §2, §5: ParserPlugin/ExporterPlugin ABCs, ParseResult/ParseIssue,
+│   │                             #   and the FormatCapabilities/FieldCapability data model (§5.1).
+│   │                             #   Depends only on schema.
+│   ├── parsers/                  # 03: one Parser per format (module per format); depends on schema + sdk.
+│   ├── exporters/                # one Exporter per format; depends on schema + sdk.
+│   ├── capabilities/             # 03/04: assembles FormatCapabilities declarations (defined in sdk)
+│   │                             #   into a queryable registry; format→capability data.
+│   ├── discovery/                # 03 §6: Format Sniffer + Information Discovery Engine. Generic by
+│   │                             #   construction — no per-format code (03 §6.1).
 │   ├── conversion/               # 04: Conversion Engine; orchestrates the above.
 │   ├── recovery/                 # 04: Recovery Engine + recovery workflows.
 │   ├── validation/               # 05: Validation Engine + Validation Report.
-│   └── plugin-sdk/               # Stable base classes/entry points for third-party formats.
+│   └── cli/                      # Appendix A: chembridge CLI. Thin presenter over the subpackages
+│                                 #   above, same rule as the API layer (§2); ships without backend/
+│                                 #   or frontend/ existing (`10 §2` decision 1).
 │
 ├── plugins/                      # First-party & example plugins built against plugin-sdk.
 │   └── example-format/           # Reference plugin proving the SDK (03_Parsers.md §6).
@@ -474,7 +492,7 @@ chembridge/
 - **`docs/`** — The engineering constitution (this set). Committed at repo root so Claude Code Plan Mode and contributors read intent before code.
 - **`frontend/`** — The Next.js web application. Contains *no* scientific logic; it is a faithful presentation layer over the API (see `07_Web_UI.md`).
 - **`backend/`** — The FastAPI service. Deliberately **thin**: it validates requests, manages jobs and storage, and calls into `packages/*`. All science lives in `packages/`.
-- **`packages/`** — The heart of ChemBridge. Every scientific capability is a standalone, framework-agnostic Python package importable *without* FastAPI. This is what lets Persona 2 (`pip install chembridge`, use as a library) and the CLI ship independently of the web stack. The internal dependency rule is strict and acyclic: `canonical-schema` depends on nothing; `parsers`, `exporters`, `capability-matrix` depend only on `canonical-schema`; `conversion`, `recovery`, `validation` depend on those; nothing depends on `backend/` or `frontend/`. This dependency direction is what physically enforces **P2**.
+- **`packages/`** — The heart of ChemBridge. Every scientific capability is a framework-agnostic Python module importable *without* FastAPI (packaging shape: §5.2). This is what lets Persona 2 (`pip install chembridge`, use as a library) and the CLI ship independently of the web stack. The internal dependency rule is strict and acyclic: `canonical-schema` depends on nothing; `plugin-sdk` depends only on `canonical-schema` — it owns the `ParserPlugin`/`ExporterPlugin` ABCs, the `ParseResult`/`ParseIssue` error contract, and the `FormatCapabilities`/`FieldCapability`/`CapabilityLevel` data model (`03 §2, §4.1`), so that a parser can declare its capabilities without importing the matrix package; `parsers`, `exporters` depend on `canonical-schema` and `plugin-sdk`; `capability-matrix` depends on `canonical-schema` and `plugin-sdk`, assembling the `FormatCapabilities` declarations plugins already produce into a queryable registry (it is consumer, not owner, of that data model); `discovery` depends on `canonical-schema`, `plugin-sdk`, and the parser registry (`03 §6`); `conversion`, `recovery`, `validation` depend on those; `cli` depends on `conversion`, `recovery`, `validation`, and `discovery`; nothing depends on `backend/` or `frontend/`. This dependency direction is what physically enforces **P2**, and it is the contract the import-graph lint (`08 §1.1`) checks mechanically.
 - **`plugins/`** — Parsers/exporters built against `plugin-sdk`, kept out of core so that "add a format" never means "edit core." Ships with at least one reference plugin.
 - **`examples/`** — Copy-pasteable end-to-end samples for both the library and the CLI, doubling as living documentation.
 - **`tests/`** — Cross-package suites that don't belong to a single package: golden datasets, round-trip diffs, and performance benchmarks (`08_Testing.md`). Package-local unit tests live beside their package.
@@ -486,6 +504,8 @@ chembridge/
 The scientific packages, the API, and the frontend evolve *together* around one shared contract — the Canonical Model. A schema field added in `packages/canonical-schema` typically requires coordinated changes in parsers, exporters, the API's response models, and the UI's report viewers. In a **polyrepo**, that single logical change becomes several PRs across repos with version-pinning dance, and it is dangerously easy to ship a parser that emits a field the exporter or UI doesn't yet understand — a silent-loss risk that directly threatens **P1**. A **monorepo** makes such changes atomic: one PR, one CI run that tests the whole pipeline round-trip, one review.
 
 **The tradeoff we accept:** monorepos can blur boundaries and let packages reach into each other's internals. We counter that with the strict, enforced dependency direction in §5.1 (packages must import only "downward"; CI can lint import graphs), so we keep the *logical* separation of a polyrepo while gaining the *atomic-change* safety of a monorepo. For a solo developer (the roadmap's assumption), a single repo with one issue tracker and one CI config is also simply less operational overhead — the polyrepo tax is not worth paying at this scale.
+
+**Packaging clarification: one distribution, not one distribution per `packages/*` directory.** The directories under `packages/` are Python *subpackages* of a single publishable distribution, `chembridge` — not separate PyPI projects with their own `pyproject.toml`, version number, and release cadence. This is what Part 9 §3's singular phrasing ("publish the Python packages under `packages/` to PyPI as the `chembridge` distribution") already implies but never states outright; it is made explicit here to remove the ambiguity. **Alternative rejected: eight separately-versioned distributions** (one per `packages/*` directory), on the theory that independent installability maximizes reuse. For a solo-maintained project pre-v1.0, this multiplies `pyproject.toml`s, editable-install wiring, and cross-package version pinning for zero users — nothing external depends on installing `capability-matrix` without `conversion`. The *logical* separation these directories exist for is fully delivered by the acyclic import rule (§5.1) and its CI enforcement, which works identically whether the boundary is a package or a distribution. Splitting into multiple distributions remains available later — e.g., a slim `chembridge-sdk` for third-party plugin authors once the SDK freezes (`10 §6` item 3) — as an additive packaging change behind the same import structure, not a redesign.
 
 ---
 
@@ -664,6 +684,8 @@ class Frame(BaseModel):
 
 **`frame_count` is derived, never stored (consistency with §4).** An earlier draft stored `frame_count` on `TrajectoryMetadata` "for cheap checks." That is the same duplicated-derived-state hazard §4 rejects for fractional coordinates: a stored count and `len(frames)` can desynchronize, and a stale count is exactly the kind of quiet inconsistency a trust-focused tool must not carry. It is therefore a **computed property** — `CanonicalObject.frame_count` returns `len(frames)` — costing an O(1) list length, never persisted and never able to disagree with the frames it counts. Serialized report/discovery payloads (`structure.frame_count`, §6.2; the `frame_count` shown in Discovery) are *rendered* from this property at emit time, so consumers still see the number without the model storing it. Wherever a serialized envelope shows `frame_count` (e.g. `trajectory.frame_count` in a round-tripped object), it is a projection of the property, authoritative only as `len(frames)`.
 
+**Why `TrajectoryMetadata` holds a single field.** After `frame_count` moved to a computed property (above), `timestep` is the container's only remaining field — an intentional seam, not an oversight: it is the reserved home for future trajectory-level (as opposed to per-frame) metadata that isn't yet needed by any Phase 1 format, following the same "extension surface first, curation second" pattern as `simulation.extra` (§6). Folding `timestep` onto the root object would save one level of nesting today at the cost of that seam.
+
 **Container convention.** `dynamics` and `electronic` are *required containers with optional contents*. This makes Discovery introspection uniform (`frame.dynamics.velocities is None`) instead of requiring two-level null checks (`frame.dynamics is None or ...`). A container whose fields are all `None` is semantically identical to "no dynamics information" and serializes compactly.
 
 #### 3.6 Dynamics (per frame)
@@ -673,6 +695,10 @@ class Constraint(BaseModel):
     kind: str                            # e.g. "fixed_atoms", "fixed_plane", "fixed_line".
     atom_indices: list[int]              # 0-based indices into this frame's atoms.
     parameters: dict[str, Any] = {}      # Kind-specific (e.g. plane normal). Documented per kind in 03_Parsers.md.
+                                         #   MUST be JSON-serializable (str/int/float/bool/list/dict/None
+                                         #   only) — the same constraint every other schema field satisfies
+                                         #   implicitly via typed fields; Constraint is the one place a
+                                         #   plain dict could otherwise smuggle in a non-serializable value.
 
 class Dynamics(BaseModel):
     velocities: Array[(N, 3)] | None = None   # Å/fs.
@@ -851,7 +877,7 @@ See §6 for how custom-array paths (which vary per file) enter the `PresenceMap`
 schema_version: str   # Semantic version of the SCHEMA, e.g. "1.0.0". Required on every Canonical Object.
 ```
 
-The schema itself is versioned **independently of the ChemBridge package version**, using semantic versioning with schema-specific semantics:
+The schema itself is versioned **independently of the ChemBridge package version**, using semantic versioning with schema-specific semantics. **Pre-1.0 schema versions are a `0.x.y` series** — e.g. `0.1.0` ships with product v0.1 — because reaching `1.0.0` is itself a normative v1.0 deliverable (`10 §6` item 3: "canonical schema tagged `1.0.0`"). An object claiming `schema_version: "1.0.0"` before that milestone would misstate the very thing this section's discipline exists to make trustworthy; every worked example in this document accordingly shows `"0.1.0"`. The bump rules below (patch/minor/major) apply identically within the `0.x` series in the interim.
 
 | Bump | Meaning | Example |
 |------|---------|---------|
@@ -1022,7 +1048,7 @@ Resulting Canonical Object (serialized JSON, abridged only by eliding the second
 
 ```json
 {
-  "schema_version": "1.0.0",
+  "schema_version": "0.1.0",
   "frames": [
     {
       "index": 0,
@@ -1087,7 +1113,7 @@ Resulting Canonical Object (abridged to the fields that differ from §8.1's patt
 
 ```json
 {
-  "schema_version": "1.0.0",
+  "schema_version": "0.1.0",
   "frames": [
     {
       "index": 0,
@@ -1112,8 +1138,7 @@ Resulting Canonical Object (abridged to the fields that differ from §8.1's patt
   "simulation": { "source_code": null, "calculator": null, "xc_functional": null,
                   "pseudopotentials": null, "thermostat": null, "md_ensemble": null,
                   "temperature": null,
-                  "extra": { "poscar:comment_line": "NaCl primitive test",
-                             "poscar:scaling_factor": "1.0" } },
+                  "extra": { "poscar:scaling_factor": "1.0" } },
   "provenance": {
     "source_filename": "POSCAR",
     "source_format": "poscar",
@@ -1129,7 +1154,8 @@ Resulting Canonical Object (abridged to the fields that differ from §8.1's patt
         "tool_version": "0.1.0", "parser_version": "poscar-parser 0.1.0", "assumptions": [] }
     ]
   },
-  "user_metadata": { "tags": [], "annotations": {}, "custom_global": {},
+  "user_metadata": { "tags": [], "annotations": {},
+                     "custom_global": { "poscar:comment": "NaCl primitive test" },
                      "custom_per_atom": {}, "custom_per_frame": {} }
 }
 ```
@@ -1257,6 +1283,7 @@ Legend: **●** full support · **◐** partial/conditional (see footnote) · **
 | `electronic.stress` | ○ | ◐² | ○ | ○ | ○ | ○ | ● |
 | `electronic.charges` | ○ | ◐² | ◐⁸ | ○ | ○ | ○ | ● |
 | `electronic.magnetic_moments` | ○ | ◐² | ○ | ○ | ○ | ○ | ● |
+| `electronic.total_spin` | ○ | ◐² | ○ | ○ | ○ | ○ | ● |
 | Simulation metadata (`simulation.*`) | ○ | ◐² | ◐⁹ | ○ | ○ | ○ | ◐¹⁰ |
 | Custom arrays (`user_metadata.custom_per_atom`) | ○ | ● | ◐¹¹ | ○ | ○ | ○ | ● |
 | Comments / free text (carry-through) | ● (comment line) | ● (comment line) | ● | ● (title line) | ● (title line) | ● (title line) | ○ |
@@ -1283,7 +1310,7 @@ Footnotes (each ◐ is a conditional the parser must handle explicitly, never si
 
 #### 4.1 Data structure
 
-The Capability Matrix (`packages/capability-matrix`) is assembled at registry load from each plugin's `capabilities()` declaration — read side from parsers, write side from exporters. It is data, not code: the Conversion Engine queries it; it never executes format logic (`01_Architecture.md §2`).
+The Capability Matrix (`packages/capability-matrix`) is assembled at registry load from each plugin's `capabilities()` declaration — read side from parsers, write side from exporters. It is data, not code: the Conversion Engine queries it; it never executes format logic (`01_Architecture.md §2`). The `CapabilityLevel`/`FieldCapability`/`FormatCapabilities` models below are defined in `packages/plugin-sdk` (`01_Architecture.md §5.1`), since a plugin must be able to declare its capabilities without depending on the matrix package that assembles them; `capability-matrix` owns the registry and query API, not the data model.
 
 ```python
 class CapabilityLevel(str, Enum):
@@ -1311,7 +1338,7 @@ class FormatCapabilities(BaseModel):
                                               #   feeding Conversion Report Warnings.
 ```
 
-Every key in `fields` must be a valid canonical path from `02 §3`; the registry rejects declarations with unknown paths at load time, which keeps the matrix and the schema from drifting apart.
+Every key in `fields` must be a valid canonical path from `02 §3`, **or** a wildcard of the form `"<category>.*"` (e.g. `"simulation.*"`, `"user_metadata.custom_per_atom"` used as a whole-container key), which the registry expands at load time to every leaf path under that prefix and applies the same declared `FieldCapability` to each. The registry rejects declarations with unknown paths or unknown category prefixes at load time, which keeps the matrix and the schema from drifting apart.
 
 #### 4.2 Example rows
 
@@ -1440,7 +1467,7 @@ flowchart TB
     F --> G["Discovery Report:<br/>✓/✗ per canonical field + structure summary<br/>+ capability context + issues"]
 ```
 
-**Step 1 — sniffing.** All registered parsers score the file head; extension is a tie-breaker hint, never authoritative (POSCAR/CONTCAR/XDATCAR have conventional *names*, not extensions — `sniff` receives the filename for this reason). The decision rule is quantified so implementations cannot drift: with `best` the top confidence and `margin = best − runner_up`, the sniffer **accepts** when `best ≥ sniff_accept_threshold` (default **0.5**); below that, the file is `UNKNOWN_FORMAT` (`06 §6`) with all candidates listed — a low-confidence guess silently applied would be a misparse waiting to happen. When accepted but `margin < sniff_ambiguity_margin` (default **0.2**), the result is **ambiguous**: the tie-break rules apply — in favor of the *more expressive* candidate if its signature keys are present, otherwise the simpler one (e.g., plain XYZ vs extXYZ, where extXYZ is a superset) — and the runner-up candidates are always recorded in the report's `sniff_evidence` so the user can override the detection via the API (`06_API.md`). Both constants are instance-configurable (`09 §2`) but ship with these defaults; the golden corpus (`08 §3`) pins expected sniff outcomes per fixture so a threshold change that flips a detection fails CI visibly rather than shifting behavior quietly.
+**Step 1 — sniffing.** All registered parsers score the file head; extension is a tie-breaker hint, never authoritative (POSCAR/CONTCAR/XDATCAR have conventional *names*, not extensions — `sniff` receives the filename for this reason). The decision rule is quantified so implementations cannot drift: with `best` the top confidence and `margin = best − runner_up`, the sniffer **accepts** when `best ≥ sniff_accept_threshold` (default **0.5**); below that, the file is `UNKNOWN_FORMAT` (`06 §6`) with all candidates listed — a low-confidence guess silently applied would be a misparse waiting to happen. When accepted but `margin < sniff_ambiguity_margin` (default **0.2**), the result is **ambiguous**: the tie-break rules apply — in favor of the *more expressive* candidate if its signature keys are present, otherwise the simpler one (e.g., plain XYZ vs extXYZ, where extXYZ is a superset) — and the runner-up candidates are always recorded in the report's `sniff_evidence` so the user can override the detection via the API (`06_API.md`). Both constants are instance-configurable (`09 §2`) but ship with these defaults; the golden corpus (`08 §3`) pins expected sniff outcomes per fixture so a threshold change that flips a detection fails CI visibly rather than shifting behavior quietly. Confidence values themselves are **ordinal signals for ranking candidates, not calibrated probabilities** — a parser's `sniff()` score need only be internally consistent (more format-specific evidence ⇒ higher score) for the accept/ambiguity thresholds to behave correctly; the golden corpus, not a probabilistic calibration exercise, is what keeps four parsers' scores mutually sensible.
 
 **The POSCAR ⇄ CONTCAR case — where "more expressive" does not apply.** POSCAR and CONTCAR are structurally **byte-identical formats** (CONTCAR is simply the name VASP writes a POSCAR-shaped file to at the end of a run; it may additionally carry a velocity/predictor-corrector tail, but a CONTCAR without one is indistinguishable from a POSCAR, and a POSCAR *may* carry velocities too). The expressiveness tie-break therefore has no signal to act on. The resolution is explicit and filename-driven, in this order: (1) if the filename is exactly `POSCAR` or `CONTCAR` (VASP's fixed conventional names, case-sensitive), that name selects the parser; (2) if a velocity/predictor-corrector tail is present, prefer `contcar` (only CONTCAR conventionally carries it) but record the ambiguity; (3) otherwise the two candidates are reported at **equal confidence** in `sniff_evidence` and the file is parsed as `poscar` (the more general reading — a CONTCAR read as POSCAR loses nothing, since the canonical fields are identical and any tail is carried through per §3 note 12), with the report stating the tie so the user can `format_override` if the CONTCAR identity matters to them. Crucially, because both parsers populate the *same* canonical fields, this choice never changes the scientific content — it changes only the recorded `source_format` label, and that label's uncertainty is surfaced rather than hidden (**P3**). This is the one Phase 1 case where two `format_id`s legitimately tie; the generic tie-break rule above is documented as not covering it precisely so an implementer does not force a false winner.
 
@@ -1453,7 +1480,10 @@ flowchart TB
 ```python
 class FieldPresenceEntry(BaseModel):
     path: str                          # Canonical field path, e.g. "dynamics.velocities".
-    status: Literal["present", "absent"]
+    status: Literal["present", "absent", "mixed"]   # "mixed" mirrors PresenceMap (02 §3.11): present
+                                       #   in some frames of a trajectory, absent in others.
+    present_frames: list[int] | None = None   # Populated only when status="mixed" — the frame
+                                              #   indices where the field is present (02 §3.11).
     format_capability: CapabilityLevel # Read-side capability of the detected format for this path.
     detail: str | None = None          # e.g. "500 frames × 64 atoms × 3", "2 comment lines".
 
@@ -1501,7 +1531,7 @@ Input: `water_traj.xyz` from `02 §8.1` (2 frames, 3 atoms, plain XYZ).
   ],
   "extras": [ "user_metadata.custom_per_frame['xyz:comment']" ],
   "issues": [],
-  "schema_version": "1.0.0"
+  "schema_version": "0.1.0"
 }
 ```
 
@@ -1515,7 +1545,7 @@ Rendered by the UI (`07_Web_UI.md`), this is precisely the ✓/✗ inventory the
 
 #### 7.1 Mechanism
 
-Third-party parsers register through Python entry points — no core code is modified, forked, or even imported beyond `packages/plugin-sdk`:
+Third-party parsers register through Python entry points — no core code is modified, forked, or even imported beyond `packages/plugin-sdk`. **This mechanism is required once third-party plugins exist; it is not required to ship first-party formats.** Until a version's scope calls for third-party plugins (per `10 §3` risk R12, realistically v0.3+), the registry may load first-party parsers/exporters from an explicit, in-code registration list — the `ParserPlugin`/`ExporterPlugin` interfaces and the capability declarations are identical either way, so switching a first-party format from explicit registration to entry-point discovery later is not a rewrite, only a registry-loading change:
 
 ```toml
 # pyproject.toml of a third-party package, e.g. chembridge-lammps-dump
@@ -1566,7 +1596,7 @@ class LammpsDumpParser(ParserPlugin):
             ))
         return ParseResult(
             canonical=CanonicalObject(
-                schema_version="1.0.0", frames=frames,
+                schema_version="0.1.0", frames=frames,
                 provenance=Provenance(
                     source_filename=filename, source_format=self.format_id,
                     source_units={"positions": "lammps metal (Å)"},
@@ -1860,7 +1890,7 @@ The Recovery Engine writes the constructed `Cell` (with `pbc = (true, true, true
   "mode": "permissive",
   "created_at": "2026-07-04T11:32:07Z",
   "source": { "format_id": "ase_traj", "filename": "relax.traj",
-              "sha256": "…", "schema_version": "1.0.0" },
+              "sha256": "…", "schema_version": "0.1.0" },
   "target": { "format_id": "poscar", "filename": "POSCAR" },
   "preserved": [
     { "path": "atoms.symbols",   "detail": "O, H, H" },
@@ -2152,7 +2182,7 @@ Continuing `04_Conversion_Engine.md §5` (conversion `b7c1e2a4-…`: frame 9 of 
       "skip_reason": "write_plan contains no velocities, forces, energies, stress, charges, magnetic moments, masses, or time." },
 
     { "check_id": "metadata_preservation", "status": "pass",
-      "paths": ["simulation.extra['poscar:comment_line']"],
+      "paths": ["user_metadata.custom_global['poscar:comment']"],
       "measured": { "planned_paths": 1, "present": 1, "content_drift": 0 },
       "tolerance_applied": null,
       "message": "Generated POSCAR title line present and semantically identical on re-parse." },
@@ -2180,7 +2210,7 @@ Continuing `04_Conversion_Engine.md §5` (conversion `b7c1e2a4-…`: frame 9 of 
     "representational_bound_floor": "enabled"
   },
   "reparse_issues": [],
-  "schema_version": "1.0.0"
+  "schema_version": "0.1.0"
 }
 ```
 
@@ -2218,6 +2248,8 @@ This section is recorded now so the report schemas (which already carry everythi
 > **Document status:** Binding. This document specifies the FastAPI backend's public REST interface: every endpoint, the async job model, authentication, rate/size limits, the error envelope, and API versioning. The API layer is deliberately thin (`01_Architecture.md §2`): it validates requests, manages jobs and storage, and delegates all scientific logic to `packages/*`. Response bodies embed the pydantic report models **verbatim** — the `DiscoveryReport` (`03_Parsers.md §6.2`), `ConversionReport` (`04_Conversion_Engine.md §2`), and `ValidationReport` (`05_Validation.md §3`) — with no parallel DTOs (`02_Canonical_Data_Model.md §9`).
 >
 > Design principles **P1–P6** are defined in `00_Project_Overview.md §2`. The primary API consumer personas are the web UI (`07_Web_UI.md`) and Persona 2, the pipeline engineer who asserts against structured reports in CI (`00_Project_Overview.md §5`).
+>
+> **Binding vs. design intent (Revision 1.2).** This Part is binding for contracts and vocabulary that other Parts and future surfaces depend on: the endpoint table (§2), the job-state enum and refusals-as-HTTP-200 rule (§1, §3.2), the report schemas embedded verbatim, and the error envelope (§6). Implementation-level detail below that layer (specific CSRF/auth mechanics in §4, exact rate-limit defaults in §5) is **design intent** — the reasoning is worth preserving, but this API is not built until roadmap v0.2, and the detail should be re-validated against the ecosystem at that time rather than treated as frozen today (`10 §6` item 7 makes docs-vs-code drift a release blocker, so premature bindingness here is a self-inflicted drift risk).
 
 ---
 
@@ -2580,6 +2612,8 @@ This is the `UNKNOWN_FORMAT` outcome defined by the Discovery algorithm (`03 §6
 > **Document status:** Binding for frontend structure, terminology, and the loss-communication design language. This document specifies the Next.js web application (`frontend/`, `01_Architecture.md §5`): the page/route map, what each page renders and which API endpoints it calls, the Recovery Workflow UI, the visual treatment of information loss, and the frontend architecture for large files and multi-step state.
 >
 > The web UI is a **faithful presentation layer**: it contains no scientific logic, never re-implements conversion behavior, and never hides reported losses (`01_Architecture.md §2`, "Must NOT"). Every piece of scientific content on screen is a rendering of a structured object defined elsewhere: the `DiscoveryReport` (`03_Parsers.md §6.2`), the `ConversionReport` (`04_Conversion_Engine.md §2`), the `ValidationReport` (`05_Validation.md §3`), and the job envelope (`06_API.md §3.2`). Design principles **P1–P6** are defined in `00_Project_Overview.md §2`; the one this document operationalizes most directly is **P1**: every loss is reported, never assumed — here, *never visually buried* either.
+>
+> **Binding vs. design intent (Revision 1.2).** This Part is binding for the page/route map (§1), the presentation-layer "Must NOT" rules above, and the ✓/✗/◆/⚠ loss-communication vocabulary (§4) — later Parts and this UI's own components must not reinvent that language. Page-level wireframe detail, exact component architecture (§5), and page-by-page copy are **design intent**: this UI is not built until roadmap v0.5+, and re-validating the detail then (rather than treating a wireframe-in-prose as frozen now) is what keeps docs-vs-code drift from becoming a release blocker (`10 §6` item 7).
 
 ---
 
@@ -2861,7 +2895,7 @@ case: nacl-primitive
 format_id: poscar
 source_file: POSCAR
 expected_canonical: expected.canonical.json
-canonical_schema_version: "1.0.0"      # Version the expectation was authored against (02 §5)
+canonical_schema_version: "0.1.0"      # Version the expectation was authored against (02 §5)
 sha256: "…"                            # Of the source file — detects silent fixture edits
 origin:
   kind: published-dataset               # published-dataset | synthetic | contributed
@@ -2954,6 +2988,8 @@ The PR suite is deliberately capped near ten minutes: the golden corpus and iden
 > **Document status:** Binding. This document specifies how ChemBridge is developed locally, built and released through GitHub Actions, deployed to production, and operated at scale: the docker-compose development environment, CI/CD workflows, the production architecture (with rationale), the hosted-instance vs self-hosting strategy, and the scaling and file-lifecycle policies that address the project's large-file and uploaded-file-security risks.
 >
 > Prerequisites: the monorepo layout and tech-stack rationale in `01_Architecture.md` (§4, §5); the async job model, limits, and retention semantics in `06_API.md` (§3, §5); the CI stage definitions in `08_Testing.md §5`. Design principles **P1–P6** are defined in `00_Project_Overview.md §2`.
+>
+> **Binding vs. design intent (Revision 1.2).** This Part is binding for the two-tier local-dev split (§1), the deployment-shape decisions with stated rejected alternatives (§4.2, self-hosting-first in §5.4), and the reports-outlive-bytes/lifecycle policy (§5.2, §6.2). Specific implementation choices dated to roadmap v0.5+ — exact CSRF/auth mechanics, named metrics, Alembic/RQ operational detail — are **design intent**, re-validated when that version's work begins rather than treated as frozen 12+ months ahead of it (`10 §6` item 7).
 
 ---
 
@@ -3134,6 +3170,8 @@ A project whose product is *trust in a record* has an unusual ops inversion: the
 | **Future (post-1.0)** | Secondary goals, on the seams | Incremental releases | New formats (LAMMPS, Quantum ESPRESSO, CP2K, Gaussian, ORCA, GROMACS, Open Babel, pymatgen objects) as plugins; visualization (Mol\*), File Repair, Analysis plugins, AI assistant — each at its named seam (`01 §6`, `07 §6`) | 2–4 per format; 6–12 per secondary feature | Each attaches at an existing seam by design; per-format cost is bounded by the O(1) architecture (`03 §4.3` alternative-rejected rationale). |
 
 Cumulative to v1.0: **≈ 50–63 part-time dev-weeks** (roughly 12–15 calendar months at the stated pace). Sequencing is strict: each milestone's components depend only on prior milestones, so no milestone begins on speculation about a later one.
+
+**Note on version-ladder terminology (Revision 1.2).** `docs/Incremental_Roadmap.md` re-slices this milestone table for a solo student developer's availability, subdividing it into v0.1–v0.7 (its v0.2 = this table's "MVP (v0.1)"; its v0.5 = this table's "v0.2"; and so on) while preserving every component, schema, and dependency listed above unchanged — only the version *labels* and *weekly packaging* differ. Consequently **"MVP" in this document and "v0.1" in the roadmap are different scopes**: this document's MVP is the roadmap's v0.2 (full seven-format Phase 1, service layer excluded); the roadmap's v0.1 is a first, smaller public release covering four formats and two recovery scenarios. Readers combining both documents should use the roadmap's labels when discussing schedule and this table's "MVP" only to mean "everything the seven-format, library-plus-CLI core promises," never a specific weekend count. `docs/IMPLEMENTATION_PLAN.md` sequences the roadmap's v0.1 into milestones and is the execution-level document for that scope.
 
 ---
 
