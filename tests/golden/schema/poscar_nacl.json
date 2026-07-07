@@ -1,0 +1,115 @@
+{
+  "schema_version": "0.1.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Na",
+          "Cl"
+        ],
+        "atomic_numbers": [
+          11,
+          17
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.82,
+            2.82,
+            2.82
+          ]
+        ],
+        "masses": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            5.64,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            5.64,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            5.64
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": null,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": {
+    "source_code": null,
+    "calculator": null,
+    "xc_functional": null,
+    "pseudopotentials": null,
+    "thermostat": null,
+    "md_ensemble": null,
+    "temperature": null,
+    "extra": {
+      "poscar:scaling_factor": "1.0"
+    }
+  },
+  "provenance": {
+    "source_filename": "POSCAR",
+    "source_format": "poscar",
+    "source_units": {
+      "positions": "fractional",
+      "lattice_vectors": "angstrom"
+    },
+    "original_coordinate_system": "fractional",
+    "parse_notes": [
+      "Direct coordinates converted to Cartesian using lattice matrix (\u00a74).",
+      "pbc set to (true,true,true) per POSCAR format definition (format-defined, not assumed)."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-07-04T10:05:00Z",
+        "operation": "parse",
+        "source_format": "poscar",
+        "target_format": null,
+        "tool_version": "0.1.0",
+        "parser_version": "poscar-parser 0.1.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {
+      "poscar:comment": "NaCl primitive test"
+    },
+    "custom_per_atom": {},
+    "custom_per_frame": {}
+  }
+}

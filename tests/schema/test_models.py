@@ -14,6 +14,7 @@ from chembridge.schema import (
     Dynamics,
     Frame,
     Provenance,
+    UserMetadata,
 )
 
 
@@ -119,6 +120,32 @@ def test_cell_pbc_carried_as_declared() -> None:
     obj = _obj([Frame(index=0, atoms=_atoms(), cell=cell)])
     assert obj.frames[0].cell is not None
     assert obj.frames[0].cell.pbc == (True, True, True)
+
+
+def test_custom_per_frame_numeric_becomes_ndarray() -> None:
+    # D12: numeric per-frame input coerces to an ndarray (the extXYZ-column branch);
+    # non-numeric input (strings) stays a list. left_to_right union picks the array first.
+    obj = CanonicalObject(
+        frames=[Frame(index=0, atoms=_atoms()), Frame(index=1, atoms=_atoms())],
+        provenance=_provenance(),
+        user_metadata=UserMetadata(
+            custom_per_frame={
+                "sim:temperature": np.array([300.0, 305.0]),
+                "xyz:comment": ["a", "b"],
+            }
+        ),
+    )
+    assert isinstance(obj.user_metadata.custom_per_frame["sim:temperature"], np.ndarray)
+    assert obj.user_metadata.custom_per_frame["xyz:comment"] == ["a", "b"]
+
+
+def test_custom_per_frame_wrong_length_rejected() -> None:
+    with pytest.raises(ValidationError):
+        CanonicalObject(
+            frames=[Frame(index=0, atoms=_atoms())],  # F == 1
+            provenance=_provenance(),
+            user_metadata=UserMetadata(custom_per_frame={"xyz:comment": ["a", "b"]}),  # len 2
+        )
 
 
 def test_extra_field_forbidden() -> None:

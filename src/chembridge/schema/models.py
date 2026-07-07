@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Annotated, Any
 
+import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 if TYPE_CHECKING:
@@ -204,12 +205,21 @@ class Provenance(_Model):
 # --- §3.10 User Metadata -------------------------------------------------------------
 
 
+# A per-atom/per-frame custom value is a sequence whose first dimension is N/F (§3.10, §6
+# rule 1): either a numeric ndarray (extXYZ extra columns) OR a length-N/F list of JSON
+# scalars (e.g. per-frame free-text comments — the §8.1 / §6.1 carry-through of XYZ comment
+# lines). left_to_right union so numeric input becomes an ndarray and only non-numeric
+# input (strings) falls through to the list form. See MASTER_SPEC Part 2 §3.10 Rev 1.3.
+_PerAtomValue = Annotated[ArrayNx | list[JsonValue], Field(union_mode="left_to_right")]
+_PerFrameValue = Annotated[ArrayFx | list[JsonValue], Field(union_mode="left_to_right")]
+
+
 class UserMetadata(_Model):
     tags: list[str] = Field(default_factory=list)
     annotations: dict[str, str] = Field(default_factory=dict)
     custom_global: dict[str, JsonValue] = Field(default_factory=dict)
-    custom_per_atom: dict[str, ArrayNx] = Field(default_factory=dict)  # first dim = N.
-    custom_per_frame: dict[str, ArrayFx] = Field(default_factory=dict)  # first dim = F.
+    custom_per_atom: dict[str, _PerAtomValue] = Field(default_factory=dict)  # first dim = N.
+    custom_per_frame: dict[str, _PerFrameValue] = Field(default_factory=dict)  # first dim = F.
 
 
 # --- §3.2 Root object ----------------------------------------------------------------
@@ -258,16 +268,16 @@ class CanonicalObject(_Model):
                     f"frame at position {position} declares index {frame.index}; "
                     "frame.index must equal its 0-based position (§3.5)"
                 )
-        # Root-level custom per-atom / per-frame arrays must match N / F (§3.10, §6 rule 1).
+        # Root-level custom per-atom / per-frame values must match N / F (§3.10, §6 rule 1).
+        # A value is either a numeric ndarray (first-dim = shape[0]) or a JSON-scalar list
+        # (first-dim = len); both are validated against the object's atom / frame count.
         f = len(self.frames)
-        for key, arr in self.user_metadata.custom_per_atom.items():
-            if arr.shape[0] != n:
-                raise ValueError(
-                    f"custom_per_atom[{key!r}] first dim {arr.shape[0]} != atom count {n}"
-                )
-        for key, arr in self.user_metadata.custom_per_frame.items():
-            if arr.shape[0] != f:
-                raise ValueError(
-                    f"custom_per_frame[{key!r}] first dim {arr.shape[0]} != frame count {f}"
-                )
+        for key, val in self.user_metadata.custom_per_atom.items():
+            length = val.shape[0] if isinstance(val, np.ndarray) else len(val)
+            if length != n:
+                raise ValueError(f"custom_per_atom[{key!r}] first dim {length} != atom count {n}")
+        for key, val in self.user_metadata.custom_per_frame.items():
+            length = val.shape[0] if isinstance(val, np.ndarray) else len(val)
+            if length != f:
+                raise ValueError(f"custom_per_frame[{key!r}] first dim {length} != frame count {f}")
         return self
