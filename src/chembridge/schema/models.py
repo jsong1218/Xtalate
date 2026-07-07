@@ -15,9 +15,12 @@ atom or frame count.
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+
+if TYPE_CHECKING:
+    from chembridge.schema.presence import PresenceMap
 
 from chembridge.schema.arrays import (
     Array33,
@@ -228,6 +231,13 @@ class CanonicalObject(_Model):
         """Number of frames — a computed property, never stored (§3.5). Serialized
         envelopes that show ``frame_count`` render it from here at emit time."""
         return len(self.frames)
+
+    def field_presence(self) -> PresenceMap:
+        """Compute the ✓/✗ presence map of this object on demand (§3.11). Never stored;
+        derived from the ``None``/populated state of the fields themselves."""
+        from chembridge.schema.presence import compute_field_presence
+
+        return compute_field_presence(self)
 
     @model_validator(mode="after")
     def _check(self) -> CanonicalObject:

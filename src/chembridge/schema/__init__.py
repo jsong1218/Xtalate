@@ -19,6 +19,7 @@ from chembridge.schema.models import (
     TrajectoryMetadata,
     UserMetadata,
 )
+from chembridge.schema.presence import PathPresence, PresenceMap
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -30,6 +31,8 @@ __all__ = [
     "Dynamics",
     "Electronic",
     "Frame",
+    "PathPresence",
+    "PresenceMap",
     "Provenance",
     "SimulationMetadata",
     "TrajectoryMetadata",
