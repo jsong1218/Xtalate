@@ -1,6 +1,6 @@
 # ChemBridge — v0.1 Implementation Plan
 
-> **Document status:** Execution plan for Version 0.1 (the first public release, per `docs/Incremental_Roadmap.md` §2). It **supersedes the roadmap's §2.5 week-by-week table for execution purposes** while preserving all of its scope decisions (four formats, two recovery scenarios, preset-only recovery, library + CLI, Tier 0 only). Scope authority remains MASTER_SPEC.md and the roadmap; this document decides *sequencing, packaging into milestones, and cut lines*.
+> **Document status:** Execution plan for Version 0.1 (the first public release, per `docs/Incremental_Roadmap_v1.0.md` §2). It **supersedes the roadmap's §2.5 week-by-week table for execution purposes** while preserving all of its scope decisions (four formats, two recovery scenarios, preset-only recovery, library + CLI, Tier 0 only). Scope authority remains MASTER_SPEC.md and the roadmap; this document decides *sequencing, packaging into milestones, and cut lines*.
 >
 > **Assumed inputs:** this plan assumes the recommendations of `docs/ARCHITECTURE_REVIEW.md` §7 items 1–7 are accepted — in particular one-distribution packaging (review §4.1), the dependency graph with plugin-sdk placed (review B3), deferred entry-point discovery (review §4.2), the v0.1 scope trims (review §4.4), and the 16–20-weekend re-baseline (review §5). Where a milestone depends on a specific review decision, it is flagged inline as **[needs review §N]**. No code is written until this plan is approved.
 
