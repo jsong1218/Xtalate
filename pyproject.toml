@@ -60,7 +60,11 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.mypy]
-python_version = "3.11"
+# Decoupled from the 3.11 runtime floor (DECISIONS.md D2): numpy>=2.5 ships type stubs
+# using PEP 695 `type` statements, which mypy rejects when targeting 3.11. Our code's
+# 3.11 compatibility is enforced instead by ruff `target-version = "py311"` plus the real
+# 3.11 test leg in CI — this setting only governs which stub syntax mypy will parse.
+python_version = "3.12"
 strict = true
 files = ["src", "tests"]
 

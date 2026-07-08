@@ -809,10 +809,11 @@ class UserMetadata(BaseModel):
     tags: list[str] = []                            # Free-form labels.
     annotations: dict[str, str] = {}                # Key → text notes.
     custom_global: dict[str, JsonValue] = {}        # Arbitrary global values (JSON-serializable).
-    custom_per_atom: dict[str, Array[(N, ...)]] = {}    # Named per-atom arrays (first dim = N), e.g.
-                                                        #   extXYZ extra columns.
-    custom_per_frame: dict[str, Array[(F, ...)]] = {}   # Named per-frame arrays (first dim = F).
+    custom_per_atom: dict[str, PerAtomValue] = {}   # First dim = N (§below). e.g. extXYZ extra columns.
+    custom_per_frame: dict[str, PerFrameValue] = {} # First dim = F (§below). e.g. XYZ comment lines.
 ```
+
+**Per-atom / per-frame value type (Revision 1.3).** A `custom_per_atom` / `custom_per_frame` value is any **sequence whose first dimension is N / F** — either a numeric array (`Array[(N, ...)]` / `Array[(F, ...)]`, e.g. extXYZ extra columns) **or a length-N / length-F list of JSON scalars** (e.g. the per-frame free-text comments the carry-through rule §6.1 routes here — see the worked example §8.1, whose `custom_per_frame["xyz:comment"]` is `["frame 0", "frame 1"]`). The earlier `Array[...]`-only annotation was written for the numeric case and could not hold the string comments §6.1 and §8.1 already require; broadening the *value* type — not the surface, the namespacing, or the first-dimension rule, all of which stand unchanged — reconciles the type with those examples. This is the minimal fix that keeps "shape-validated, serializability-checked, semantics-free" (§6 rule 1) intact: the first dimension is still validated against N / F, the value is still required to be JSON-serializable, and its meaning is still never interpreted. Recorded in `docs/DECISIONS.md` D12.
 
 See §6 for the namespacing rules that keep this surface from polluting the scientific core.
 
