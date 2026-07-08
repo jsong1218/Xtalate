@@ -3,5 +3,17 @@
 Assembles the capability declarations that plugins produce (the data model lives in
 ``sdk``) into a queryable registry; it is consumer, not owner, of that model, and
 never executes format logic (Part 1 §2). Depends on ``schema`` and ``sdk``.
-Populated in M4.
+Implemented in M2.
 """
+
+from chembridge.capabilities.registry import (
+    CapabilityMatrix,
+    InvalidCapabilityDeclaration,
+    Registry,
+)
+
+__all__ = [
+    "CapabilityMatrix",
+    "InvalidCapabilityDeclaration",
+    "Registry",
+]
