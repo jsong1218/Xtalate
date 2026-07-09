@@ -1,10 +1,10 @@
 # ChemBridge — v0.2 Implementation Plan
 
-> **Document status:** Execution plan for Version 0.2 ("Trustworthy Core Complete", per `docs/Incremental_Roadmap.md` §3). It **supersedes the roadmap's §3 prose for execution purposes** while preserving all of its scope decisions (no new formats, no services, no UI; v0.2 *fills in* `recovery/`, `validation/`, and `tests/` to Part 10-MVP completeness). Scope authority remains MASTER_SPEC.md and the roadmap; this document decides *sequencing, packaging into milestones, and cut lines*.
+> **Document status:** Execution plan for Version 0.2 ("Trustworthy Core Complete", per `docs/Incremental_Roadmap_v1.0.md` §3). It **supersedes the roadmap's §3 prose for execution purposes** while preserving all of its scope decisions (no new formats, no services, no UI; v0.2 *fills in* `recovery/`, `validation/`, and `tests/` to Part 10-MVP completeness). Scope authority remains MASTER_SPEC.md and the roadmap; this document decides *sequencing, packaging into milestones, and cut lines*.
 >
 > **Label reminder (Revision 1.2 note, Part 10 §1):** this roadmap's v0.2 **is** Part 10's "MVP" — the point at which everything the spec promises about the four-format core is mechanically enforced, not just designed. Part 10's own "v0.2" (API + remaining formats) is this ladder's v0.3–v0.5.
 >
-> **Assumed inputs:** v0.1 shipped per `docs/IMPLEMENTATION_PLAN.md` — four formats (or three plus the pre-authorized M3c cut, see gate G0 below), two recovery scenarios preset-only, runtime completeness assertion live since M4, identity round-trips green in CI, `--tolerance-profile NAME` (named profiles only), and the v0.1 tag published. Milestone numbering continues globally from v0.1's M0–M6.
+> **Assumed inputs:** v0.1 shipped per `docs/IMPLEMENTATION_PLAN_v0.1.md` — four formats (or three plus the pre-authorized M3c cut, see gate G0 below), two recovery scenarios preset-only, runtime completeness assertion live since M4, identity round-trips green in CI, `--tolerance-profile NAME` (named profiles only), and the v0.1 tag published. Milestone numbering continues globally from v0.1's M0–M6.
 
 ---
 

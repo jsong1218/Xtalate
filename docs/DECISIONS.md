@@ -1,6 +1,6 @@
 # ChemBridge — Engineering Decisions Log
 
-> **Status:** Binding for implementation, subordinate to `MASTER_SPEC.md`. This log records the concrete build-time decisions that the spec leaves to implementation — the ones `docs/ARCHITECTURE_REVIEW.md` §3/§7 flagged as needed before code. Each follows the house style: state the decision, reject at least one alternative. New decisions append here with an ID; a decision that later contradicts the spec triggers a `MASTER_SPEC.md` Revision note in the same change (standing rule, `IMPLEMENTATION_PLAN.md` §4).
+> **Status:** Binding for implementation, subordinate to `MASTER_SPEC.md`. This log records the concrete build-time decisions that the spec leaves to implementation — the ones `docs/ARCHITECTURE_REVIEW.md` §3/§7 flagged as needed before code. Each follows the house style: state the decision, reject at least one alternative. New decisions append here with an ID; a decision that later contradicts the spec triggers a `MASTER_SPEC.md` Revision note in the same change (standing rule, `IMPLEMENTATION_PLAN_v0.1.md` §4).
 
 ## D1 — One distribution, `src/` layout (resolves review §4.1, B4)
 
@@ -10,7 +10,7 @@
 
 **Rejected — flat layout** (`chembridge/` at repo root, no `src/`). The `src/` layout prevents the classic "tests import the un-installed working copy instead of the installed package" footgun and makes the editable install the only import path.
 
-**Naming refinement over `IMPLEMENTATION_PLAN.md` M0.** The plan's shorthand listed a combined `formats/`; this log instead keeps `parsers/` and `exporters/` as separate subpackages, because the spec gives them distinct components with distinct "Must NOT" contracts (Part 1 §2) and cites `packages/parsers`/`packages/exporters` throughout. Within each, modules are organized one-per-format (`parsers/xyz.py`, `exporters/xyz.py`). Recorded as `MASTER_SPEC` Revision 1.2 addendum item 8.
+**Naming refinement over `IMPLEMENTATION_PLAN_v0.1.md` M0.** The plan's shorthand listed a combined `formats/`; this log instead keeps `parsers/` and `exporters/` as separate subpackages, because the spec gives them distinct components with distinct "Must NOT" contracts (Part 1 §2) and cites `packages/parsers`/`packages/exporters` throughout. Within each, modules are organized one-per-format (`parsers/xyz.py`, `exporters/xyz.py`). Recorded as `MASTER_SPEC` Revision 1.2 addendum item 8.
 
 ## D2 — Python ≥ 3.11
 
