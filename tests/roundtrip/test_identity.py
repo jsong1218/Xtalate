@@ -11,8 +11,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from chembridge.exporters.extxyz import ExtxyzExporter
 from chembridge.exporters.poscar import make_contcar_exporter, make_poscar_exporter
 from chembridge.exporters.xyz import XyzExporter
+from chembridge.parsers.extxyz import ExtxyzParser
 from chembridge.parsers.poscar import make_contcar_parser, make_poscar_parser
 from chembridge.parsers.xyz import XyzParser
 from chembridge.schema import CanonicalObject
@@ -38,6 +40,11 @@ def test_xyz_identity() -> None:
 def test_poscar_identity() -> None:
     source = (GOLDEN / "poscar" / "nacl-primitive" / "POSCAR").read_bytes()
     _roundtrip(make_poscar_parser(), make_poscar_exporter(), source)
+
+
+def test_extxyz_identity() -> None:
+    source = (GOLDEN / "extxyz" / "co-in-cell" / "sample.extxyz").read_bytes()
+    _roundtrip(ExtxyzParser(), ExtxyzExporter(), source)
 
 
 SELECTIVE = b"""sd test

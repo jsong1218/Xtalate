@@ -28,8 +28,8 @@ def _registry() -> Registry:
 
 def test_builtins_register_without_error() -> None:
     reg = _registry()
-    assert {p.format_id for p in reg.parsers()} == {"xyz", "poscar", "contcar"}
-    assert {e.format_id for e in reg.exporters()} == {"xyz", "poscar", "contcar"}
+    assert {p.format_id for p in reg.parsers()} == {"xyz", "extxyz", "poscar", "contcar"}
+    assert {e.format_id for e in reg.exporters()} == {"xyz", "extxyz", "poscar", "contcar"}
 
 
 def test_capability_matrix_reports_poscar_write_side() -> None:
@@ -47,6 +47,21 @@ def test_sniffer_picks_xyz_for_xyz_file() -> None:
     data = (GOLDEN / "xyz" / "water-traj" / "water_traj.xyz").read_bytes()
     result = sniffer.sniff(data, "water_traj.xyz")
     assert result.format_id == "xyz"
+
+
+def test_sniffer_prefers_extxyz_over_plain_xyz_on_marked_file() -> None:
+    # Both parsers accept the .xyz name, but only extXYZ recognises the Lattice=/Properties=
+    # markers — the superset wins the disambiguation (Part 3 §6.1, §3 n.2).
+    sniffer = Sniffer(_registry())
+    data = b'1\nLattice="4 0 0 0 4 0 0 0 4" Properties=species:S:1:pos:R:3\nH 0 0 0\n'
+    result = sniffer.sniff(data, "structure.xyz")
+    assert result.format_id == "extxyz"
+
+
+def test_sniffer_picks_plain_xyz_over_extxyz_without_markers() -> None:
+    sniffer = Sniffer(_registry())
+    data = (GOLDEN / "xyz" / "water-traj" / "water_traj.xyz").read_bytes()
+    assert sniffer.sniff(data, "water_traj.xyz").format_id == "xyz"
 
 
 def test_sniffer_picks_poscar_by_name() -> None:

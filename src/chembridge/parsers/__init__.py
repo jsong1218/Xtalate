@@ -11,11 +11,13 @@ assembly imports *downward* only and the P2 import contract holds.
 
 from __future__ import annotations
 
+from chembridge.parsers.extxyz import ExtxyzParser
 from chembridge.parsers.poscar import PoscarParser, make_contcar_parser, make_poscar_parser
 from chembridge.parsers.xyz import XyzParser
 from chembridge.sdk import ParserPlugin
 
 __all__ = [
+    "ExtxyzParser",
     "PoscarParser",
     "XyzParser",
     "builtin_parsers",
@@ -25,5 +27,5 @@ __all__ = [
 
 
 def builtin_parsers() -> list[ParserPlugin]:
-    """The parsers shipped in v0.1 (M3a XYZ, M3b POSCAR/CONTCAR). extXYZ (M3c) joins here."""
-    return [XyzParser(), make_poscar_parser(), make_contcar_parser()]
+    """The parsers shipped in v0.1 (M3a XYZ, M3b POSCAR/CONTCAR, M3c extXYZ)."""
+    return [XyzParser(), ExtxyzParser(), make_poscar_parser(), make_contcar_parser()]

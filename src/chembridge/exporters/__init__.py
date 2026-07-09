@@ -10,6 +10,7 @@ higher layer assembles into a Registry.
 
 from __future__ import annotations
 
+from chembridge.exporters.extxyz import ExtxyzExporter
 from chembridge.exporters.poscar import (
     PoscarExporter,
     make_contcar_exporter,
@@ -19,6 +20,7 @@ from chembridge.exporters.xyz import XyzExporter
 from chembridge.sdk import ExporterPlugin
 
 __all__ = [
+    "ExtxyzExporter",
     "PoscarExporter",
     "XyzExporter",
     "builtin_exporters",
@@ -28,5 +30,5 @@ __all__ = [
 
 
 def builtin_exporters() -> list[ExporterPlugin]:
-    """The exporters shipped in v0.1 (M3a XYZ, M3b POSCAR/CONTCAR). extXYZ (M3c) joins here."""
-    return [XyzExporter(), make_poscar_exporter(), make_contcar_exporter()]
+    """The exporters shipped in v0.1 (M3a XYZ, M3b POSCAR/CONTCAR, M3c extXYZ)."""
+    return [XyzExporter(), ExtxyzExporter(), make_poscar_exporter(), make_contcar_exporter()]

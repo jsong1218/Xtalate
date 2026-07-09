@@ -1,0 +1,21 @@
+case: co-in-cell
+format_id: extxyz
+source_file: sample.extxyz
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "638bbb0deb73df0167a8317e2c183b2a12258215b4a69368860278f104a8b053"
+origin:
+  kind: synthetic
+  source: >-
+    Hand-authored for M3c: a single-frame diatomic (C, O) in a cubic cell exercising the
+    breadth of extXYZ's Properties=/Lattice= grammar. No public spec worked example exists
+    for extXYZ (unlike XYZ §8.1 / POSCAR §8.2), so this fixture is synthetic. Values chosen
+    to survive ASE's 8-decimal write formatting so the identity round-trip is exact.
+  license: "Apache-2.0"
+notes: >-
+  Covers the unit-/sign-safe field mappings (masses -> u, energy -> eV, forces -> eV/Å,
+  charge column -> electronic.charges cation-positive) and the Lattice=/pbc= cell with an
+  arbitrary comment key (config_type) carried through to custom_per_frame['extxyz:config_type']
+  (Part 2 §6.1). The default-laundering behaviours (zero cell -> None, undeclared pbc,
+  zero momenta -> None) are exercised by the unit tests in tests/parsers/test_extxyz.py,
+  not by this golden — laundering is about what the file does NOT say.
