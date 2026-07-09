@@ -1,0 +1,14 @@
+case: water-traj
+format_id: xyz
+source_file: water_traj.xyz
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "0837adbe10efa7e4306defdf275c3820fdea79e21b0d35bf86008add9dbe7d1b"
+origin:
+  kind: synthetic
+  source: "MASTER_SPEC Part 2 §8.1 worked example (2-frame, 3-atom plain XYZ)"
+  license: "Apache-2.0"
+notes: >-
+  Plain XYZ: species + Cartesian positions + free-text comment lines, no cell / velocities /
+  energies. Exercises multi-frame parsing, absence (cell=None, dynamics/electronic all None),
+  and the §6.1 comment carry-through into user_metadata.custom_per_frame['xyz:comment'].

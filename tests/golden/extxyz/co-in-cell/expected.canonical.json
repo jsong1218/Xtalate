@@ -1,0 +1,119 @@
+{
+  "schema_version": "0.1.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "C",
+          "O"
+        ],
+        "atomic_numbers": [
+          6,
+          8
+        ],
+        "positions": [
+          [
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            2.125,
+            1.0,
+            1.0
+          ]
+        ],
+        "masses": [
+          12.011,
+          15.999
+        ]
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            6.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            6.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            6.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.5,
+            0.0,
+            0.0
+          ],
+          [
+            -0.5,
+            0.0,
+            0.0
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -14.25,
+        "stress": null,
+        "charges": [
+          0.3,
+          -0.3
+        ],
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": null,
+  "provenance": {
+    "source_filename": "sample.extxyz",
+    "source_format": "extxyz",
+    "source_units": {
+      "positions": "angstrom"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [],
+    "history": [
+      {
+        "timestamp": "<normalised>",
+        "operation": "parse",
+        "source_format": "extxyz",
+        "target_format": null,
+        "tool_version": "<normalised>",
+        "parser_version": "<normalised>",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {},
+    "custom_per_atom": {},
+    "custom_per_frame": {
+      "extxyz:config_type": [
+        "diatomic"
+      ]
+    }
+  }
+}

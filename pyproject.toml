@@ -35,6 +35,7 @@ classifiers = [
 dependencies = [
     "pydantic>=2.7",
     "numpy>=1.26",
+    "ase>=3.29,<4",
 ]
 
 [project.optional-dependencies]
@@ -67,6 +68,16 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+
+# ASE ships a py.typed marker but is largely unannotated (DECISIONS.md D7 wraps it as the
+# sole scientific-I/O dependency, M3c). Under --strict its unannotated functions would trip
+# `no-untyped-call` at every call site. We treat it as an untyped I/O workhorse confined to
+# the two extxyz wrapper modules — `follow_imports = "skip"` makes ASE symbols `Any` — and
+# rely on our laundering + golden tests, not ASE's types, to pin its behavior.
+[[tool.mypy.overrides]]
+module = "ase.*"
+ignore_missing_imports = true
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
