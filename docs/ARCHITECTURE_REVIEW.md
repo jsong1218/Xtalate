@@ -1,8 +1,8 @@
 # ChemBridge — Architecture Review
 
-> **Document status:** Advisory. A lead-architect review of `docs/MASTER_SPEC.md` (Parts 0–10 + Appendices A/B) and `docs/Incremental_Roadmap.md`, performed before any code exists. Findings are numbered and cited by Part/§ so each can be verified against the spec and accepted or rejected individually. This document changes nothing by itself; accepted findings should be applied to MASTER_SPEC.md as a Revision 1.2 note (per the spec's own convention, Part preface, Assembly note 6).
+> **Document status:** Advisory. A lead-architect review of `docs/MASTER_SPEC.md` (Parts 0–10 + Appendices A/B) and `docs/Incremental_Roadmap_v1.0.md`, performed before any code exists. Findings are numbered and cited by Part/§ so each can be verified against the spec and accepted or rejected individually. This document changes nothing by itself; accepted findings should be applied to MASTER_SPEC.md as a Revision 1.2 note (per the spec's own convention, Part preface, Assembly note 6).
 >
-> Companion document: `docs/IMPLEMENTATION_PLAN.md` re-slices v0.1 into milestones, incorporating the recommendations below that the owner accepts.
+> Companion document: `docs/IMPLEMENTATION_PLAN_v0.1.md` re-slices v0.1 into milestones, incorporating the recommendations below that the owner accepts.
 
 ---
 
@@ -46,7 +46,7 @@ There is also a project-shape risk worth naming once: the specification is ~65,0
 | A9 | **Capability-path wildcard is undefined.** Part 3 §4.1: every `fields` key "must be a valid canonical path; the registry rejects declarations with unknown paths." The POSCAR example in §4.2 uses `"simulation.*"`. | Part 3 §4.1 vs §4.2. | **Medium** — one sentence fixes it (e.g., "a trailing `.*` denotes all leaf paths under the prefix; the registry expands it at load"). |
 | A10 | **`electronic.total_spin` is missing from the Part 3 §3 format table** while present in the schema (Part 2 §3.7) and the Discovery example (Part 3 §6.3). The table-vs-declaration sync test (Part 8 §1.1) would flag this on its first run. | Part 3 §3 table. | Low — add the row (likely `◐²` for extXYZ/ASE traj, `○` elsewhere). |
 | A11 | **`schema_version: "1.0.0-draft"` (roadmap §2.3) vs `"1.0.0"` (every Part 2 example), and Part 2 §5's migration semantics never define pre-release ordering.** A migration registry keyed on semver needs to know where `1.0.0-draft` sorts. | Roadmap §2.3 vs Part 2 §§3.2, 5, 8. | **Medium** — recommend an explicit pre-1.0 series: v0.1 ships `schema_version: "0.1.0"`, frozen `"1.0.0"` at product v1.0 (this also matches Part 10 §6 item 3, "schema tagged 1.0.0" as a v1.0 deliverable, which implies it is *not* 1.0.0 before then). |
-| A12 | **File-name drift:** the roadmap is `docs/Incremental_Roadmap.md`; project communication (including the request for this review) refers to `docs/ROADMAP.md`. | — | Low — rename to `docs/ROADMAP.md` or standardize references; pick one. |
+| A12 | **File-name drift:** the roadmap is `docs/Incremental_Roadmap.md`; project communication (including the request for this review) refers to `docs/ROADMAP.md`. | — | Low — rename to `docs/ROADMAP.md` or standardize references; pick one. *(Resolved differently: the file was later renamed `docs/Incremental_Roadmap_v1.0.md` as part of a broader per-version roadmap split — see `docs/DECISIONS.md`.)* |
 
 ---
 
@@ -160,7 +160,7 @@ Recorded so that "review" is not read as "rewrite":
 | 3 | Add a Revision 1.2 note to MASTER_SPEC adopting the roadmap's version ladder and the terminology rule ("MVP" = v0.2; v0.1 = first public release), plus the spec-vs-spec fixes: worked-example carry-through keys (A6), `mixed` in `FieldPresenceEntry` (A7), capability wildcard semantics (A9), `total_spin` table row (A10), schema pre-1.0 versioning `0.1.0` (A11), roadmap validation wording (A8). | A5–A11 | ~2–3 h, one editing pass |
 | 4 | Make the M0 engineering decisions and record them (with rejected alternatives, per house style): packaging shape (§4.1/B4), module homes for CLI/discovery/sniffer (B1, B2), acyclic graph with plugin-sdk placed (B3), per-format strategy (B5), array serialization + golden equality semantics (B6), lint tooling (B7). | B1–B8 | the first work session of M0 |
 | 5 | Downgrade Parts 6/7/9 implementation detail to "design intent — re-validate at build time." | §4.3 | <1 h |
-| 6 | Adopt the v0.1 scope trims (§4.4), the runtime completeness assertion (§4.5), and defer entry-point discovery to v0.3 (§4.2). | §4 | reflected in IMPLEMENTATION_PLAN.md |
-| 7 | Re-baseline v0.1 to 16–20 weekends with the pre-authorized extXYZ cut-line (§5.4). | §5 | reflected in IMPLEMENTATION_PLAN.md |
+| 6 | Adopt the v0.1 scope trims (§4.4), the runtime completeness assertion (§4.5), and defer entry-point discovery to v0.3 (§4.2). | §4 | reflected in IMPLEMENTATION_PLAN_v0.1.md |
+| 7 | Re-baseline v0.1 to 16–20 weekends with the pre-authorized extXYZ cut-line (§5.4). | §5 | reflected in IMPLEMENTATION_PLAN_v0.1.md |
 
-Items 1–3 are spec hygiene and take one sitting. Items 4–7 are absorbed into `docs/IMPLEMENTATION_PLAN.md`, which assumes they are accepted (each dependency is flagged there explicitly).
+Items 1–3 are spec hygiene and take one sitting. Items 4–7 are absorbed into `docs/IMPLEMENTATION_PLAN_v0.1.md`, which assumes they are accepted (each dependency is flagged there explicitly).

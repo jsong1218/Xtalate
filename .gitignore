@@ -219,3 +219,12 @@ __marimo__/
 
 #MacOS
 .DS_Store
+
+# Secrets (CLAUDE.md "Never commit secrets" / DECISIONS.md) — defensive, ahead of need:
+# no credentials exist in the v0.1 codebase yet, but these patterns are excluded before
+# the v0.5 Service layer (DB, object storage, hosted-instance API keys) makes them real.
+*.pem
+*.key
+credentials.json
+secrets.*
+!secrets.*.example

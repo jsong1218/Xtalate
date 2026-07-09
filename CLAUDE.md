@@ -1,0 +1,139 @@
+# CLAUDE.md — ChemBridge Project Context
+
+> Load this file at the start of every Claude Code / Claude chat session working on ChemBridge. It is a compressed index of `MASTER_SPEC.md` (the full constitution, assembled from `docs/00_Project_Overview.md` through `docs/10_Roadmap.md`). If anything here conflicts with a doc in `docs/`, **the doc wins** — this file is a map, not the territory. If a later-uploaded doc contradicts an earlier one, flag the discrepancy; do not silently pick one.
+
+> **Staleness note (added post-M0/M1, honoring this file's own conflict rule above).** This file predates the pre-implementation architecture review (`docs/ARCHITECTURE_REVIEW.md`) and `MASTER_SPEC.md` Revision 1.2. Two sections below are now historical rather than current and are flagged in place: **Repository Shape** (the actual v0.1 layout is a single package, not the `packages/*` monorepo sketch) and **Documentation Set and Reading Order** (the eleven standalone `NN_*.md` files never existed as separate documents; `docs/MASTER_SPEC.md` is the single edited source of truth). Everything else below — mission, principles, glossary, architecture, absence convention, tech stack (as a *destination*, not a v0.1 dependency list), API conventions — remains binding. For current status, see `docs/DECISIONS.md` (build-time decisions) and `docs/IMPLEMENTATION_PLAN_v0.1.md` (execution milestones).
+
+## Mission
+
+> **ChemBridge is the trusted translation layer between computational chemistry file formats — a converter that tells you exactly what it kept, what it lost, and why.**
+
+Guiding philosophy: **never silently lose scientific information.** Litmus test for any design decision: *if a user diffed the source and output files by hand, would anything surprise them that ChemBridge didn't already tell them about?* If yes, the design is wrong.
+
+## Design Principles (P1–P6) — binding, referenced by ID in every doc
+
+| ID | Principle |
+|----|-----------|
+| **P1** | Every loss is reported, never assumed. "The user probably doesn't need X" is never a valid reason for silence. |
+| **P2** | No parser talks to another parser. All translation flows through one Canonical Model: `Native File → Canonical Object → Target Format`. No format-to-format shortcuts, ever. |
+| **P3** | Absence is information. The schema distinguishes "never present in the source" (`None`) from "present with value zero/empty." |
+| **P4** | Recover explicitly, never guess. Missing-but-required data is supplied only through an explicit Recovery Workflow, recorded as an Assumption. |
+| **P5** | Know the formats before converting. The Capability Matrix predicts preservation/loss *before* conversion; Validation verifies it *after*. |
+| **P6** | Extensibility over optimization. New formats/features attach at defined seams without core redesign; performance is reclaimed later behind stable interfaces. |
+
+One sentence to carry into every doc: **a conversion you can't audit is a conversion you can't trust.**
+
+## Binding Glossary (use these terms verbatim; never coin synonyms)
+
+| Term | Meaning |
+|---|---|
+| **Canonical Model / Canonical Object** | The single internal schema every parser writes to and every exporter reads from (defined in `02_Canonical_Data_Model.md`). |
+| **Parser** | Reads exactly one native format → produces a Canonical Object. Never writes files, never calls another parser, never defaults an absent field. |
+| **Exporter** | Reads a Canonical Object → writes exactly one native format. Never reads native files. |
+| **Capability Matrix** | Per-format, per-field data structure declaring what each format can/cannot express; drives loss prediction. |
+| **Information Discovery Engine** | Inspects an arbitrary file and reports what's present/absent (✓/✗ per canonical field) without converting it. |
+| **Recovery Engine / Recovery Workflow** | Offers explicit, user-chosen ways to supply data a target format requires but the source lacks; every choice becomes an Assumption. |
+| **Conversion Report** | Structured, machine-readable record of what a conversion kept, dropped, transformed, or assumed. |
+| **Validation Report** | Post-conversion re-parse-and-diff result against the original Canonical Object, within tolerance. |
+| **Discovery Report** | Output of the Information Discovery Engine. |
+| **Provenance** | Canonical Model's record of source software, parser version, and full conversion history (incl. all Assumptions). |
+| **Plugin SDK** | Stable interface for third-party parsers/exporters/analysis modules; first-party formats hold no privileged API. |
+| **Round-trip** | `Format A → Canonical → Format B → Canonical`, diffed within tolerance; primary strategy for catching silent bugs. |
+| **Phase 1 formats** | The seven MVP formats: XYZ, extXYZ, CIF, POSCAR, CONTCAR, XDATCAR, ASE trajectory. |
+
+## Architecture at a Glance
+
+Single spine, four advisory subsystems that guide but never bypass it:
+
+```
+Native File → Format Sniffer → Parser → Canonical Object → Exporter → Target Format
+                                            ↑        ↓
+                        Information Discovery   Capability Matrix
+                        Recovery Engine (explicit only) → Validation Engine
+```
+
+- **Format Sniffer** — identifies format + confidence, selects a parser.
+- **Parser layer** (one per format) — must not read another format or talk to another parser.
+- **Canonical Object** — the only thing that crosses the parser/exporter boundary.
+- **Capability Matrix** — tells the exporter what the target can hold *before* it writes.
+- **Recovery Engine** — fills required-but-missing fields only with explicit user consent, recorded as an Assumption.
+- **Validation Engine** — re-parses the output and diffs it against the source Canonical Object.
+- **API layer** (`backend/`, FastAPI) — thin; validates requests, manages jobs/storage; contains no scientific logic.
+- **Web UI** (`frontend/`, Next.js) — presents the workflow and renders reports faithfully; never re-implements conversion logic or hides losses.
+
+## Canonical Model — Absence Convention (P3), normative
+
+| State | Representation | Meaning |
+|---|---|---|
+| Absent | `None` | Source file did not contain this information at all. |
+| Present | Actual value (incl. zeros) | Source file contained it; the value is the value. |
+
+Parsers are forbidden from defaulting — no zero velocities, no identity lattice, no `energy = 0.0` invented to fill a gap. Schema categories: Geometry, Simulation Cell, Trajectory, Dynamics, Electronic Information, Simulation Metadata, Provenance, User Metadata. Modeled as pydantic v2-style; NumPy arrays in memory, nested JSON lists on the wire; internal coordinates and unit conventions are defined normatively in `02_Canonical_Data_Model.md` — treat field names there as final.
+
+## Tech Stack (rationale lives in `01_Architecture.md §4`)
+
+> These are destination choices for the versions that need them (Service in v0.5, Web UI in v0.6), not the v0.1 dependency set. v0.1 is a pure-Python library + CLI: pydantic + numpy, plus ASE once the extXYZ parser lands (the sole scientific dependency — pymatgen was rejected as a v0.1 dependency; see `docs/DECISIONS.md` D4, D7).
+
+| Layer | Choice |
+|---|---|
+| Frontend | Next.js + React + Tailwind |
+| Backend | FastAPI (Python — must be in-process with ASE/pymatgen) |
+| Scientific core | ASE + pymatgen |
+| Future visualization | Mol* (secondary goal, not MVP) |
+| Relational DB | PostgreSQL (JSONB for report bodies) |
+| Blob storage | S3-compatible object storage, lifecycle-expiring |
+| Job queue | RQ on Redis |
+
+## Repository Shape — HISTORICAL, see note below
+
+> **This section describes the original monorepo sketch, not the current repository.** The pre-implementation architecture review found a solo-maintainer monorepo of eight separately-packaged components to be unnecessary overhead for v0.1 (`docs/ARCHITECTURE_REVIEW.md` §4.1; `docs/DECISIONS.md` D1). The actual v0.1 layout is **one package**, `src/chembridge/`, with subpackages `schema`, `sdk`, `parsers`, `exporters`, `capabilities`, `discovery`, `conversion`, `recovery`, `validation`, `cli` — same import-direction discipline (below), no per-component `pyproject.toml`s. `frontend/`, `backend/`, and `plugins/` do not exist yet; they arrive with the versions that need them (v0.5 Service, v0.6 Web UI, v0.3 entry-point plugin discovery). See `docs/MASTER_SPEC.md` Part 1 §5 for the current tree.
+
+```
+frontend/            Next.js app; no scientific logic
+backend/             FastAPI; thin; calls into packages/
+packages/
+  canonical-schema/  depends on nothing else in packages/
+  parsers/           one per format; depends only on canonical-schema
+  exporters/         one per format; depends only on canonical-schema
+  capability-matrix/
+  conversion/        Conversion Engine — orchestrates the above
+  recovery/          Recovery Engine + workflows
+  validation/        Validation Engine + Validation Report
+  plugin-sdk/        stable base classes for third-party formats
+plugins/             first-party & example plugins built against plugin-sdk
+examples/            runnable end-to-end library + CLI samples
+tests/               golden/, roundtrip/, performance/ (cross-cutting suites)
+docs/                the doc set this file indexes
+```
+
+Dependency direction is strict and acyclic; nothing in `packages/` depends on `backend/` or `frontend/`. This is what physically enforces **P2**. (In the current single-package layout, the same rule applies to the `chembridge.*` subpackages — enforced by an `import-linter` `layers` contract, `pyproject.toml`.)
+
+## API Conventions (full spec in `06_API.md`)
+
+- All endpoints under `/v1/`. Path-prefix versioning; additive changes are non-breaking; new formats/scenarios are *values*, not new endpoints.
+- Long-running operations (`inspect`, `convert`, `validate`) are **async jobs**: submit → poll `/v1/jobs/{job_id}` → retrieve result.
+- Job states: `queued → running → completed | failed | cancelled`, plus `running → awaiting_recovery → running | expired`. An expired `awaiting_recovery` job resolves to a **refused** conversion, never a silently applied default.
+- **A refusal is not an HTTP error.** A conversion the engine declines is a completed job whose `ConversionReport.status == "refused"` — HTTP 200.
+- Single error envelope for all non-2xx responses: `{ error: { code, message, details, request_id, documentation_url } }`. Codes are stable machine strings (e.g. `UNKNOWN_FORMAT`, `PARSE_ERROR`, `VALIDATION_ACK_REQUIRED`, `JOB_ALREADY_TERMINAL`).
+- Response bodies embed the pydantic report models verbatim (`DiscoveryReport`, `ConversionReport`, `ValidationReport`) — no parallel DTOs.
+
+*(This describes the v0.5 Service layer's target contract; there is no API yet in v0.1.)*
+
+## Documentation Set and Reading Order — HISTORICAL, see note below
+
+> **The eleven standalone files below never existed as separate documents** and this reading order does not apply. `docs/MASTER_SPEC.md` is edited directly as the single source of truth (`MASTER_SPEC.md` Revision 1.2, Preface). The document family that actually exists: `docs/MASTER_SPEC.md` (the constitution), `docs/ARCHITECTURE_REVIEW.md` (pre-implementation review), `docs/DECISIONS.md` (build-time decisions log), `docs/IMPLEMENTATION_PLAN_v0.1.md` through `_v1.0.md` (per-version execution plans), `docs/Incremental_Roadmap_v1.0.md` (the solo-developer version ladder). Start with `MASTER_SPEC.md`'s own Table of Contents / reading-order note.
+
+`docs/00_Project_Overview.md` → `01_Architecture.md` → `02_Canonical_Data_Model.md` → `03_Parsers.md` → `04_Conversion_Engine.md` → `05_Validation.md` → `06_API.md` → `07_Web_UI.md` → `08_Testing.md` → `09_Deployment.md` → `10_Roadmap.md`. `MASTER_SPEC.md` at repo root merges all of these verbatim and is the canonical reference if a standalone file is missing from context.
+
+## Working Rules for This Project
+
+- **Terminology is binding.** Reuse exact field names, endpoint paths, report field names, and component names already established. If a name seems wrong, say so explicitly and explain why — never rename silently.
+- **Write for an isolated reader.** Every doc must stand alone for a contributor or a planning agent who has not read the master prompt directly, while staying consistent with the rest of `docs/`.
+- **Justify nontrivial decisions.** Name at least one reasonable rejected alternative for each nontrivial architectural or design choice.
+- **No silent data loss, ever — including in the docs themselves.** Any design that could cause silent loss must be called out explicitly, not glossed over.
+- **MVP discipline.** Favor maintainability, correctness, and extensibility over convenience; don't overengineer Phase 1, but never foreclose Secondary Goals — name the extensibility seam they'd attach to.
+- **Scope discipline.** Produce only the file(s) a given prompt asks for. Do not pad a doc with content that belongs in a different doc file.
+- **Format.** Professional Markdown; Mermaid for all diagrams (GitHub-renderable); directory trees where relevant; no marketing language — this is engineering documentation, not a pitch.
+- **No AI attribution in commits.** No `Co-Authored-By` AI trailer, no "Generated with …" line, and no AI listed as author or contributor in commit metadata, `CITATION.cff`, or release notes — the human maintainer is the author of record on every commit an agent creates or assists with. (`docs/MASTER_SPEC.md` Preface; `docs/DECISIONS.md` D10.)
+- **Never commit secrets.** No API keys, tokens, database credentials, or other secrets are ever committed to this repository, in code, config, fixtures, or commit messages — not even temporarily, not even in a since-reverted commit (git history is not a safe place to "fix it later"). Secrets are supplied only via environment variables or an untracked local file (`.env`, already gitignored) and referenced by name in code, never inlined. Before staging or committing, check `git status`/`git diff` for anything that looks like a credential — including in filenames that look innocuous — and stop to ask if unsure. If a secret is ever accidentally committed, the fix is rotation (invalidate the leaked credential) *and* history rewrite, not just a follow-up commit that deletes it. There are no secrets in the v0.1 codebase (pure-Python library + CLI, no network calls, no credentials); this rule exists ahead of need because v0.5 (Service layer: database, object storage, hosted-instance API keys) is exactly where a leak would first become possible, and the discipline should already be established by then.
+
