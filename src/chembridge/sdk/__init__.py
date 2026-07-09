@@ -4,5 +4,24 @@ Publishes ``ParserPlugin``/``ExporterPlugin`` (Part 3 §2), ``ParseResult``/
 ``ParseIssue``/``ParseError`` (Part 3 §5), and the ``FormatCapabilities``/
 ``FieldCapability``/``CapabilityLevel`` data model (Part 3 §4.1, placed here per
 Revision 1.2 so a plugin can declare capabilities without importing the registry).
-Depends only on ``schema``. Populated in M2.
+Depends only on ``schema``. Implemented in M2.
 """
+
+from chembridge.sdk.capabilities import (
+    CapabilityLevel,
+    FieldCapability,
+    FormatCapabilities,
+)
+from chembridge.sdk.plugins import ExporterPlugin, ParserPlugin
+from chembridge.sdk.results import ParseError, ParseIssue, ParseResult
+
+__all__ = [
+    "CapabilityLevel",
+    "ExporterPlugin",
+    "FieldCapability",
+    "FormatCapabilities",
+    "ParseError",
+    "ParseIssue",
+    "ParseResult",
+    "ParserPlugin",
+]
