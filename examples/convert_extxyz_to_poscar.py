@@ -1,4 +1,4 @@
-"""ChemBridge M4 demo — the first cross-format conversion with a full Conversion Report.
+"""ChemBridge demo — a cross-format conversion with its Conversion Report *and* Validation Report.
 
 Run from the repo root::
 
@@ -6,10 +6,12 @@ Run from the repo root::
 
 It parses an extended-XYZ structure, converts it to POSCAR, and prints the Conversion
 Report — showing exactly what was preserved, what was removed and *why*, and any caveats —
-before printing the POSCAR bytes. This is the payoff of the whole pipeline: loss is predicted
-from the Capability Matrix, executed transparently, and reported, never discovered after the
-fact (P1, P5). Nothing here is bespoke to the extXYZ→POSCAR pair — the same engine converts
-any registered pair from the formats' own capability declarations.
+then the Validation Report that ChemBridge produces for *every* conversion by re-parsing the
+output and checking the report told the truth (M5, Part 5). Finally it prints the POSCAR bytes.
+This is the payoff of the whole pipeline: loss is predicted from the Capability Matrix, executed
+transparently, reported, and independently re-verified — never discovered after the fact (P1, P5).
+Nothing here is bespoke to the extXYZ→POSCAR pair — the same engine converts any registered pair
+from the formats' own capability declarations.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from chembridge.capabilities import Registry
 from chembridge.conversion import ConversionEngine, ConversionReport
 from chembridge.exporters import builtin_exporters
 from chembridge.parsers import builtin_parsers
+from chembridge.validation import ValidationReport
 
 SOURCE = (
     Path(__file__).parent.parent / "tests" / "golden" / "extxyz" / "co-in-cell" / "sample.extxyz"
@@ -53,6 +56,13 @@ def print_report(report: ConversionReport) -> None:
     print(f"  supplied: {len(report.supplied)}   assumptions: {len(report.assumptions)}")
 
 
+def print_validation(report: ValidationReport) -> None:
+    glyph = {"pass": "✓", "warn": "⚠", "fail": "✗", "skipped": "–"}
+    print(f"Validation Report  [{report.status}]  (profile: {report.tolerance_profile['name']})")
+    for check in report.checks:
+        print(f"    {glyph.get(check.status, '?')} {check.check_id}: {check.message}")
+
+
 def main() -> None:
     registry = build_registry()
     engine = ConversionEngine(registry)
@@ -70,6 +80,9 @@ def main() -> None:
     )
 
     print_report(result.report)
+    print()
+    assert result.validation is not None
+    print_validation(result.validation)
     print("\n----- POSCAR output -----")
     assert result.output is not None
     print(result.output.decode())

@@ -1,22 +1,28 @@
 """The Conversion Engine (MASTER_SPEC Part 4 §1–2).
 
-Orchestrates a single conversion: pre-flight diff → (recovery, M5) → `write_plan` export →
-Conversion Report, with the completeness invariant asserted at finalization (review §4.5).
-It delegates every format decision to the parsers/exporters via their `capabilities()`
-declarations — there is no per-(source, target) logic here (Part 3 §4.3, the O(n) design).
+Orchestrates a single conversion: pre-flight diff → Recovery Engine → `write_plan` export →
+Conversion Report → Validation Engine, with the completeness invariant asserted at finalization
+(review §4.5). It delegates every format decision to the parsers/exporters via their
+`capabilities()` declarations — there is no per-(source, target) logic here (Part 3 §4.3, the
+O(n) design) — and every *recovery* decision to the Recovery Engine (Part 4 §3), mapping that
+engine's plain result types onto the report's `Assumption`/`SuppliedEntry`/`RemovedEntry`.
 
 **`write_plan` discipline (Part 4 §1 rules 1–4).** The engine does not pass a side-channel
 list to the exporter; it *materializes* the plan as a filtered Canonical Object — the
 `canonical′` of the sequence diagram — in which every field the plan excludes is set to
 `None`. Handed that object, an exporter honoring the absence convention (it "never fabricates
-values for absent fields", rule 2) writes exactly the plan and nothing more. This makes the
-plan structurally enforced rather than trusted, and makes `canonical′` the precise *expected
-object* the Validation Engine will diff the re-parsed output against (Part 5 §1, M5).
+values for absent fields", rule 2) writes exactly the plan and nothing more. `canonical′` is the
+precise *expected object* the Validation Engine diffs the re-parsed output against (Part 5 §1).
 
-**M4 scope.** Recovery is detected but not resolved (M5): a conversion needing an unresolved
-scenario is *refused* — a completed outcome with `status="refused"`, not an error (Part 4 §4).
-Validation is not yet invoked as the final step (M5). `strict`-mode loss gating (Part 4 §4)
-is likewise M5; M4 records `mode` and runs the permissive path.
+**Recovery and refusal (Part 4 §3–4).** A conversion whose pre-flight diff detects a scenario
+(target-required field absent, or `frame_count > max_frames`) is routed through the Recovery
+Engine with the caller's presets. If a needed choice is missing the conversion is *refused* — a
+completed outcome with `status="refused"`, not an error. Strict mode additionally refuses on
+unacknowledged bulk loss or parse warnings (Part 4 §4).
+
+**Validation (Part 5).** Every completed conversion is validated as an unconditional final step;
+the resulting `ValidationReport` rides on `ConversionResult.validation`. There is no switch to
+skip it — an unvalidated conversion is exactly the artifact this project exists to abolish.
 """
 
 from __future__ import annotations
@@ -30,7 +36,13 @@ from typing import Any
 from chembridge import __version__
 from chembridge.capabilities import Registry
 from chembridge.conversion.preflight import PreflightDiff, build_preflight
-from chembridge.conversion.report import ConversionReport
+from chembridge.conversion.report import (
+    Assumption,
+    ConversionReport,
+    RemovedEntry,
+    SuppliedEntry,
+)
+from chembridge.recovery import RecoveryEngine
 from chembridge.schema import (
     AtomsBlock,
     CanonicalObject,
@@ -43,6 +55,8 @@ from chembridge.schema import (
     TrajectoryMetadata,
     UserMetadata,
 )
+from chembridge.sdk import ParseIssue
+from chembridge.validation import ToleranceProfile, ValidationEngine, ValidationReport
 
 _SIMULATION_FIELDS = (
     "source_code",
@@ -72,11 +86,16 @@ class ConversionResult:
     # The write_plan-filtered object handed to the exporter — the Validation Engine's expected
     # object (Part 5 §1). None iff refused.
     canonical_out: CanonicalObject | None
+    # Exactly one ValidationReport per completed conversion (Part 5 §3); None iff refused (a
+    # refused conversion produces no output file and therefore nothing to validate).
+    validation: ValidationReport | None = None
 
 
 class ConversionEngine:
     def __init__(self, registry: Registry) -> None:
         self._registry = registry
+        self._recovery = RecoveryEngine()
+        self._validation = ValidationEngine(registry)
 
     def preflight(
         self,
@@ -103,7 +122,9 @@ class ConversionEngine:
             source_sha256=source_sha256,
             target_format_id=target_format_id,
             target_filename=target_filename,
-            diff=diff,
+            preserved=diff.preserved,
+            removed=diff.removed,
+            warnings=diff.warnings,
         )
         _assert_completeness(report, source)
         return report
@@ -118,42 +139,130 @@ class ConversionEngine:
         source_sha256: str | None = None,
         target_filename: str | None = None,
         mode: str = "permissive",
+        recovery_choices: dict[str, dict[str, Any]] | None = None,
+        parse_issues: list[ParseIssue] | None = None,
+        acknowledge_loss: bool = False,
+        acknowledge_parse_warnings: bool = False,
+        tolerance_profile: str = "default",
     ) -> ConversionResult:
         """Run the conversion end to end and produce the final report (Part 4 §1)."""
+        recovery_choices = recovery_choices or {}
+        parse_issues = parse_issues or []
         matrix = self._registry.capability_matrix()
         diff = build_preflight(source, matrix, target_format_id)
 
-        if diff.unresolved:
-            # No recovery in M4 → a structured refusal (a completed outcome, not an error).
-            refusal: dict[str, Any] = {
-                "code": "RECOVERY_REQUIRED",
-                "message": "conversion needs recovery decisions that are not yet available; "
-                "supply them once the Recovery Engine (M5) lands, or choose a target that does "
-                "not require the missing fields",
-                "unresolved_scenarios": [
-                    {"scenario": s.scenario, "path": s.path, "detail": s.detail}
-                    for s in diff.unresolved
-                ],
-            }
-            report = self._assemble(
-                stage="final",
-                status="refused",
-                mode=mode,
-                source=source,
-                source_format_id=source_format_id,
-                source_filename=source_filename,
-                source_sha256=source_sha256,
-                target_format_id=target_format_id,
-                target_filename=target_filename,
-                diff=diff,
-                refusal=refusal,
-            )
-            _assert_completeness(report, source)
-            return ConversionResult(report=report, output=None, canonical_out=None)
+        # --- Recovery (Part 4 §3) --------------------------------------------------------
+        recovered = source
+        assumptions: list[Assumption] = []
+        supplied: list[SuppliedEntry] = []
+        recovery_removed: list[RemovedEntry] = []
+        write_plan = set(diff.write_plan)
 
-        canonical_out = _apply_write_plan(source, diff.write_plan, target_format_id)
+        if diff.unresolved:
+            outcome = self._recovery.resolve(source, diff.unresolved, recovery_choices)
+            if outcome.canonical is None:
+                return self._refuse(
+                    source=source,
+                    source_format_id=source_format_id,
+                    source_filename=source_filename,
+                    source_sha256=source_sha256,
+                    target_format_id=target_format_id,
+                    target_filename=target_filename,
+                    mode=mode,
+                    diff=diff,
+                    refusal={
+                        "code": "RECOVERY_REQUIRED",
+                        "message": "conversion needs recovery decisions that were not supplied; "
+                        "provide them as recovery_choices presets, or choose a target that does "
+                        "not require the missing fields",
+                        "unresolved_scenarios": [
+                            {"scenario": s.scenario, "path": s.path, "detail": s.detail}
+                            for s in outcome.unresolved
+                        ],
+                    },
+                )
+            recovered = outcome.canonical
+            for applied in outcome.assumptions:
+                assumptions.append(
+                    Assumption(
+                        id=applied.id,
+                        scenario=applied.scenario,
+                        choice=applied.choice,
+                        parameters=applied.parameters,
+                        origin=applied.origin,  # type: ignore[arg-type]
+                        description=applied.description,
+                    )
+                )
+                for sup in applied.supplied:
+                    supplied.append(
+                        SuppliedEntry(path=sup.path, from_assumption=applied.id, detail=sup.detail)
+                    )
+                    write_plan.add(sup.path)  # a fabricated field must be in the write_plan.
+                for drop in applied.removed:
+                    recovery_removed.append(
+                        RemovedEntry(path=drop.path, reason=drop.reason, detail=drop.detail)
+                    )
+
+        removed = [*diff.removed, *recovery_removed]
+
+        # --- Strict-mode gating (Part 4 §4) ----------------------------------------------
+        if mode == "strict":
+            if removed and not acknowledge_loss:
+                return self._refuse(
+                    source=source,
+                    source_format_id=source_format_id,
+                    source_filename=source_filename,
+                    source_sha256=source_sha256,
+                    target_format_id=target_format_id,
+                    target_filename=target_filename,
+                    mode=mode,
+                    diff=diff,
+                    removed=removed,
+                    supplied=supplied,
+                    assumptions=assumptions,
+                    refusal={
+                        "code": "UNACKNOWLEDGED_LOSS",
+                        "message": "strict mode: reductive loss must be acknowledged "
+                        "(acknowledge_loss=True) before this conversion will proceed",
+                        "unresolved_scenarios": [],
+                    },
+                )
+            parse_warnings = [i for i in parse_issues if i.severity == "warning"]
+            if parse_warnings and not acknowledge_parse_warnings:
+                return self._refuse(
+                    source=source,
+                    source_format_id=source_format_id,
+                    source_filename=source_filename,
+                    source_sha256=source_sha256,
+                    target_format_id=target_format_id,
+                    target_filename=target_filename,
+                    mode=mode,
+                    diff=diff,
+                    removed=removed,
+                    supplied=supplied,
+                    assumptions=assumptions,
+                    refusal={
+                        "code": "UNACKNOWLEDGED_PARSE_WARNINGS",
+                        "message": "strict mode: parse warnings must be acknowledged "
+                        "(acknowledge_parse_warnings=True) before this conversion will proceed",
+                        "unresolved_scenarios": [],
+                    },
+                )
+
+        # --- Export (Part 4 §1) ----------------------------------------------------------
+        recovered = _append_recovery_records(
+            recovered, assumptions, source_format_id, target_format_id
+        )
+        canonical_out = _apply_write_plan(recovered, write_plan, target_format_id)
+        exporter = self._registry.get_exporter(target_format_id)
         buffer = BytesIO()
-        self._registry.get_exporter(target_format_id).export(canonical_out, buffer)
+        exporter.export(canonical_out, buffer)
+        output = buffer.getvalue()
+
+        # Warnings echo parse warnings (Part 3 §5 rule 5) alongside capability caveats (already in
+        # diff.warnings). Export-time transformation warnings would be added here if the exporter
+        # changed representation; the v0.1 POSCAR exporter writes canonical Cartesian unchanged.
+        warnings = [*diff.warnings, *_parse_warnings(parse_issues)]
 
         report = self._assemble(
             stage="final",
@@ -165,12 +274,65 @@ class ConversionEngine:
             source_sha256=source_sha256,
             target_format_id=target_format_id,
             target_filename=target_filename,
-            diff=diff,
+            preserved=diff.preserved,
+            removed=removed,
+            supplied=supplied,
+            assumptions=assumptions,
+            warnings=warnings,
         )
         _assert_completeness(report, source)
-        return ConversionResult(
-            report=report, output=buffer.getvalue(), canonical_out=canonical_out
+
+        # --- Validation (Part 5) — the unconditional final step --------------------------
+        validation = self._validation.validate(
+            expected=canonical_out,
+            output=output,
+            target_format_id=target_format_id,
+            conversion_report=report,
+            tolerance=ToleranceProfile.named(tolerance_profile),
         )
+        return ConversionResult(
+            report=report, output=output, canonical_out=canonical_out, validation=validation
+        )
+
+    def _refuse(
+        self,
+        *,
+        source: CanonicalObject,
+        source_format_id: str,
+        source_filename: str | None,
+        source_sha256: str | None,
+        target_format_id: str,
+        target_filename: str | None,
+        mode: str,
+        diff: PreflightDiff,
+        refusal: dict[str, Any],
+        removed: list[RemovedEntry] | None = None,
+        supplied: list[SuppliedEntry] | None = None,
+        assumptions: list[Assumption] | None = None,
+    ) -> ConversionResult:
+        """Assemble a refused Conversion Report (a completed outcome, not an error; Part 4 §4).
+
+        The full pre-flight `preserved`/`removed` prediction rides along so a pipeline has
+        everything it needs to decide whether to supply presets and retry."""
+        report = self._assemble(
+            stage="final",
+            status="refused",
+            mode=mode,
+            source=source,
+            source_format_id=source_format_id,
+            source_filename=source_filename,
+            source_sha256=source_sha256,
+            target_format_id=target_format_id,
+            target_filename=target_filename,
+            preserved=diff.preserved,
+            removed=removed if removed is not None else diff.removed,
+            supplied=supplied or [],
+            assumptions=assumptions or [],
+            warnings=diff.warnings,
+            refusal=refusal,
+        )
+        _assert_completeness(report, source)
+        return ConversionResult(report=report, output=None, canonical_out=None, validation=None)
 
     def _assemble(
         self,
@@ -184,7 +346,11 @@ class ConversionEngine:
         source_sha256: str | None,
         target_format_id: str,
         target_filename: str | None,
-        diff: PreflightDiff,
+        preserved: list[Any],
+        removed: list[Any],
+        warnings: list[Any],
+        supplied: list[SuppliedEntry] | None = None,
+        assumptions: list[Assumption] | None = None,
         refusal: dict[str, Any] | None = None,
     ) -> ConversionReport:
         return ConversionReport(
@@ -200,17 +366,58 @@ class ConversionEngine:
                 "schema_version": source.schema_version,
             },
             target={"format_id": target_format_id, "filename": target_filename},
-            preserved=list(diff.preserved),
-            removed=list(diff.removed),
-            supplied=[],  # Recovery is M5; nothing is fabricated in M4.
-            assumptions=[],
-            warnings=list(diff.warnings),
+            preserved=list(preserved),
+            removed=list(removed),
+            supplied=list(supplied or []),
+            assumptions=list(assumptions or []),
+            warnings=list(warnings),
             refusal=refusal,
         )
 
 
 def _utc_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_warnings(issues: list[ParseIssue]) -> list[Any]:
+    from chembridge.conversion.report import ReportWarning
+
+    return [
+        ReportWarning(code=i.code, message=i.message, source="parse")
+        for i in issues
+        if i.severity == "warning"
+    ]
+
+
+def _append_recovery_records(
+    canonical: CanonicalObject,
+    assumptions: list[Assumption],
+    source_format_id: str,
+    target_format_id: str,
+) -> CanonicalObject:
+    """Append one ``ConversionRecord(operation="recovery")`` per applied Assumption (Part 4 §3.2;
+    §2 provenance mirroring), so the object stays independently self-explanatory."""
+    if not assumptions:
+        return canonical
+    records = [
+        ConversionRecord(
+            timestamp=_utc_now(),
+            operation="recovery",
+            source_format=source_format_id,
+            target_format=target_format_id,
+            tool_version=__version__,
+            parser_version=None,
+            assumptions=[a.id],
+        )
+        for a in assumptions
+    ]
+    return canonical.model_copy(
+        update={
+            "provenance": canonical.provenance.model_copy(
+                update={"history": [*canonical.provenance.history, *records]}
+            )
+        }
+    )
 
 
 def _apply_write_plan(

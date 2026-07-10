@@ -16,7 +16,6 @@ from chembridge.conversion.engine import (
 )
 from chembridge.conversion.preflight import (
     PreflightDiff,
-    UnresolvedScenario,
     build_preflight,
     capability_path,
 )
@@ -28,6 +27,7 @@ from chembridge.conversion.report import (
     ReportWarning,
     SuppliedEntry,
 )
+from chembridge.recovery import UnresolvedScenario
 
 __all__ = [
     "Assumption",

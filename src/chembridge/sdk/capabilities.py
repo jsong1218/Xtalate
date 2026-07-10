@@ -46,3 +46,12 @@ class FormatCapabilities(BaseModel):
     required_fields: list[str] = Field(default_factory=list)
     native_coordinate_system: Literal["cartesian", "fractional", "both"]
     lossy_notes: list[str] = Field(default_factory=list)  # Format-level caveats -> Warnings.
+    # Declared decimal precision per canonical field path (write side) — the machine-readable
+    # generalization of ``lossy_notes`` that feeds the Validation Engine's representational-bound
+    # tolerance (Part 5 §4.2). ``None`` for a field, or an absent field, means *full* precision
+    # (the exporter round-trips it exactly, e.g. POSCAR's ``repr(float)`` Cartesian coordinates ->
+    # bound 0). An integer *d* means the field is written with *d* decimals -> a per-component
+    # representational bound the tolerance formula scales by ``k_warn``/``k_fail``. Additive to the
+    # frozen declaration (DECISIONS.md D24); exporters that don't declare it validate at full
+    # precision, which is the honest default for the v0.1 formats.
+    numeric_precision: dict[str, int | None] = Field(default_factory=dict)
