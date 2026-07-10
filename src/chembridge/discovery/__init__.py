@@ -6,6 +6,8 @@ winning parser, and produces the ``DiscoveryReport`` from ``field_presence()``.
 Sniffer + registry in M2; the Discovery Report in M6's inspect command.
 """
 
+from chembridge.discovery.engine import DiscoveryEngine
+from chembridge.discovery.report import DiscoveryReport, FieldPresenceEntry
 from chembridge.discovery.sniffer import (
     DEFAULT_ACCEPT_THRESHOLD,
     DEFAULT_AMBIGUITY_MARGIN,
@@ -17,6 +19,9 @@ from chembridge.discovery.sniffer import (
 __all__ = [
     "DEFAULT_ACCEPT_THRESHOLD",
     "DEFAULT_AMBIGUITY_MARGIN",
+    "DiscoveryEngine",
+    "DiscoveryReport",
+    "FieldPresenceEntry",
     "SniffCandidate",
     "SniffResult",
     "Sniffer",
