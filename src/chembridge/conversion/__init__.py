@@ -1,7 +1,46 @@
 """Conversion Engine — orchestrates parse → capability diff → recovery → export → report.
 
-Owns the pre-flight diff, the ``write_plan``, the ``ConversionReport`` (Part 4 §2),
-the completeness-invariant runtime assertion (review §4.5), and the automatic
-final-step validation (Part 1 §3). Delegates all format and recovery logic.
-Populated in M4-M5.
+Owns the pre-flight diff (Part 3 §4.3), the ``write_plan`` (Part 4 §1), the
+``ConversionReport`` (Part 4 §2), and the completeness-invariant runtime assertion
+(review §4.5). Delegates all format logic to the parsers/exporters via their
+``capabilities()`` declarations. Recovery resolution and the automatic final-step
+validation land in M5; M4 is the happy path plus structured refusal.
 """
+
+from __future__ import annotations
+
+from chembridge.conversion.engine import (
+    CompletenessInvariantError,
+    ConversionEngine,
+    ConversionResult,
+)
+from chembridge.conversion.preflight import (
+    PreflightDiff,
+    UnresolvedScenario,
+    build_preflight,
+    capability_path,
+)
+from chembridge.conversion.report import (
+    Assumption,
+    ConversionReport,
+    PreservedEntry,
+    RemovedEntry,
+    ReportWarning,
+    SuppliedEntry,
+)
+
+__all__ = [
+    "Assumption",
+    "CompletenessInvariantError",
+    "ConversionEngine",
+    "ConversionReport",
+    "ConversionResult",
+    "PreflightDiff",
+    "PreservedEntry",
+    "RemovedEntry",
+    "ReportWarning",
+    "SuppliedEntry",
+    "UnresolvedScenario",
+    "build_preflight",
+    "capability_path",
+]
