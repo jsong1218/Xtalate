@@ -34,4 +34,5 @@ def test_subpackages_importable() -> None:
 def test_cli_entry_point_runs() -> None:
     from chembridge.cli import main
 
-    assert main() == 0
+    # No subcommand prints help and returns the usage exit code (M6; was a placeholder 0 pre-M6).
+    assert main([]) == 1

@@ -420,6 +420,16 @@ def _append_recovery_records(
     )
 
 
+def build_expected_object(
+    source: CanonicalObject, write_plan: set[str], target_format_id: str
+) -> CanonicalObject:
+    """Materialize the *expected object* (``canonical′``) from a source object and a container-level
+    ``write_plan`` — the public entry the offline full re-parse re-validation uses to reconstruct
+    the Validation Engine's reference from a source file and a Conversion Report's path lists
+    (Part 5 §4.5). Identical construction to the Conversion Engine's own filtering step."""
+    return _apply_write_plan(source, write_plan, target_format_id)
+
+
 def _apply_write_plan(
     source: CanonicalObject, plan: set[str], target_format_id: str
 ) -> CanonicalObject:

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from chembridge.validation.engine import ConversionReportView, ValidationEngine
 from chembridge.validation.report import CheckResult, ValidationReport
+from chembridge.validation.rethreshold import rethreshold
 from chembridge.validation.tolerance import ToleranceProfile
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "ToleranceProfile",
     "ValidationEngine",
     "ValidationReport",
+    "rethreshold",
 ]

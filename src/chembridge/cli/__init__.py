@@ -1,15 +1,11 @@
 """ChemBridge CLI — a thin presenter over the engines (MASTER_SPEC Appendix A).
 
-Contains no scientific logic; emits the report schemas of Parts 3-5 verbatim as
-JSON and honors the preset-only recovery model (Part 10 §2). Commands
-(``inspect``/``convert``/``validate``/``capabilities``) are populated in M6.
+Contains no scientific logic; emits the report schemas of Parts 3-5 verbatim as JSON (``--json``)
+or renders them as a terminal inventory, and honors the preset-only recovery model (Part 10 §2).
+The command implementations live in :mod:`chembridge.cli.main`; this package exposes the
+console-script entry point ``chembridge``.
 """
 
+from chembridge.cli.main import main
 
-def main() -> int:
-    """Console-script entry point (``chembridge``). Placeholder until M6."""
-    print(
-        "chembridge 0.1.0.dev0 — CLI not yet implemented "
-        "(see docs/IMPLEMENTATION_PLAN.md, milestone M6)."
-    )
-    return 0
+__all__ = ["main"]
