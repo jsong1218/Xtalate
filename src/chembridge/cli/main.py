@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 class _UsageError(Exception):
-    """A caller mistake surfaced after argparse (bad --recover spec, unknown profile, …) → exit 1."""
+    """A caller mistake surfaced after argparse (bad --recover, unknown profile) → exit 1."""
 
 
 # --- commands ------------------------------------------------------------------------------------
@@ -412,7 +412,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument(
         "--validation-report",
         metavar="PATH",
-        help="Write the ValidationReport here (full re-parse), or — alone — read it to re-threshold.",
+        help="Write the report (full re-parse), or — alone — read it to re-threshold.",
     )
     p_validate.add_argument("--tolerance-profile", metavar="NAME", help="default|strict|loose.")
     p_validate.add_argument("--json", action="store_true", help="Print the ValidationReport JSON.")

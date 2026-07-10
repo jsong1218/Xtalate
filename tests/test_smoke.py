@@ -23,7 +23,7 @@ SUBPACKAGES = (
 
 
 def test_package_version() -> None:
-    assert chembridge.__version__ == "0.1.0.dev0"
+    assert chembridge.__version__ == "0.1.0"
 
 
 def test_subpackages_importable() -> None:

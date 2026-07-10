@@ -69,7 +69,8 @@ class DiscoveryEngine:
                         code="UNKNOWN_FORMAT",
                         message=(
                             "no registered format matched with sufficient confidence "
-                            f"(top score {sniff.confidence:.2f}); pass an explicit format to override"
+                            f"(top score {sniff.confidence:.2f}); pass an explicit "
+                            "format to override"
                         ),
                     )
                 ]
