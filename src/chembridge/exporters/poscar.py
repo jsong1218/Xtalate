@@ -144,6 +144,11 @@ class PoscarExporter(ExporterPlugin):
                 "electronic.charges": none,
                 "electronic.magnetic_moments": none,
                 "simulation.*": none,
+                "user_metadata.custom_global": FieldCapability(
+                    level=CapabilityLevel.PARTIAL,
+                    notes="Only the POSCAR title (poscar:comment) and CONTCAR predictor-corrector "
+                    "block (contcar:predictor_corrector); other custom_global keys are dropped.",
+                ),
                 "user_metadata.custom_per_atom": none,
                 "user_metadata.custom_per_frame": none,
             },
