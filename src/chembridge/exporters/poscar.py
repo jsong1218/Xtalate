@@ -34,6 +34,24 @@ def _fmt(x: float) -> str:
     return repr(float(x))
 
 
+def _grouping(symbols: list[str]) -> tuple[list[str], list[int], list[int]]:
+    """Group atoms by element in first-occurrence order (POSCAR requires one element's atoms to be
+    contiguous). Returns ``(order, permutation, counts)`` where ``order`` is the element sequence,
+    ``permutation[i]`` is the source index written at output position *i* (the Part 5 permutation
+    map), and ``counts`` is the per-element atom count. Used by both ``export`` (to write the file)
+    and ``atom_permutation`` (to report the map), so the two can never disagree."""
+    order: list[str] = []
+    groups: dict[str, list[int]] = {}
+    for i, sym in enumerate(symbols):
+        if sym not in groups:
+            groups[sym] = []
+            order.append(sym)
+        groups[sym].append(i)
+    permutation = [i for sym in order for i in groups[sym]]
+    counts = [len(groups[sym]) for sym in order]
+    return order, permutation, counts
+
+
 class PoscarExporter(ExporterPlugin):
     """POSCAR/CONTCAR writer. One class, registered under ``poscar`` and ``contcar``
     (the canonical fields written are identical; only the reported label differs)."""
@@ -61,15 +79,7 @@ class PoscarExporter(ExporterPlugin):
 
         # Group atoms by element in first-occurrence order -> a permutation applied to every
         # per-atom array so the written file is internally consistent (Part 5 permutation map).
-        order: list[str] = []
-        groups: dict[str, list[int]] = {}
-        for i, sym in enumerate(atoms.symbols):
-            if sym not in groups:
-                groups[sym] = []
-                order.append(sym)
-            groups[sym].append(i)
-        permutation = [i for sym in order for i in groups[sym]]
-        counts = [len(groups[sym]) for sym in order]
+        order, permutation, counts = _grouping(atoms.symbols)
 
         title = canonical.user_metadata.custom_global.get(_COMMENT_KEY, "")
         out: list[str] = [str(title) if title is not None else ""]

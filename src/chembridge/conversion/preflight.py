@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 
 from chembridge.capabilities import CapabilityMatrix
 from chembridge.conversion.report import PreservedEntry, RemovedEntry, ReportWarning
+from chembridge.recovery import UnresolvedScenario
 from chembridge.schema import CanonicalObject
 from chembridge.sdk import CapabilityLevel
 
@@ -36,15 +37,6 @@ _DERIVED_PATHS = frozenset({"atoms.atomic_numbers"})
 # A target required-field that is absent on the source maps to the recovery scenario that can
 # supply it (Part 4 §3.3). Only the fabricative one exists in v0.1 (review §4.4 trim).
 _REQUIRED_FIELD_SCENARIOS = {"cell.lattice_vectors": "missing_lattice"}
-
-
-@dataclass
-class UnresolvedScenario:
-    """A recovery the conversion needs but M4 cannot resolve (Part 4 §3; resolved in M5)."""
-
-    scenario: str  # "missing_lattice" | "frame_selection".
-    path: str | None = None  # The canonical path it would supply (fabricative scenarios).
-    detail: str | None = None
 
 
 @dataclass

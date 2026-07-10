@@ -55,6 +55,18 @@ class ExporterPlugin(ABC):
         native files. Transformations (unit/coordinate/sign) are reported by the Conversion
         Engine, not performed silently."""
 
+    def atom_permutation(self, canonical: CanonicalObject) -> list[int] | None:
+        """The atom reordering this exporter applies on write, or ``None`` for no reordering.
+
+        When present, it is a list ``perm`` of length N where output position *i* holds source
+        atom ``perm[i]`` — the **permutation map** the Validation Engine needs to compare species
+        and positions after a reorder (Part 5 §2, ``species_preservation``). An exporter that
+        reorders atoms (e.g. POSCAR groups them by element) MUST override this so the map is
+        derived from the *same* grouping it writes; the default identity is correct for exporters
+        that preserve source order. Additive to the frozen ``export`` contract (DECISIONS.md D23),
+        so existing/third-party exporters keep working unchanged."""
+        return None
+
     @abstractmethod
     def capabilities(self) -> FormatCapabilities:
         """This format's write-side capability declaration (§4)."""

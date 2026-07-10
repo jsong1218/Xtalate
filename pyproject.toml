@@ -65,6 +65,11 @@ select = ["E", "F", "I", "UP", "B"]
 # using PEP 695 `type` statements, which mypy rejects when targeting 3.11. Our code's
 # 3.11 compatibility is enforced instead by ruff `target-version = "py311"` plus the real
 # 3.11 test leg in CI — this setting only governs which stub syntax mypy will parse.
+# NOTE: numpy 2.5 requires Python >=3.12, so the CI legs necessarily type-check against
+# different numpy stub generations (2.5 on 3.13, 2.4 on 3.11). The 3.11 leg is the stricter
+# guard; type-check numpy-typed code against the oldest supported numpy before pushing
+# (DECISIONS.md D2 addendum). numpy is intentionally left uncapped (D4) — no pin can unify
+# the stubs without either breaking 3.11 or upper-capping a foundational dependency.
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
