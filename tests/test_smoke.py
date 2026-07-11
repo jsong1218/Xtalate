@@ -23,7 +23,7 @@ SUBPACKAGES = (
 
 
 def test_package_version() -> None:
-    assert chembridge.__version__ == "0.1.0.dev0"
+    assert chembridge.__version__ == "0.1.0"
 
 
 def test_subpackages_importable() -> None:
@@ -34,4 +34,5 @@ def test_subpackages_importable() -> None:
 def test_cli_entry_point_runs() -> None:
     from chembridge.cli import main
 
-    assert main() == 0
+    # No subcommand prints help and returns the usage exit code (M6; was a placeholder 0 pre-M6).
+    assert main([]) == 1

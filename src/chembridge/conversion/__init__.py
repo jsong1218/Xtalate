@@ -13,6 +13,7 @@ from chembridge.conversion.engine import (
     CompletenessInvariantError,
     ConversionEngine,
     ConversionResult,
+    build_expected_object,
 )
 from chembridge.conversion.preflight import (
     PreflightDiff,
@@ -41,6 +42,7 @@ __all__ = [
     "ReportWarning",
     "SuppliedEntry",
     "UnresolvedScenario",
+    "build_expected_object",
     "build_preflight",
     "capability_path",
 ]
