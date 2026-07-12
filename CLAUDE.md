@@ -1,8 +1,8 @@
 # CLAUDE.md — ChemBridge Project Context
 
-> Load this file at the start of every Claude Code / Claude chat session working on ChemBridge. It is a compressed index of `MASTER_SPEC.md` (the full constitution, assembled from `docs/00_Project_Overview.md` through `docs/10_Roadmap.md`). If anything here conflicts with a doc in `docs/`, **the doc wins** — this file is a map, not the territory. If a later-uploaded doc contradicts an earlier one, flag the discrepancy; do not silently pick one.
+> Load this file at the start of every Claude Code / Claude chat session working on ChemBridge. It is a compressed index of `docs/MASTER_SPEC.md` (the full constitution — a single edited document, *not* an assembly of standalone files; see the document-family section below). If anything here conflicts with a doc in `docs/`, **the doc wins** — this file is a map, not the territory. If a later-uploaded doc contradicts an earlier one, flag the discrepancy; do not silently pick one.
 
-> **Staleness note (added post-M0/M1, honoring this file's own conflict rule above).** This file predates the pre-implementation architecture review (`docs/ARCHITECTURE_REVIEW.md`) and `MASTER_SPEC.md` Revision 1.2. Two sections below are now historical rather than current and are flagged in place: **Repository Shape** (the actual v0.1 layout is a single package, not the `packages/*` monorepo sketch) and **Documentation Set and Reading Order** (the eleven standalone `NN_*.md` files never existed as separate documents; `docs/MASTER_SPEC.md` is the single edited source of truth). Everything else below — mission, principles, glossary, architecture, absence convention, tech stack (as a *destination*, not a v0.1 dependency list), API conventions — remains binding. For current status, see `docs/DECISIONS.md` (build-time decisions) and `docs/IMPLEMENTATION_PLAN_v0.1.md` (execution milestones).
+> **Status (refreshed Revision 1.6, July 2026).** **v0.1 is feature-complete** (MASTER_SPEC Preface Revision 1.2 item 17): the full spine — parse → pre-flight → recovery → export → report → validation — plus the Information Discovery Engine and the `chembridge` CLI are implemented, tested, and shipped for the four v0.1 formats (XYZ, extXYZ, POSCAR, CONTCAR). The map below is now current against Revisions 1.3–1.6 and `docs/DECISIONS.md` D1–D33; the two sections previously flagged HISTORICAL (Repository Shape, Documentation Set) have been rewritten to the real state. Mission, principles (P1–P6), glossary, architecture, the absence convention, tech stack (a *destination*, not the v0.1 dependency set), and API conventions remain binding. For current status and build-time rationale, read the **Revision 1.2 addenda** in the MASTER_SPEC Preface (the M0–M6 landing notes) and the **D-log through D33**; per-version execution lives in `docs/IMPLEMENTATION_PLAN_v0.1.md`–`_v1.0.md`.
 
 ## Mission
 
@@ -39,7 +39,7 @@ One sentence to carry into every doc: **a conversion you can't audit is a conver
 | **Provenance** | Canonical Model's record of source software, parser version, and full conversion history (incl. all Assumptions). |
 | **Plugin SDK** | Stable interface for third-party parsers/exporters/analysis modules; first-party formats hold no privileged API. |
 | **Round-trip** | `Format A → Canonical → Format B → Canonical`, diffed within tolerance; primary strategy for catching silent bugs. |
-| **Phase 1 formats** | The seven MVP formats: XYZ, extXYZ, CIF, POSCAR, CONTCAR, XDATCAR, ASE trajectory. |
+| **Phase 1 formats** | The seven formats: XYZ, extXYZ, CIF, POSCAR, CONTCAR, XDATCAR, ASE trajectory. (Under the roadmap ladder these do not all land in the "MVP": roadmap v0.2's MVP is four of them — XYZ, extXYZ, POSCAR, CONTCAR, the v0.1 set — and all seven complete at roadmap v0.4. Say "the seven Phase 1 formats," not "the seven MVP formats.") |
 
 ## Architecture at a Glance
 
@@ -84,46 +84,52 @@ Parsers are forbidden from defaulting — no zero velocities, no identity lattic
 | Blob storage | S3-compatible object storage, lifecycle-expiring |
 | Job queue | RQ on Redis |
 
-## Repository Shape — HISTORICAL, see note below
+## Repository Shape (current v0.1 layout)
 
-> **This section describes the original monorepo sketch, not the current repository.** The pre-implementation architecture review found a solo-maintainer monorepo of eight separately-packaged components to be unnecessary overhead for v0.1 (`docs/ARCHITECTURE_REVIEW.md` §4.1; `docs/DECISIONS.md` D1). The actual v0.1 layout is **one package**, `src/chembridge/`, with subpackages `schema`, `sdk`, `parsers`, `exporters`, `capabilities`, `discovery`, `conversion`, `recovery`, `validation`, `cli` — same import-direction discipline (below), no per-component `pyproject.toml`s. `frontend/`, `backend/`, and `plugins/` do not exist yet; they arrive with the versions that need them (v0.5 Service, v0.6 Web UI, v0.3 entry-point plugin discovery). See `docs/MASTER_SPEC.md` Part 1 §5 for the current tree.
+> The pre-implementation architecture review rejected a solo-maintainer monorepo of separately-packaged components as unnecessary overhead (`docs/ARCHITECTURE_REVIEW.md` §4.1; `docs/DECISIONS.md` D1). The shipped v0.1 layout is **one package** in a `src/` layout — no per-component `pyproject.toml`s. `frontend/`, `backend/`, and `plugins/` do not exist yet; they arrive with the versions that need them (Service at roadmap v0.5, Web UI at v0.6, entry-point plugin discovery at v0.3). `docs/MASTER_SPEC.md` Part 1 §5 is the authoritative tree.
 
 ```
-frontend/            Next.js app; no scientific logic
-backend/             FastAPI; thin; calls into packages/
-packages/
-  canonical-schema/  depends on nothing else in packages/
-  parsers/           one per format; depends only on canonical-schema
-  exporters/         one per format; depends only on canonical-schema
-  capability-matrix/
-  conversion/        Conversion Engine — orchestrates the above
-  recovery/          Recovery Engine + workflows
-  validation/        Validation Engine + Validation Report
-  plugin-sdk/        stable base classes for third-party formats
-plugins/             first-party & example plugins built against plugin-sdk
-examples/            runnable end-to-end library + CLI samples
-tests/               golden/, roundtrip/, performance/ (cross-cutting suites)
-docs/                the doc set this file indexes
+src/chembridge/
+  schema/         Canonical Model; depends on nothing else in chembridge/  (a.k.a. "canonical-schema")
+  sdk/            stable parser/exporter base classes + capability models   (a.k.a. "plugin-sdk")
+  parsers/        one per format; depends only on schema + sdk
+  exporters/      one per format; depends only on schema + sdk
+  capabilities/   Capability Matrix: assembles + queries declarations       (a.k.a. "capability-matrix")
+  discovery/      Information Discovery Engine + Format Sniffer + Discovery Report
+  conversion/     Conversion Engine — orchestrates the above + Conversion Report
+  recovery/       Recovery Engine + workflows (preset-only in v0.1)
+  validation/     Validation Engine + Validation Report
+  cli/            thin argparse presenter: inspect / convert / validate / capabilities
+examples/         runnable end-to-end library + CLI samples
+tests/            golden/, roundtrip/, and per-subpackage suites
+docs/             the doc family this file indexes
 ```
 
-Dependency direction is strict and acyclic; nothing in `packages/` depends on `backend/` or `frontend/`. This is what physically enforces **P2**. (In the current single-package layout, the same rule applies to the `chembridge.*` subpackages — enforced by an `import-linter` `layers` contract, `pyproject.toml`.)
+Dependency direction is strict and acyclic — enforced physically by an `import-linter` `layers` contract (`pyproject.toml`), run with ruff + mypy --strict + pytest on every PR (`docs/DECISIONS.md` D5). This is what enforces **P2**. The descriptive names in parentheses (`canonical-schema`, `plugin-sdk`, `capability-matrix`) are the prose labels used across the spec; the tree gives the import-name mapping.
 
 ## API Conventions (full spec in `06_API.md`)
 
 - All endpoints under `/v1/`. Path-prefix versioning; additive changes are non-breaking; new formats/scenarios are *values*, not new endpoints.
 - Long-running operations (`inspect`, `convert`, `validate`) are **async jobs**: submit → poll `/v1/jobs/{job_id}` → retrieve result.
-- Job states: `queued → running → completed | failed | cancelled`, plus `running → awaiting_recovery → running | expired`. An expired `awaiting_recovery` job resolves to a **refused** conversion, never a silently applied default.
+- Job states: `queued → running → completed | failed | cancelled`, plus `queued → failed` (dequeue-precondition failure, Revision 1.1) and `running → awaiting_recovery → running | expired`. An expired `awaiting_recovery` job resolves to a **refused** conversion, never a silently applied default.
 - **A refusal is not an HTTP error.** A conversion the engine declines is a completed job whose `ConversionReport.status == "refused"` — HTTP 200.
 - Single error envelope for all non-2xx responses: `{ error: { code, message, details, request_id, documentation_url } }`. Codes are stable machine strings (e.g. `UNKNOWN_FORMAT`, `PARSE_ERROR`, `VALIDATION_ACK_REQUIRED`, `JOB_ALREADY_TERMINAL`).
 - Response bodies embed the pydantic report models verbatim (`DiscoveryReport`, `ConversionReport`, `ValidationReport`) — no parallel DTOs.
 
 *(This describes the v0.5 Service layer's target contract; there is no API yet in v0.1.)*
 
-## Documentation Set and Reading Order — HISTORICAL, see note below
+## Documentation Set
 
-> **The eleven standalone files below never existed as separate documents** and this reading order does not apply. `docs/MASTER_SPEC.md` is edited directly as the single source of truth (`MASTER_SPEC.md` Revision 1.2, Preface). The document family that actually exists: `docs/MASTER_SPEC.md` (the constitution), `docs/ARCHITECTURE_REVIEW.md` (pre-implementation review), `docs/DECISIONS.md` (build-time decisions log), `docs/IMPLEMENTATION_PLAN_v0.1.md` through `_v1.0.md` (per-version execution plans), `docs/Incremental_Roadmap_v1.0.md` (the solo-developer version ladder). Start with `MASTER_SPEC.md`'s own Table of Contents / reading-order note.
+> `docs/MASTER_SPEC.md` is edited directly as the single source of truth (Revision 1.2, Preface); the standalone `00`–`10` `.md` files named in older prose **never existed as separate committed files** — do not create or assume them. The Part numbering (`04 §3.3` = "Part 4 §3.3") survives only as a stable citation scheme inside the one document. The document family that actually exists:
 
-`docs/00_Project_Overview.md` → `01_Architecture.md` → `02_Canonical_Data_Model.md` → `03_Parsers.md` → `04_Conversion_Engine.md` → `05_Validation.md` → `06_API.md` → `07_Web_UI.md` → `08_Testing.md` → `09_Deployment.md` → `10_Roadmap.md`. `MASTER_SPEC.md` at repo root merges all of these verbatim and is the canonical reference if a standalone file is missing from context.
+- **`docs/MASTER_SPEC.md`** — the constitution (Parts 0–10 + Appendices; Preface revision log runs Revisions 1.1–1.6). Start here; use its Table of Contents.
+- **`docs/DECISIONS.md`** — build-time decisions log, **D1–D33**, each with a rejected alternative and a standing-rules note at the top.
+- **`docs/ARCHITECTURE_REVIEW.md`** — the accepted pre-implementation review (its acceptance is MASTER_SPEC Revision 1.2).
+- **`docs/Incremental_Roadmap_v1.0.md`** — the solo-developer version ladder (v0.1–v0.7); carries a Revision 1.6 staleness banner over its execution detail, ladder still binding.
+- **`docs/IMPLEMENTATION_PLAN_v0.1.md` … `_v1.0.md`** — per-version execution plans, milestones **M0–M38**, each superseding the roadmap's execution prose for its version.
+- **`docs/DOCS_CONSISTENCY_REVIEW_2026-07.md`** — the post-v0.1 corpus consistency review (findings C1–C11) this refresh implements.
+
+> Not committed to this repo (external, historical): `ChemBridge_Doc_Prompts.md` — the prompt set that generated the original drafts; superseded by the single-source-of-truth model, do not run it or create the standalone files.
 
 ## Working Rules for This Project
 
