@@ -10,11 +10,11 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from chembridge.capabilities import CapabilityMatrix, Registry
-from chembridge.conversion.preflight import build_preflight, capability_path
-from chembridge.exporters import builtin_exporters
-from chembridge.parsers import builtin_parsers
-from chembridge.schema import CanonicalObject
+from xtalate.capabilities import CapabilityMatrix, Registry
+from xtalate.conversion.preflight import build_preflight, capability_path
+from xtalate.exporters import builtin_exporters
+from xtalate.parsers import builtin_parsers
+from xtalate.schema import CanonicalObject
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 

@@ -1,8 +1,8 @@
 cff-version: 1.2.0
-message: "If you use ChemBridge in your research, please cite it as below."
-title: "ChemBridge: an audit-first converter for computational-chemistry file formats"
+message: "If you use Xtalate in your research, please cite it as below."
+title: "Xtalate: an audit-first converter for computational-chemistry file formats"
 abstract: >-
-  ChemBridge is a translation layer between computational-chemistry file formats that reports
+  Xtalate is a translation layer between computational-chemistry file formats that reports
   exactly what each conversion keeps, loses, or fabricates, and independently re-validates the
   result. All translation flows through a single canonical data model; loss is predicted before
   conversion and verified after.
@@ -13,7 +13,7 @@ authors:
 version: 0.1.0
 date-released: 2026-07-10
 license: Apache-2.0
-repository-code: "https://github.com/jsong1218/ChemBridge"
+repository-code: "https://github.com/jsong1218/Xtalate"
 keywords:
   - computational chemistry
   - file format conversion

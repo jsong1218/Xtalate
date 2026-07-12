@@ -1,19 +1,19 @@
-# ChemBridge
+# Xtalate
 
-[![CI](https://github.com/jsong1218/ChemBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/jsong1218/ChemBridge/actions/workflows/ci.yml)
+[![CI](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml/badge.svg)](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 
 **The trusted translation layer between computational-chemistry file formats — a converter that tells you exactly what it kept, what it lost, and why.**
 
-Every conversion produces a structured **Conversion Report** (what was preserved, dropped, or fabricated, and the reason for each) and an automatic **Validation Report** (the output re-parsed and diffed against the source to prove the report told the truth). The guiding rule is simple: *never silently lose scientific information.* If you diffed the input and output by hand, nothing should surprise you that ChemBridge didn't already tell you about.
+Every conversion produces a structured **Conversion Report** (what was preserved, dropped, or fabricated, and the reason for each) and an automatic **Validation Report** (the output re-parsed and diffed against the source to prove the report told the truth). The guiding rule is simple: *never silently lose scientific information.* If you diffed the input and output by hand, nothing should surprise you that Xtalate didn't already tell you about.
 
 ## What v0.1 does
 
 - **Formats** (read *and* write): plain **XYZ**, **extended XYZ** (ASE-backed), **POSCAR**, **CONTCAR**.
 - **Inspect** — the Information Discovery Engine reports a ✓/✗ inventory of which canonical fields a file contains, each annotated with the format's capability.
 - **Convert** — a single spine, `Native File → Canonical Object → Native File`, driven by a per-format **Capability Matrix** that predicts loss *before* writing. No format ever talks to another format.
-- **Recover, explicitly** — when a target needs a field the source lacks (e.g. POSCAR requires a lattice) or can hold only one frame, ChemBridge does not guess. You supply a preset choice (`--recover`) and it is recorded as an **Assumption**; with no choice, the conversion **refuses** rather than inventing data.
+- **Recover, explicitly** — when a target needs a field the source lacks (e.g. POSCAR requires a lattice) or can hold only one frame, Xtalate does not guess. You supply a preset choice (`--recover`) and it is recorded as an **Assumption**; with no choice, the conversion **refuses** rather than inventing data.
 - **Validate, always** — every completed conversion is re-parsed through the ordinary reader and diffed against the expected object under a numeric tolerance profile. There is no switch to skip it.
 
 ## What v0.1 does *not* do (yet)
@@ -26,7 +26,7 @@ Every conversion produces a structured **Conversion Report** (what was preserved
 ## Install
 
 ```bash
-pip install chembridge          # once published to PyPI
+pip install xtalate          # once published to PyPI
 # or, from a checkout:
 pip install -e ".[dev]"
 ```
@@ -38,7 +38,7 @@ Requires Python ≥ 3.11. The only scientific dependency is ASE (for extended XY
 **Inspect** a file — see what's actually inside it, before converting anything:
 
 ```console
-$ chembridge inspect water_traj.xyz
+$ xtalate inspect water_traj.xyz
 File:   water_traj.xyz  (164 bytes)
 Format: Plain XYZ [xyz]  confidence 0.9
 Structure: 2 frame(s) × 3 atoms; species O, H
@@ -57,7 +57,7 @@ Carried-through extras (namespaced, format-specific):
 **Convert** a 2-frame, lattice-less XYZ trajectory to POSCAR. POSCAR needs a single structure *and* a lattice, so we supply two explicit recovery choices; each becomes a recorded Assumption:
 
 ```console
-$ chembridge convert water_traj.xyz --to poscar -o POSCAR \
+$ xtalate convert water_traj.xyz --to poscar -o POSCAR \
     --recover frame_selection=last \
     --recover missing_lattice=bounding_box,padding_ang=5.0
 Conversion Report  [final · completed · permissive]
@@ -79,13 +79,13 @@ Without the `--recover` flags the same command **refuses** (exit code 2) and pri
 
 Exit codes make the CLI CI-native: `0` ok · `2` refused · `3` validation failed · `4` parse error · `5` warnings under `--mode strict` · `1` usage error.
 
-Other commands: `chembridge capabilities [FORMAT]` prints the Capability Matrix; `chembridge validate …` re-validates an existing conversion (full re-parse or tolerance re-thresholding). Any command accepts `--json` to emit the report schema verbatim for piping.
+Other commands: `xtalate capabilities [FORMAT]` prints the Capability Matrix; `xtalate validate …` re-validates an existing conversion (full re-parse or tolerance re-thresholding). Any command accepts `--json` to emit the report schema verbatim for piping.
 
 ## Quickstart (library)
 
 ```python
-from chembridge.registry import default_registry
-from chembridge.conversion import ConversionEngine
+from xtalate.registry import default_registry
+from xtalate.conversion import ConversionEngine
 
 registry = default_registry()
 with open("in.extxyz", "rb") as fh:

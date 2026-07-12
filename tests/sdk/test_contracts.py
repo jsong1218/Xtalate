@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from chembridge.schema import AtomsBlock, CanonicalObject, Frame, Provenance
-from chembridge.sdk import (
+from xtalate.schema import AtomsBlock, CanonicalObject, Frame, Provenance
+from xtalate.sdk import (
     CapabilityLevel,
     ExporterPlugin,
     FieldCapability,

@@ -8,9 +8,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from chembridge.parsers.poscar import make_contcar_parser, make_poscar_parser
-from chembridge.sdk import ParseError
 from tests._format_helpers import assert_matches_golden, parse_bytes
+from xtalate.parsers.poscar import make_contcar_parser, make_poscar_parser
+from xtalate.sdk import ParseError
 
 GOLDEN = Path(__file__).parent.parent / "golden" / "poscar" / "nacl-primitive"
 

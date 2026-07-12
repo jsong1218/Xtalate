@@ -14,14 +14,14 @@ from pathlib import Path
 
 import pytest
 
-from chembridge.capabilities import Registry
-from chembridge.conversion import ConversionEngine, ConversionReport
-from chembridge.conversion.engine import CompletenessInvariantError, _assert_completeness
-from chembridge.conversion.report import PreservedEntry, SuppliedEntry
-from chembridge.exporters import builtin_exporters
-from chembridge.parsers import builtin_parsers
-from chembridge.schema import CanonicalObject
 from tests._format_helpers import assert_scientifically_equal
+from xtalate.capabilities import Registry
+from xtalate.conversion import ConversionEngine, ConversionReport
+from xtalate.conversion.engine import CompletenessInvariantError, _assert_completeness
+from xtalate.conversion.report import PreservedEntry, SuppliedEntry
+from xtalate.exporters import builtin_exporters
+from xtalate.parsers import builtin_parsers
+from xtalate.schema import CanonicalObject
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 

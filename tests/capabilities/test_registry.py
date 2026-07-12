@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import pytest
 
-from chembridge.capabilities import CapabilityMatrix, InvalidCapabilityDeclaration, Registry
-from chembridge.sdk import CapabilityLevel, FieldCapability
 from tests._dummy_plugins import DummyExporter, DummyParser
+from xtalate.capabilities import CapabilityMatrix, InvalidCapabilityDeclaration, Registry
+from xtalate.sdk import CapabilityLevel, FieldCapability
 
 FULL = FieldCapability(level=CapabilityLevel.FULL)
 NONE = FieldCapability(level=CapabilityLevel.NONE)

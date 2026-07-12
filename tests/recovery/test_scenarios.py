@@ -8,7 +8,7 @@ listed at all in v0.1.
 
 from __future__ import annotations
 
-from chembridge.recovery import SCENARIO_HAZARD, HazardClass, available_options
+from xtalate.recovery import SCENARIO_HAZARD, HazardClass, available_options
 
 
 def test_hazard_classes_are_the_three_way_split() -> None:

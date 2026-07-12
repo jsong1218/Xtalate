@@ -8,8 +8,8 @@ raw measured values are untouched.
 
 from __future__ import annotations
 
-from chembridge.validation import ToleranceProfile, rethreshold
-from chembridge.validation.report import CheckResult, ValidationReport
+from xtalate.validation import ToleranceProfile, rethreshold
+from xtalate.validation.report import CheckResult, ValidationReport
 
 
 def _report(rmsd: float) -> ValidationReport:

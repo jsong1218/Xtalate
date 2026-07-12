@@ -15,10 +15,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from chembridge.capabilities import Registry
-from chembridge.parsers import builtin_parsers
-from chembridge.recovery import RecoveryEngine, RecoveryError, UnresolvedScenario
-from chembridge.schema import CanonicalObject
+from xtalate.capabilities import Registry
+from xtalate.parsers import builtin_parsers
+from xtalate.recovery import RecoveryEngine, RecoveryError, UnresolvedScenario
+from xtalate.schema import CanonicalObject
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 

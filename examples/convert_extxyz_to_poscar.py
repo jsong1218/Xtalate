@@ -1,4 +1,4 @@
-"""ChemBridge demo — a cross-format conversion with its Conversion Report *and* Validation Report.
+"""Xtalate demo — a cross-format conversion with its Conversion Report *and* Validation Report.
 
 Run from the repo root::
 
@@ -6,7 +6,7 @@ Run from the repo root::
 
 It parses an extended-XYZ structure, converts it to POSCAR, and prints the Conversion
 Report — showing exactly what was preserved, what was removed and *why*, and any caveats —
-then the Validation Report that ChemBridge produces for *every* conversion by re-parsing the
+then the Validation Report that Xtalate produces for *every* conversion by re-parsing the
 output and checking the report told the truth (M5, Part 5). Finally it prints the POSCAR bytes.
 This is the payoff of the whole pipeline: loss is predicted from the Capability Matrix, executed
 transparently, reported, and independently re-verified — never discovered after the fact (P1, P5).
@@ -20,11 +20,11 @@ import hashlib
 import io
 from pathlib import Path
 
-from chembridge.capabilities import Registry
-from chembridge.conversion import ConversionEngine, ConversionReport
-from chembridge.exporters import builtin_exporters
-from chembridge.parsers import builtin_parsers
-from chembridge.validation import ValidationReport
+from xtalate.capabilities import Registry
+from xtalate.conversion import ConversionEngine, ConversionReport
+from xtalate.exporters import builtin_exporters
+from xtalate.parsers import builtin_parsers
+from xtalate.validation import ValidationReport
 
 SOURCE = (
     Path(__file__).parent.parent / "tests" / "golden" / "extxyz" / "co-in-cell" / "sample.extxyz"

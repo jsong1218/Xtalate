@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from chembridge.cli.main import (
+from xtalate.cli.main import (
     EXIT_OK,
     EXIT_PARSE_ERROR,
     EXIT_REFUSED,

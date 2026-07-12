@@ -1,0 +1,463 @@
+"""Extended XYZ parser (MASTER_SPEC Part 3 §2, §3, §4.2).
+
+ASE-backed (DECISIONS.md D7): the ``Lattice=`` / ``Properties=`` grammar with typed,
+variable per-atom columns is exactly where a battle-tested reader earns its keep, so ASE is
+wrapped here rather than re-implemented. The wrap is not free — ASE is an I/O workhorse that
+*always* hands back a fully-populated ``Atoms`` object, inventing a zero cell, ``pbc``, and
+zeroed momenta for information the source never stated. Turning those library defaults back
+into **absence** (``None``) is the single most important thing this module does (Part 3 §2,
+"Wrapping ASE/pymatgen"): it is the difference between honoring the absence convention (P3)
+and silently fabricating a degenerate cell nobody wrote.
+
+Laundering rules applied here (each has a golden test in ``tests/parsers/test_extxyz.py``):
+
+* **Cell.** ASE returns an all-zero 3×3 when no ``Lattice=`` key is present → ``cell = None``.
+* **PBC.** ASE defaults ``pbc`` to ``(True, True, True)`` whenever a lattice exists, even if
+  the file declared no ``pbc=`` key. A cell is kept (the lattice is real) with that
+  convention value, but the fact that it was *not declared* is recorded in ``parse_notes``
+  (the extXYZ analogue of the POSCAR format-defined-PBC note, Part 3 §3 n.3) — never passed
+  off as source data.
+* **Momenta / velocities.** ASE synthesises zero momenta for a file that declared none;
+  velocities are populated **only** when the source carried a ``momenta`` column, and are
+  unit-converted from ASE's internal velocity unit to canonical Å/fs.
+* **Masses.** ASE can always *compute* masses from atomic numbers; ``atoms.masses`` is set
+  only when the file actually declared a ``masses`` column.
+
+Field mapping is unit- and sign-safe by construction (DECISIONS.md D18): positions (Å),
+lattice (Å), masses (u), ``energy`` (eV), ``forces`` (eV/Å) and ``momenta``→velocities (Å/fs)
+map to their canonical homes; every other ``Properties=`` column carries through verbatim to
+``user_metadata.custom_per_atom["extxyz:<name>"]`` and every comment-line key=value to
+``custom_per_frame["extxyz:<key>"]`` (Part 2 §6.1, §3.10). ``stress`` is carried the same way
+rather than mapped to ``electronic.stress``, because ASE's stress *sign convention* cannot be
+reconciled with the canonical tension-positive convention (Part 2 §3.7.1) without a
+source-declared convention the file does not carry — see DECISIONS.md D18.
+"""
+
+from __future__ import annotations
+
+import io
+import re
+from typing import TYPE_CHECKING, Any, BinaryIO
+
+import numpy as np
+from ase import units as ase_units
+from ase.io import read as ase_read
+from pydantic import JsonValue
+
+from xtalate.parsers._common import build_provenance, decode_text
+from xtalate.schema import (
+    AtomsBlock,
+    CanonicalObject,
+    Cell,
+    Dynamics,
+    Electronic,
+    Frame,
+    TrajectoryMetadata,
+    UserMetadata,
+)
+from xtalate.sdk import (
+    CapabilityLevel,
+    FieldCapability,
+    FormatCapabilities,
+    ParseError,
+    ParseIssue,
+    ParseResult,
+    ParserPlugin,
+)
+
+if TYPE_CHECKING:
+    from ase import Atoms
+
+FORMAT_ID = "extxyz"
+_KEY_PREFIX = "extxyz:"
+# ASE stores per-frame results (energy/forces/stress/charges/magmoms/…) on a
+# SinglePointCalculator; everything else the source declared lives in atoms.arrays (per-atom
+# columns) or atoms.info (comment key-values). These array names have dedicated canonical
+# homes and are not treated as custom columns.
+_RESERVED_ARRAYS = frozenset({"numbers", "positions", "momenta", "masses"})
+# Calculator results with a unit- and sign-safe canonical home. Everything ASE places on the
+# calculator that is NOT here (e.g. stress, dipole, free_energy) is carried through verbatim
+# to custom_per_frame so nothing is dropped silently (P1) — see _partition_calc.
+_MAPPED_CALC_KEYS = frozenset({"energy", "forces", "charges", "magmoms"})
+_EXTXYZ_MARKERS = ("Lattice=", "Properties=")
+# ASE's velocity unit is Å / (ASE time unit); ase.units.fs is "1 fs expressed in ASE time",
+# so multiplying an ASE-unit velocity by it yields Å/fs (verified by round-trip).
+_VEL_ASE_TO_ANG_PER_FS = ase_units.fs
+_PBC_KEY_RE = re.compile(r"\bpbc\s*=", re.IGNORECASE)
+
+
+def _error(code: str, message: str, *, location: str | None = None) -> ParseError:
+    return ParseError([ParseIssue(severity="error", code=code, message=message, location=location)])
+
+
+def _frame_comment_lines(lines: list[str]) -> list[str]:
+    """Walk the XYZ block structure and return each frame's raw comment line.
+
+    ASE consumes ``Lattice=`` / ``Properties=`` / ``pbc=`` and does not tell us whether a
+    key was *declared* vs. defaulted — but the absence convention turns on exactly that
+    distinction for ``pbc`` (an undeclared ``pbc`` is a convention value, not source data).
+    So the raw comment line is recovered here to detect key presence, cheaply and without a
+    second full parse. Structurally malformed input is left for ASE to reject uniformly.
+    """
+    comments: list[str] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        if lines[i].strip() == "":
+            i += 1
+            continue
+        try:
+            count = int(lines[i].strip())
+        except ValueError:
+            break  # not a count line; let ASE produce the authoritative error
+        if count <= 0 or i + 1 >= n:
+            break
+        comments.append(lines[i + 1])
+        i += 2 + count
+    return comments
+
+
+class ExtxyzParser(ParserPlugin):
+    format_id = FORMAT_ID
+    format_name = "Extended XYZ"
+    version = "0.1.0"
+    file_extensions = (".xyz", ".extxyz")
+
+    def sniff(self, head: bytes, filename: str | None) -> float:
+        # extXYZ is a superset of XYZ (Part 3 §3 n.2): its signature is a comment line
+        # carrying Lattice= / Properties= key-value markers. Without them a file is plain
+        # XYZ and the plain parser should win — so score low, not zero, on a bare .xyz.
+        text = head.decode("utf-8", errors="replace")
+        lines = text.splitlines()
+        if not lines:
+            return 0.0
+        try:
+            count = int(lines[0].strip())
+        except ValueError:
+            return 0.0
+        if count <= 0 or len(lines) < 2:
+            return 0.0
+        if any(marker in lines[1] for marker in _EXTXYZ_MARKERS):
+            return 0.9  # unambiguous extXYZ header — beats plain XYZ's marker-capped 0.6
+        return 0.2  # parses as XYZ but shows no extXYZ markers: yield to the plain parser
+
+    def parse(self, stream: BinaryIO, *, filename: str | None) -> ParseResult:
+        text = decode_text(stream.read(), format_id=FORMAT_ID)
+        if text.strip() == "":
+            raise _error("EXTXYZ_EMPTY", "file contains no frames")
+        raw_comments = _frame_comment_lines(text.splitlines())
+        try:
+            images = ase_read(io.StringIO(text), format="extxyz", index=":")
+        except Exception as exc:  # ASE raises many exception types; normalise to the contract
+            raise _error(
+                "EXTXYZ_PARSE_ERROR",
+                f"ASE could not read the file as extended XYZ: {exc}",
+            ) from exc
+        atoms_list: list[Atoms] = list(images)
+        if not atoms_list:
+            raise _error("EXTXYZ_EMPTY", "file contains no frames")
+
+        n_atoms = len(atoms_list[0])
+        for k, atoms in enumerate(atoms_list):
+            if len(atoms) != n_atoms:
+                # The canonical model fixes N across frames (Part 2 §3.2); a variable-N
+                # extXYZ trajectory cannot be represented and must not be silently reshaped.
+                raise _error(
+                    "EXTXYZ_VARIABLE_ATOM_COUNT",
+                    f"frame {k} has {len(atoms)} atoms but frame 0 has {n_atoms}; the canonical "
+                    "model requires a constant atom count across frames (Part 2 §3.2)",
+                    location=f"frame {k}",
+                )
+
+        issues: list[ParseIssue] = []
+        parse_notes: list[str] = []
+        frames: list[Frame] = []
+        carried_calc: list[dict[str, JsonValue]] = []
+        undeclared_pbc = False
+
+        for index, atoms in enumerate(atoms_list):
+            comment = raw_comments[index] if index < len(raw_comments) else ""
+            cell, frame_pbc_note = self._build_cell(atoms, comment)
+            undeclared_pbc = undeclared_pbc or frame_pbc_note
+            mapped, carried = _partition_calc(atoms, n_atoms, index, issues)
+            carried_calc.append(carried)
+            frames.append(
+                Frame(
+                    index=index,
+                    atoms=self._build_atoms(atoms),
+                    cell=cell,
+                    dynamics=self._build_dynamics(atoms, mapped),
+                    electronic=Electronic(
+                        total_energy=mapped.get("energy"),
+                        charges=mapped.get("charges"),
+                        magnetic_moments=mapped.get("magmoms"),
+                    ),
+                )
+            )
+
+        if undeclared_pbc:
+            parse_notes.append(
+                "pbc not declared for a lattice-bearing frame; set to (true,true,true) per the "
+                "extXYZ convention that a Lattice implies full periodicity (recorded, not assumed)."
+            )
+        if any(atoms.has("momenta") for atoms in atoms_list):
+            # Note whenever a momenta column was present — including an explicit all-zero one (a
+            # source stating the atoms are at rest is information, §2 rule 3), not only when some
+            # velocity is nonzero.
+            parse_notes.append(
+                "velocities converted from ASE internal units to Å/fs (source 'momenta' column)."
+            )
+
+        user_metadata = self._build_user_metadata(atoms_list, carried_calc, issues)
+        provenance = build_provenance(
+            format_id=FORMAT_ID,
+            filename=filename,
+            original_coordinate_system="cartesian",
+            source_units={"positions": "angstrom"},
+            parse_notes=parse_notes,
+        )
+        trajectory = None if len(frames) == 1 else TrajectoryMetadata(timestep=None)
+        canonical = CanonicalObject(
+            frames=frames,
+            trajectory=trajectory,
+            provenance=provenance,
+            user_metadata=user_metadata,
+        )
+        return ParseResult(canonical=canonical, issues=issues)
+
+    # -- per-frame builders ------------------------------------------------------------
+
+    @staticmethod
+    def _build_atoms(atoms: Atoms) -> AtomsBlock:
+        positions = np.asarray(atoms.get_positions(), dtype=np.float64)
+        masses = (
+            np.asarray(atoms.arrays["masses"], dtype=np.float64)
+            if "masses" in atoms.arrays
+            else None
+        )
+        return AtomsBlock(
+            symbols=list(atoms.get_chemical_symbols()),
+            positions=positions,
+            masses=masses,
+        )
+
+    @staticmethod
+    def _build_cell(atoms: Atoms, comment: str) -> tuple[Cell | None, bool]:
+        """Return ``(cell, pbc_was_undeclared)`` — laundering the ASE zero-cell default."""
+        lattice = np.asarray(atoms.cell.array, dtype=float)
+        if not lattice.any():
+            return None, False  # no Lattice= key: ASE's zero cell is absence, not a cell
+        pbc = (bool(atoms.pbc[0]), bool(atoms.pbc[1]), bool(atoms.pbc[2]))
+        undeclared = _PBC_KEY_RE.search(comment) is None
+        return Cell(lattice_vectors=lattice, pbc=pbc), undeclared
+
+    @staticmethod
+    def _build_dynamics(atoms: Atoms, mapped: dict[str, Any]) -> Dynamics:
+        velocities = None
+        if atoms.has("momenta"):
+            # Laundering: ASE synthesises zero momenta for a file that declared none, so only
+            # a real momenta column produces velocities (unit-converted ASE → Å/fs).
+            velocities = (
+                np.asarray(atoms.get_velocities(), dtype=np.float64) * _VEL_ASE_TO_ANG_PER_FS
+            )
+        forces = mapped.get("forces")
+        return Dynamics(velocities=velocities, forces=forces)
+
+    # -- object-level carry-through ----------------------------------------------------
+
+    def _build_user_metadata(
+        self,
+        atoms_list: list[Atoms],
+        carried_calc: list[dict[str, JsonValue]],
+        issues: list[ParseIssue],
+    ) -> UserMetadata:
+        custom_per_atom = self._collect_custom_columns(atoms_list, issues)
+        custom_per_frame = self._collect_comment_metadata(atoms_list, carried_calc)
+        return UserMetadata(
+            custom_per_atom=custom_per_atom,
+            custom_per_frame=custom_per_frame,
+        )
+
+    @staticmethod
+    def _collect_custom_columns(
+        atoms_list: list[Atoms], issues: list[ParseIssue]
+    ) -> dict[str, Any]:
+        """Arbitrary ``Properties=`` columns → ``custom_per_atom['extxyz:<name>']`` (first dim N).
+
+        ``custom_per_atom`` is object-level (Part 2 §3.10), so a column that *varies* across
+        frames of a trajectory cannot be represented losslessly. Rather than silently keep
+        one frame's values, that is reported as a warning (P1) and frame 0 is carried.
+        """
+        first = atoms_list[0]
+        columns: dict[str, Any] = {}
+        for name, array in first.arrays.items():
+            if name in _RESERVED_ARRAYS:
+                continue
+            values = np.asarray(array)
+            consistent = all(
+                name in a.arrays and np.array_equal(np.asarray(a.arrays[name]), values)
+                for a in atoms_list
+            )
+            if not consistent:
+                issues.append(
+                    ParseIssue(
+                        severity="warning",
+                        code="EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE",
+                        message=(
+                            f"per-atom column {name!r} varies across frames; the canonical model "
+                            "stores per-atom custom arrays once per object (Part 2 §3.10), so only "
+                            "the first frame's values are carried"
+                        ),
+                    )
+                )
+            # Numeric columns are stored as a float64 ndarray (ArrayNx); non-numeric columns (a
+            # string ``:S:`` property such as a per-atom label) are carried as a length-N list of
+            # JSON scalars — the second arm of the custom_per_atom union (Part 2 §3.10). Forcing a
+            # string column through astype(float) previously raised a raw ValueError, escaping the
+            # ParseResult/ParseError contract (§5).
+            if np.issubdtype(values.dtype, np.number):
+                columns[f"{_KEY_PREFIX}{name}"] = values.astype(float, copy=False)
+            else:
+                columns[f"{_KEY_PREFIX}{name}"] = [_as_json(v) for v in values]
+        return columns
+
+    @staticmethod
+    def _collect_comment_metadata(
+        atoms_list: list[Atoms], carried_calc: list[dict[str, JsonValue]]
+    ) -> dict[str, Any]:
+        """Comment key=value pairs + carried calc results → ``custom_per_frame`` (first dim F).
+
+        Every key seen in any frame becomes a length-F list (``None`` where a frame omits it),
+        so the per-frame association the carry-through rule requires (Part 2 §6.1) is kept.
+        ``carried_calc[i]`` holds the calculator results for frame ``i`` that have no canonical
+        home (stress, and anything unexpected) — carried, never dropped (P1).
+        """
+        info_keys: list[str] = []
+        for atoms in atoms_list:
+            for key in atoms.info:
+                if key not in info_keys:
+                    info_keys.append(key)
+        calc_keys: list[str] = []
+        for carried in carried_calc:
+            for key in carried:
+                if key not in calc_keys:
+                    calc_keys.append(key)
+
+        per_frame: dict[str, Any] = {}
+        for key in info_keys:
+            per_frame[f"{_KEY_PREFIX}{key}"] = [
+                _as_json(atoms.info.get(key)) for atoms in atoms_list
+            ]
+        for key in calc_keys:
+            per_frame[f"{_KEY_PREFIX}{key}"] = [carried.get(key) for carried in carried_calc]
+        return per_frame
+
+    def capabilities(self) -> FormatCapabilities:
+        full = FieldCapability(level=CapabilityLevel.FULL)
+        partial = CapabilityLevel.PARTIAL
+        return FormatCapabilities(
+            format_id=FORMAT_ID,
+            format_name=self.format_name,
+            direction="read",
+            fields={
+                "atoms.symbols": full,
+                "atoms.positions": full,
+                "atoms.masses": FieldCapability(
+                    level=partial, notes="Only when declared in Properties= columns."
+                ),
+                "cell.lattice_vectors": FieldCapability(
+                    level=partial, notes="Only when Lattice= key present."
+                ),
+                "cell.pbc": FieldCapability(
+                    level=partial,
+                    notes="From pbc= key; (T,T,T) by extXYZ convention when a Lattice has no "
+                    "pbc= key (recorded in parse_notes).",
+                ),
+                "dynamics.velocities": FieldCapability(
+                    level=partial, notes="Only when a momenta column is present; unit-converted."
+                ),
+                "dynamics.forces": FieldCapability(
+                    level=partial, notes="Only when a forces column is present."
+                ),
+                "electronic.total_energy": FieldCapability(
+                    level=partial, notes="Only when energy= key present."
+                ),
+                "electronic.charges": FieldCapability(
+                    level=partial, notes="Only when a per-atom charge column is present."
+                ),
+                "electronic.magnetic_moments": FieldCapability(
+                    level=partial, notes="Only when a per-atom magmoms column is present."
+                ),
+                "user_metadata.custom_per_atom": FieldCapability(
+                    level=CapabilityLevel.FULL, notes="Arbitrary Properties= columns."
+                ),
+                "user_metadata.custom_per_frame": FieldCapability(
+                    level=CapabilityLevel.FULL,
+                    notes="Arbitrary comment-line key-value pairs; carries stress verbatim (D18).",
+                ),
+            },
+            max_frames=None,
+            required_fields=[],
+            native_coordinate_system="cartesian",
+            # v0.1 carries stress through custom_per_frame rather than mapping electronic.stress,
+            # to avoid a silent sign-convention error (DECISIONS.md D18; Part 2 §3.7.1).
+            lossy_notes=[
+                "stress/virial carried verbatim in user_metadata.custom_per_frame['extxyz:stress'] "
+                "rather than electronic.stress (v0.1; DECISIONS.md D18).",
+            ],
+        )
+
+
+def _partition_calc(
+    atoms: Atoms, n_atoms: int, frame_index: int, issues: list[ParseIssue]
+) -> tuple[dict[str, Any], dict[str, JsonValue]]:
+    """Split a frame's ASE calculator results into (mapped, carried).
+
+    ``mapped`` holds the results with a unit- and sign-safe canonical home (energy → eV,
+    forces → eV/Å, per-atom ``charges`` → e cation-positive, per-atom ``magmoms`` → μB
+    spin-up-positive; all matching Part 2 §3.7.1). ``carried`` holds everything else — ``stress``
+    (whose sign convention cannot be reconciled without a source-declared convention,
+    DECISIONS.md D18) and any unexpected key — routed verbatim to ``custom_per_frame`` so a
+    result ASE parsed is never dropped silently (P1). An unexpected carried key warns.
+    """
+    mapped: dict[str, Any] = {}
+    carried: dict[str, JsonValue] = {}
+    if atoms.calc is None:
+        return mapped, carried
+    for key, value in atoms.calc.results.items():
+        if key == "energy":
+            mapped["energy"] = float(value)
+        elif key == "forces":
+            mapped["forces"] = np.asarray(value, dtype=np.float64)
+        elif key in ("charges", "magmoms") and _is_per_atom_scalar(value, n_atoms):
+            canonical = "charges" if key == "charges" else "magmoms"
+            mapped[canonical] = np.asarray(value, dtype=np.float64)
+        else:
+            carried[key] = _as_json(value)
+            if key not in _MAPPED_CALC_KEYS and key != "stress":
+                issues.append(
+                    ParseIssue(
+                        severity="warning",
+                        code="EXTXYZ_UNMAPPED_RESULT_CARRIED",
+                        message=f"calculator result {key!r} has no canonical field; carried "
+                        f"verbatim in user_metadata.custom_per_frame['{_KEY_PREFIX}{key}']",
+                        location=f"frame {frame_index}",
+                    )
+                )
+    return mapped, carried
+
+
+def _is_per_atom_scalar(value: Any, n_atoms: int) -> bool:
+    """True if ``value`` is a 1-D per-atom array (fits ArrayN); a non-collinear magmoms
+    vector or an oddly-shaped array falls through to verbatim carry-through instead."""
+    array = np.asarray(value)
+    return array.ndim == 1 and array.shape[0] == n_atoms
+
+
+def _as_json(value: Any) -> JsonValue:
+    """Coerce an ASE info/calc value into a JSON-serialisable scalar or nested list."""
+    if isinstance(value, np.ndarray):
+        return value.tolist()  # type: ignore[no-any-return]
+    if isinstance(value, np.generic):
+        return value.item()  # type: ignore[no-any-return]
+    return value  # type: ignore[no-any-return]

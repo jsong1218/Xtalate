@@ -1,6 +1,6 @@
-# ChemBridge — Incremental Development Roadmap (Solo Student Edition)
+# Xtalate — Incremental Development Roadmap (Solo Student Edition)
 
-> **Staleness / supersession banner (added Revision 1.6, July 2026).** This roadmap was written *before* `docs/ARCHITECTURE_REVIEW.md` was accepted and was never refreshed afterward. The following passages below are **superseded** and retained only as the historical sizing/sketch the review's §5 arithmetic depends on: §2.5's week-by-week table, the `packages/` monorepo layout, the "dependency-direction lint stub" / "pytest on every PR, nothing more" language, `1.0.0-draft` as the schema version, and the "12–13 weekends" calendar. The current state of each is: single `src/chembridge/` package (`DECISIONS.md` D1, MASTER_SPEC Rev 1.2 item 9); a real `import-linter` contract plus ruff + mypy --strict + pytest on every PR from M0 (D5); `schema_version: "0.1.0"` (Rev 1.2); and a re-baselined **16–20 weekends** (`ARCHITECTURE_REVIEW.md` §5.4, adopted by `IMPLEMENTATION_PLAN_v0.1.md` §3). The **version ladder (§1), scope decisions, and stopping-point rationale below remain binding.** Each `IMPLEMENTATION_PLAN_v0.N.md` supersedes this document's §2.5/§3/§4 execution prose for its own version; a few one-word factual claims are point-fixed inline below so an isolated reader quoting the roadmap is not misled.
+> **Staleness / supersession banner (added Revision 1.6, July 2026).** This roadmap was written *before* `docs/ARCHITECTURE_REVIEW.md` was accepted and was never refreshed afterward. The following passages below are **superseded** and retained only as the historical sizing/sketch the review's §5 arithmetic depends on: §2.5's week-by-week table, the `packages/` monorepo layout, the "dependency-direction lint stub" / "pytest on every PR, nothing more" language, `1.0.0-draft` as the schema version, and the "12–13 weekends" calendar. The current state of each is: single `src/xtalate/` package (`DECISIONS.md` D1, MASTER_SPEC Rev 1.2 item 9); a real `import-linter` contract plus ruff + mypy --strict + pytest on every PR from M0 (D5); `schema_version: "0.1.0"` (Rev 1.2); and a re-baselined **16–20 weekends** (`ARCHITECTURE_REVIEW.md` §5.4, adopted by `IMPLEMENTATION_PLAN_v0.1.md` §3). The **version ladder (§1), scope decisions, and stopping-point rationale below remain binding.** Each `IMPLEMENTATION_PLAN_v0.N.md` supersedes this document's §2.5/§3/§4 execution prose for its own version; a few one-word factual claims are point-fixed inline below so an isolated reader quoting the roadmap is not misled.
 >
 > **Document status:** Binding supplement to MASTER_SPEC Part 10 (the Roadmap). This document does **not** redesign the architecture — every component, schema, report, and boundary referenced below is defined normatively in Parts 0–9 and used verbatim. What it changes is *sequencing and packaging*: Part 10 plans for an experienced developer at 10–15 h/week; this document re-plans the same content for **one student developer, weekends only during semesters (~8–10 h/week), with concentrated availability during school breaks**.
 >
@@ -35,7 +35,7 @@ flowchart LR
 
 | This roadmap | Ships | Part 10 mapping | Effort (student weekends) |
 |---|---|---|---|
-| **v0.1** | **First public release.** `pip install` library + `chembridge` CLI; XYZ, extXYZ, POSCAR/CONTCAR; Discovery/Conversion/Validation Reports; `missing_lattice` + `frame_selection` recovery (preset-only) | First ~60% of Part 10's MVP | **12–13 weekends** (≈ one semester) |
+| **v0.1** | **First public release.** `pip install` library + `xtalate` CLI; XYZ, extXYZ, POSCAR/CONTCAR; Discovery/Conversion/Validation Reports; `missing_lattice` + `frame_selection` recovery (preset-only) | First ~60% of Part 10's MVP | **12–13 weekends** (≈ one semester) |
 | **v0.2** | Full scenario catalog, strict/permissive modes complete, report-completeness property test, golden corpus governance, POSCAR velocity block | Completes Part 10's MVP (its "v0.1") | **3–4 concentrated weeks** (one school break) |
 | **v0.3** | XDATCAR + ASE trajectory parsers/exporters; frame-chunked processing; benchmark seed | First half of Part 10's "v0.2" | **8–10 weekends** |
 | **v0.4** | CIF parser/exporter (occupancy, symmetry, multi-block) | Second half of Part 10's "v0.2" (format side) | **5–7 weekends** |
@@ -64,7 +64,7 @@ The framing rule for every v0.1 decision: **narrow and finished, never broad and
 
 ### 2.2 What it is
 
-The smallest *shippable product* that delivers the entire value proposition end to end: *parse → discover → predict loss → convert (or refuse) → report → validate*, as a library and CLI. One sentence pitch on the v0.1 README: *"Convert an XYZ trajectory to a POSCAR, and ChemBridge will tell you it dropped 9 frames, refuse to invent a lattice unless you name one, and prove the output round-trips."*
+The smallest *shippable product* that delivers the entire value proposition end to end: *parse → discover → predict loss → convert (or refuse) → report → validate*, as a library and CLI. One sentence pitch on the v0.1 README: *"Convert an XYZ trajectory to a POSCAR, and Xtalate will tell you it dropped 9 frames, refuse to invent a lattice unless you name one, and prove the output round-trips."*
 
 ### 2.3 Primary features
 
@@ -75,7 +75,7 @@ The smallest *shippable product* that delivers the entire value proposition end 
 - **Conversion Engine + Conversion Report** with `preserved`/`removed`/`supplied`/`assumptions` (`04 §2`) and the structured refusal path.
 - **Recovery Engine with exactly two scenarios:** `missing_lattice` (fabricative — the flagship XYZ→POSCAR case) and `frame_selection` (selective reductive — forced by any multi-frame → POSCAR conversion). Preset-only, per Part 10 §2 decision 4.
 - **Validation Engine** with the default tolerance profile and `ValidationReport` (`05 §3`). The *runtime* engine ships the full re-parse-and-diff path over the whole §2 check catalog (Rev 1.2 item 16); it is only the v0.1 *test-suite* round-trips that are identity-only (`A → Canonical → A`).
-- **CLI:** `chembridge inspect`, `chembridge convert`, `chembridge validate`, emitting the report schemas verbatim as JSON (Appendix A surface, minimally).
+- **CLI:** `xtalate inspect`, `xtalate convert`, `xtalate validate`, emitting the report schemas verbatim as JSON (Appendix A surface, minimally).
 - **Tier 0 dev loop + GitHub Actions running pytest on every PR.** Nothing more.
 
 ### 2.4 Intentionally omitted (and where it went)
@@ -114,7 +114,7 @@ The smallest *shippable product* that delivers the entire value proposition end 
 
 Risks: schema perfectionism in weeks 1–2 (timebox: the absence convention and field names must be right; validator exhaustiveness can grow); POSCAR coordinate-mode edge cases (mitigate by wrapping ASE I/O and laundering, per `03 §2`); motivation dip mid-semester (mitigated by weeks 8–9 being the payoff weeks — schedule them before any long exam gap if possible); and a risk the public-release framing itself creates — **polish creep**, spending week 12's budget on logo/website/badge aesthetics instead of the release checklist. The bar is "a stranger reproduces the demo in ten minutes," not "looks like a funded project"; anything beyond the week-12 checklist waits.
 
-Stopping point: v0.1 is a complete, trustworthy product for the single most common real conversion pain (VASP-adjacent ↔ XYZ-family) — small in coverage, finished in behavior. It is usable by Persona 1 via CLI and Persona 2 via `import chembridge`, and it is the version researchers can be pointed at without caveats about supported formats being "coming soon" inside them: what it supports, it supports honestly and completely. If the project paused forever here, it would still stand as a legitimate open-source contribution and a defensible portfolio piece.
+Stopping point: v0.1 is a complete, trustworthy product for the single most common real conversion pain (VASP-adjacent ↔ XYZ-family) — small in coverage, finished in behavior. It is usable by Persona 1 via CLI and Persona 2 via `import xtalate`, and it is the version researchers can be pointed at without caveats about supported formats being "coming soon" inside them: what it supports, it supports honestly and completely. If the project paused forever here, it would still stand as a legitimate open-source contribution and a defensible portfolio piece.
 
 ---
 
@@ -137,7 +137,7 @@ Stopping point: v0.1 is a complete, trustworthy product for the single most comm
 - **Primary:** **XDATCAR** (per-frame cells, forces the frame-chunked implementation — Part 10 risk R8) and **ASE trajectory** (binary richness; zero-cell laundering per `03 §2`) parsers/exporters; frame-chunked processing through the Conversion and Validation Engines; performance benchmark seed (`08 §4`) with a large-trajectory fixture; memory ceiling documented.
 - **Omitted:** CIF (isolated to v0.4 because it is the costliest single parser and shares nothing with trajectory work); any service layer.
 - **Risks:** chunked processing is the first genuinely algorithmic engine change since v0.1 — budget two full weekends for it before touching either parser; `.traj` version drift across ASE releases (pin ASE, record version in Provenance).
-- **Stopping point:** ChemBridge now handles the "10,000-frame MD run" class of input that motivated the project, still as a clean library. Six of seven Phase 1 formats done.
+- **Stopping point:** Xtalate now handles the "10,000-frame MD run" class of input that motivated the project, still as a clean library. Six of seven Phase 1 formats done.
 
 ## 5. v0.4 — CIF (Phase 1 Complete)
 
@@ -205,9 +205,9 @@ Exams, life, and CIF will eat some of this. The ladder degrades gracefully: any 
 
 ## 12. The Four Answers
 
-**Smallest feature set that still deserves the name "ChemBridge":** a library + CLI that converts between the XYZ family and POSCAR/CONTCAR, and that (a) shows a Discovery Report before converting, (b) emits a Conversion Report naming every preserved, removed, and supplied field, (c) *refuses* to invent a lattice unless the user names one, recording it as an Assumption, and (d) validates every output by re-parse-and-diff. That is v0.1. One conversion pair with total transparency embodies the mission; twenty formats with silent loss would not.
+**Smallest feature set that still deserves the name "Xtalate":** a library + CLI that converts between the XYZ family and POSCAR/CONTCAR, and that (a) shows a Discovery Report before converting, (b) emits a Conversion Report naming every preserved, removed, and supplied field, (c) *refuses* to invent a lattice unless the user names one, recording it as an Assumption, and (d) validates every output by re-parse-and-diff. That is v0.1. One conversion pair with total transparency embodies the mission; twenty formats with silent loss would not.
 
-**First feature to implement:** the canonical schema's **absence convention** (`02 §2`) — it is the load-bearing wall for every report, every parser rule, and every recovery decision. The first *user-visible* feature built on it is `chembridge inspect` for XYZ (week 4): a Discovery Report is a compelling demo on its own and forces the schema, sniffer, SDK, and one parser to be real.
+**First feature to implement:** the canonical schema's **absence convention** (`02 §2`) — it is the load-bearing wall for every report, every parser rule, and every recovery decision. The first *user-visible* feature built on it is `xtalate inspect` for XYZ (week 4): a Discovery Report is a compelling demo on its own and forces the schema, sniffer, SDK, and one parser to be real.
 
 **First milestone to show publicly (GitHub, portfolio, college applications):** make the repository public from **week 1** — the spec set itself is already a portfolio artifact, and building in the open costs nothing at this scale. The first *demo-able* moment is **week 8** (first cross-format conversion with a full report — record the terminal session for the README). But the milestone this roadmap is built around is the **v0.1 tag itself, which is by design the first public release** (§2.1): installable, documented, CI-green, scope-honest, reproducible in ten minutes by a stranger. That is the version to put in front of internship reviewers, admissions readers, and researchers. For applications, v0.1 plus the write-up of *why* it refuses to guess is a stronger story than any feature count.
 

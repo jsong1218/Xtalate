@@ -1,4 +1,4 @@
-# ChemBridge — v0.6 Implementation Plan
+# Xtalate — v0.6 Implementation Plan
 
 > **Document status:** Execution plan for Version 0.6 ("Humans — Web UI Core", per `docs/Incremental_Roadmap_v1.0.md` §7). It **supersedes the roadmap's §7 prose for execution purposes** while preserving its scope decisions: the Next.js upload → inspect → convert → report → download journey, report rendering in the ✓/✗/◆/⚠ loss-communication language (Part 7 §4), and fixture-driven component tests. **Omitted, per the roadmap:** interactive recovery decision cards, the format explorer, history, and the docs site (all → v0.7); all visualization (post-1.0, Part 7 §6).
 >

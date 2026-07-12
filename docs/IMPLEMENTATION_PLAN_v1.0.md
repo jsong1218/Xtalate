@@ -1,4 +1,4 @@
-# ChemBridge — v1.0 Implementation Plan
+# Xtalate — v1.0 Implementation Plan
 
 > **Document status:** Execution plan for Version 1.0 ("Frozen Contracts", per `docs/Incremental_Roadmap_v1.0.md` §9). The roadmap's rule for this version is absolute and this plan honors it: **the definition of done is Part 10 §6, verbatim and unchanged — this plan adds nothing to it and removes nothing from it.** What this document decides is only *sequencing, packaging into milestones, and the calendar mechanics* of getting every §6 line true at the same moment. Part 10's own characterization governs the temperament: this is "the discipline milestone, not the feature milestone" — mostly verification, documentation, and API-surface review.
 >
@@ -23,7 +23,7 @@ flowchart LR
 
 Estimates in **weekends** (~9 h). The roadmap budgets 6–8; the ranges sum to **7–9** with buffer inside the ranges — but the binding constraint is likely the **wall clock**: M38 cannot tag until the matrix has 30 consecutive green days behind it, so the last engine-touching merge (normally M35's migration) starts a window that M36–M38's work deliberately fits inside. A nightly red during the window is a stop-the-line defect: fix it, and restart the count — a v1.0 tagged on "green except that one flake" would make §6 item 1 a lie in the release notes.
 
-**Standing posture from M35's merge onward: code freeze below the presentation layer.** Only defect fixes touch `src/chembridge/`; each one restarts the 30-day clock consciously and is worth it — the clock exists to prove stability, not to be outrun.
+**Standing posture from M35's merge onward: code freeze below the presentation layer.** Only defect fixes touch `src/xtalate/`; each one restarts the 30-day clock consciously and is worth it — the clock exists to prove stability, not to be outrun.
 
 ---
 
@@ -56,7 +56,7 @@ Everything §4.2 of Part 10 names as the public surface, reviewed once, frozen t
 2. **The compatibility canary in CI** (risk R12's named mitigation): every PR builds and tests the reference plugin against the current SDK; a core change that breaks it fails CI — the SDK freeze gains mechanical teeth.
 3. **The add-a-format guide finalized** around the reference plugin as its worked example: the Part 10 §4.3 checklist (implement, declare honestly — PARTIAL with notes beats optimistic FULL — golden cases, identity round-trips, table row) now points at real code for every step.
 
-**Done means:** `pip install` of the reference plugin wheel into a clean chembridge environment makes the toy format appear in `chembridge capabilities`, the format explorer, and the nightly matrix with zero core changes; the canary demonstrably fails on a deliberate SDK-breaking commit in a scratch branch.
+**Done means:** `pip install` of the reference plugin wheel into a clean xtalate environment makes the toy format appear in `xtalate capabilities`, the format explorer, and the nightly matrix with zero core changes; the canary demonstrably fails on a deliberate SDK-breaking commit in a scratch branch.
 **Dependencies:** M35 (builds against the frozen SDK). **Cut line:** the toy format's breadth (single-frame, three fields is enough) — never the no-private-imports rule or the canary.
 
 ---
@@ -120,7 +120,7 @@ The weekend arithmetic fits the roadmap's 6–8; the wall clock is the likelier 
 
 The verification *is* M38 — Part 10 §6 walked with evidence. The final sequence, from clean environments:
 
-1. `pip install chembridge` (built artifact): the v0.1 CLI acceptance pass still green, seven formats plus the reference plugin's toy format when its wheel is added.
+1. `pip install xtalate` (built artifact): the v0.1 CLI acceptance pass still green, seven formats plus the reference plugin's toy format when its wheel is added.
 2. The three worked examples reproduced by a non-author on all four surfaces from public docs alone (§6 item 4) — the stranger test that has closed every version, at maximum strength.
 3. Self-hosting drill from the v0.7 guide on a clean machine, now including the restore drill and a lifecycle-expiry check against the real store.
 4. Nightly history: 30 consecutive greens; benchmark dashboard on the pinned runner within targets; property suites zero-waiver by audit.

@@ -1,4 +1,4 @@
-# ChemBridge — v0.5 Implementation Plan
+# Xtalate — v0.5 Implementation Plan
 
 > **Document status:** Execution plan for Version 0.5 ("Service — REST API", per `docs/Incremental_Roadmap_v1.0.md` §6). It **supersedes the roadmap's §6 prose for execution purposes** while preserving its scope decisions: the FastAPI backend per Part 6, the async job model including `awaiting_recovery` (interactive recovery arrives *here*, exactly as Part 10 §2 decision 4 planned), PostgreSQL and object-storage adapters behind the Tier 0-compatible interfaces, the Tier 1 compose stack, and the job-lifecycle test suite. **Omitted, per the roadmap:** hosted public instance (a v1.0-time decision), accounts/OAuth (self-hosted anonymous mode + static API key only), SSE/WebSockets (rejected in Part 6 §3.1 anyway), horizontal scaling.
 >
@@ -43,7 +43,7 @@ Everything stateful, behind interfaces Tier 0 can still satisfy — a parser bug
 4. **First endpoints (synchronous, no jobs yet):** `GET /v1/health` (liveness + `?ready=true` dependency checks), `GET /v1/capabilities` and `/v1/capabilities/{format_id}` (straight from the registry — seven formats appear with zero API-side format knowledge), `GET /v1/limits` (values from config). Error envelope (Part 6 §6) implemented as the single exception-to-response path from the start — retrofitting an envelope under thirty endpoints is the rewrite this milestone exists to avoid.
 5. **Tier 1 compose, first shape:** `backend` + `postgres` + `minio` + `queue` services boot; MinIO bucket + lifecycle rules created by an init job (so §5.2 expiry is locally testable from the first week).
 
-**Done means:** `docker compose up` then `curl /v1/health?ready=true` shows all dependencies green; the adapter suite passes against SQLite/Postgres and filesystem/MinIO alike; `GET /v1/capabilities` output equals `chembridge capabilities --json`.
+**Done means:** `docker compose up` then `curl /v1/health?ready=true` shows all dependencies green; the adapter suite passes against SQLite/Postgres and filesystem/MinIO alike; `GET /v1/capabilities` output equals `xtalate capabilities --json`.
 **Dependencies:** none within v0.5. **Cut line:** compose polish (profiles, resource hints) — never adapter parity tests or the envelope-first rule.
 
 ---
@@ -147,5 +147,5 @@ Before tagging v0.5, from a clean machine:
 3. Same conversion with presets in the initial request: byte-equivalent reports; refused variant (no presets, then cancel instead of resume) leaves a terminal `cancelled` job with no report, and a second identical convert refuses as `completed` HTTP-200 with exit-code-2-equivalent semantics.
 4. Expiry drills against MinIO with shortened TTLs: paused job → `expired` → refused report; uploaded bytes gone at TTL while `GET /v1/conversions/{id}` still serves both reports.
 5. Limits: an oversized upload 413s; a rate burst 429s with `Retry-After`; a static-API-key instance rejects keyless mutating requests.
-6. `pip install chembridge` still works standalone — Tier 0 unharmed; the CLI acceptance pass of v0.1 §5 still passes unchanged.
+6. `pip install xtalate` still works standalone — Tier 0 unharmed; the CLI acceptance pass of v0.1 §5 still passes unchanged.
 7. CI green on the tag including the compose integration job; OpenAPI artifact published; CHANGELOG and README match what shipped.

@@ -1,4 +1,4 @@
-# ChemBridge — v0.7 Implementation Plan
+# Xtalate — v0.7 Implementation Plan
 
 > **Document status:** Execution plan for Version 0.7 ("Interactive Recovery + Polish", per `docs/Incremental_Roadmap_v1.0.md` §8). It **supersedes the roadmap's §8 prose for execution purposes** while preserving its scope decisions: the Recovery Workflow UI rendered from the `awaiting_recovery` job envelope, the failed-validation acknowledgment gate (`VALIDATION_ACK_REQUIRED`), the format explorer from `/v1/capabilities`, the history page, and the production/self-hosting compose (Part 9 §4–§5). At this version's end the product is **feature-complete against Parts 6–7**; only v1.0's freezing discipline remains.
 >
@@ -123,5 +123,5 @@ Before tagging v0.7, against a production-compose instance on a clean machine:
 4. Refused → resolve-and-retry → completed, entirely in-browser.
 5. `/formats` answers a capability question in two clicks; `/history` shows an expired upload's report as readable with download honestly unavailable; deleting a file leaves its report.
 6. Every `documentation_url` from a forced sample of API errors resolves on the docs site; CI link-check green.
-7. The self-hosting drill of M34, plus: `pip install chembridge` and the v0.1 CLI acceptance pass still green — the library remains a first-class product beneath the service.
+7. The self-hosting drill of M34, plus: `pip install xtalate` and the v0.1 CLI acceptance pass still green — the library remains a first-class product beneath the service.
 8. CI green on the tag; scope statement declares feature-completeness against Parts 6–7 and names anything cut.

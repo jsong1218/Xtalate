@@ -14,9 +14,9 @@ import io
 import numpy as np
 import pytest
 
-from chembridge.exporters.poscar import make_poscar_exporter
-from chembridge.parsers._common import build_provenance
-from chembridge.schema import (
+from xtalate.exporters.poscar import make_poscar_exporter
+from xtalate.parsers._common import build_provenance
+from xtalate.schema import (
     AtomsBlock,
     CanonicalObject,
     Cell,

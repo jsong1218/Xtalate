@@ -18,14 +18,14 @@ import io
 from pathlib import Path
 from typing import BinaryIO, cast
 
-from chembridge.capabilities import Registry
-from chembridge.conversion import ConversionEngine
-from chembridge.conversion.engine import ConversionResult
-from chembridge.exporters import builtin_exporters
-from chembridge.exporters.poscar import PoscarExporter
-from chembridge.parsers import builtin_parsers
-from chembridge.schema import AtomsBlock, CanonicalObject
-from chembridge.validation import CheckResult
+from xtalate.capabilities import Registry
+from xtalate.conversion import ConversionEngine
+from xtalate.conversion.engine import ConversionResult
+from xtalate.exporters import builtin_exporters
+from xtalate.exporters.poscar import PoscarExporter
+from xtalate.parsers import builtin_parsers
+from xtalate.schema import AtomsBlock, CanonicalObject
+from xtalate.validation import CheckResult
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 
