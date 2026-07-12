@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from chembridge.schema import (
+from xtalate.schema import (
     AtomsBlock,
     CanonicalObject,
     Cell,

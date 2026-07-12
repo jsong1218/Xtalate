@@ -7,9 +7,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from chembridge.parsers.xyz import XyzParser
-from chembridge.sdk import ParseError
 from tests._format_helpers import assert_matches_golden, parse_bytes
+from xtalate.parsers.xyz import XyzParser
+from xtalate.sdk import ParseError
 
 GOLDEN = Path(__file__).parent.parent / "golden" / "xyz" / "water-traj"
 

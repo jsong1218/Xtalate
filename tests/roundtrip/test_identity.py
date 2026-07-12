@@ -11,15 +11,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from chembridge.exporters.extxyz import ExtxyzExporter
-from chembridge.exporters.poscar import make_contcar_exporter, make_poscar_exporter
-from chembridge.exporters.xyz import XyzExporter
-from chembridge.parsers.extxyz import ExtxyzParser
-from chembridge.parsers.poscar import make_contcar_parser, make_poscar_parser
-from chembridge.parsers.xyz import XyzParser
-from chembridge.schema import CanonicalObject
-from chembridge.sdk import ExporterPlugin, ParserPlugin
 from tests._format_helpers import assert_scientifically_equal, parse_bytes
+from xtalate.exporters.extxyz import ExtxyzExporter
+from xtalate.exporters.poscar import make_contcar_exporter, make_poscar_exporter
+from xtalate.exporters.xyz import XyzExporter
+from xtalate.parsers.extxyz import ExtxyzParser
+from xtalate.parsers.poscar import make_contcar_parser, make_poscar_parser
+from xtalate.parsers.xyz import XyzParser
+from xtalate.schema import CanonicalObject
+from xtalate.sdk import ExporterPlugin, ParserPlugin
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 

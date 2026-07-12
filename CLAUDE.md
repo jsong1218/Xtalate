@@ -1,14 +1,14 @@
-# CLAUDE.md — ChemBridge Project Context
+# CLAUDE.md — Xtalate Project Context
 
-> Load this file at the start of every Claude Code / Claude chat session working on ChemBridge. It is a compressed index of `docs/MASTER_SPEC.md` (the full constitution — a single edited document, *not* an assembly of standalone files; see the document-family section below). If anything here conflicts with a doc in `docs/`, **the doc wins** — this file is a map, not the territory. If a later-uploaded doc contradicts an earlier one, flag the discrepancy; do not silently pick one.
+> Load this file at the start of every Claude Code / Claude chat session working on Xtalate. It is a compressed index of `docs/MASTER_SPEC.md` (the full constitution — a single edited document, *not* an assembly of standalone files; see the document-family section below). If anything here conflicts with a doc in `docs/`, **the doc wins** — this file is a map, not the territory. If a later-uploaded doc contradicts an earlier one, flag the discrepancy; do not silently pick one.
 
-> **Status (refreshed Revision 1.6, July 2026).** **v0.1 is feature-complete** (MASTER_SPEC Preface Revision 1.2 item 17): the full spine — parse → pre-flight → recovery → export → report → validation — plus the Information Discovery Engine and the `chembridge` CLI are implemented, tested, and shipped for the four v0.1 formats (XYZ, extXYZ, POSCAR, CONTCAR). The map below is now current against Revisions 1.3–1.6 and `docs/DECISIONS.md` D1–D33; the two sections previously flagged HISTORICAL (Repository Shape, Documentation Set) have been rewritten to the real state. Mission, principles (P1–P6), glossary, architecture, the absence convention, tech stack (a *destination*, not the v0.1 dependency set), and API conventions remain binding. For current status and build-time rationale, read the **Revision 1.2 addenda** in the MASTER_SPEC Preface (the M0–M6 landing notes) and the **D-log through D33**; per-version execution lives in `docs/IMPLEMENTATION_PLAN_v0.1.md`–`_v1.0.md`.
+> **Status (refreshed Revision 1.6, July 2026).** **v0.1 is feature-complete** (MASTER_SPEC Preface Revision 1.2 item 17): the full spine — parse → pre-flight → recovery → export → report → validation — plus the Information Discovery Engine and the `xtalate` CLI are implemented, tested, and shipped for the four v0.1 formats (XYZ, extXYZ, POSCAR, CONTCAR). The map below is now current against Revisions 1.3–1.6 and `docs/DECISIONS.md` D1–D33; the two sections previously flagged HISTORICAL (Repository Shape, Documentation Set) have been rewritten to the real state. Mission, principles (P1–P6), glossary, architecture, the absence convention, tech stack (a *destination*, not the v0.1 dependency set), and API conventions remain binding. For current status and build-time rationale, read the **Revision 1.2 addenda** in the MASTER_SPEC Preface (the M0–M6 landing notes) and the **D-log through D33**; per-version execution lives in `docs/IMPLEMENTATION_PLAN_v0.1.md`–`_v1.0.md`.
 
 ## Mission
 
-> **ChemBridge is the trusted translation layer between computational chemistry file formats — a converter that tells you exactly what it kept, what it lost, and why.**
+> **Xtalate is the trusted translation layer between computational chemistry file formats — a converter that tells you exactly what it kept, what it lost, and why.**
 
-Guiding philosophy: **never silently lose scientific information.** Litmus test for any design decision: *if a user diffed the source and output files by hand, would anything surprise them that ChemBridge didn't already tell them about?* If yes, the design is wrong.
+Guiding philosophy: **never silently lose scientific information.** Litmus test for any design decision: *if a user diffed the source and output files by hand, would anything surprise them that Xtalate didn't already tell them about?* If yes, the design is wrong.
 
 ## Design Principles (P1–P6) — binding, referenced by ID in every doc
 
@@ -89,8 +89,8 @@ Parsers are forbidden from defaulting — no zero velocities, no identity lattic
 > The pre-implementation architecture review rejected a solo-maintainer monorepo of separately-packaged components as unnecessary overhead (`docs/ARCHITECTURE_REVIEW.md` §4.1; `docs/DECISIONS.md` D1). The shipped v0.1 layout is **one package** in a `src/` layout — no per-component `pyproject.toml`s. `frontend/`, `backend/`, and `plugins/` do not exist yet; they arrive with the versions that need them (Service at roadmap v0.5, Web UI at v0.6, entry-point plugin discovery at v0.3). `docs/MASTER_SPEC.md` Part 1 §5 is the authoritative tree.
 
 ```
-src/chembridge/
-  schema/         Canonical Model; depends on nothing else in chembridge/  (a.k.a. "canonical-schema")
+src/xtalate/
+  schema/         Canonical Model; depends on nothing else in xtalate/  (a.k.a. "canonical-schema")
   sdk/            stable parser/exporter base classes + capability models   (a.k.a. "plugin-sdk")
   parsers/        one per format; depends only on schema + sdk
   exporters/      one per format; depends only on schema + sdk
@@ -129,7 +129,7 @@ Dependency direction is strict and acyclic — enforced physically by an `import
 - **`docs/IMPLEMENTATION_PLAN_v0.1.md` … `_v1.0.md`** — per-version execution plans, milestones **M0–M38**, each superseding the roadmap's execution prose for its version.
 - **`docs/DOCS_CONSISTENCY_REVIEW_2026-07.md`** — the post-v0.1 corpus consistency review (findings C1–C11) this refresh implements.
 
-> Not committed to this repo (external, historical): `ChemBridge_Doc_Prompts.md` — the prompt set that generated the original drafts; superseded by the single-source-of-truth model, do not run it or create the standalone files.
+> Not committed to this repo (external, historical): `Xtalate_Doc_Prompts.md` — the prompt set that generated the original drafts; superseded by the single-source-of-truth model, do not run it or create the standalone files.
 
 ## Working Rules for This Project
 

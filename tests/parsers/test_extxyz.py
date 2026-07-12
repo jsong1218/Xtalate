@@ -16,9 +16,9 @@ import pytest
 from ase import units as ase_units
 from ase.data import atomic_masses, atomic_numbers
 
-from chembridge.parsers.extxyz import ExtxyzParser
-from chembridge.sdk import ParseError
 from tests._format_helpers import assert_matches_golden, parse_bytes
+from xtalate.parsers.extxyz import ExtxyzParser
+from xtalate.sdk import ParseError
 
 GOLDEN = Path(__file__).parent.parent / "golden" / "extxyz" / "co-in-cell"
 

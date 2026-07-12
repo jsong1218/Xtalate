@@ -1,4 +1,4 @@
-# ChemBridge — v0.4 Implementation Plan
+# Xtalate — v0.4 Implementation Plan
 
 > **Document status:** Execution plan for Version 0.4 ("CIF — Phase 1 Complete", per `docs/Incremental_Roadmap_v1.0.md` §5). It **supersedes the roadmap's §5 prose for execution purposes** while preserving its one non-negotiable scope decision: **nothing else lands in this version.** Part 10 prices CIF at ~3 experienced weeks alone; the roadmap's verdict — "mixing CIF with other work is how CIF eats a semester" — is adopted here as a standing rule, not a suggestion. Scope authority remains MASTER_SPEC.md (Part 3 §3, especially footnotes 3, 4, 8, 9, 11, 13) and the roadmap; this document decides *sequencing, packaging into milestones, and cut lines*.
 >
@@ -74,7 +74,7 @@ The remaining semantics, and the write side.
 4. **Capability rows** for CIF read + write; the table-sync test forces the Part 3 §3 column to match; CIF's arrival in the pre-flight diff (`space_group` now a *source-present* field every other format removes — the first format to exercise that path).
 5. Golden + identity round-trip (CIF → Canonical → CIF, comparable under the strict profile given the `P 1` export policy); CIF joins the two/three-hop matrix and nightly n×n automatically via the registry.
 
-**Done means:** an occupancy-bearing CIF warns at parse *and* in every conversion report; identity round-trip green; `chembridge convert struct.cif --to poscar` produces the fractional→Cartesian→Direct chain with a complete report.
+**Done means:** an occupancy-bearing CIF warns at parse *and* in every conversion report; identity round-trip green; `xtalate convert struct.cif --to poscar` produces the fractional→Cartesian→Direct chain with a complete report.
 **Dependencies:** M18. **Cut line:** exporter niceties (tag ordering, cosmetic layout) — never the occupancy warnings or the `removed` entry for `space_group`.
 
 ---
@@ -104,7 +104,7 @@ CIF is the format where synthetic fixtures least resemble the wild; this milesto
 | M19 | 1–2 | 5–6 | Occupancy warning visible in a conversion report before the exporter merges. |
 | M20 | 1–2 | 6–8 | Tag v0.4 — Phase 1 complete. |
 
-A pause after any milestone is coherent: after M17, ChemBridge honestly parses full-cell CIFs; after M18, all CIFs; after M19, it writes them. The version tags only after M20's real-world batch — a CIF parser validated purely on synthetic files would be trustworthy in the lab and embarrassing in the wild.
+A pause after any milestone is coherent: after M17, Xtalate honestly parses full-cell CIFs; after M18, all CIFs; after M19, it writes them. The version tags only after M20's real-world batch — a CIF parser validated purely on synthetic files would be trustworthy in the lab and embarrassing in the wild.
 
 ## 4. Standing rules during v0.4
 
@@ -118,11 +118,11 @@ A pause after any milestone is coherent: after M17, ChemBridge honestly parses f
 
 Before tagging v0.4, from a clean environment with the built artifact:
 
-1. `pip install chembridge`; `chembridge capabilities` lists all seven Phase 1 formats.
-2. `chembridge inspect` on a COD NaCl entry: expanded atom count matches the published conventional cell; `space_group` present; the ✓/✗ inventory shows occupancy-free structure cleanly.
-3. `chembridge inspect` on an occupancy-bearing entry: the occupancy warning appears; converting it to any target repeats the warning in the Conversion Report.
+1. `pip install xtalate`; `xtalate capabilities` lists all seven Phase 1 formats.
+2. `xtalate inspect` on a COD NaCl entry: expanded atom count matches the published conventional cell; `space_group` present; the ✓/✗ inventory shows occupancy-free structure cleanly.
+3. `xtalate inspect` on an occupancy-bearing entry: the occupancy warning appears; converting it to any target repeats the warning in the Conversion Report.
 4. A two-block CIF: block two named in the Discovery Report's issues, never silently dropped.
-5. `chembridge convert struct.cif --to poscar` and `--to extxyz`: complete reports; `space_group` in `removed` with its reason; validation passes.
+5. `xtalate convert struct.cif --to poscar` and `--to extxyz`: complete reports; `space_group` in `removed` with its reason; validation passes.
 6. CIF → CIF identity round-trip green under the strict profile from the CLI.
 7. Nightly n×n matrix (now 7×7 write-capable pairs) green on the release commit; ATTRIBUTIONS.md regenerates byte-stable with the COD entries included.
 8. CI green on the tag; CHANGELOG and README state Phase 1 completeness and the occupancy limitation honestly.

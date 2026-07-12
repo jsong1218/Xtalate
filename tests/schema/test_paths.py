@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from chembridge.schema.paths import (
+from xtalate.schema.paths import (
     CANONICAL_FIELD_PATHS,
     expand_capability_path,
     is_valid_path,

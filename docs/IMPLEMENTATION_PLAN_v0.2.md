@@ -1,4 +1,4 @@
-# ChemBridge — v0.2 Implementation Plan
+# Xtalate — v0.2 Implementation Plan
 
 > **Document status:** Execution plan for Version 0.2 ("Trustworthy Core Complete", per `docs/Incremental_Roadmap_v1.0.md` §3). It **supersedes the roadmap's §3 prose for execution purposes** while preserving all of its scope decisions (no new formats, no services, no UI; v0.2 *fills in* `recovery/`, `validation/`, and `tests/` to Part 10-MVP completeness). Scope authority remains MASTER_SPEC.md and the roadmap; this document decides *sequencing, packaging into milestones, and cut lines*.
 >
@@ -68,7 +68,7 @@ The one deliberate v0.1 format deferral, plus the two velocity-family scenarios 
 3. **`missing_masses` choices:** `standard_masses` (IUPAC standard atomic weights — a *reported default*, fabricative, never silent) and `manual_input`. The `maxwell_boltzmann` → `missing_masses` chain resolves in dependency order and records two Assumptions.
 4. **Physics tests** (the roadmap's named risk for this version): MB-initialized velocities tested against known distributions — per-component variance = kT/m within statistical tolerance at fixed seed and large-N fixture; zero center-of-mass drift option decision recorded in `docs/DECISIONS.md` (with the rejected alternative); determinism test (same seed ⇒ identical velocities).
 
-**Done means:** `chembridge convert traj.extxyz --to poscar --recover missing_lattice=… --recover frame_selection=last --recover missing_velocities=maxwell_boltzmann,temperature_K=300,seed=42` produces a POSCAR with a velocity block, a report whose `supplied` entries trace velocities *and* (if chained) masses to their Assumptions, and identical output on re-run.
+**Done means:** `xtalate convert traj.extxyz --to poscar --recover missing_lattice=… --recover frame_selection=last --recover missing_velocities=maxwell_boltzmann,temperature_K=300,seed=42` produces a POSCAR with a velocity block, a report whose `supplied` entries trace velocities *and* (if chained) masses to their Assumptions, and identical output on re-run.
 **Dependencies:** M7 (scenario registrations). **Cut line:** Direct-mode velocity export edge cases (log `ParseIssue`, track) — never the MB distribution tests or the seed-recording rule.
 
 **Risk:** Maxwell–Boltzmann correctness. Mitigation is the distribution tests above; if they resist a weekend of debugging, the checkpoint decision is to ship `zero_init` + `standard_masses` and hold `maxwell_boltzmann` for a v0.2.1 patch — that cut removes one *choice*, not a scenario, so the catalog stays complete.
@@ -152,7 +152,7 @@ If the break ends before M11: M7–M8 are a coherent resting state (catalog comp
 
 Before tagging v0.2, from a clean environment with the built artifact:
 
-1. `pip install chembridge`; `chembridge capabilities --json` shows the velocity-block rows.
+1. `pip install xtalate`; `xtalate capabilities --json` shows the velocity-block rows.
 2. Drive **every scenario in Part 4 §3.3** from the CLI at least once: each fabricative/selective scenario refused without a preset (exit 2, honest option list), then resolved with one (exit 0, correct Assumption/`supplied` shape). `missing_energy` refuses and offers no synthetic option.
 3. The MB conversion of M8's done-means reproduces byte-identical output and Assumption parameters (`temperature_K`, `seed`) across two runs.
 4. Full PR suite — identity + two-hop + three-hop matrix, golden corpus, both property tests — green with zero waivers, under 10 minutes.
