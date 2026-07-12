@@ -10,8 +10,8 @@ from typing import BinaryIO
 
 import numpy as np
 
-from chembridge.schema import AtomsBlock, CanonicalObject, Frame, Provenance
-from chembridge.sdk import (
+from xtalate.schema import AtomsBlock, CanonicalObject, Frame, Provenance
+from xtalate.sdk import (
     ExporterPlugin,
     FieldCapability,
     FormatCapabilities,

@@ -4,9 +4,9 @@ tie-break — all exercised through dummy parsers, proving the sniffer stays gen
 
 from __future__ import annotations
 
-from chembridge.capabilities import Registry
-from chembridge.discovery import Sniffer
 from tests._dummy_plugins import DummyParser
+from xtalate.capabilities import Registry
+from xtalate.discovery import Sniffer
 
 
 def _registry(*parsers: DummyParser) -> Registry:

@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from chembridge.schema.arrays import Array33, ArrayN, ArrayN3, ArrayNx
+from xtalate.schema.arrays import Array33, ArrayN, ArrayN3, ArrayNx
 
 
 class _Holder(BaseModel):

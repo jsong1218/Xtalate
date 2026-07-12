@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from chembridge.schema import (
+from xtalate.schema import (
     SCHEMA_VERSION,
     AtomsBlock,
     CanonicalObject,

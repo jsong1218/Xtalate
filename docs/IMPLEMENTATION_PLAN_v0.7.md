@@ -1,4 +1,4 @@
-# ChemBridge — v0.7 Implementation Plan
+# Xtalate — v0.7 Implementation Plan
 
 > **Document status:** Execution plan for Version 0.7 ("Interactive Recovery + Polish", per `docs/Incremental_Roadmap_v1.0.md` §8). It **supersedes the roadmap's §8 prose for execution purposes** while preserving its scope decisions: the Recovery Workflow UI rendered from the `awaiting_recovery` job envelope, the failed-validation acknowledgment gate (`VALIDATION_ACK_REQUIRED`), the format explorer from `/v1/capabilities`, the history page, and the production/self-hosting compose (Part 9 §4–§5). At this version's end the product is **feature-complete against Parts 6–7**; only v1.0's freezing discipline remains.
 >
@@ -72,7 +72,7 @@ The v0.6 interims retired.
 **Deliverables**
 
 1. **`/formats`** (Part 7 §2.7): the Capability Matrix as a browsable grid **generated from `GET /v1/capabilities`** — it can never drift from the running instance's registry, and an installed plugin format appears with zero UI changes (the P6 payoff on screen). Format detail view: read/write declarations, `required_fields` framed as "converting *into* this format requires…" (a preview of recovery scenarios), `max_frames`, `lossy_notes`. The landing page's "Explore formats" link goes live.
-2. **`/history`** (Part 7 §2.6): cursor-paginated table from `GET /v1/history` — date, source/target, status chips (the v0.6 summary-chip component at one-line granularity, so loss is visible even in a table row); per-row actions: open record, re-convert (routes to `/files/[file_id]` while the upload is unexpired), delete file behind a confirmation naming the retention policy. **Expired artifacts stay listed with their reports** — "expired" as a rendered state with its explanation, never a surprise `410`.
+2. **`/history`** (Part 7 §2.6): cursor-paginated table from `GET /v1/history` — date, source/target, status chips (the v0.6 summary-chip component at one-line granularity, so loss is visible even in a table row); per-row actions: open record, re-convert (routes to `/files/[file_id]` while the upload is unexpired), delete file behind a confirmation naming the retention policy. **Expired-*bytes* artifacts stay listed with their reports** — "expired" as a rendered state with its explanation, never a surprise `410`. The listing is bounded, not indefinite: after the 30-day `report_retention_days` window the record and its report are deleted outright and the row leaves the history (Part 7 §2.6, Revision 1.5) — a row lingering as an empty husk past report retention is the pre-1.5 stance D32 explicitly rejected.
 3. Component tests: the grid renders from a capabilities fixture including a fictional plugin format; history rows render all four status combinations (completed/refused × validation states) plus the expired state.
 
 **Done means:** "can extXYZ hold stress?" is answerable in two clicks without leaving the browser; a user deletes an uploaded file from history and its conversion report remains readable — reports-outlive-bytes, visible in the UI at last.
@@ -123,5 +123,5 @@ Before tagging v0.7, against a production-compose instance on a clean machine:
 4. Refused → resolve-and-retry → completed, entirely in-browser.
 5. `/formats` answers a capability question in two clicks; `/history` shows an expired upload's report as readable with download honestly unavailable; deleting a file leaves its report.
 6. Every `documentation_url` from a forced sample of API errors resolves on the docs site; CI link-check green.
-7. The self-hosting drill of M34, plus: `pip install chembridge` and the v0.1 CLI acceptance pass still green — the library remains a first-class product beneath the service.
+7. The self-hosting drill of M34, plus: `pip install xtalate` and the v0.1 CLI acceptance pass still green — the library remains a first-class product beneath the service.
 8. CI green on the tag; scope statement declares feature-completeness against Parts 6–7 and names anything cut.

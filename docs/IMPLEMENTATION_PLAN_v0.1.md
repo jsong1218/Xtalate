@@ -1,4 +1,4 @@
-# ChemBridge — v0.1 Implementation Plan
+# Xtalate — v0.1 Implementation Plan
 
 > **Document status:** Execution plan for Version 0.1 (the first public release, per `docs/Incremental_Roadmap_v1.0.md` §2). It **supersedes the roadmap's §2.5 week-by-week table for execution purposes** while preserving all of its scope decisions (four formats, two recovery scenarios, preset-only recovery, library + CLI, Tier 0 only). Scope authority remains MASTER_SPEC.md and the roadmap; this document decides *sequencing, packaging into milestones, and cut lines*.
 >
@@ -44,8 +44,8 @@ The milestone that exists so no later milestone starts with an unmade decision.
 1. Resolve **LICENSE** (review A1) and the source-of-truth/preface fixes (review A2–A3, §7 items 1–3 — one spec-editing pass, including the Revision 1.2 note). **[needs review §7.1–3]**
 2. Single-distribution repo layout **[needs review §4.1]**:
    ```
-   pyproject.toml            # one distribution: chembridge
-   src/chembridge/
+   pyproject.toml            # one distribution: xtalate
+   src/xtalate/
      schema/                 # Part 2 (canonical-schema)
      sdk/                    # Part 3 §2, §5 + FormatCapabilities types (review B3)
      parsers/  exporters/    # one module per format each — kept separate per Part 1 §2 (DECISIONS D1)
@@ -86,9 +86,9 @@ The milestone that exists so no later milestone starts with an unmade decision.
 
 **Deliverables**
 
-1. `chembridge.sdk`: `ParserPlugin` / `ExporterPlugin` ABCs, `ParseResult` / `ParseIssue` / `ParseError` (Part 3 §2, §5), and the `FormatCapabilities` / `FieldCapability` / `CapabilityLevel` data models (moved here per review B3), including wildcard-path semantics (review A9).
+1. `xtalate.sdk`: `ParserPlugin` / `ExporterPlugin` ABCs, `ParseResult` / `ParseIssue` / `ParseError` (Part 3 §2, §5), and the `FormatCapabilities` / `FieldCapability` / `CapabilityLevel` data models (moved here per review B3), including wildcard-path semantics (review A9).
 2. **Explicit-list registry** — `register(parser)` calls, no entry-point discovery (review §4.2; entry points are additive in v0.3).
-3. Format sniffer (`chembridge.discovery`): all-parsers scoring, accept threshold 0.5 / ambiguity margin 0.2, filename hints, and the POSCAR⇄CONTCAR filename rule (Part 3 §6.1).
+3. Format sniffer (`xtalate.discovery`): all-parsers scoring, accept threshold 0.5 / ambiguity margin 0.2, filename hints, and the POSCAR⇄CONTCAR filename rule (Part 3 §6.1).
 4. A dummy in-test parser proving registration, sniffing, and capability declaration end to end.
 
 **Done means:** sniffer unit tests pass for the dummy + negative cases (`UNKNOWN_FORMAT` with candidate list); registry rejects a capability declaration with an unknown canonical path.
@@ -119,7 +119,7 @@ ASE-backed with the **default-laundering suite** (Part 3 §2 — zero cell → `
 
 **Deliverables**
 
-1. `chembridge.capabilities`: registry assembly from `capabilities()` declarations; query API; capability rows for all implemented formats (write-side POSCAR row per Part 3 §4.2, corrected for wildcard semantics).
+1. `xtalate.capabilities`: registry assembly from `capabilities()` declarations; query API; capability rows for all implemented formats (write-side POSCAR row per Part 3 §4.2, corrected for wildcard semantics).
 2. Pre-flight diff (Part 3 §4.3): presence × write-capability → predicted `preserved`/`removed`/scenarios/`warnings`; `required_fields` and `max_frames` triggers.
 3. Conversion Engine happy path + `write_plan` discipline (exporter writes exactly the plan, Part 4 §1 rules 1–4) + `ConversionReport` schema verbatim (Part 4 §2), both `preflight` and `final` stages, `ConversionRecord(operation="convert")` appended to provenance.
 4. **Completeness invariant as a runtime assertion** at report finalization (review §4.5): every source-present/`mixed` path ∈ `preserved ∪ removed`; every `supplied` path absent-on-source with a resolving `from_assumption`. Raises in dev/test; logged-and-raised always (it is never legitimate).
@@ -156,12 +156,12 @@ The philosophy-critical milestone; deliberately given the time the roadmap's wee
 
 **Deliverables**
 
-1. `chembridge.cli` (framework per M0): `inspect`, `convert`, `validate`, `capabilities` per Appendix A — `--format`, `--to`, `-o`, `--mode`, repeatable `--recover SCENARIO=CHOICE[,param=value…]`, `--acknowledge-loss`, `--acknowledge-parse-warnings`, `--tolerance-profile NAME`, `--report PATH` / `--validation-report PATH` / bare `--json` per the Appendix A convention; exit codes 0/1/2/3/4/5 per §A.2. `validate` ships both the offline re-parse mode and the re-thresholding mode (Part 5 §4.5) — both are pure library calls.
+1. `xtalate.cli` (framework per M0): `inspect`, `convert`, `validate`, `capabilities` per Appendix A — `--format`, `--to`, `-o`, `--mode`, repeatable `--recover SCENARIO=CHOICE[,param=value…]`, `--acknowledge-loss`, `--acknowledge-parse-warnings`, `--tolerance-profile NAME`, `--report PATH` / `--validation-report PATH` / bare `--json` per the Appendix A convention; exit codes 0/1/2/3/4/5 per §A.2. `validate` ships both the offline re-parse mode and the re-thresholding mode (Part 5 §4.5) — both are pure library calls.
 2. Discovery Engine terminal rendering (✓/✗ inventory with capability context — Part 3 §6.3's example as the fixture).
 3. `examples/` with the full worked flow, copy-pasteable from README; README rewritten: pitch, quickstart, recorded demo transcript, **explicit "what v0.1 does and does not do"** scope statement (naming the M3c cut if taken), CI badge.
 4. Release checklist: `CHANGELOG.md`, `CITATION.cff`, `NOTICE` (if Apache-2.0), golden-corpus tidy + `ATTRIBUTIONS.md` if any non-synthetic fixtures were admitted; **tag and publish v0.1** (PyPI + GitHub release).
 
-**Done means:** the roadmap's own bar — a stranger on a clean machine runs `pip install chembridge`, reproduces the README demo (inspect → convert-with-refusal → convert-with-presets → validate) in under 10 minutes without asking a question; CI green on a fresh clone.
+**Done means:** the roadmap's own bar — a stranger on a clean machine runs `pip install xtalate`, reproduces the README demo (inspect → convert-with-refusal → convert-with-presets → validate) in under 10 minutes without asking a question; CI green on a fresh clone.
 **Dependencies:** M5. **Cut line:** demo GIF/transcript polish and doc breadth — never install correctness or the scope statement. Polish-creep warning of roadmap §2.6 applies verbatim.
 
 ---
@@ -193,9 +193,9 @@ Buffer is built into the ranges rather than appended as a single terminal week (
 
 Before tagging v0.1, run the acceptance pass end to end from a clean environment:
 
-1. `pip install chembridge` from the built artifact (not the checkout).
-2. `chembridge inspect water_traj.xyz` → Discovery inventory matches Part 3 §6.3.
-3. `chembridge convert water_traj.xyz --to poscar` → **exit 2**, refused report with `missing_lattice` + `frame_selection` unresolved.
+1. `pip install xtalate` from the built artifact (not the checkout).
+2. `xtalate inspect water_traj.xyz` → Discovery inventory matches Part 3 §6.3.
+3. `xtalate convert water_traj.xyz --to poscar` → **exit 2**, refused report with `missing_lattice` + `frame_selection` unresolved.
 4. Same command with `--recover frame_selection=last --recover missing_lattice=bounding_box,padding_ang=5.0` → exit 0; report shows `supplied` lattice traced to its Assumption; ValidationReport `passed`.
-5. `chembridge validate --output POSCAR --source water_traj.xyz --conversion-report report.json` → passes offline.
+5. `xtalate validate --output POSCAR --source water_traj.xyz --conversion-report report.json` → passes offline.
 6. CI green on the tag; README demo reproducible by someone who is not the author.

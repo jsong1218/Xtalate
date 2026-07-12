@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from chembridge.validation.tolerance import K_FAIL, K_WARN, Bounds, ToleranceProfile
+from xtalate.validation.tolerance import K_FAIL, K_WARN, Bounds, ToleranceProfile
 
 
 def _pair(b: Bounds) -> tuple[float, float]:

@@ -1,4 +1,4 @@
-# ChemBridge — v0.3 Implementation Plan
+# Xtalate — v0.3 Implementation Plan
 
 > **Document status:** Execution plan for Version 0.3 ("Trajectories at Scale", per `docs/Incremental_Roadmap_v1.0.md` §4). It **supersedes the roadmap's §4 prose for execution purposes** while preserving its scope decisions: XDATCAR and ASE trajectory parsers/exporters, frame-chunked processing through the Conversion and Validation Engines, the performance-benchmark seed, and the nightly round-trip matrix — plus entry-point plugin discovery, the additive registry change `docs/ARCHITECTURE_REVIEW.md` §4.2 scheduled for exactly this version. CIF is **not here** (isolated to v0.4 deliberately: "mixing CIF with other work is how CIF eats a semester"). Scope authority remains MASTER_SPEC.md and the roadmap; this document decides *sequencing, packaging into milestones, and cut lines*.
 >
@@ -63,7 +63,7 @@ The format that motivated chunking: VASP MD trajectories, routinely 10⁴ frames
 3. **Error contract fixtures:** truncated frame block mid-file → recoverable `ParseError` with `recovery_hint="truncate_at_last_valid_frame"` (the v0.2 `truncate_corrupt_tail` scenario now has a second consumer); count/symbol mismatch in header → `ParseError`.
 4. **Golden + round-trips:** synthetic golden cases (fixed-cell, NpT per-frame-cell, single-frame degenerate) with manifests per v0.2 governance; identity round-trip **through the streaming path**; XDATCAR joins the two/three-hop matrix automatically via the registry (the v0.2 investment paying out: zero suite edits).
 
-**Done means:** golden + identity + error fixtures green; `chembridge convert XDATCAR --to extxyz` on a generated 10k-frame file completes within the M12 memory ceiling; the matrix has grown by one format with no test-suite edits.
+**Done means:** golden + identity + error fixtures green; `xtalate convert XDATCAR --to extxyz` on a generated 10k-frame file completes within the M12 memory ceiling; the matrix has grown by one format with no test-suite edits.
 **Dependencies:** M12. **Cut line:** exporter NpT breadth (fixed-cell export first, per-frame-cell export tracked) — never the per-frame-cell *parse* or the `timestep = None` honesty.
 
 ---
@@ -77,7 +77,7 @@ The richest format in Phase 1 — and the one whose worked example anchors the s
 1. **Parser/exporter, ASE-backed** (D7: ASE is the only scientific dependency), covering the format's breadth per Part 3 §3: positions/symbols/masses, cells, velocities, forces, energy, stress, charges, magnetic moments, constraints (ASE `FixAtoms` → `Constraint(kind="fixed_atoms_mask")`), per-frame `time`/`trajectory.timestep`, calculator name/parameters → `simulation.calculator` / `simulation.extra` (n.10).
 2. **The default-laundering suite**, the highest-value parser tests in the project (Part 8 §1.1), applied to ASE's inventions: default zero cell → `cell = None`; undeclared `pbc=(F,F,F)` → `None`; zero momenta → `velocities = None`. No parser defaulting, ever — the standing rule at its sternest, because ASE actively manufactures these values.
 3. **Version discipline** (roadmap §4's `.traj` drift risk): ASE pinned; the ASE version recorded in `Provenance` alongside `parser_version`, so a future pin bump that changes parse behavior is visible in every report. A canary test asserts the pinned version.
-4. **The spec's worked example, reproduced for real:** a committed generator builds `relax.traj` (10-frame water optimization, no cell); the Appendix A command line — `chembridge convert relax.traj --to poscar --recover frame_selection=last --recover missing_lattice=bounding_box,padding_ang=5.0 …` — reproduces the Part 4 §5 Conversion Report and Part 5 §6 Validation Report shapes end to end as a test. Until now those fixtures were hand-built; from M14 the spec's central example is *executable* (Part 10 §4.6 rule 4).
+4. **The spec's worked example, reproduced for real:** a committed generator builds `relax.traj` (10-frame water optimization, no cell); the Appendix A command line — `xtalate convert relax.traj --to poscar --recover frame_selection=last --recover missing_lattice=bounding_box,padding_ang=5.0 …` — reproduces the Part 4 §5 Conversion Report and Part 5 §6 Validation Report shapes end to end as a test. Until now those fixtures were hand-built; from M14 the spec's central example is *executable* (Part 10 §4.6 rule 4).
 5. Golden cases (rich all-fields trajectory; minimal molecule; laundering cases) with manifests; identity round-trip; automatic matrix membership.
 
 **Done means:** laundering suite green; worked-example test green byte-for-byte against the spec fixtures (modulo timestamps/ids); `.traj` identity round-trip green through the streaming interface where ASE's reader supports lazy access (documented fallback where it does not).
@@ -107,12 +107,12 @@ The additive registry change deferred from v0.1 by design (review §4.2: entry p
 
 **Deliverables**
 
-1. **`importlib.metadata` entry-point discovery** (`chembridge.parsers` / `chembridge.exporters` groups, Part 3 §7.1) *added to* the explicit-list registry — first-party formats stay explicitly registered; discovery is for third parties. Declaration validation at load: a plugin declaring capabilities against unknown canonical paths is rejected with a readable error, not silently accepted.
+1. **`importlib.metadata` entry-point discovery** (`xtalate.parsers` / `xtalate.exporters` groups, Part 3 §7.1) *added to* the explicit-list registry — first-party formats stay explicitly registered; discovery is for third parties. Declaration validation at load: a plugin declaring capabilities against unknown canonical paths is rejected with a readable error, not silently accepted.
 2. **Discovery proof:** a minimal in-repo test plugin (separate installable package under `tests/`) is discovered from its entry point, sniffs, converts, and joins the round-trip matrix — the P6 promise demonstrated, and the seed of v1.0's reference plugin.
 3. **Docs:** the add-a-format guide updated for entry-point packaging, carrying the R12 honesty clause verbatim — the SDK remains unstable until v1.0; plugin authors before then accept interface churn.
 4. **Release:** `CHANGELOG.md`; README scope statement updated (six of seven Phase 1 formats; CIF named as v0.4); version bump; **tag and publish v0.3** (PyPI + GitHub release).
 
-**Done means:** `pip install` of the test plugin wheel into a clean env makes its format appear in `chembridge capabilities` with no code changes; a bad-declaration plugin fails loudly at registry load.
+**Done means:** `pip install` of the test plugin wheel into a clean env makes its format appear in `xtalate capabilities` with no code changes; a bad-declaration plugin fails loudly at registry load.
 **Dependencies:** M12 only (registry). **Cut line:** this whole milestone's discovery half slips to v0.4 before anything in M12–M15 is cut; the release half (item 4) is never cut — v0.3 tags when M15 is green regardless.
 
 ---
@@ -141,8 +141,8 @@ M14 may interleave with M13/M15 across weekends; the table's cumulative column a
 
 Before tagging v0.3, from a clean environment with the built artifact:
 
-1. `pip install chembridge`; `chembridge capabilities` lists six formats (XYZ, extXYZ, POSCAR, CONTCAR, XDATCAR, ASE traj).
-2. Generate the 10k-frame XDATCAR with the committed script; `chembridge convert XDATCAR --to extxyz` completes with peak memory inside the documented ceiling, and the Conversion + Validation Reports satisfy the completeness invariant.
+1. `pip install xtalate`; `xtalate capabilities` lists six formats (XYZ, extXYZ, POSCAR, CONTCAR, XDATCAR, ASE traj).
+2. Generate the 10k-frame XDATCAR with the committed script; `xtalate convert XDATCAR --to extxyz` completes with peak memory inside the documented ceiling, and the Conversion + Validation Reports satisfy the completeness invariant.
 3. Run the spec's own worked example verbatim (Appendix A command on a generated `relax.traj`) and diff the reports against the Part 4 §5 / Part 5 §6 fixtures.
 4. Laundering spot-check: a `.traj` with ASE's default zero cell inspects as `cell: absent` — never a fabricated box.
 5. One full nightly run (n×n matrix, extended properties, audit) green on the release commit.

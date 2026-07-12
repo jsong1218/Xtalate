@@ -21,9 +21,9 @@ import io
 import json
 from typing import Any
 
-from chembridge.schema import CanonicalObject
-from chembridge.sdk import ParseResult
-from chembridge.sdk.plugins import ParserPlugin
+from xtalate.schema import CanonicalObject
+from xtalate.sdk import ParseResult
+from xtalate.sdk.plugins import ParserPlugin
 
 
 def parse_bytes(parser: ParserPlugin, data: bytes, *, filename: str | None = None) -> ParseResult:

@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from chembridge.discovery import DiscoveryEngine, DiscoveryReport
-from chembridge.registry import default_registry
-from chembridge.sdk import CapabilityLevel, ParseError
+from xtalate.discovery import DiscoveryEngine, DiscoveryReport
+from xtalate.registry import default_registry
+from xtalate.sdk import CapabilityLevel, ParseError
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 WATER = GOLDEN / "xyz" / "water-traj" / "water_traj.xyz"
@@ -122,8 +122,8 @@ def test_mixed_status_lists_present_frames() -> None:
 
     import numpy as np
 
-    from chembridge.discovery.engine import DiscoveryEngine as _Engine
-    from chembridge.schema import Dynamics
+    from xtalate.discovery.engine import DiscoveryEngine as _Engine
+    from xtalate.schema import Dynamics
 
     reg = default_registry()
     base = reg.get_parser("xyz").parse(io.BytesIO(WATER.read_bytes()), filename="w.xyz").canonical

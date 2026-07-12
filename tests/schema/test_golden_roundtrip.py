@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from chembridge.schema import CanonicalObject
+from xtalate.schema import CanonicalObject
 
 GOLDEN = Path(__file__).parent.parent / "golden" / "schema"
 CASES = ["xyz_2frame_3atom.json", "poscar_nacl.json"]

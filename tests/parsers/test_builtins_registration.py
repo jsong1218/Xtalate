@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from chembridge.capabilities import Registry
-from chembridge.discovery import Sniffer
-from chembridge.exporters import builtin_exporters
-from chembridge.parsers import builtin_parsers
+from xtalate.capabilities import Registry
+from xtalate.discovery import Sniffer
+from xtalate.exporters import builtin_exporters
+from xtalate.parsers import builtin_parsers
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 
