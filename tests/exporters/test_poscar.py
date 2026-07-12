@@ -39,8 +39,11 @@ def _object(symbols: list[str], *, constraints: list[Constraint] | None = None) 
             )
         ],
         provenance=build_provenance(
-            format_id="test", filename=None, original_coordinate_system="cartesian",
-            source_units={}, parse_notes=[],
+            format_id="test",
+            filename=None,
+            original_coordinate_system="cartesian",
+            source_units={},
+            parse_notes=[],
         ),
     )
 

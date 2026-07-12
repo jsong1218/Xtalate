@@ -62,9 +62,11 @@ def test_interleaved_species_to_poscar_passes_validation() -> None:
     # H O H → POSCAR reorders to H H O. The exporter's atom_permutation lets validation compare
     # under that grouping; without it species_preservation/positions_rmsd false-fail.
     reg = _registry()
-    source = reg.get_parser("xyz").parse(
-        io.BytesIO(b"3\nwater-ish\nH 0 0 0\nO 0 0 1\nH 0 1 1\n"), filename="t.xyz"
-    ).canonical
+    source = (
+        reg.get_parser("xyz")
+        .parse(io.BytesIO(b"3\nwater-ish\nH 0 0 0\nO 0 0 1\nH 0 1 1\n"), filename="t.xyz")
+        .canonical
+    )
     result = ConversionEngine(reg).convert(
         source,
         source_format_id="xyz",
