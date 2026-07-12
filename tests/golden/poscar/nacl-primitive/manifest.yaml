@@ -11,5 +11,5 @@ origin:
 notes: >-
   Tests fractional→Cartesian conversion at the parser boundary (§4), format-defined
   pbc=(T,T,T) (§3 n.3), the title-line carry-through into
-  user_metadata.custom_global['poscar:comment'], and the scaling factor recorded in
-  simulation.extra['poscar:scaling_factor'].
+  user_metadata.custom_global['poscar:comment'], and the scaling factor recorded as a
+  provenance parse-note (folded into the lattice, §4; DECISIONS.md D34).

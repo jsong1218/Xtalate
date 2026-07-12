@@ -22,7 +22,7 @@ from typing import BinaryIO
 import numpy as np
 from pydantic import JsonValue
 
-from chembridge.parsers._common import build_provenance
+from chembridge.parsers._common import build_provenance, decode_text
 from chembridge.schema import (
     AtomsBlock,
     CanonicalObject,
@@ -30,7 +30,6 @@ from chembridge.schema import (
     Constraint,
     Dynamics,
     Frame,
-    SimulationMetadata,
     UserMetadata,
 )
 from chembridge.schema.elements import is_valid_symbol
@@ -45,7 +44,9 @@ from chembridge.sdk import (
 )
 
 _COMMENT_KEY = "poscar:comment"
-_SCALE_KEY = "poscar:scaling_factor"
+# The scaling factor is folded into the lattice (§4) and recorded as a provenance note, not as a
+# presence-bearing field (DECISIONS.md D34) — see the parse() assembly for the rationale.
+_SCALE_NOTE_PREFIX = "scaling factor folded into lattice vectors (§4); source value: "
 _PREDICTOR_KEY = "contcar:predictor_corrector"
 _PBC_NOTE = (
     "pbc set to (true,true,true) per POSCAR format definition (format-defined, not assumed)."
@@ -154,7 +155,7 @@ class PoscarParser(ParserPlugin):
     # -- parse -------------------------------------------------------------------------
 
     def parse(self, stream: BinaryIO, *, filename: str | None) -> ParseResult:
-        lines = stream.read().decode("utf-8").splitlines()
+        lines = decode_text(stream.read(), format_id=self.format_id).splitlines()
         if len(lines) < 7:
             raise _error("POSCAR_MALFORMED", "file is too short to be a POSCAR (need >= 7 lines)")
 
@@ -238,7 +239,24 @@ class PoscarParser(ParserPlugin):
         if cursor >= len(lines):
             raise _error("POSCAR_MALFORMED", "missing coordinate-mode line", location="end of file")
         mode_char = lines[cursor].strip()[:1].lower()
-        fractional = mode_char in ("d",)  # 'Direct' == fractional; 'C'/'K' == Cartesian
+        # VASP rule (§4): a mode line beginning with C/c/K/k is Cartesian; *everything else* —
+        # 'Direct', 'Fractional', a blank line, or garbage — is Direct (fractional). Keying only
+        # off 'd' would silently misread a fractional file as Cartesian Å (undetectable corruption),
+        # so Cartesian is the explicit case and fractional is the default.
+        fractional = mode_char not in ("c", "k")
+        if mode_char not in ("c", "k", "d"):
+            issues.append(
+                ParseIssue(
+                    severity="warning",
+                    code="POSCAR_AMBIGUOUS_COORDINATE_MODE",
+                    message=(
+                        f"coordinate-mode line {lines[cursor]!r} does not begin with C/K "
+                        "(Cartesian) or D (Direct); read as Direct/fractional per VASP's default "
+                        "rule (§4)"
+                    ),
+                    location=f"line {cursor + 1}",
+                )
+            )
         cursor += 1
 
         # --- coordinates (+ optional selective-dynamics flags) ------------------------
@@ -310,6 +328,16 @@ class PoscarParser(ParserPlugin):
 
         # --- optional velocity / predictor-corrector tail (CONTCAR) -------------------
         velocities, predictor = self._parse_tail(lines, cursor, n_atoms)
+        parse_notes = [coord_note, _PBC_NOTE, f"{_SCALE_NOTE_PREFIX}{scale_token}"]
+        if velocities is not None:
+            # VASP writes the velocity block in Å/fs — already the canonical velocity unit (§3.1) —
+            # so it is stored verbatim, no conversion. Annotate the source unit and note the block
+            # so a reader can see the velocities came from the file, not from a default (§2 rule 3).
+            source_units["velocities"] = "angstrom/fs"
+            parse_notes.append(
+                "velocity block read from the CONTCAR tail in Å/fs "
+                "(canonical unit; stored verbatim)."
+            )
         custom_global: dict[str, JsonValue] = {_COMMENT_KEY: title}
         if predictor is not None:
             custom_global[_PREDICTOR_KEY] = predictor
@@ -328,12 +356,19 @@ class PoscarParser(ParserPlugin):
             velocities=None if velocities is None else np.asarray(velocities, dtype=float),
             constraints=constraints,
         )
+        # The scaling factor is *already folded into* the returned lattice vectors (§4), so it is
+        # not independent source information the target must separately carry — per the routing
+        # rule (MASTER_SPEC §6.1: simulation.extra holds it "only if not already reflected in the
+        # reconstructed lattice"), it is recorded in provenance (excluded from field presence),
+        # not simulation.extra. Storing it in simulation.extra made every POSCAR→POSCAR conversion
+        # fail absence-conformance, since no exporter can carry simulation.* yet the re-parse always
+        # re-derives a scale (DECISIONS.md D34).
         provenance = build_provenance(
             format_id=self.format_id,
             filename=filename,
             original_coordinate_system=coord_system,
             source_units=source_units,
-            parse_notes=[coord_note, _PBC_NOTE],
+            parse_notes=parse_notes,
         )
         canonical = CanonicalObject(
             frames=[
@@ -345,7 +380,6 @@ class PoscarParser(ParserPlugin):
                 )
             ],
             trajectory=None,  # a POSCAR is a single structure, no time axis (§3.2)
-            simulation=SimulationMetadata(extra={_SCALE_KEY: scale_token}),
             provenance=provenance,
             user_metadata=UserMetadata(custom_global=custom_global),
         )

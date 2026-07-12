@@ -26,7 +26,7 @@ from typing import BinaryIO
 import numpy as np
 from pydantic import JsonValue
 
-from chembridge.parsers._common import build_provenance
+from chembridge.parsers._common import build_provenance, decode_text
 from chembridge.schema import (
     AtomsBlock,
     CanonicalObject,
@@ -101,7 +101,7 @@ class XyzParser(ParserPlugin):
         return score
 
     def parse(self, stream: BinaryIO, *, filename: str | None) -> ParseResult:
-        lines = stream.read().decode("utf-8").splitlines()
+        lines = decode_text(stream.read(), format_id=FORMAT_ID).splitlines()
         frames: list[Frame] = []
         comments: list[JsonValue] = []
         i = 0

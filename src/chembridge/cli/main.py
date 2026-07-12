@@ -30,6 +30,7 @@ from chembridge.conversion import (
     capability_path,
 )
 from chembridge.discovery import DiscoveryEngine
+from chembridge.recovery import RecoveryError
 from chembridge.registry import default_registry
 from chembridge.sdk import ParseError
 from chembridge.validation import (
@@ -76,6 +77,11 @@ def main(argv: list[str] | None = None) -> int:
         for issue in exc.issues:
             print(f"parse error [{issue.code}]: {issue.message}", file=sys.stderr)
         return EXIT_PARSE_ERROR
+    except RecoveryError as exc:
+        # An invalid --recover preset (a bad choice or missing parameter) is a caller error, not
+        # a refusal: surface it as a clean usage message, never a traceback (per the engine docs).
+        print(f"error: invalid --recover preset: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     except _UsageError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_USAGE
@@ -141,7 +147,11 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
         if result.validation is not None:
             print()
             print(render.render_validation(result.validation))
-        _emit_output(args, result.output)
+
+    # The output file is written regardless of --json — the reports and the artifact are
+    # independent outputs. In --json mode only the stdout dump is suppressed (it would corrupt the
+    # JSON stream); the file-write notice always goes to stderr so stdout stays pure.
+    _emit_output(args, result.output, human=not args.json)
 
     return _convert_exit_code(report, result.validation, args.mode)
 
@@ -328,13 +338,16 @@ def _convert_exit_code(
     return EXIT_OK
 
 
-def _emit_output(args: argparse.Namespace, output: bytes | None) -> None:
+def _emit_output(args: argparse.Namespace, output: bytes | None, *, human: bool) -> None:
     if output is None:
         return
     if args.output:
         Path(args.output).write_bytes(output)
-        print(f"\nWrote {args.to} output to {args.output}")
-    else:
+        # Status line to stderr so a --json run keeps stdout as clean JSON.
+        print(f"Wrote {args.to} output to {args.output}", file=sys.stderr)
+    elif human:
+        # No -o and human mode: dump the converted bytes to stdout for a quick look. In --json mode
+        # with no -o there is nowhere clean to put the artifact, so it is simply not emitted.
         print(f"\n----- {args.to} output -----")
         sys.stdout.write(output.decode())
 

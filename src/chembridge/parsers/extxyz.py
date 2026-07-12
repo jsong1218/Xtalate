@@ -44,7 +44,7 @@ from ase import units as ase_units
 from ase.io import read as ase_read
 from pydantic import JsonValue
 
-from chembridge.parsers._common import build_provenance
+from chembridge.parsers._common import build_provenance, decode_text
 from chembridge.schema import (
     AtomsBlock,
     CanonicalObject,
@@ -142,7 +142,7 @@ class ExtxyzParser(ParserPlugin):
         return 0.2  # parses as XYZ but shows no extXYZ markers: yield to the plain parser
 
     def parse(self, stream: BinaryIO, *, filename: str | None) -> ParseResult:
-        text = stream.read().decode("utf-8")
+        text = decode_text(stream.read(), format_id=FORMAT_ID)
         if text.strip() == "":
             raise _error("EXTXYZ_EMPTY", "file contains no frames")
         raw_comments = _frame_comment_lines(text.splitlines())
@@ -200,7 +200,10 @@ class ExtxyzParser(ParserPlugin):
                 "pbc not declared for a lattice-bearing frame; set to (true,true,true) per the "
                 "extXYZ convention that a Lattice implies full periodicity (recorded, not assumed)."
             )
-        if any(atoms.get_velocities().any() for atoms in atoms_list if atoms.has("momenta")):
+        if any(atoms.has("momenta") for atoms in atoms_list):
+            # Note whenever a momenta column was present — including an explicit all-zero one (a
+            # source stating the atoms are at rest is information, §2 rule 3), not only when some
+            # velocity is nonzero.
             parse_notes.append(
                 "velocities converted from ASE internal units to Å/fs (source 'momenta' column)."
             )
@@ -307,7 +310,15 @@ class ExtxyzParser(ParserPlugin):
                         ),
                     )
                 )
-            columns[f"{_KEY_PREFIX}{name}"] = values.astype(float, copy=False)
+            # Numeric columns are stored as a float64 ndarray (ArrayNx); non-numeric columns (a
+            # string ``:S:`` property such as a per-atom label) are carried as a length-N list of
+            # JSON scalars — the second arm of the custom_per_atom union (Part 2 §3.10). Forcing a
+            # string column through astype(float) previously raised a raw ValueError, escaping the
+            # ParseResult/ParseError contract (§5).
+            if np.issubdtype(values.dtype, np.number):
+                columns[f"{_KEY_PREFIX}{name}"] = values.astype(float, copy=False)
+            else:
+                columns[f"{_KEY_PREFIX}{name}"] = [_as_json(v) for v in values]
         return columns
 
     @staticmethod

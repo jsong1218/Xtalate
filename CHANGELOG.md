@@ -6,6 +6,45 @@ All notable changes to ChemBridge are recorded here. The format follows
 tracked separately from the package version and reaches `1.0.0` only in the v1.0 release
 (`docs/MASTER_SPEC.md` Part 2 §5); v0.1 objects carry `schema_version = "0.1.0"`.
 
+## [Unreleased]
+
+Post-v0.1 correctness pass: eight defects found by a review that exercised the shipped code
+against real inputs. Each was reproduced, fixed, and pinned with a regression test.
+
+### Fixed
+
+- **POSCAR/CONTCAR conversions no longer false-fail validation.** The scaling factor is now
+  recorded as a `provenance` parse-note instead of `simulation.extra` (it is already folded into
+  the lattice vectors, §4). Storing it in `simulation.extra` — which no exporter can carry — made
+  *every* POSCAR→POSCAR/CONTCAR conversion fail `absence_conformance`, since the re-parse always
+  re-derives a scale (`docs/DECISIONS.md` D34).
+- **POSCAR exporter reports its element-grouping permutation** (`atom_permutation`). Any
+  element-interleaved source (e.g. XYZ `H O H`) to POSCAR previously false-failed
+  `species_preservation`/`positions_rmsd` as "chemistry lost" because validation compared under
+  source order while the exporter had regrouped by element.
+- **POSCAR coordinate-mode line now follows VASP semantics** — only `C/c/K/k` is Cartesian; every
+  other line (`Direct`, `Fractional`, blank, garbage) is fractional, with an ambiguous line flagged
+  (`POSCAR_AMBIGUOUS_COORDINATE_MODE`). The prior logic misread any non-`d` mode as Cartesian Å —
+  silent scientific corruption.
+- **Text parsers honor the error contract on non-UTF-8 input.** XYZ, extXYZ, and POSCAR now raise a
+  structured `ParseError` (`*_ENCODING_ERROR`) instead of a raw `UnicodeDecodeError`.
+- **extXYZ string-typed per-atom columns** (a `:S:` property such as a per-atom label) are carried
+  as a JSON-scalar list instead of crashing on `astype(float)`.
+- **CLI `convert --json -o PATH` writes the output file.** It previously reported success while
+  silently writing nothing; the report JSON and the artifact are now independent outputs, and the
+  file-write notice goes to stderr so stdout stays pure JSON.
+- **Invalid `--recover` presets** exit cleanly (usage error) instead of printing a traceback.
+- **POSCAR exporter rejects unrepresentable constraints** with a clear error instead of an
+  `IndexError` when handed a non-`selective_dynamics` constraint.
+
+### Changed
+
+- **Honest-loss annotations tightened.** An extXYZ `momenta` column now records the
+  "velocities converted" parse-note even when it is explicitly all-zero (a source stating the atoms
+  are at rest is information, §2 rule 3), and a CONTCAR velocity tail now annotates
+  `source_units["velocities"] = "angstrom/fs"` with a parse-note, rather than storing the block
+  with its unit left implicit.
+
 ## [0.1.0] — 2026-07-10
 
 First release: the complete pure-Python **library + CLI** core. It converts between four
@@ -44,4 +83,5 @@ byte of scientific information kept, dropped, or fabricated.
 - Recovery is preset-only; tolerance profiles are the three named ones (custom tables are later
   seams).
 
+[Unreleased]: https://github.com/jsong1218/ChemBridge/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/jsong1218/ChemBridge/releases/tag/v0.1.0

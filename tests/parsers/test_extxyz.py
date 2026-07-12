@@ -203,3 +203,21 @@ def test_malformed_file_raises_parse_error() -> None:
     with pytest.raises(ParseError) as exc:
         parse_bytes(_parser(), b"5\nProperties=species:S:1:pos:R:3\nO 0 0 0\n")
     assert exc.value.issues[0].code == "EXTXYZ_PARSE_ERROR"
+
+
+def test_non_utf8_input_is_parse_error() -> None:
+    with pytest.raises(ParseError) as exc:
+        parse_bytes(_parser(), b'2\nLattice="\xff" x\nH 0 0 0\nH 1 1 1\n')
+    assert exc.value.issues[0].code == "EXTXYZ_ENCODING_ERROR"
+
+
+def test_string_per_atom_column_carried_as_list() -> None:
+    # A string-typed Properties column (``:S:``) has no numeric home; it is carried as a length-N
+    # list of JSON scalars (the second arm of the custom_per_atom union, §3.10), not forced through
+    # astype(float) — which previously raised a raw ValueError, escaping the parse contract.
+    source = (
+        b'2\nLattice="4 0 0 0 4 0 0 0 4" Properties=species:S:1:pos:R:3:label:S:1\n'
+        b"Si 0 0 0 core\nC 1 1 1 shell\n"
+    )
+    result = parse_bytes(_parser(), source)
+    assert result.canonical.user_metadata.custom_per_atom["extxyz:label"] == ["core", "shell"]

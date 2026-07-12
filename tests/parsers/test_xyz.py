@@ -94,6 +94,13 @@ def test_non_numeric_coordinate_raises() -> None:
     assert exc.value.issues[0].code == "XYZ_MALFORMED_COORDINATE"
 
 
+def test_non_utf8_input_is_parse_error() -> None:
+    # Non-text bytes must fail through the ParseError contract (§5), not a raw UnicodeDecodeError.
+    with pytest.raises(ParseError) as exc:
+        parse_bytes(_parser(), b"2\n\xff\xfe\nH 0 0 0\nH 1 1 1\n")
+    assert exc.value.issues[0].code == "XYZ_ENCODING_ERROR"
+
+
 def test_sniff_recognises_plain_xyz() -> None:
     score = _parser().sniff((GOLDEN / "water_traj.xyz").read_bytes(), "water_traj.xyz")
     assert score >= 0.9

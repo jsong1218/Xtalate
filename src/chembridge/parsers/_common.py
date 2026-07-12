@@ -13,6 +13,33 @@ from datetime import UTC, datetime
 
 from chembridge import __version__
 from chembridge.schema import ConversionRecord, Provenance
+from chembridge.sdk import ParseError, ParseIssue
+
+
+def decode_text(data: bytes, *, format_id: str) -> str:
+    """Decode a source file's bytes as UTF-8, turning a decode failure into a ``ParseError`` (§5).
+
+    A non-text file handed to a text parser (directly or via a ``--format`` override) must fail
+    through the same structured error contract as any other malformed input — a raw
+    ``UnicodeDecodeError`` would escape the ParseResult/ParseError boundary and surface as an
+    uncaught traceback in the CLI and API. The offending byte offset is named so the report is
+    actionable."""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ParseError(
+            [
+                ParseIssue(
+                    severity="error",
+                    code=f"{format_id.upper()}_ENCODING_ERROR",
+                    message=(
+                        f"file is not valid UTF-8 text (byte 0x{data[exc.start]:02x} at offset "
+                        f"{exc.start}); {format_id} is a text format"
+                    ),
+                    location=f"byte {exc.start}",
+                )
+            ]
+        ) from exc
 
 
 def utc_now() -> str:
