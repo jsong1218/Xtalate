@@ -87,8 +87,11 @@ def test_fractional_converted_to_cartesian() -> None:
     assert obj.provenance.original_coordinate_system == "fractional"
     assert obj.frames[0].cell is not None
     assert obj.frames[0].cell.pbc == (True, True, True)  # format-defined (§3 n.3)
-    assert obj.simulation is not None
-    assert obj.simulation.extra == {"poscar:scaling_factor": "1.0"}
+    # The scaling factor is folded into the lattice (§4), so it is recorded as a provenance note,
+    # not as a presence-bearing simulation.extra field (DECISIONS.md D34): storing it there made
+    # every POSCAR→POSCAR conversion false-fail absence-conformance.
+    assert obj.simulation is None
+    assert any("scaling factor" in note and "1.0" in note for note in obj.provenance.parse_notes)
     assert obj.user_metadata.custom_global == {"poscar:comment": "NaCl primitive test"}
 
 
@@ -97,6 +100,35 @@ def test_cartesian_mode_scales_positions() -> None:
     assert obj.provenance.original_coordinate_system == "cartesian"
     assert np.array_equal(obj.frames[0].atoms.positions[1], [2.0, 2.0, 2.0])
     assert obj.frames[0].atoms.symbols == ["Si", "Si"]
+
+
+def test_non_cartesian_mode_line_is_read_as_direct() -> None:
+    # VASP rule (§4): only C/c/K/k is Cartesian; every other mode line — here 'Fractional' — is
+    # Direct. Keying only off 'd' would silently misread fractional 0.5 as 0.5 Å (undetectable
+    # corruption). The ambiguous mode line is flagged, not swallowed.
+    fractional = b"t\n1.0\n4 0 0\n0 4 0\n0 0 4\nSi\n1\nFractional\n0.5 0.5 0.5\n"
+    result = parse_bytes(make_poscar_parser(), fractional)
+    obj = result.canonical
+    assert np.array_equal(obj.frames[0].atoms.positions[0], [2.0, 2.0, 2.0])
+    assert obj.provenance.original_coordinate_system == "fractional"
+    assert any(i.code == "POSCAR_AMBIGUOUS_COORDINATE_MODE" for i in result.issues)
+
+
+def test_cartesian_k_prefix_mode_line() -> None:
+    # A mode line beginning with 'K' (kartesian, a VASP synonym) is Cartesian, no warning.
+    kart = b"t\n1.0\n4 0 0\n0 4 0\n0 0 4\nSi\n1\nKartesian\n1.5 1.5 1.5\n"
+    result = parse_bytes(make_poscar_parser(), kart)
+    assert np.array_equal(result.canonical.frames[0].atoms.positions[0], [1.5, 1.5, 1.5])
+    assert result.canonical.provenance.original_coordinate_system == "cartesian"
+    assert result.issues == []
+
+
+def test_non_utf8_input_is_parse_error() -> None:
+    # A non-text file handed to the text parser must fail through the ParseError contract (§5),
+    # not raise a raw UnicodeDecodeError.
+    with pytest.raises(ParseError) as exc:
+        parse_bytes(make_poscar_parser(), b"t\n1.0\n\xff 0 0\n0 4 0\n0 0 4\nSi\n1\nDirect\n0 0 0\n")
+    assert exc.value.issues[0].code == "POSCAR_ENCODING_ERROR"
 
 
 def test_negative_scale_is_target_volume() -> None:
@@ -163,6 +195,9 @@ def test_velocity_and_predictor_tail_carried_through() -> None:
     assert np.array_equal(obj.frames[0].dynamics.velocities[0], [0.1, 0.2, 0.3])
     assert "contcar:predictor_corrector" in obj.user_metadata.custom_global
     assert any(i.code == "POSCAR_PREDICTOR_CORRECTOR_CARRIED" for i in result.issues)
+    # A velocity block came from the file, so its unit is annotated and noted (not left implicit).
+    assert obj.provenance.source_units.get("velocities") == "angstrom/fs"
+    assert any("velocity block read from the CONTCAR tail" in n for n in obj.provenance.parse_notes)
 
 
 def test_sniff_exact_names() -> None:

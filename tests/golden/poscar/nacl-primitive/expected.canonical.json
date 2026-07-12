@@ -67,18 +67,7 @@
     }
   ],
   "trajectory": null,
-  "simulation": {
-    "source_code": null,
-    "calculator": null,
-    "xc_functional": null,
-    "pseudopotentials": null,
-    "thermostat": null,
-    "md_ensemble": null,
-    "temperature": null,
-    "extra": {
-      "poscar:scaling_factor": "1.0"
-    }
-  },
+  "simulation": null,
   "provenance": {
     "source_filename": "POSCAR",
     "source_format": "poscar",
@@ -89,7 +78,8 @@
     "original_coordinate_system": "fractional",
     "parse_notes": [
       "Direct coordinates converted to Cartesian using lattice matrix (\u00a74).",
-      "pbc set to (true,true,true) per POSCAR format definition (format-defined, not assumed)."
+      "pbc set to (true,true,true) per POSCAR format definition (format-defined, not assumed).",
+      "scaling factor folded into lattice vectors (\u00a74); source value: 1.0"
     ],
     "history": [
       {

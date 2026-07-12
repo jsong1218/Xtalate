@@ -44,6 +44,44 @@ def _parse(reg: Registry, format_id: str, path: Path) -> CanonicalObject:
 # --- happy path -----------------------------------------------------------------------
 
 
+def test_poscar_to_poscar_passes_validation() -> None:
+    # Identity conversion. The scaling factor is a provenance note, not a simulation.extra field
+    # (D34) — storing it there made this false-fail absence-conformance, since the re-parse always
+    # re-derives a scale but no exporter carries simulation.*.
+    reg = _registry()
+    source = _parse(reg, "poscar", GOLDEN / "poscar" / "nacl-primitive" / "POSCAR")
+    result = ConversionEngine(reg).convert(
+        source, source_format_id="poscar", target_format_id="poscar", source_filename="POSCAR"
+    )
+    assert result.report.status == "completed"
+    assert result.validation is not None
+    assert result.validation.status == "passed"
+
+
+def test_interleaved_species_to_poscar_passes_validation() -> None:
+    # H O H → POSCAR reorders to H H O. The exporter's atom_permutation lets validation compare
+    # under that grouping; without it species_preservation/positions_rmsd false-fail.
+    reg = _registry()
+    source = (
+        reg.get_parser("xyz")
+        .parse(io.BytesIO(b"3\nwater-ish\nH 0 0 0\nO 0 0 1\nH 0 1 1\n"), filename="t.xyz")
+        .canonical
+    )
+    result = ConversionEngine(reg).convert(
+        source,
+        source_format_id="xyz",
+        target_format_id="poscar",
+        recovery_choices={
+            "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}}
+        },
+    )
+    assert result.report.status == "completed"
+    assert result.validation is not None
+    assert result.validation.status == "passed"
+    species = [c for c in result.validation.checks if c.check_id == "species_preservation"]
+    assert species and species[0].status == "pass"
+
+
 def test_extxyz_to_poscar_completes_and_output_reparses() -> None:
     reg = _registry()
     engine = ConversionEngine(reg)

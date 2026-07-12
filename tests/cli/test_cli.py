@@ -109,6 +109,41 @@ def test_convert_json_emits_both_reports(capsys: pytest.CaptureFixture[str]) -> 
     assert payload["validation_report"]["status"] == "passed"
 
 
+def test_convert_json_with_output_still_writes_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # --json and -o are independent outputs: the reports go to stdout as JSON, the artifact to the
+    # file. --json previously suppressed the file write entirely (silent no-op, exit 0). stdout must
+    # stay pure JSON (the "Wrote …" notice goes to stderr).
+    out = tmp_path / "POSCAR"
+    code = main(["convert", WATER, "--to", "poscar", *_RECOVER, "-o", str(out), "--json"])
+    assert code == EXIT_OK
+    assert out.exists() and out.read_bytes()
+    captured = capsys.readouterr()
+    json.loads(captured.out)  # stdout parses as JSON — no notice leaked in
+    assert "Wrote" in captured.err
+
+
+def test_convert_bad_recover_choice_is_clean_usage_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # An unoffered recovery choice is a caller error → clean exit 1, no traceback.
+    code = main(
+        [
+            "convert",
+            WATER,
+            "--to",
+            "poscar",
+            "--recover",
+            "frame_selection=last",
+            "--recover",
+            "missing_lattice=bogus",
+        ]
+    )
+    assert code == EXIT_USAGE
+    assert "Traceback" not in capsys.readouterr().err
+
+
 def test_convert_bad_recover_spec_is_usage_error() -> None:
     assert main(["convert", WATER, "--to", "poscar", "--recover", "frame_selection"]) == EXIT_USAGE
 

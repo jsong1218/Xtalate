@@ -60,8 +60,10 @@ def test_poscar_values_and_presence() -> None:
     assert np.array_equal(obj.frames[0].atoms.positions[1], [2.82, 2.82, 2.82])
     assert obj.provenance.original_coordinate_system == "fractional"
 
-    assert obj.simulation is not None
-    assert obj.simulation.extra == {"poscar:scaling_factor": "1.0"}  # structural param (§6.1)
+    # Scaling factor is folded into the lattice (§4) and recorded as a provenance note, not a
+    # presence-bearing simulation.extra field (DECISIONS.md D34).
+    assert obj.simulation is None
+    assert any("scaling factor" in note and "1.0" in note for note in obj.provenance.parse_notes)
     assert obj.user_metadata.custom_global == {"poscar:comment": "NaCl primitive test"}  # title
 
     pm = obj.field_presence()

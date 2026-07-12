@@ -34,6 +34,28 @@ def _fmt(x: float) -> str:
     return repr(float(x))
 
 
+def _selective_dynamics_mask(constraints: list, n_atoms: int) -> list[list[bool]]:  # type: ignore[type-arg]
+    """The per-atom T/F flag rows for a selective-dynamics block. POSCAR can only express a single
+    per-axis fixed-atom mask (the exporter's ``dynamics.constraints`` capability is PARTIAL — Part 3
+    §4.2), so a constraint list that is not exactly one ``selective_dynamics`` entry carrying an
+    N-row mask cannot be written and is refused here rather than silently mis-emitted (P1). The
+    Conversion Engine's pre-flight already reports any constraint the target cannot hold; this guard
+    is the exporter's own contract check for objects handed to it directly."""
+    if len(constraints) != 1 or constraints[0].kind != "selective_dynamics":
+        kinds = [c.kind for c in constraints]
+        raise ValueError(
+            "POSCAR can only write a single 'selective_dynamics' per-atom mask; cannot represent "
+            f"constraints {kinds} (Part 3 §4.2 — dynamics.constraints is PARTIAL)"
+        )
+    raw = constraints[0].parameters.get("mask", [])
+    mask = [list(m) for m in raw]
+    if len(mask) != n_atoms:
+        raise ValueError(
+            f"selective_dynamics mask has {len(mask)} rows but the frame has {n_atoms} atoms"
+        )
+    return mask
+
+
 def _grouping(symbols: list[str]) -> tuple[list[str], list[int], list[int]]:
     """Group atoms by element in first-occurrence order (POSCAR requires one element's atoms to be
     contiguous). Returns ``(order, permutation, counts)`` where ``order`` is the element sequence,
@@ -61,6 +83,15 @@ class PoscarExporter(ExporterPlugin):
     def __init__(self, *, format_id: str = "poscar") -> None:
         self.format_id = format_id
         self.format_name = "VASP POSCAR" if format_id == "poscar" else "VASP CONTCAR"
+
+    def atom_permutation(self, canonical: CanonicalObject) -> list[int] | None:
+        """The element-grouping reorder this exporter applies on write (Part 5 §2). POSCAR groups
+        atoms by element in first-occurrence order, so the Validation Engine must compare species
+        and positions under the *same* grouping ``export`` writes — reconstructed here from the
+        one ``_grouping`` both call, so the two can never disagree. Returns ``None`` when the
+        grouping is already the identity (source order needs no reordering)."""
+        permutation = _grouping(canonical.frames[0].atoms.symbols)[1]
+        return None if permutation == list(range(len(permutation))) else permutation
 
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
         if len(canonical.frames) != 1:
@@ -96,9 +127,7 @@ class PoscarExporter(ExporterPlugin):
         if constraints is not None:
             out.append("Selective dynamics")
             if constraints:
-                # Exactly one selective_dynamics constraint carrying a per-atom mask.
-                raw = constraints[0].parameters.get("mask", [])
-                mask_by_atom = [list(m) for m in raw]
+                mask_by_atom = _selective_dynamics_mask(constraints, len(atoms.symbols))
             else:
                 mask_by_atom = [[True, True, True] for _ in atoms.symbols]
 
