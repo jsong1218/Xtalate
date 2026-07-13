@@ -12,10 +12,17 @@ types (``AppliedAssumption``, ``SuppliedField``, ``FrameDrop``); the ``Conversio
 layer) maps them onto ``Assumption``/``SuppliedEntry``/``RemovedEntry`` for the report. It depends
 only on ``schema``.
 
-**Dependency ordering (Part 4 §3.3).** ``frame_selection`` is resolved before ``missing_lattice``
-because a ``bounding_box`` lattice is computed on the *selected* frame's positions. Assumptions are
-numbered ``A1, A2, …`` in application order, matching the worked example (A1 = frame_selection,
-A2 = missing_lattice; Part 4 §5).
+**Dependency ordering (Part 4 §3.3).** Scenarios resolve in a fixed dependency order, not the order
+they were detected: ``frame_selection`` first (a ``bounding_box`` lattice is computed on the
+*selected* frame's positions), then ``constraint_representation`` (frame-independent), then
+``missing_lattice``. Assumptions are numbered ``A1, A2, …`` in application order, matching the
+worked example (A1 = frame_selection, A2 = missing_lattice; Part 4 §5).
+
+**Generalized dispatch.** New scenarios attach at the ``_RESOLVERS`` table (**P6**) — a scenario is
+resolvable iff it is classified in ``SCENARIO_HAZARD`` *and* has a resolver here; anything else
+refuses. Each resolver receives the detected ``UnresolvedScenario`` so it can validate the choice
+against that instance's honest ``options`` (computed for the concrete pair, Part 4 §3.3) and read
+any detection ``params`` (e.g. the target's representable constraint kinds).
 """
 
 from __future__ import annotations
@@ -32,9 +39,9 @@ from xtalate.recovery.scenarios import (
 )
 from xtalate.schema import AtomsBlock, CanonicalObject, Cell, Frame
 
-# Resolution order (Part 4 §3.3): a bounding box is computed on the frame chosen by
-# frame_selection, so frame_selection must run first.
-_DEP_ORDER = ("frame_selection", "missing_lattice")
+# Resolution order (Part 4 §3.3): frame_selection first (a bounding box is computed on the chosen
+# frame), then constraint projection (frame-independent), then the fabricated lattice.
+_DEP_ORDER = ("frame_selection", "constraint_representation", "missing_lattice")
 
 
 class RecoveryError(ValueError):
@@ -52,8 +59,21 @@ class SuppliedField:
 
 
 @dataclass
+class PreservedField:
+    """A source field a *selective-reductive* recovery keeps (Part 4 §2, `preserved`).
+
+    Distinct from ``SuppliedField``: the value is genuine source data the choice *retained*, not
+    fabricated — so it lands in ``preserved`` (and the write plan), never ``supplied``. Emitted by
+    ``constraint_representation``'s ``project`` for the representable subset it keeps."""
+
+    path: str
+    detail: str | None = None
+
+
+@dataclass
 class FrameDrop:
-    """The `removed` accounting for a selective-reductive frame reduction (Part 4 §5 removed[0])."""
+    """A ``removed`` entry for a selective-reductive reduction — dropped frames (frame_selection) or
+    unrepresentable constraints (constraint_representation) (Part 4 §5 removed[0])."""
 
     path: str
     reason: str
@@ -64,8 +84,10 @@ class FrameDrop:
 class AppliedAssumption:
     """One recorded recovery decision (Part 4 §2 `Assumption`), plus its field-level effects.
 
-    ``supplied`` is non-empty only for fabricative scenarios; ``removed`` only for selective-
-    reductive ones. The two never overlap — the bright line of Part 4 §3.1."""
+    ``supplied`` is non-empty only for fabricative scenarios; ``preserved`` and ``removed`` only for
+    selective-reductive ones (a ``project`` may carry both — the kept subset and the dropped
+    remainder of one partially-retained path). ``supplied`` and ``preserved`` never overlap — the
+    bright line of Part 4 §3.1 (fabricated vs. genuine-but-retained)."""
 
     id: str
     scenario: str
@@ -74,6 +96,7 @@ class AppliedAssumption:
     origin: str  # "preset" | "user". v0.1 is preset-only (D22).
     description: str
     supplied: list[SuppliedField] = field(default_factory=list)
+    preserved: list[PreservedField] = field(default_factory=list)
     removed: list[FrameDrop] = field(default_factory=list)
 
 
@@ -125,35 +148,47 @@ class RecoveryEngine:
             choice = recovery_choices[scenario_code]
             if scenario_code == "frame_selection":
                 working, applied, selected_source_index = _apply_frame_selection(
-                    working, aid, choice, origin
+                    working, aid, choice, origin, match
+                )
+            elif scenario_code == "constraint_representation":
+                working, applied = _apply_constraint_representation(
+                    working, aid, choice, origin, match
                 )
             else:  # missing_lattice
                 working, applied = _apply_missing_lattice(
-                    working, aid, choice, origin, computed_on_frame=selected_source_index
+                    working, aid, choice, origin, match, computed_on_frame=selected_source_index
                 )
             assumptions.append(applied)
 
         return RecoveryResult(canonical=working, assumptions=assumptions, unresolved=[])
 
 
-def _choice_code(choice: dict[str, Any], scenario: str) -> str:
+def _choice_code(choice: dict[str, Any], scenario: UnresolvedScenario) -> str:
+    """Validate the caller's choice against the *honest* option list for this detected scenario
+    instance (Part 4 §3.3). The instance carries the pair-specific ``options`` (computed by
+    pre-flight); a directly-constructed scenario with no options falls back to the default list.
+    A choice outside the offered set is a *caller error* (``RecoveryError``), not a refusal."""
+    offered = scenario.options or available_options(scenario.scenario)
     code = choice.get("choice")
-    if not isinstance(code, str) or code not in available_options(scenario):
+    if not isinstance(code, str) or code not in offered:
         raise RecoveryError(
-            f"{scenario!r}: choice {code!r} is not an offered option "
-            f"{available_options(scenario)!r}"
+            f"{scenario.scenario!r}: choice {code!r} is not an offered option {offered!r}"
         )
     return code
 
 
 def _apply_frame_selection(
-    canonical: CanonicalObject, aid: str, choice: dict[str, Any], origin: str
+    canonical: CanonicalObject,
+    aid: str,
+    choice: dict[str, Any],
+    origin: str,
+    scenario: UnresolvedScenario,
 ) -> tuple[CanonicalObject, AppliedAssumption, int]:
     """Reduce a multi-frame object to the single chosen frame (selective reductive, Part 4 §3.1).
 
     Records an ``Assumption`` and a ``FrameDrop`` (the dropped frames as a `removed` entry) but
     **no** ``SuppliedField`` — the retained frame is genuine source data, not fabricated."""
-    code = _choice_code(choice, "frame_selection")
+    code = _choice_code(choice, scenario)
     params = choice.get("parameters", {}) or {}
     n = canonical.frame_count
     if code == "first":
@@ -206,11 +241,104 @@ def _apply_frame_selection(
     return reduced, assumption, index
 
 
+def _apply_constraint_representation(
+    canonical: CanonicalObject,
+    aid: str,
+    choice: dict[str, Any],
+    origin: str,
+    scenario: UnresolvedScenario,
+) -> tuple[CanonicalObject, AppliedAssumption]:
+    """Resolve source constraints a target can only *partially* represent (selective reductive,
+    Part 4 §3.1, §3.3).
+
+    ``project`` keeps the constraints whose ``kind`` is in the target's representable set (recorded
+    as ``preserved`` — genuine data retained, **not** fabricated) and drops the rest (``removed``).
+    ``drop_all`` keeps none. Either way one ``Assumption`` is recorded and **no** ``SuppliedField``
+    — the selective-reductive bright line. A partial constraint translation changes the physics of
+    any downstream relaxation, which is exactly why the catalog makes it a recorded choice rather
+    than a silent reduction (Part 4 §3.3)."""
+    code = _choice_code(choice, scenario)
+    representable = set(scenario.params.get("representable_kinds", []))
+
+    new_frames = []
+    kept_total = 0
+    dropped_counts: dict[str, int] = {}
+    for frame in canonical.frames:
+        kept = []
+        for constraint in frame.dynamics.constraints or []:
+            if code == "project" and constraint.kind in representable:
+                kept.append(constraint)
+            else:  # unrepresentable (project), or every constraint (drop_all)
+                dropped_counts[constraint.kind] = dropped_counts.get(constraint.kind, 0) + 1
+        kept_total += len(kept)
+        new_dynamics = frame.dynamics.model_copy(update={"constraints": kept or None})
+        new_frames.append(frame.model_copy(update={"dynamics": new_dynamics}))
+
+    updated = canonical.model_copy(update={"frames": new_frames})
+    kinds = sorted(representable)
+    total_dropped = sum(dropped_counts.values())
+
+    preserved: list[PreservedField] = []
+    if kept_total > 0:
+        preserved.append(
+            PreservedField(
+                path="dynamics.constraints",
+                detail=f"{kept_total} representable constraint(s) kept ({kinds}).",
+            )
+        )
+    removed: list[FrameDrop] = []
+    if total_dropped > 0:
+        removed.append(
+            FrameDrop(
+                path="dynamics.constraints",
+                reason=(
+                    f"Target represents only {kinds} constraint kinds; "
+                    "other constraints cannot be written."
+                ),
+                detail=(
+                    f"{total_dropped} constraint(s) dropped across frames: "
+                    f"{dict(sorted(dropped_counts.items()))}."
+                ),
+            )
+        )
+
+    if code == "project":
+        parameters: dict[str, Any] = {
+            "representable_kinds": kinds,
+            "dropped_kinds": dict(sorted(dropped_counts.items())),
+        }
+        description = (
+            f"Constraints projected onto the target's representable subset {kinds}: {kept_total} "
+            f"kept, {total_dropped} dropped. A partial constraint translation changes the physics "
+            "of a downstream relaxation, so it is a recorded choice, not a silent reduction."
+        )
+    else:  # drop_all
+        parameters = {"dropped": total_dropped}
+        description = (
+            f"All {total_dropped} source constraint(s) dropped at the caller's explicit request "
+            f"(the target could represent {kinds}, but drop_all keeps none). Recorded so a "
+            "downstream relaxation is never silently unconstrained."
+        )
+
+    assumption = AppliedAssumption(
+        id=aid,
+        scenario="constraint_representation",
+        choice=code,
+        parameters=parameters,
+        origin=origin,
+        description=description,
+        preserved=preserved,
+        removed=removed,
+    )
+    return updated, assumption
+
+
 def _apply_missing_lattice(
     canonical: CanonicalObject,
     aid: str,
     choice: dict[str, Any],
     origin: str,
+    scenario: UnresolvedScenario,
     *,
     computed_on_frame: int,
 ) -> tuple[CanonicalObject, AppliedAssumption]:
@@ -220,7 +348,7 @@ def _apply_missing_lattice(
     ``Assumption`` **and** two ``SuppliedField`` entries — the cell did not exist in the source,
     so it is filed as created, never carried (**P4**). ``pbc`` is set to (T,T,T): POSCAR, the only
     v0.1 lattice-requiring target, is fully periodic by definition (Part 3 §3 n.3)."""
-    code = _choice_code(choice, "missing_lattice")
+    code = _choice_code(choice, scenario)
     params = choice.get("parameters", {}) or {}
     pbc = (True, True, True)
 

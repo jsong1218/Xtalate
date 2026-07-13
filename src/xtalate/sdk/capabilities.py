@@ -44,6 +44,17 @@ class FormatCapabilities(BaseModel):
     max_frames: int | None = None  # None = unlimited; 1 = single-structure format.
     # Canonical paths that MUST be present to write this format (write side only). Drives Recovery.
     required_fields: list[str] = Field(default_factory=list)
+    # Whether the format can express an open (non-periodic) cell, `pbc=(F,F,F)` (write side). Drives
+    # the ✳`non_periodic` option of the `missing_lattice` recovery scenario (Part 4 §3.3): a lattice
+    # a periodic-only target *requires* can be fabricated as an open box only for a target that can
+    # say "not periodic" — extXYZ yes, POSCAR never. An explicit, machine-readable flag rather than
+    # a prose reading of the `cell.pbc` note (DECISIONS.md D35). Absent/False = fully-periodic only.
+    allows_open_boundaries: bool = False
+    # The constraint `kind` values this format can represent (write side; Part 2 §3.6, Part 4 §3.3).
+    # When `dynamics.constraints` is PARTIAL, this is the machine-readable subset the
+    # `constraint_representation` recovery `project` choice keeps (the remainder → `removed`) — e.g.
+    # POSCAR declares `["selective_dynamics"]`. Empty for a format that represents no constraints.
+    representable_constraint_kinds: list[str] = Field(default_factory=list)
     native_coordinate_system: Literal["cartesian", "fractional", "both"]
     lossy_notes: list[str] = Field(default_factory=list)  # Format-level caveats -> Warnings.
     # Declared decimal precision per canonical field path (write side) — the machine-readable

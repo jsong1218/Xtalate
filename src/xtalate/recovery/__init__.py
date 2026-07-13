@@ -2,8 +2,10 @@
 
 Implements the three-way hazard model and the fabricative bright line (Part 4 §3):
 every applied recovery records an ``Assumption`` (and a ``supplied`` entry when it
-fabricates); no default is ever applied silently. v0.1 scenarios: ``missing_lattice``
-and ``frame_selection`` (preset-only). Implemented in M5.
+fabricates); no default is ever applied silently. The full Part 4 §3.3 catalog of eight
+scenarios is registered and hazard-classified (``scenarios.SCENARIO_HAZARD``); v0.2 M7
+(Slice 1) resolves ``missing_lattice``, ``frame_selection``, and ``constraint_representation``
+preset-only, with the remaining scenarios refusing until their M8 / Slice-2 resolvers land.
 
 Sits below ``conversion`` in the import graph (Part 1 §5.1), so it returns plain result
 types (``AppliedAssumption`` etc.) the ``ConversionEngine`` maps onto the Conversion Report;
@@ -15,6 +17,7 @@ from __future__ import annotations
 from xtalate.recovery.engine import (
     AppliedAssumption,
     FrameDrop,
+    PreservedField,
     RecoveryEngine,
     RecoveryError,
     RecoveryResult,
@@ -32,6 +35,7 @@ __all__ = [
     "AppliedAssumption",
     "FrameDrop",
     "HazardClass",
+    "PreservedField",
     "RecoveryEngine",
     "RecoveryError",
     "RecoveryResult",

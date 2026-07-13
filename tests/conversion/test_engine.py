@@ -182,6 +182,77 @@ def test_preflight_is_awaiting_recovery_when_scenarios_unresolved() -> None:
     assert report.status == "awaiting_recovery"
 
 
+# --- constraint_representation end to end (M7, Part 4 §3.3) ---------------------------------------
+
+_SELECTIVE_POSCAR = b"""sd test
+1.0
+  4.0  0.0  0.0
+  0.0  4.0  0.0
+  0.0  0.0  4.0
+H
+2
+Selective dynamics
+Direct
+  0.0 0.0 0.0   T T F
+  0.5 0.5 0.5   F F F
+"""
+
+
+def _selective_source(reg: Registry) -> CanonicalObject:
+    return (
+        reg.get_parser("poscar").parse(io.BytesIO(_SELECTIVE_POSCAR), filename="POSCAR").canonical
+    )
+
+
+def test_constraint_poscar_to_poscar_refuses_without_a_preset() -> None:
+    # A partial constraint translation changes downstream physics, so POSCAR→POSCAR with a
+    # non-empty selective_dynamics block now *refuses* without an explicit choice (Part 4 §3.3),
+    # and the refusal carries the honest option list (P5).
+    reg = _registry()
+    result = ConversionEngine(reg).convert(
+        _selective_source(reg), source_format_id="poscar", target_format_id="poscar"
+    )
+    assert result.report.status == "refused"
+    assert result.report.refusal is not None
+    (scenario,) = result.report.refusal["unresolved_scenarios"]
+    assert scenario["scenario"] == "constraint_representation"
+    assert scenario["options"] == ["project", "drop_all"]
+
+
+def test_constraint_project_completes_and_preserves_the_kept_subset() -> None:
+    reg = _registry()
+    result = ConversionEngine(reg).convert(
+        _selective_source(reg),
+        source_format_id="poscar",
+        target_format_id="poscar",
+        recovery_choices={"constraint_representation": {"choice": "project"}},
+    )
+    assert result.report.status == "completed"
+    # The retained constraint is Preserved (genuine data), never Supplied (P4).
+    assert "dynamics.constraints" in {e.path for e in result.report.preserved}
+    assert "dynamics.constraints" not in {e.path for e in result.report.supplied}
+    (assumption,) = result.report.assumptions
+    assert assumption.scenario == "constraint_representation"
+    assert assumption.choice == "project"
+    assert result.validation is not None
+    assert result.validation.status in ("passed", "passed_with_warnings")
+
+
+def test_constraint_drop_all_completes_and_removes_the_constraints() -> None:
+    reg = _registry()
+    result = ConversionEngine(reg).convert(
+        _selective_source(reg),
+        source_format_id="poscar",
+        target_format_id="poscar",
+        recovery_choices={"constraint_representation": {"choice": "drop_all"}},
+    )
+    assert result.report.status == "completed"
+    assert "dynamics.constraints" in {e.path for e in result.report.removed}
+    assert result.report.supplied == []
+    assert result.canonical_out is not None
+    assert result.canonical_out.frames[0].dynamics.constraints is None
+
+
 # --- completeness invariant (review §4.5) ---------------------------------------------
 
 

@@ -39,6 +39,7 @@ from xtalate.conversion.preflight import PreflightDiff, build_preflight
 from xtalate.conversion.report import (
     Assumption,
     ConversionReport,
+    PreservedEntry,
     RemovedEntry,
     SuppliedEntry,
 )
@@ -122,7 +123,9 @@ class ConversionEngine:
             source_sha256=source_sha256,
             target_format_id=target_format_id,
             target_filename=target_filename,
-            preserved=diff.preserved,
+            # `pending` paths (a scenario decides their fate) ride in the draft as predicted-
+            # preserved so the completeness invariant holds before any choice is made (Part 4 §3.3).
+            preserved=[*diff.preserved, *diff.pending],
             removed=diff.removed,
             warnings=diff.warnings,
         )
@@ -155,6 +158,7 @@ class ConversionEngine:
         recovered = source
         assumptions: list[Assumption] = []
         supplied: list[SuppliedEntry] = []
+        recovery_preserved: list[PreservedEntry] = []
         recovery_removed: list[RemovedEntry] = []
         write_plan = set(diff.write_plan)
 
@@ -170,13 +174,22 @@ class ConversionEngine:
                     target_filename=target_filename,
                     mode=mode,
                     diff=diff,
+                    # A scenario-refused conversion still accounts for the `pending` paths (whose
+                    # fate the unmade choice would decide) as predicted-preserved, so the refusal
+                    # report satisfies the completeness invariant (Part 4 §2, §3.3).
+                    preserved=[*diff.preserved, *diff.pending],
                     refusal={
                         "code": "RECOVERY_REQUIRED",
                         "message": "conversion needs recovery decisions that were not supplied; "
                         "provide them as recovery_choices presets, or choose a target that does "
                         "not require the missing fields",
                         "unresolved_scenarios": [
-                            {"scenario": s.scenario, "path": s.path, "detail": s.detail}
+                            {
+                                "scenario": s.scenario,
+                                "path": s.path,
+                                "detail": s.detail,
+                                "options": s.options,
+                            }
                             for s in outcome.unresolved
                         ],
                     },
@@ -198,11 +211,17 @@ class ConversionEngine:
                         SuppliedEntry(path=sup.path, from_assumption=applied.id, detail=sup.detail)
                     )
                     write_plan.add(sup.path)  # a fabricated field must be in the write_plan.
+                for pres in applied.preserved:
+                    # A selective-reductive choice's *retained* genuine data (e.g. the constraint
+                    # subset `project` keeps) — Preserved (and written), never Supplied (P4).
+                    recovery_preserved.append(PreservedEntry(path=pres.path, detail=pres.detail))
+                    write_plan.add(pres.path)
                 for drop in applied.removed:
                     recovery_removed.append(
                         RemovedEntry(path=drop.path, reason=drop.reason, detail=drop.detail)
                     )
 
+        preserved = [*diff.preserved, *recovery_preserved]
         removed = [*diff.removed, *recovery_removed]
 
         # --- Strict-mode gating (Part 4 §4) ----------------------------------------------
@@ -217,6 +236,7 @@ class ConversionEngine:
                     target_filename=target_filename,
                     mode=mode,
                     diff=diff,
+                    preserved=preserved,
                     removed=removed,
                     supplied=supplied,
                     assumptions=assumptions,
@@ -238,6 +258,7 @@ class ConversionEngine:
                     target_filename=target_filename,
                     mode=mode,
                     diff=diff,
+                    preserved=preserved,
                     removed=removed,
                     supplied=supplied,
                     assumptions=assumptions,
@@ -274,7 +295,7 @@ class ConversionEngine:
             source_sha256=source_sha256,
             target_format_id=target_format_id,
             target_filename=target_filename,
-            preserved=diff.preserved,
+            preserved=preserved,
             removed=removed,
             supplied=supplied,
             assumptions=assumptions,
@@ -306,6 +327,7 @@ class ConversionEngine:
         mode: str,
         diff: PreflightDiff,
         refusal: dict[str, Any],
+        preserved: list[PreservedEntry] | None = None,
         removed: list[RemovedEntry] | None = None,
         supplied: list[SuppliedEntry] | None = None,
         assumptions: list[Assumption] | None = None,
@@ -313,7 +335,9 @@ class ConversionEngine:
         """Assemble a refused Conversion Report (a completed outcome, not an error; Part 4 §4).
 
         The full pre-flight `preserved`/`removed` prediction rides along so a pipeline has
-        everything it needs to decide whether to supply presets and retry."""
+        everything it needs to decide whether to supply presets and retry. A strict-mode refusal
+        that fires *after* recovery passes the recovery-augmented `preserved`/`removed` so the
+        completeness invariant still holds over the refused report."""
         report = self._assemble(
             stage="final",
             status="refused",
@@ -324,7 +348,7 @@ class ConversionEngine:
             source_sha256=source_sha256,
             target_format_id=target_format_id,
             target_filename=target_filename,
-            preserved=diff.preserved,
+            preserved=preserved if preserved is not None else diff.preserved,
             removed=removed if removed is not None else diff.removed,
             supplied=supplied or [],
             assumptions=assumptions or [],

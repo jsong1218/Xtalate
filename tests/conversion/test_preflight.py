@@ -109,3 +109,75 @@ def test_single_frame_xyz_to_poscar_only_needs_lattice() -> None:
     source = reg.get_parser("xyz").parse(io.BytesIO(data), filename="o.xyz").canonical
     diff = build_preflight(source, _matrix(reg), "poscar")
     assert [s.scenario for s in diff.unresolved] == ["missing_lattice"]
+
+
+# --- honest, pair-specific option lists on detected scenarios (M7, Part 4 §3.3) ------------------
+
+
+def test_missing_lattice_scenario_carries_honest_options_excluding_non_periodic() -> None:
+    # POSCAR is periodic-only, so the detected scenario's own option list excludes non_periodic —
+    # the same list the engine validates against and the refusal report shows (no drift).
+    reg = _registry()
+    source = _parse(reg, "xyz", GOLDEN / "xyz" / "water-traj" / "water_traj.xyz")
+    diff = build_preflight(source, _matrix(reg), "poscar")
+    lattice = next(s for s in diff.unresolved if s.scenario == "missing_lattice")
+    assert lattice.options == ["manual_input", "bounding_box"]
+
+
+# --- constraint_representation trigger (M7) ------------------------------------------------------
+
+_SELECTIVE_POSCAR = b"""sd test
+1.0
+  4.0  0.0  0.0
+  0.0  4.0  0.0
+  0.0  0.0  4.0
+H
+2
+Selective dynamics
+Direct
+  0.0 0.0 0.0   T T F
+  0.5 0.5 0.5   F F F
+"""
+
+_ALL_FREE_POSCAR = b"""all-T test
+1.0
+  4.0  0.0  0.0
+  0.0  4.0  0.0
+  0.0  0.0  4.0
+H
+1
+Selective dynamics
+Direct
+  0.0 0.0 0.0   T T T
+"""
+
+
+def test_nonempty_constraints_trigger_constraint_representation_not_auto_preserve() -> None:
+    # A non-empty constraint list against POSCAR's PARTIAL dynamics.constraints is a recorded choice
+    # (Part 4 §3.3) — not auto-preserved, and not in preserved/removed until the resolver decides.
+    reg = _registry()
+    source = (
+        reg.get_parser("poscar").parse(io.BytesIO(_SELECTIVE_POSCAR), filename="POSCAR").canonical
+    )
+    diff = build_preflight(source, _matrix(reg), "poscar")
+
+    scenario = next(s for s in diff.unresolved if s.scenario == "constraint_representation")
+    assert scenario.path == "dynamics.constraints"
+    assert scenario.options == ["project", "drop_all"]
+    assert scenario.params["representable_kinds"] == ["selective_dynamics"]
+    assert "dynamics.constraints" not in {e.path for e in diff.preserved}
+    assert "dynamics.constraints" not in {e.path for e in diff.removed}
+    assert "dynamics.constraints" not in diff.write_plan
+
+
+def test_empty_constraints_do_not_trigger_and_preserve_normally() -> None:
+    # constraints=[] ("explicitly unconstrained", Part 2 §3.6) carries no subset to choose — it is
+    # present and PARTIAL-representable, so it preserves normally, no scenario.
+    reg = _registry()
+    source = (
+        reg.get_parser("poscar").parse(io.BytesIO(_ALL_FREE_POSCAR), filename="POSCAR").canonical
+    )
+    assert source.frames[0].dynamics.constraints == []
+    diff = build_preflight(source, _matrix(reg), "poscar")
+    assert [s.scenario for s in diff.unresolved] == []
+    assert "dynamics.constraints" in {e.path for e in diff.preserved}
