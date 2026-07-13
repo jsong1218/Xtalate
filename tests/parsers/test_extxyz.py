@@ -135,6 +135,16 @@ def test_comment_keyvalue_carries_to_custom_per_frame() -> None:
     assert obj.user_metadata.custom_per_frame["extxyz:config_type"] == ["slab"]
 
 
+def test_already_namespaced_comment_key_is_not_double_namespaced() -> None:
+    # A comment key that already carries a <format>: namespace (e.g. xyz:comment written by a
+    # cross-format export) is kept verbatim, not re-tagged to extxyz:xyz:comment — so it round-trips
+    # and does not false-fail metadata_preservation (parser _namespace rule).
+    data = b'1\nProperties=species:S:1:pos:R:3 xyz:comment="frame zero"\nH 0 0 0\n'
+    obj = parse_bytes(_parser(), data).canonical
+    assert obj.user_metadata.custom_per_frame["xyz:comment"] == ["frame zero"]
+    assert "extxyz:xyz:comment" not in obj.user_metadata.custom_per_frame
+
+
 def test_stress_carried_not_mapped_to_electronic_stress() -> None:
     # Sign-convention safety (DECISIONS.md D18): stress is carried verbatim, not mapped.
     data = (

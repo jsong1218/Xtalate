@@ -313,6 +313,24 @@ def test_upload_reference_lattice_end_to_end() -> None:
     )
 
 
+def test_xyz_comments_to_extxyz_validates_passed() -> None:
+    # Regression: an XYZ source carrying per-frame comments (user_metadata.custom_per_frame
+    # ['xyz:comment']) → extXYZ. The comment key must round-trip verbatim (not become
+    # extxyz:xyz:comment), or metadata_preservation false-fails though the value survives.
+    reg = _registry()
+    xyz = b"2\nframe zero\nH 0 0 0\nH 0 0 0.8\n2\nframe one\nH 0 0 0\nH 0 0 0.9\n"
+    source = reg.get_parser("xyz").parse(io.BytesIO(xyz), filename="t.xyz").canonical
+    result = ConversionEngine(reg).convert(
+        source, source_format_id="xyz", target_format_id="extxyz"
+    )
+    assert result.report.status == "completed"
+    assert "user_metadata.custom_per_frame['xyz:comment']" in {
+        e.path for e in result.report.preserved
+    }
+    assert result.validation is not None
+    assert result.validation.status in ("passed", "passed_with_warnings")
+
+
 # --- completeness invariant (review §4.5) ---------------------------------------------
 
 

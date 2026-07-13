@@ -51,6 +51,16 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
     (`frame_selection` → `constraint_representation` → `missing_lattice`), replacing the hard-coded
     two-scenario branch (`docs/DECISIONS.md` D37).
 
+### Fixed
+
+- **XYZ-with-comments → extXYZ no longer false-fails validation.** The extXYZ exporter writes a
+  carried-through comment key (`xyz:comment`) faithfully, but the parser re-namespaced *every*
+  comment key under `extxyz:`, so the value round-tripped under a changed path
+  (`extxyz:xyz:comment`) and the Validation Engine's `metadata_preservation` check reported the
+  planned path absent — marking every such conversion `failed`. The parser now skips the `extxyz:`
+  tag for a key that already carries a `<format>:` namespace, so foreign keys round-trip verbatim
+  while bare extXYZ keys are namespaced as before (`docs/DECISIONS.md` D41).
+
 ### Changed
 
 - **A PARTIAL constraint capability now triggers recovery instead of auto-preserving.** A source
