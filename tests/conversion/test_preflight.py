@@ -183,3 +183,33 @@ def test_empty_constraints_do_not_trigger_and_preserve_normally() -> None:
     diff = build_preflight(source, _matrix(reg), "poscar")
     assert [s.scenario for s in diff.unresolved] == []
     assert "dynamics.constraints" in {e.path for e in diff.preserved}
+
+
+def test_xyz_target_preserves_only_comment_of_custom_per_frame() -> None:
+    # Plain XYZ writes one free-text comment line per frame (xyz:comment) and nothing else. An
+    # extXYZ source's foreign per-frame key must be predicted Removed — declaring the container
+    # FULL would predict it Preserved and then the exporter would silently drop it (Part 3 §4.2).
+    # Only the comment (if present) enters the write_plan, and per key, so canonical' keeps just it.
+    reg = _registry()
+    data = b"1\nProperties=species:S:1:pos:R:3 config_type=slab\nH 0 0 0\n"
+    source = reg.get_parser("extxyz").parse(io.BytesIO(data), filename="s.extxyz").canonical
+    diff = build_preflight(source, _matrix(reg), "xyz")
+
+    assert "user_metadata.custom_per_frame['extxyz:config_type']" in {e.path for e in diff.removed}
+    assert "user_metadata.custom_per_frame['extxyz:config_type']" not in {
+        e.path for e in diff.preserved
+    }
+    assert "user_metadata.custom_per_frame" not in diff.write_plan
+
+
+def test_xyz_target_keeps_comment_key_per_key_in_write_plan() -> None:
+    # A source carrying the free-text comment: xyz:comment is Preserved and enters the write_plan at
+    # per-key granularity (not the whole container), so a sibling foreign key would not ride along.
+    reg = _registry()
+    xyz = b"1\nhello world\nH 0 0 0\n"
+    source = reg.get_parser("xyz").parse(io.BytesIO(xyz), filename="t.xyz").canonical
+    diff = build_preflight(source, _matrix(reg), "xyz")
+
+    assert "user_metadata.custom_per_frame['xyz:comment']" in {e.path for e in diff.preserved}
+    assert "user_metadata.custom_per_frame['xyz:comment']" in diff.write_plan
+    assert "user_metadata.custom_per_frame" not in diff.write_plan

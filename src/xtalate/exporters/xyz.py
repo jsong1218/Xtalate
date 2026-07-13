@@ -56,12 +56,21 @@ class XyzExporter(ExporterPlugin):
             fields={
                 "atoms.symbols": full,
                 "atoms.positions": full,
+                # Plain XYZ has exactly one free-text comment line per frame — it can hold the
+                # `xyz:comment` key and nothing else. Declaring the container FULL would predict a
+                # foreign per-frame key (e.g. an extXYZ `config_type` on an extXYZ→XYZ conversion)
+                # Preserved, then silently drop it in `export` — a validation false-fail and a real
+                # loss. PARTIAL + `writable_custom_keys` makes the split honest: `xyz:comment` is
+                # Preserved, every other per-frame key is Removed (Part 3 §4.2).
                 "user_metadata.custom_per_frame": FieldCapability(
-                    level=CapabilityLevel.FULL, notes="Free-text comment line, one per frame."
+                    level=CapabilityLevel.PARTIAL,
+                    notes="Only the free-text comment line (xyz:comment), one per frame; other "
+                    "per-frame keys cannot be expressed by plain XYZ.",
                 ),
             },
             max_frames=None,
             required_fields=["atoms.symbols", "atoms.positions"],
+            writable_custom_keys={"user_metadata.custom_per_frame": [_COMMENT_KEY]},
             native_coordinate_system="cartesian",
             lossy_notes=[],
         )

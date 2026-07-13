@@ -64,9 +64,10 @@ class PreflightDiff:
     preserved: list[PreservedEntry] = field(default_factory=list)
     removed: list[RemovedEntry] = field(default_factory=list)
     warnings: list[ReportWarning] = field(default_factory=list)
-    # Container-level canonical paths the exporter is cleared to write (the write_plan, Part 4
-    # §1). Custom_* containers are all-or-nothing at this granularity; per-key entries are still
-    # reported individually in `preserved`/`removed`.
+    # Canonical paths the exporter is cleared to write (the write_plan, Part 4 §1). Usually
+    # container-level; a custom_* container a format writes only *specific* keys of contributes
+    # per-key entries (`user_metadata.custom_per_frame['xyz:comment']`) instead, so `canonical′`
+    # keeps exactly those keys. `_apply_write_plan` accepts either granularity.
     write_plan: set[str] = field(default_factory=set)
     unresolved: list[UnresolvedScenario] = field(default_factory=list)
     # Source-present paths whose fate a *scenario* decides (e.g. `dynamics.constraints` under
@@ -121,6 +122,24 @@ def build_preflight(
         # convention) and satisfy the completeness invariant before a choice is made.
         if container == _CONSTRAINTS and constraints_need_recovery:
             diff.pending.append(PreservedEntry(path=path, detail=detail))
+            continue
+
+        # A custom_* container the target writes only *specific* keys of (Part 3 §4.2): classify
+        # per-key, not by the container level. A declared key is Preserved and enters the write plan
+        # *per key* (so only it survives into `canonical′`); any other present key is Removed — the
+        # exporter cannot express it, and predicting it Preserved would false-fail validation when
+        # the exporter drops it. Plain XYZ, e.g., holds only its `xyz:comment` free-text line.
+        allowed = caps.writable_custom_keys.get(container)
+        if allowed is not None and path != container:
+            key = _custom_key(path)
+            if key in allowed:
+                diff.preserved.append(PreservedEntry(path=path, detail=detail))
+                diff.write_plan.add(path)
+            else:
+                reason = cap.notes or (
+                    f"Target format {target_format_id!r} stores only {allowed} in {container}."
+                )
+                diff.removed.append(RemovedEntry(path=path, reason=reason, detail=detail))
             continue
 
         if cap.level == CapabilityLevel.FULL:
@@ -194,6 +213,15 @@ def _scenario_options(scenario: str, caps: FormatCapabilities) -> list[str]:
         target_can_be_nonperiodic=caps.allows_open_boundaries,
         target_supports_multifile=True,
     )
+
+
+def _custom_key(path: str) -> str:
+    """Extract the dynamic key from a custom-container presence path (Part 2 §3.11), e.g.
+    ``user_metadata.custom_per_frame['xyz:comment']`` → ``xyz:comment``. Returns ``path`` unchanged
+    if it carries no ``['…']`` suffix (not a per-key custom path)."""
+    start = path.find("['")
+    end = path.rfind("']")
+    return path[start + 2 : end] if start != -1 and end != -1 and end > start else path
 
 
 def _has_constraints(source: CanonicalObject) -> bool:

@@ -617,9 +617,9 @@ def _apply_write_plan(
     user_metadata = UserMetadata(
         tags=um.tags if "user_metadata.tags" in plan else [],
         annotations=um.annotations if "user_metadata.annotations" in plan else {},
-        custom_global=um.custom_global if "user_metadata.custom_global" in plan else {},
-        custom_per_atom=um.custom_per_atom if "user_metadata.custom_per_atom" in plan else {},
-        custom_per_frame=um.custom_per_frame if "user_metadata.custom_per_frame" in plan else {},
+        custom_global=_kept_custom(um.custom_global, "user_metadata.custom_global", plan),
+        custom_per_atom=_kept_custom(um.custom_per_atom, "user_metadata.custom_per_atom", plan),
+        custom_per_frame=_kept_custom(um.custom_per_frame, "user_metadata.custom_per_frame", plan),
     )
 
     provenance = source.provenance.model_copy(
@@ -647,6 +647,17 @@ def _apply_write_plan(
         provenance=provenance,
         user_metadata=user_metadata,
     )
+
+
+def _kept_custom(container: dict[str, Any], container_path: str, plan: set[str]) -> dict[str, Any]:
+    """Filter a ``custom_*`` container against the write_plan (Part 4 §1). A container-level plan
+    entry keeps the whole container (a FULL/PARTIAL target that writes any key — e.g. extXYZ);
+    otherwise only keys whose per-key path is planned survive (a target that writes only specific
+    keys — e.g. plain XYZ's ``xyz:comment``). The per-key path format mirrors ``field_presence()``
+    exactly (``schema.presence``), so a preserved per-key path round-trips through this filter."""
+    if container_path in plan:
+        return dict(container)
+    return {k: v for k, v in container.items() if f"{container_path}['{k}']" in plan}
 
 
 def _filter_frame(frame: Frame, plan: set[str]) -> Frame:

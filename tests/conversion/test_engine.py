@@ -331,6 +331,42 @@ def test_xyz_comments_to_extxyz_validates_passed() -> None:
     assert result.validation.status in ("passed", "passed_with_warnings")
 
 
+def test_extxyz_foreign_per_frame_key_to_xyz_is_removed_not_false_failed() -> None:
+    # Sibling of the above, the other direction: extXYZ → plain XYZ. Plain XYZ holds only its
+    # free-text comment (xyz:comment), so a foreign per-frame key (config_type) cannot be expressed.
+    # It must be reported *removed* and dropped from canonical′ — declaring the container FULL would
+    # predict it Preserved, the exporter would silently drop it, and metadata_preservation would
+    # false-fail (Part 3 §4.2). The conversion completes and validates.
+    reg = _registry()
+    data = b"1\nProperties=species:S:1:pos:R:3 config_type=slab\nH 0 0 0\n"
+    source = reg.get_parser("extxyz").parse(io.BytesIO(data), filename="s.extxyz").canonical
+    result = ConversionEngine(reg).convert(
+        source, source_format_id="extxyz", target_format_id="xyz"
+    )
+    assert result.report.status == "completed"
+    removed = {e.path for e in result.report.removed}
+    assert "user_metadata.custom_per_frame['extxyz:config_type']" in removed
+    assert result.canonical_out is not None
+    assert result.canonical_out.user_metadata.custom_per_frame == {}
+    assert result.validation is not None
+    assert result.validation.status == "passed"
+
+
+def test_xyz_with_comment_to_xyz_still_preserves_the_comment() -> None:
+    # The restriction must not regress the comment round-trip: xyz → xyz keeps xyz:comment.
+    reg = _registry()
+    xyz = b"1\nframe zero\nH 0 0 0\n1\nframe one\nH 0 0 0.8\n"
+    source = reg.get_parser("xyz").parse(io.BytesIO(xyz), filename="t.xyz").canonical
+    result = ConversionEngine(reg).convert(source, source_format_id="xyz", target_format_id="xyz")
+    assert result.report.status == "completed"
+    assert result.validation is not None
+    assert result.validation.status == "passed"
+    assert result.canonical_out is not None
+    assert result.canonical_out.user_metadata.custom_per_frame == {
+        "xyz:comment": ["frame zero", "frame one"]
+    }
+
+
 # --- completeness invariant (review §4.5) ---------------------------------------------
 
 

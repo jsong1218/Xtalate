@@ -27,7 +27,6 @@ from xtalate.conversion import (
     ConversionEngine,
     ConversionReport,
     build_expected_object,
-    capability_path,
     parse_with_recovery,
 )
 from xtalate.discovery import DiscoveryEngine
@@ -251,7 +250,12 @@ def _validate_full_reparse(args: argparse.Namespace, registry: Registry) -> Vali
 
     source_bytes = _read_bytes(args.source)
     source, _ = _parse_source(registry, source_bytes, args.source, None)
-    plan = {capability_path(e.path) for e in conversion.preserved}
+    # Reconstruct the write_plan from the report's preserved paths at their declared granularity:
+    # container-level for ordinary fields, per-key for a custom container a target writes only
+    # specific keys of (`build_expected_object` → `_apply_write_plan` accepts either). Collapsing a
+    # per-key path to its container here would wrongly re-admit dropped foreign keys into the
+    # reference object.
+    plan = {e.path for e in conversion.preserved}
     expected = build_expected_object(source, plan, target_format)
     output_bytes = _read_bytes(args.output)
     return ValidationEngine(registry).validate(

@@ -60,6 +60,14 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
   planned path absent — marking every such conversion `failed`. The parser now skips the `extxyz:`
   tag for a key that already carries a `<format>:` namespace, so foreign keys round-trip verbatim
   while bare extXYZ keys are namespaced as before (`docs/DECISIONS.md` D41).
+- **extXYZ → plain XYZ no longer false-fails on a foreign per-frame key (the D41 sibling).** Plain
+  XYZ holds one free-text comment line per frame (`xyz:comment`) and nothing else, but its exporter
+  declared the whole `custom_per_frame` container writable — so pre-flight predicted a foreign key
+  (an extXYZ `config_type`) Preserved, the exporter silently dropped it, and `metadata_preservation`
+  marked the conversion `failed`. `FormatCapabilities` gains `writable_custom_keys` (the per-key
+  analogue of `representable_constraint_kinds`): an unwritable per-frame key is now honestly reported
+  `removed`, while `xyz:comment` is still preserved (and the identity round-trip still passes) via a
+  per-key write plan (`docs/DECISIONS.md` D42).
 
 ### Changed
 
