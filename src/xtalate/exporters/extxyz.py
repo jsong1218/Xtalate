@@ -130,6 +130,7 @@ class ExtxyzExporter(ExporterPlugin):
             },
             max_frames=None,
             required_fields=["atoms.symbols", "atoms.positions"],
+            allows_open_boundaries=True,  # extXYZ writes pbc=; an open cell is expressible.
             native_coordinate_system="cartesian",
             lossy_notes=[],
         )

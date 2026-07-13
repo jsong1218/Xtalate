@@ -153,6 +153,106 @@ def test_convert_unknown_tolerance_profile_is_usage_error() -> None:
     assert code == EXIT_USAGE
 
 
+# --- convert: Slice 2 recovery paths -------------------------------------------------------------
+
+_VASP4_POSCAR = """vasp4
+1.0
+  4.0  0.0  0.0
+  0.0  4.0  0.0
+  0.0  0.0  4.0
+2 1
+Direct
+  0.0 0.0 0.0
+  0.5 0.5 0.5
+  0.25 0.25 0.25
+"""
+
+
+def test_convert_split_all_writes_one_file_per_frame(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    outdir = tmp_path / "frames"
+    code = main(
+        [
+            "convert",
+            WATER,
+            "--to",
+            "poscar",
+            "-o",
+            str(outdir),
+            "--recover",
+            "frame_selection=split_all",
+            "--recover",
+            "missing_lattice=bounding_box,padding_ang=3.0",
+        ]
+    )
+    assert code == EXIT_OK
+    written = sorted(p.name for p in outdir.iterdir())
+    assert written == ["POSCAR_0000", "POSCAR_0001"]  # water-traj has 2 frames
+    assert "Wrote 2 poscar file(s)" in capsys.readouterr().err
+
+
+def test_convert_missing_species_recoverable_error_without_preset(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = tmp_path / "POSCAR"
+    src.write_text(_VASP4_POSCAR)
+    code = main(["convert", str(src), "--to", "poscar", "-o", str(tmp_path / "out")])
+    assert code == EXIT_PARSE_ERROR
+    err = capsys.readouterr().err
+    assert "supply_species" in err and "recoverable" in err  # actionable message
+
+
+def test_convert_missing_species_species_map_succeeds(tmp_path: Path) -> None:
+    src = tmp_path / "POSCAR"
+    src.write_text(_VASP4_POSCAR)
+    conv = tmp_path / "conv.json"
+    code = main(
+        [
+            "convert",
+            str(src),
+            "--to",
+            "extxyz",
+            "-o",
+            str(tmp_path / "out.extxyz"),
+            "--recover",
+            "missing_species=species_map,species=H:O",
+            "--report",
+            str(conv),
+        ]
+    )
+    assert code == EXIT_OK
+    report = json.loads(conv.read_text())
+    assert any(a["scenario"] == "missing_species" for a in report["assumptions"])
+    assert "atoms.symbols" in {s["path"] for s in report["supplied"]}
+
+
+def test_convert_missing_lattice_upload_reference_via_file_param(tmp_path: Path) -> None:
+    # A no-lattice XYZ borrows its lattice from a reference POSCAR named by file=PATH.
+    src = tmp_path / "mol.xyz"
+    src.write_text("2\nf\nH 0 0 0\nH 0 0 0.8\n")
+    ref = tmp_path / "REF"
+    ref.write_text("ref\n1.0\n 5 0 0\n 0 5 0\n 0 0 5\nH\n2\nDirect\n 0 0 0\n 0.1 0.1 0.1\n")
+    conv = tmp_path / "conv.json"
+    code = main(
+        [
+            "convert",
+            str(src),
+            "--to",
+            "poscar",
+            "-o",
+            str(tmp_path / "OUT"),
+            "--recover",
+            f"missing_lattice=upload_reference,file={ref}",
+            "--report",
+            str(conv),
+        ]
+    )
+    assert code == EXIT_OK
+    report = json.loads(conv.read_text())
+    assert "cell.lattice_vectors" in {s["path"] for s in report["supplied"]}
+
+
 # --- validate ------------------------------------------------------------------------------------
 
 

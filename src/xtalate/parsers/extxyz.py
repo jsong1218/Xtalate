@@ -86,6 +86,21 @@ _VEL_ASE_TO_ANG_PER_FS = ase_units.fs
 _PBC_KEY_RE = re.compile(r"\bpbc\s*=", re.IGNORECASE)
 
 
+def _namespace(key: str) -> str:
+    """Tag a raw extXYZ comment/column key with the ``extxyz:`` format namespace to record its
+    provenance (Part 2 §6.1) — **unless it already carries a ``<format>:`` namespace**.
+
+    A bare key (``config_type``) becomes ``extxyz:config_type``. A key that already contains a
+    ``:`` — e.g. ``xyz:comment`` written onto an extXYZ comment line by a cross-format export — is
+    kept verbatim: double-namespacing it to ``extxyz:xyz:comment`` would both hide its true origin
+    and change its canonical path, false-failing the Validation Engine's ``metadata_preservation``
+    check on an ``X → Canonical → extXYZ`` round-trip (the value survives, but under a changed key).
+    The exporter mirror (``exporters.extxyz``) strips only its own ``extxyz:`` prefix, so an
+    ``extxyz:``-origin key round-trips (write ``foo`` → re-read ``extxyz:foo``) while a foreign key
+    is written and re-read verbatim."""
+    return key if ":" in key else f"{_KEY_PREFIX}{key}"
+
+
 def _error(code: str, message: str, *, location: str | None = None) -> ParseError:
     return ParseError([ParseIssue(severity="error", code=code, message=message, location=location)])
 
@@ -316,9 +331,9 @@ class ExtxyzParser(ParserPlugin):
             # string column through astype(float) previously raised a raw ValueError, escaping the
             # ParseResult/ParseError contract (§5).
             if np.issubdtype(values.dtype, np.number):
-                columns[f"{_KEY_PREFIX}{name}"] = values.astype(float, copy=False)
+                columns[_namespace(name)] = values.astype(float, copy=False)
             else:
-                columns[f"{_KEY_PREFIX}{name}"] = [_as_json(v) for v in values]
+                columns[_namespace(name)] = [_as_json(v) for v in values]
         return columns
 
     @staticmethod
@@ -345,11 +360,9 @@ class ExtxyzParser(ParserPlugin):
 
         per_frame: dict[str, Any] = {}
         for key in info_keys:
-            per_frame[f"{_KEY_PREFIX}{key}"] = [
-                _as_json(atoms.info.get(key)) for atoms in atoms_list
-            ]
+            per_frame[_namespace(key)] = [_as_json(atoms.info.get(key)) for atoms in atoms_list]
         for key in calc_keys:
-            per_frame[f"{_KEY_PREFIX}{key}"] = [carried.get(key) for carried in carried_calc]
+            per_frame[_namespace(key)] = [carried.get(key) for carried in carried_calc]
         return per_frame
 
     def capabilities(self) -> FormatCapabilities:

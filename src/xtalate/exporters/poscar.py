@@ -193,6 +193,8 @@ class PoscarExporter(ExporterPlugin):
             },
             max_frames=1,
             required_fields=["atoms.symbols", "atoms.positions", "cell.lattice_vectors"],
+            allows_open_boundaries=False,  # POSCAR cells are fully periodic (Part 3 §4.2).
+            representable_constraint_kinds=["selective_dynamics"],  # the PARTIAL subset above.
             native_coordinate_system="both",
             lossy_notes=[
                 "Positions written with full float64 precision; sub-ulp differences possible "

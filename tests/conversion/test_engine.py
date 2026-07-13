@@ -182,6 +182,191 @@ def test_preflight_is_awaiting_recovery_when_scenarios_unresolved() -> None:
     assert report.status == "awaiting_recovery"
 
 
+# --- constraint_representation end to end (M7, Part 4 §3.3) ---------------------------------------
+
+_SELECTIVE_POSCAR = b"""sd test
+1.0
+  4.0  0.0  0.0
+  0.0  4.0  0.0
+  0.0  0.0  4.0
+H
+2
+Selective dynamics
+Direct
+  0.0 0.0 0.0   T T F
+  0.5 0.5 0.5   F F F
+"""
+
+
+def _selective_source(reg: Registry) -> CanonicalObject:
+    return (
+        reg.get_parser("poscar").parse(io.BytesIO(_SELECTIVE_POSCAR), filename="POSCAR").canonical
+    )
+
+
+def test_constraint_poscar_to_poscar_refuses_without_a_preset() -> None:
+    # A partial constraint translation changes downstream physics, so POSCAR→POSCAR with a
+    # non-empty selective_dynamics block now *refuses* without an explicit choice (Part 4 §3.3),
+    # and the refusal carries the honest option list (P5).
+    reg = _registry()
+    result = ConversionEngine(reg).convert(
+        _selective_source(reg), source_format_id="poscar", target_format_id="poscar"
+    )
+    assert result.report.status == "refused"
+    assert result.report.refusal is not None
+    (scenario,) = result.report.refusal["unresolved_scenarios"]
+    assert scenario["scenario"] == "constraint_representation"
+    assert scenario["options"] == ["project", "drop_all"]
+
+
+def test_constraint_project_completes_and_preserves_the_kept_subset() -> None:
+    reg = _registry()
+    result = ConversionEngine(reg).convert(
+        _selective_source(reg),
+        source_format_id="poscar",
+        target_format_id="poscar",
+        recovery_choices={"constraint_representation": {"choice": "project"}},
+    )
+    assert result.report.status == "completed"
+    # The retained constraint is Preserved (genuine data), never Supplied (P4).
+    assert "dynamics.constraints" in {e.path for e in result.report.preserved}
+    assert "dynamics.constraints" not in {e.path for e in result.report.supplied}
+    (assumption,) = result.report.assumptions
+    assert assumption.scenario == "constraint_representation"
+    assert assumption.choice == "project"
+    assert result.validation is not None
+    assert result.validation.status in ("passed", "passed_with_warnings")
+
+
+def test_constraint_drop_all_completes_and_removes_the_constraints() -> None:
+    reg = _registry()
+    result = ConversionEngine(reg).convert(
+        _selective_source(reg),
+        source_format_id="poscar",
+        target_format_id="poscar",
+        recovery_choices={"constraint_representation": {"choice": "drop_all"}},
+    )
+    assert result.report.status == "completed"
+    assert "dynamics.constraints" in {e.path for e in result.report.removed}
+    assert result.report.supplied == []
+    assert result.canonical_out is not None
+    assert result.canonical_out.frames[0].dynamics.constraints is None
+
+
+# --- frame_selection=split_all end to end (Slice 2, Part 4 §3.3) ---------------------------------
+
+
+def test_split_all_writes_one_output_per_frame_and_validates_each() -> None:
+    # A 2-frame XYZ trajectory → POSCAR with split_all: `output` is None, `outputs` carries one
+    # single-structure file per frame, and the merged validation covers every file.
+    reg = _registry()
+    source = _parse(reg, "xyz", GOLDEN / "xyz" / "water-traj" / "water_traj.xyz")
+    n = source.frame_count
+    result = ConversionEngine(reg).convert(
+        source,
+        source_format_id="xyz",
+        target_format_id="poscar",
+        recovery_choices={
+            "frame_selection": {"choice": "split_all"},
+            "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 2.0}},
+        },
+    )
+    assert result.report.status == "completed"
+    assert result.output is None
+    assert result.outputs is not None and len(result.outputs) == n
+    # Each split file re-parses as a single-structure POSCAR.
+    for chunk in result.outputs:
+        assert reg.get_parser("poscar").parse(io.BytesIO(chunk), filename="POSCAR").canonical
+    # One frame_selection Assumption for the split (no per-frame Assumptions).
+    assert [a.choice for a in result.report.assumptions if a.scenario == "frame_selection"] == [
+        "split_all"
+    ]
+    assert result.validation is not None
+    assert result.validation.status in ("passed", "passed_with_warnings")
+    # Merged validation tags each check with the file it came from.
+    assert {c.measured.get("split_file_index") for c in result.validation.checks} == set(range(n))
+
+
+def test_upload_reference_lattice_end_to_end() -> None:
+    # A no-lattice single-frame XYZ borrows its POSCAR lattice from a matching reference structure.
+    reg = _registry()
+    xyz = b"2\nf\nH 0 0 0\nH 0 0 0.8\n"
+    source = reg.get_parser("xyz").parse(io.BytesIO(xyz), filename="t.xyz").canonical
+    ref_poscar = b"ref\n1.0\n 5 0 0\n 0 5 0\n 0 0 5\nH\n2\nDirect\n 0 0 0\n 0.1 0.1 0.1\n"
+    reference = reg.get_parser("poscar").parse(io.BytesIO(ref_poscar), filename="POSCAR").canonical
+    result = ConversionEngine(reg).convert(
+        source,
+        source_format_id="xyz",
+        target_format_id="poscar",
+        recovery_choices={
+            "missing_lattice": {
+                "choice": "upload_reference",
+                "parameters": {"reference": reference},
+            }
+        },
+    )
+    assert result.report.status == "completed"
+    assert "cell.lattice_vectors" in {s.path for s in result.report.supplied}
+    assert result.validation is not None and result.validation.status in (
+        "passed",
+        "passed_with_warnings",
+    )
+
+
+def test_xyz_comments_to_extxyz_validates_passed() -> None:
+    # Regression: an XYZ source carrying per-frame comments (user_metadata.custom_per_frame
+    # ['xyz:comment']) → extXYZ. The comment key must round-trip verbatim (not become
+    # extxyz:xyz:comment), or metadata_preservation false-fails though the value survives.
+    reg = _registry()
+    xyz = b"2\nframe zero\nH 0 0 0\nH 0 0 0.8\n2\nframe one\nH 0 0 0\nH 0 0 0.9\n"
+    source = reg.get_parser("xyz").parse(io.BytesIO(xyz), filename="t.xyz").canonical
+    result = ConversionEngine(reg).convert(
+        source, source_format_id="xyz", target_format_id="extxyz"
+    )
+    assert result.report.status == "completed"
+    assert "user_metadata.custom_per_frame['xyz:comment']" in {
+        e.path for e in result.report.preserved
+    }
+    assert result.validation is not None
+    assert result.validation.status in ("passed", "passed_with_warnings")
+
+
+def test_extxyz_foreign_per_frame_key_to_xyz_is_removed_not_false_failed() -> None:
+    # Sibling of the above, the other direction: extXYZ → plain XYZ. Plain XYZ holds only its
+    # free-text comment (xyz:comment), so a foreign per-frame key (config_type) cannot be expressed.
+    # It must be reported *removed* and dropped from canonical′ — declaring the container FULL would
+    # predict it Preserved, the exporter would silently drop it, and metadata_preservation would
+    # false-fail (Part 3 §4.2). The conversion completes and validates.
+    reg = _registry()
+    data = b"1\nProperties=species:S:1:pos:R:3 config_type=slab\nH 0 0 0\n"
+    source = reg.get_parser("extxyz").parse(io.BytesIO(data), filename="s.extxyz").canonical
+    result = ConversionEngine(reg).convert(
+        source, source_format_id="extxyz", target_format_id="xyz"
+    )
+    assert result.report.status == "completed"
+    removed = {e.path for e in result.report.removed}
+    assert "user_metadata.custom_per_frame['extxyz:config_type']" in removed
+    assert result.canonical_out is not None
+    assert result.canonical_out.user_metadata.custom_per_frame == {}
+    assert result.validation is not None
+    assert result.validation.status == "passed"
+
+
+def test_xyz_with_comment_to_xyz_still_preserves_the_comment() -> None:
+    # The restriction must not regress the comment round-trip: xyz → xyz keeps xyz:comment.
+    reg = _registry()
+    xyz = b"1\nframe zero\nH 0 0 0\n1\nframe one\nH 0 0 0.8\n"
+    source = reg.get_parser("xyz").parse(io.BytesIO(xyz), filename="t.xyz").canonical
+    result = ConversionEngine(reg).convert(source, source_format_id="xyz", target_format_id="xyz")
+    assert result.report.status == "completed"
+    assert result.validation is not None
+    assert result.validation.status == "passed"
+    assert result.canonical_out is not None
+    assert result.canonical_out.user_metadata.custom_per_frame == {
+        "xyz:comment": ["frame zero", "frame one"]
+    }
+
+
 # --- completeness invariant (review §4.5) ---------------------------------------------
 
 

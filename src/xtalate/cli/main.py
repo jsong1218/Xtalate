@@ -27,7 +27,7 @@ from xtalate.conversion import (
     ConversionEngine,
     ConversionReport,
     build_expected_object,
-    capability_path,
+    parse_with_recovery,
 )
 from xtalate.discovery import DiscoveryEngine
 from xtalate.recovery import RecoveryError
@@ -76,6 +76,15 @@ def main(argv: list[str] | None = None) -> int:
     except ParseError as exc:
         for issue in exc.issues:
             print(f"parse error [{issue.code}]: {issue.message}", file=sys.stderr)
+            if issue.recovery_hint:
+                # A recoverable error: point the user at the preset that would resolve it, so a
+                # refused parse is actionable rather than a dead end (Part 4 §3.3).
+                print(
+                    f"  recoverable (hint: {issue.recovery_hint}) — re-run with a matching "
+                    "--recover preset (e.g. --recover missing_species=species_map,species=... or "
+                    "--recover truncate_corrupt_tail=truncate)",
+                    file=sys.stderr,
+                )
         return EXIT_PARSE_ERROR
     except RecoveryError as exc:
         # An invalid --recover preset (a bad choice or missing parameter) is a caller error, not
@@ -110,16 +119,27 @@ def _cmd_inspect(args: argparse.Namespace, registry: Registry) -> int:
 
 def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
     data = _read_bytes(args.file)
-    source, source_format = _parse_source(registry, data, args.file, args.format)
     tolerance_name = _tolerance_name(args.tolerance_profile)
+    recovery_choices = _parse_recover(args.recover)
+    _inject_references(registry, recovery_choices)
+    # parse-time recovery (missing_species / truncate_corrupt_tail) is applied here, before the
+    # engine, if a matching preset was supplied; otherwise the recoverable parse error stands.
+    parsed = parse_with_recovery(
+        registry,
+        data,
+        filename=Path(args.file).name,
+        format_override=args.format,
+        recovery_choices=recovery_choices,
+    )
     result = ConversionEngine(registry).convert(
-        source,
-        source_format_id=source_format,
+        parsed.canonical,
+        source_format_id=parsed.format_id,
         target_format_id=args.to,
         source_filename=Path(args.file).name,
         target_filename=Path(args.output).name if args.output else None,
         mode=args.mode,
-        recovery_choices=_parse_recover(args.recover),
+        recovery_choices=recovery_choices,
+        parse_recovery=parsed,
         acknowledge_loss=args.acknowledge_loss,
         acknowledge_parse_warnings=args.acknowledge_parse_warnings,
         tolerance_profile=tolerance_name,
@@ -151,7 +171,7 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
     # The output file is written regardless of --json — the reports and the artifact are
     # independent outputs. In --json mode only the stdout dump is suppressed (it would corrupt the
     # JSON stream); the file-write notice always goes to stderr so stdout stays pure.
-    _emit_output(args, result.output, human=not args.json)
+    _emit_output(args, result, human=not args.json)
 
     return _convert_exit_code(report, result.validation, args.mode)
 
@@ -230,7 +250,12 @@ def _validate_full_reparse(args: argparse.Namespace, registry: Registry) -> Vali
 
     source_bytes = _read_bytes(args.source)
     source, _ = _parse_source(registry, source_bytes, args.source, None)
-    plan = {capability_path(e.path) for e in conversion.preserved}
+    # Reconstruct the write_plan from the report's preserved paths at their declared granularity:
+    # container-level for ordinary fields, per-key for a custom container a target writes only
+    # specific keys of (`build_expected_object` → `_apply_write_plan` accepts either). Collapsing a
+    # per-key path to its container here would wrongly re-admit dropped foreign keys into the
+    # reference object.
+    plan = {e.path for e in conversion.preserved}
     expected = build_expected_object(source, plan, target_format)
     output_bytes = _read_bytes(args.output)
     return ValidationEngine(registry).validate(
@@ -304,6 +329,22 @@ def _parse_recover(specs: list[str] | None) -> dict[str, dict[str, Any]]:
     return choices
 
 
+def _inject_references(registry: Registry, recovery_choices: dict[str, dict[str, Any]]) -> None:
+    """Resolve any ``file=PATH`` recovery parameter (``upload_reference``) into a parsed reference
+    ``CanonicalObject`` under ``parameters['reference']`` (Part 4 §3.3). The CLI does the
+    second-file parse so the Recovery Engine / parser hook receives a canonical object, not a path —
+    keeping the library layer file-system-free."""
+    for spec in recovery_choices.values():
+        params = spec.get("parameters", {})
+        ref_path = params.get("file")
+        if ref_path is None:
+            continue
+        ref_bytes = _read_bytes(str(ref_path))
+        params["reference"] = parse_with_recovery(
+            registry, ref_bytes, filename=Path(str(ref_path)).name
+        ).canonical
+
+
 def _coerce(value: str) -> Any:
     """Coerce a CLI parameter string to int, then float, else leave it a string."""
     for cast in (int, float):
@@ -338,7 +379,12 @@ def _convert_exit_code(
     return EXIT_OK
 
 
-def _emit_output(args: argparse.Namespace, output: bytes | None, *, human: bool) -> None:
+def _emit_output(args: argparse.Namespace, result: Any, *, human: bool) -> None:
+    # `split_all` produced one file per frame (Part 4 §3.3): write the set into a directory.
+    if result.outputs is not None:
+        _emit_split_outputs(args, result.outputs, human=human)
+        return
+    output = result.output
     if output is None:
         return
     if args.output:
@@ -350,6 +396,23 @@ def _emit_output(args: argparse.Namespace, output: bytes | None, *, human: bool)
         # with no -o there is nowhere clean to put the artifact, so it is simply not emitted.
         print(f"\n----- {args.to} output -----")
         sys.stdout.write(output.decode())
+
+
+def _emit_split_outputs(args: argparse.Namespace, outputs: list[bytes], *, human: bool) -> None:
+    """Write a ``split_all`` result — one file per frame — into the directory named by ``-o``."""
+    if not args.output:
+        raise _UsageError(
+            "split_all produced one file per frame; pass -o DIR to name an output directory"
+        )
+    directory = Path(args.output)
+    directory.mkdir(parents=True, exist_ok=True)
+    # POSCAR/CONTCAR have no conventional extension; other formats take one from the format id.
+    suffix = "" if args.to in ("poscar", "contcar") else f".{args.to}"
+    stem = "POSCAR" if args.to in ("poscar", "contcar") else "frame"
+    for i, chunk in enumerate(outputs):
+        (directory / f"{stem}_{i:04d}{suffix}").write_bytes(chunk)
+    # Status line to stderr so a --json run keeps stdout clean.
+    print(f"Wrote {len(outputs)} {args.to} file(s) to {directory}/", file=sys.stderr)
 
 
 def _read_bytes(path: str) -> bytes:

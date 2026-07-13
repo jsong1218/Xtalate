@@ -109,3 +109,107 @@ def test_single_frame_xyz_to_poscar_only_needs_lattice() -> None:
     source = reg.get_parser("xyz").parse(io.BytesIO(data), filename="o.xyz").canonical
     diff = build_preflight(source, _matrix(reg), "poscar")
     assert [s.scenario for s in diff.unresolved] == ["missing_lattice"]
+
+
+# --- honest, pair-specific option lists on detected scenarios (M7, Part 4 §3.3) ------------------
+
+
+def test_missing_lattice_scenario_carries_honest_options_excluding_non_periodic() -> None:
+    # POSCAR is periodic-only, so the detected scenario's own option list excludes non_periodic —
+    # the same list the engine validates against and the refusal report shows (no drift). It does
+    # include upload_reference (Slice 2), which any target can offer.
+    reg = _registry()
+    source = _parse(reg, "xyz", GOLDEN / "xyz" / "water-traj" / "water_traj.xyz")
+    diff = build_preflight(source, _matrix(reg), "poscar")
+    lattice = next(s for s in diff.unresolved if s.scenario == "missing_lattice")
+    assert lattice.options == ["manual_input", "upload_reference", "bounding_box"]
+    assert "non_periodic" not in lattice.options
+
+
+# --- constraint_representation trigger (M7) ------------------------------------------------------
+
+_SELECTIVE_POSCAR = b"""sd test
+1.0
+  4.0  0.0  0.0
+  0.0  4.0  0.0
+  0.0  0.0  4.0
+H
+2
+Selective dynamics
+Direct
+  0.0 0.0 0.0   T T F
+  0.5 0.5 0.5   F F F
+"""
+
+_ALL_FREE_POSCAR = b"""all-T test
+1.0
+  4.0  0.0  0.0
+  0.0  4.0  0.0
+  0.0  0.0  4.0
+H
+1
+Selective dynamics
+Direct
+  0.0 0.0 0.0   T T T
+"""
+
+
+def test_nonempty_constraints_trigger_constraint_representation_not_auto_preserve() -> None:
+    # A non-empty constraint list against POSCAR's PARTIAL dynamics.constraints is a recorded choice
+    # (Part 4 §3.3) — not auto-preserved, and not in preserved/removed until the resolver decides.
+    reg = _registry()
+    source = (
+        reg.get_parser("poscar").parse(io.BytesIO(_SELECTIVE_POSCAR), filename="POSCAR").canonical
+    )
+    diff = build_preflight(source, _matrix(reg), "poscar")
+
+    scenario = next(s for s in diff.unresolved if s.scenario == "constraint_representation")
+    assert scenario.path == "dynamics.constraints"
+    assert scenario.options == ["project", "drop_all"]
+    assert scenario.params["representable_kinds"] == ["selective_dynamics"]
+    assert "dynamics.constraints" not in {e.path for e in diff.preserved}
+    assert "dynamics.constraints" not in {e.path for e in diff.removed}
+    assert "dynamics.constraints" not in diff.write_plan
+
+
+def test_empty_constraints_do_not_trigger_and_preserve_normally() -> None:
+    # constraints=[] ("explicitly unconstrained", Part 2 §3.6) carries no subset to choose — it is
+    # present and PARTIAL-representable, so it preserves normally, no scenario.
+    reg = _registry()
+    source = (
+        reg.get_parser("poscar").parse(io.BytesIO(_ALL_FREE_POSCAR), filename="POSCAR").canonical
+    )
+    assert source.frames[0].dynamics.constraints == []
+    diff = build_preflight(source, _matrix(reg), "poscar")
+    assert [s.scenario for s in diff.unresolved] == []
+    assert "dynamics.constraints" in {e.path for e in diff.preserved}
+
+
+def test_xyz_target_preserves_only_comment_of_custom_per_frame() -> None:
+    # Plain XYZ writes one free-text comment line per frame (xyz:comment) and nothing else. An
+    # extXYZ source's foreign per-frame key must be predicted Removed — declaring the container
+    # FULL would predict it Preserved and then the exporter would silently drop it (Part 3 §4.2).
+    # Only the comment (if present) enters the write_plan, and per key, so canonical' keeps just it.
+    reg = _registry()
+    data = b"1\nProperties=species:S:1:pos:R:3 config_type=slab\nH 0 0 0\n"
+    source = reg.get_parser("extxyz").parse(io.BytesIO(data), filename="s.extxyz").canonical
+    diff = build_preflight(source, _matrix(reg), "xyz")
+
+    assert "user_metadata.custom_per_frame['extxyz:config_type']" in {e.path for e in diff.removed}
+    assert "user_metadata.custom_per_frame['extxyz:config_type']" not in {
+        e.path for e in diff.preserved
+    }
+    assert "user_metadata.custom_per_frame" not in diff.write_plan
+
+
+def test_xyz_target_keeps_comment_key_per_key_in_write_plan() -> None:
+    # A source carrying the free-text comment: xyz:comment is Preserved and enters the write_plan at
+    # per-key granularity (not the whole container), so a sibling foreign key would not ride along.
+    reg = _registry()
+    xyz = b"1\nhello world\nH 0 0 0\n"
+    source = reg.get_parser("xyz").parse(io.BytesIO(xyz), filename="t.xyz").canonical
+    diff = build_preflight(source, _matrix(reg), "xyz")
+
+    assert "user_metadata.custom_per_frame['xyz:comment']" in {e.path for e in diff.preserved}
+    assert "user_metadata.custom_per_frame['xyz:comment']" in diff.write_plan
+    assert "user_metadata.custom_per_frame" not in diff.write_plan

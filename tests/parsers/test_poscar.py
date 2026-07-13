@@ -3,6 +3,7 @@ selective dynamics, VASP-4 recovery error, the CONTCAR tail, and sniffing (Part 
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import numpy as np
@@ -198,6 +199,34 @@ def test_velocity_and_predictor_tail_carried_through() -> None:
     # A velocity block came from the file, so its unit is annotated and noted (not left implicit).
     assert obj.provenance.source_units.get("velocities") == "angstrom/fs"
     assert any("velocity block read from the CONTCAR tail" in n for n in obj.provenance.parse_notes)
+
+
+_VASP4 = b"vasp4\n1.0\n 4 0 0\n 0 4 0\n 0 0 4\n2 1\nDirect\n 0 0 0\n 0.5 0.5 0.5\n 0.25 0.25 0.25\n"
+
+
+def test_parse_recover_species_map_rejects_wrong_group_count() -> None:
+    # 2 count groups but only 1 symbol supplied → a clear ParseError, not a silent mis-map.
+    with pytest.raises(ParseError, match="one symbol per count group"):
+        make_poscar_parser().parse_recover(
+            io.BytesIO(_VASP4),
+            filename="POSCAR",
+            hint="supply_species",
+            choice="species_map",
+            parameters={"species": "H"},
+        )
+
+
+def test_parse_recover_rejects_non_vasp4_input() -> None:
+    # A VASP-5 file (species line present) is not a supply_species case.
+    v5 = b"v5\n1.0\n 4 0 0\n 0 4 0\n 0 0 4\nH\n2\nDirect\n 0 0 0\n 0.5 0.5 0.5\n"
+    with pytest.raises(ParseError, match="VASP-4 counts line"):
+        make_poscar_parser().parse_recover(
+            io.BytesIO(v5),
+            filename="POSCAR",
+            hint="supply_species",
+            choice="species_map",
+            parameters={"species": "H"},
+        )
 
 
 def test_sniff_exact_names() -> None:

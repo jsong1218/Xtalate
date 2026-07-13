@@ -18,17 +18,60 @@ import pytest
 from xtalate.capabilities import Registry
 from xtalate.parsers import builtin_parsers
 from xtalate.recovery import RecoveryEngine, RecoveryError, UnresolvedScenario
-from xtalate.schema import CanonicalObject
+from xtalate.schema import CanonicalObject, Constraint
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 
 
-def _source() -> CanonicalObject:
+def _registry() -> Registry:
     reg = Registry()
     for parser in builtin_parsers():
         reg.register_parser(parser)
+    return reg
+
+
+def _source() -> CanonicalObject:
+    reg = _registry()
     data = (GOLDEN / "xyz" / "water-traj" / "water_traj.xyz").read_bytes()
     return reg.get_parser("xyz").parse(io.BytesIO(data), filename="w.xyz").canonical
+
+
+# A single-frame POSCAR carrying a real selective_dynamics constraint (some atoms fixed) plus an
+# injected non-representable constraint, for the constraint_representation resolver tests.
+_SELECTIVE_POSCAR = b"""sd test
+1.0
+  4.0  0.0  0.0
+  0.0  4.0  0.0
+  0.0  0.0  4.0
+H
+2
+Selective dynamics
+Direct
+  0.0 0.0 0.0   T T F
+  0.5 0.5 0.5   F F F
+"""
+
+
+def _constraint_source(*, add_unrepresentable: bool = False) -> CanonicalObject:
+    reg = _registry()
+    obj = reg.get_parser("poscar").parse(io.BytesIO(_SELECTIVE_POSCAR), filename="POSCAR").canonical
+    frame = obj.frames[0]
+    constraints = list(frame.dynamics.constraints or [])
+    assert constraints and constraints[0].kind == "selective_dynamics"
+    if add_unrepresentable:
+        constraints.append(Constraint(kind="fixed_bond", atom_indices=[0, 1]))
+    new_dyn = frame.dynamics.model_copy(update={"constraints": constraints})
+    return obj.model_copy(update={"frames": [frame.model_copy(update={"dynamics": new_dyn})]})
+
+
+# The offered options a POSCAR target computes for constraint_representation (Part 4 §3.3).
+def _constraint_scenario() -> UnresolvedScenario:
+    return UnresolvedScenario(
+        scenario="constraint_representation",
+        path="dynamics.constraints",
+        options=["project", "drop_all"],
+        params={"representable_kinds": ["selective_dynamics"]},
+    )
 
 
 # The two scenarios a multi-frame, no-lattice XYZ → POSCAR raises (Part 4 §5 worked example shape).
@@ -173,3 +216,222 @@ def test_index_frame_selection_requires_in_range_index() -> None:
                 "frame_selection": {"choice": "index", "parameters": {"frame_index": 99}}
             },
         )
+
+
+# --- constraint_representation (selective reductive, Part 4 §3.3) ---------------------------------
+
+
+def test_constraint_project_keeps_representable_and_drops_the_remainder() -> None:
+    # project keeps the representable subset (selective_dynamics) — genuine data, so Preserved,
+    # never Supplied — and drops the unrepresentable remainder (fixed_bond) — Removed.
+    src = _constraint_source(add_unrepresentable=True)
+    result = RecoveryEngine().resolve(
+        src,
+        [_constraint_scenario()],
+        recovery_choices={"constraint_representation": {"choice": "project"}},
+    )
+    assert result.canonical is not None
+    (a,) = result.assumptions
+    assert (a.id, a.scenario, a.choice) == ("A1", "constraint_representation", "project")
+
+    # Selective-reductive bright line: NO SuppliedField.
+    assert a.supplied == []
+    assert [p.path for p in a.preserved] == ["dynamics.constraints"]
+    assert [r.path for r in a.removed] == ["dynamics.constraints"]
+    assert a.parameters["dropped_kinds"] == {"fixed_bond": 1}
+
+    # The object keeps only the representable constraint.
+    kept = result.canonical.frames[0].dynamics.constraints
+    assert kept is not None
+    assert [c.kind for c in kept] == ["selective_dynamics"]
+
+
+def test_constraint_project_with_all_representable_drops_nothing() -> None:
+    # Source has only selective_dynamics, which POSCAR represents → kept, nothing removed.
+    src = _constraint_source()
+    result = RecoveryEngine().resolve(
+        src,
+        [_constraint_scenario()],
+        recovery_choices={"constraint_representation": {"choice": "project"}},
+    )
+    assert result.canonical is not None
+    (a,) = result.assumptions
+    assert [p.path for p in a.preserved] == ["dynamics.constraints"]
+    assert a.removed == []
+    assert a.supplied == []
+
+
+def test_constraint_drop_all_removes_everything_and_supplies_nothing() -> None:
+    src = _constraint_source(add_unrepresentable=True)
+    result = RecoveryEngine().resolve(
+        src,
+        [_constraint_scenario()],
+        recovery_choices={"constraint_representation": {"choice": "drop_all"}},
+    )
+    assert result.canonical is not None
+    (a,) = result.assumptions
+    assert a.choice == "drop_all"
+    assert a.preserved == []
+    assert a.supplied == []
+    assert [r.path for r in a.removed] == ["dynamics.constraints"]
+    assert a.parameters == {"dropped": 2}
+    # All constraints gone (absence convention: None, not an empty list).
+    assert result.canonical.frames[0].dynamics.constraints is None
+
+
+def test_constraint_unoffered_choice_raises() -> None:
+    with pytest.raises(RecoveryError, match="not an offered option"):
+        RecoveryEngine().resolve(
+            _constraint_source(),
+            [_constraint_scenario()],
+            recovery_choices={"constraint_representation": {"choice": "reproject"}},
+        )
+
+
+# --- composition ordering across three scenarios (Part 4 §3.3) ------------------------------------
+
+
+def test_three_scenarios_resolve_in_dependency_order() -> None:
+    # A multi-frame, no-lattice, constraint-bearing source needs all three. They must resolve in
+    # dependency order — frame_selection, then constraint_representation, then missing_lattice
+    # (the bounding box is computed on the chosen frame) — and be numbered A1, A2, A3 in that order.
+    src = _source()  # multi-frame water, no lattice, no constraints…
+    frame0 = src.frames[0]
+    cons = [
+        Constraint(
+            kind="selective_dynamics",
+            atom_indices=[0, 1, 2],
+            parameters={"mask": [[True, True, True]] * 3},
+        )
+    ]
+    frame0 = frame0.model_copy(
+        update={"dynamics": frame0.dynamics.model_copy(update={"constraints": cons})}
+    )
+    src = src.model_copy(update={"frames": [frame0, *src.frames[1:]]})
+
+    result = RecoveryEngine().resolve(
+        src,
+        [
+            UnresolvedScenario(scenario="missing_lattice", path="cell.lattice_vectors"),
+            _constraint_scenario(),
+            UnresolvedScenario(scenario="frame_selection"),
+        ],
+        recovery_choices={
+            "frame_selection": {"choice": "first"},
+            "constraint_representation": {"choice": "project"},
+            "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 3.0}},
+        },
+    )
+    assert result.canonical is not None
+    assert [(a.id, a.scenario) for a in result.assumptions] == [
+        ("A1", "frame_selection"),
+        ("A2", "constraint_representation"),
+        ("A3", "missing_lattice"),
+    ]
+
+
+# --- missing_lattice: upload_reference (Slice 2, Part 4 §3.3) -------------------------------------
+
+_REF_POSCAR = b"""ref
+1.0
+  5.0  0.0  0.0
+  0.0  6.0  0.0
+  0.0  0.0  7.0
+O H
+1 2
+Direct
+  0.0 0.0 0.0
+  0.1 0.1 0.1
+  0.2 0.2 0.2
+"""
+
+
+def _reference() -> CanonicalObject:
+    reg = _registry()
+    return reg.get_parser("poscar").parse(io.BytesIO(_REF_POSCAR), filename="POSCAR").canonical
+
+
+def test_upload_reference_borrows_the_reference_lattice() -> None:
+    # A no-lattice source (3 atoms) borrows the 3×3 lattice from a 3-atom reference structure;
+    # this is fabricative — the cell did not exist in the source — so it supplies cell fields.
+    result = RecoveryEngine().resolve(
+        _source(),
+        [
+            UnresolvedScenario(scenario="frame_selection"),
+            UnresolvedScenario(
+                scenario="missing_lattice",
+                path="cell.lattice_vectors",
+                options=["manual_input", "upload_reference", "bounding_box"],
+            ),
+        ],
+        recovery_choices={
+            "frame_selection": {"choice": "first"},
+            "missing_lattice": {
+                "choice": "upload_reference",
+                "parameters": {"reference": _reference()},
+            },
+        },
+    )
+    assert result.canonical is not None
+    cell = result.canonical.frames[0].cell
+    assert cell is not None
+    assert np.allclose(np.diag(np.asarray(cell.lattice_vectors, dtype=float)), [5.0, 6.0, 7.0])
+    (assumption,) = [a for a in result.assumptions if a.scenario == "missing_lattice"]
+    assert assumption.choice == "upload_reference"
+    # Fabricative bright line: the borrowed cell is a SuppliedField, never a PreservedField.
+    assert {s.path for s in assumption.supplied} == {"cell.lattice_vectors", "cell.pbc"}
+
+
+def test_upload_reference_rejects_atom_count_mismatch() -> None:
+    reg = _registry()
+    # A 2-atom reference against the 3-atom water source.
+    two_atom = (
+        reg.get_parser("poscar")
+        .parse(
+            io.BytesIO(_REF_POSCAR.replace(b"1 2\n", b"1 1\n").replace(b"  0.2 0.2 0.2\n", b"")),
+            filename="POSCAR",
+        )
+        .canonical
+    )
+    with pytest.raises(RecoveryError, match="atom-count mismatch"):
+        RecoveryEngine().resolve(
+            _source(),
+            [
+                UnresolvedScenario(scenario="frame_selection"),
+                UnresolvedScenario(scenario="missing_lattice", path="cell.lattice_vectors"),
+            ],
+            recovery_choices={
+                "frame_selection": {"choice": "first"},
+                "missing_lattice": {
+                    "choice": "upload_reference",
+                    "parameters": {"reference": two_atom},
+                },
+            },
+        )
+
+
+# --- frame_selection: split_all (Slice 2, Part 4 §3.3) -------------------------------------------
+
+
+def test_split_all_keeps_every_frame_and_records_one_assumption() -> None:
+    # split_all does not reduce — every frame is retained (the ConversionEngine emits one file each)
+    # — and records exactly one Assumption with no removed entries (nothing is dropped).
+    src = _source()
+    n = src.frame_count
+    assert n > 1
+    result = RecoveryEngine().resolve(
+        src,
+        [
+            UnresolvedScenario(
+                scenario="frame_selection", options=["first", "last", "index", "split_all"]
+            )
+        ],
+        recovery_choices={"frame_selection": {"choice": "split_all"}},
+    )
+    assert result.canonical is not None
+    assert result.canonical.frame_count == n  # no reduction
+    (assumption,) = result.assumptions
+    assert assumption.scenario == "frame_selection"
+    assert assumption.choice == "split_all"
+    assert assumption.removed == []  # nothing dropped
+    assert assumption.supplied == []  # nothing fabricated

@@ -33,16 +33,20 @@ from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
 
+import numpy as np
+
 from xtalate import __version__
 from xtalate.capabilities import Registry
+from xtalate.conversion.parse_recovery import ParseRecovery
 from xtalate.conversion.preflight import PreflightDiff, build_preflight
 from xtalate.conversion.report import (
     Assumption,
     ConversionReport,
+    PreservedEntry,
     RemovedEntry,
     SuppliedEntry,
 )
-from xtalate.recovery import RecoveryEngine
+from xtalate.recovery import AppliedAssumption, RecoveryEngine
 from xtalate.schema import (
     AtomsBlock,
     CanonicalObject,
@@ -82,13 +86,18 @@ class ConversionResult:
     """Everything a caller (CLI, API, validation) needs from one conversion."""
 
     report: ConversionReport
-    output: bytes | None  # None iff refused.
+    output: bytes | None  # None iff refused, or iff `outputs` carries a per-frame set (split_all).
     # The write_plan-filtered object handed to the exporter — the Validation Engine's expected
     # object (Part 5 §1). None iff refused.
     canonical_out: CanonicalObject | None
     # Exactly one ValidationReport per completed conversion (Part 5 §3); None iff refused (a
-    # refused conversion produces no output file and therefore nothing to validate).
+    # refused conversion produces no output file and therefore nothing to validate). For a
+    # `split_all` conversion this is the merged report over all per-frame files.
     validation: ValidationReport | None = None
+    # One output per frame, set *only* when `frame_selection=split_all` resolved (Part 4 §3.3): the
+    # single-structure target receives one file per source frame. None for an ordinary single-file
+    # conversion (where `output` carries the bytes). The CLI writes these into a directory.
+    outputs: list[bytes] | None = None
 
 
 class ConversionEngine:
@@ -122,7 +131,9 @@ class ConversionEngine:
             source_sha256=source_sha256,
             target_format_id=target_format_id,
             target_filename=target_filename,
-            preserved=diff.preserved,
+            # `pending` paths (a scenario decides their fate) ride in the draft as predicted-
+            # preserved so the completeness invariant holds before any choice is made (Part 4 §3.3).
+            preserved=[*diff.preserved, *diff.pending],
             removed=diff.removed,
             warnings=diff.warnings,
         )
@@ -141,26 +152,48 @@ class ConversionEngine:
         mode: str = "permissive",
         recovery_choices: dict[str, dict[str, Any]] | None = None,
         parse_issues: list[ParseIssue] | None = None,
+        parse_recovery: ParseRecovery | None = None,
         acknowledge_loss: bool = False,
         acknowledge_parse_warnings: bool = False,
         tolerance_profile: str = "default",
     ) -> ConversionResult:
-        """Run the conversion end to end and produce the final report (Part 4 §1)."""
+        """Run the conversion end to end and produce the final report (Part 4 §1).
+
+        ``parse_recovery`` carries any *parse-time* recovery (``missing_species``,
+        ``truncate_corrupt_tail``) the caller already applied via ``parse_with_recovery`` — its
+        Assumptions are merged ahead of pre-flight recovery and land in the report identically."""
         recovery_choices = recovery_choices or {}
-        parse_issues = parse_issues or []
+        parse_issues = list(parse_issues or [])
+        if parse_recovery is not None:
+            # The recovery's own warnings (POSCAR_SPECIES_SUPPLIED / XYZ_TRUNCATED) echo into the
+            # report like any parse warning (Part 3 §5 rule 5), so the recovery is never silent.
+            parse_issues = [*parse_issues, *parse_recovery.issues]
         matrix = self._registry.capability_matrix()
         diff = build_preflight(source, matrix, target_format_id)
 
-        # --- Recovery (Part 4 §3) --------------------------------------------------------
-        recovered = source
-        assumptions: list[Assumption] = []
-        supplied: list[SuppliedEntry] = []
-        recovery_removed: list[RemovedEntry] = []
-        write_plan = set(diff.write_plan)
+        # Parse-time recovery Assumptions (applied before the object existed) are merged ahead of
+        # pre-flight recovery. Their fabricated paths are already present in `source` (it is the
+        # recovered object), so they are excluded from the pre-flight `preserved` and treated as
+        # absent-at-source by the completeness invariant — they belong in `supplied` (Part 4 §3.3).
+        parse_applied = list(parse_recovery.assumptions) if parse_recovery else []
+        fabricated_at_parse = {sup.path for a in parse_applied for sup in a.supplied}
 
+        # --- Pre-flight recovery (Part 4 §3) ---------------------------------------------
+        recovered = source
+        recovery_applied: list[AppliedAssumption] = []
         if diff.unresolved:
             outcome = self._recovery.resolve(source, diff.unresolved, recovery_choices)
             if outcome.canonical is None:
+                # Refusal after a successful parse-time recovery still carries that recovery's
+                # Assumptions/supplied so the refused report is complete (Part 4 §2, §3.3).
+                for n, applied in enumerate(parse_applied, 1):
+                    applied.id = f"A{n}"
+                r_assumptions, r_supplied, r_preserved, r_removed, _ = _map_assumptions(
+                    parse_applied
+                )
+                preflight_preserved = [
+                    e for e in diff.preserved if e.path not in fabricated_at_parse
+                ]
                 return self._refuse(
                     source=source,
                     source_format_id=source_format_id,
@@ -170,39 +203,45 @@ class ConversionEngine:
                     target_filename=target_filename,
                     mode=mode,
                     diff=diff,
+                    # A scenario-refused conversion still accounts for the `pending` paths (whose
+                    # fate the unmade choice would decide) as predicted-preserved, so the refusal
+                    # report satisfies the completeness invariant (Part 4 §2, §3.3).
+                    preserved=[*preflight_preserved, *diff.pending, *r_preserved],
+                    removed=[*diff.removed, *r_removed],
+                    supplied=r_supplied,
+                    assumptions=r_assumptions,
+                    fabricated_at_parse=fabricated_at_parse,
                     refusal={
                         "code": "RECOVERY_REQUIRED",
                         "message": "conversion needs recovery decisions that were not supplied; "
                         "provide them as recovery_choices presets, or choose a target that does "
                         "not require the missing fields",
                         "unresolved_scenarios": [
-                            {"scenario": s.scenario, "path": s.path, "detail": s.detail}
+                            {
+                                "scenario": s.scenario,
+                                "path": s.path,
+                                "detail": s.detail,
+                                "options": s.options,
+                            }
                             for s in outcome.unresolved
                         ],
                     },
                 )
             recovered = outcome.canonical
-            for applied in outcome.assumptions:
-                assumptions.append(
-                    Assumption(
-                        id=applied.id,
-                        scenario=applied.scenario,
-                        choice=applied.choice,
-                        parameters=applied.parameters,
-                        origin=applied.origin,  # type: ignore[arg-type]
-                        description=applied.description,
-                    )
-                )
-                for sup in applied.supplied:
-                    supplied.append(
-                        SuppliedEntry(path=sup.path, from_assumption=applied.id, detail=sup.detail)
-                    )
-                    write_plan.add(sup.path)  # a fabricated field must be in the write_plan.
-                for drop in applied.removed:
-                    recovery_removed.append(
-                        RemovedEntry(path=drop.path, reason=drop.reason, detail=drop.detail)
-                    )
+            recovery_applied = outcome.assumptions
 
+        # Merge parse-time (first) and pre-flight recovery Assumptions, renumbering A1.. in
+        # application order (Part 4 §5 numbering).
+        all_applied = [*parse_applied, *recovery_applied]
+        for n, applied in enumerate(all_applied, 1):
+            applied.id = f"A{n}"
+        assumptions, supplied, recovery_preserved, recovery_removed, plan_additions = (
+            _map_assumptions(all_applied)
+        )
+        write_plan = set(diff.write_plan) | plan_additions
+
+        preflight_preserved = [e for e in diff.preserved if e.path not in fabricated_at_parse]
+        preserved = [*preflight_preserved, *recovery_preserved]
         removed = [*diff.removed, *recovery_removed]
 
         # --- Strict-mode gating (Part 4 §4) ----------------------------------------------
@@ -217,6 +256,7 @@ class ConversionEngine:
                     target_filename=target_filename,
                     mode=mode,
                     diff=diff,
+                    preserved=preserved,
                     removed=removed,
                     supplied=supplied,
                     assumptions=assumptions,
@@ -238,6 +278,7 @@ class ConversionEngine:
                     target_filename=target_filename,
                     mode=mode,
                     diff=diff,
+                    preserved=preserved,
                     removed=removed,
                     supplied=supplied,
                     assumptions=assumptions,
@@ -255,9 +296,6 @@ class ConversionEngine:
         )
         canonical_out = _apply_write_plan(recovered, write_plan, target_format_id)
         exporter = self._registry.get_exporter(target_format_id)
-        buffer = BytesIO()
-        exporter.export(canonical_out, buffer)
-        output = buffer.getvalue()
 
         # Warnings echo parse warnings (Part 3 §5 rule 5) alongside capability caveats (already in
         # diff.warnings). Export-time transformation warnings would be added here if the exporter
@@ -274,13 +312,47 @@ class ConversionEngine:
             source_sha256=source_sha256,
             target_format_id=target_format_id,
             target_filename=target_filename,
-            preserved=diff.preserved,
+            preserved=preserved,
             removed=removed,
             supplied=supplied,
             assumptions=assumptions,
             warnings=warnings,
         )
-        _assert_completeness(report, source)
+        _assert_completeness(report, source, fabricated_at_parse)
+
+        tolerance = ToleranceProfile.named(tolerance_profile)
+
+        # `frame_selection=split_all` (Part 4 §3.3): the single-structure target receives one file
+        # per retained frame. Each file is exported and validated against its own single-frame
+        # expected object; the per-file Validation Reports are merged into one (worst status wins).
+        if _is_split_all(assumptions):
+            outputs: list[bytes] = []
+            validations: list[ValidationReport] = []
+            for i in range(canonical_out.frame_count):
+                single = _single_frame_slice(canonical_out, i)
+                buffer = BytesIO()
+                exporter.export(single, buffer)
+                outputs.append(buffer.getvalue())
+                validations.append(
+                    self._validation.validate(
+                        expected=single,
+                        output=outputs[-1],
+                        target_format_id=target_format_id,
+                        conversion_report=report,
+                        tolerance=tolerance,
+                    )
+                )
+            return ConversionResult(
+                report=report,
+                output=None,
+                canonical_out=canonical_out,
+                validation=_merge_split_validations(validations),
+                outputs=outputs,
+            )
+
+        buffer = BytesIO()
+        exporter.export(canonical_out, buffer)
+        output = buffer.getvalue()
 
         # --- Validation (Part 5) — the unconditional final step --------------------------
         validation = self._validation.validate(
@@ -288,7 +360,7 @@ class ConversionEngine:
             output=output,
             target_format_id=target_format_id,
             conversion_report=report,
-            tolerance=ToleranceProfile.named(tolerance_profile),
+            tolerance=tolerance,
         )
         return ConversionResult(
             report=report, output=output, canonical_out=canonical_out, validation=validation
@@ -306,14 +378,18 @@ class ConversionEngine:
         mode: str,
         diff: PreflightDiff,
         refusal: dict[str, Any],
+        preserved: list[PreservedEntry] | None = None,
         removed: list[RemovedEntry] | None = None,
         supplied: list[SuppliedEntry] | None = None,
         assumptions: list[Assumption] | None = None,
+        fabricated_at_parse: frozenset[str] | set[str] = frozenset(),
     ) -> ConversionResult:
         """Assemble a refused Conversion Report (a completed outcome, not an error; Part 4 §4).
 
         The full pre-flight `preserved`/`removed` prediction rides along so a pipeline has
-        everything it needs to decide whether to supply presets and retry."""
+        everything it needs to decide whether to supply presets and retry. A strict-mode refusal
+        that fires *after* recovery passes the recovery-augmented `preserved`/`removed` so the
+        completeness invariant still holds over the refused report."""
         report = self._assemble(
             stage="final",
             status="refused",
@@ -324,14 +400,14 @@ class ConversionEngine:
             source_sha256=source_sha256,
             target_format_id=target_format_id,
             target_filename=target_filename,
-            preserved=diff.preserved,
+            preserved=preserved if preserved is not None else diff.preserved,
             removed=removed if removed is not None else diff.removed,
             supplied=supplied or [],
             assumptions=assumptions or [],
             warnings=diff.warnings,
             refusal=refusal,
         )
-        _assert_completeness(report, source)
+        _assert_completeness(report, source, fabricated_at_parse)
         return ConversionResult(report=report, output=None, canonical_out=None, validation=None)
 
     def _assemble(
@@ -373,6 +449,47 @@ class ConversionEngine:
             warnings=list(warnings),
             refusal=refusal,
         )
+
+
+def _map_assumptions(
+    applied_list: list[AppliedAssumption],
+) -> tuple[
+    list[Assumption], list[SuppliedEntry], list[PreservedEntry], list[RemovedEntry], set[str]
+]:
+    """Map the Recovery Engine's plain ``AppliedAssumption`` result types onto the Conversion
+    Report's ``Assumption``/``SuppliedEntry``/``PreservedEntry``/``RemovedEntry`` (Part 4 §2–3),
+    returning the report entries plus the set of paths a fabrication/retention adds to the write
+    plan. Shared by the success path and the (parse-time-only) refusal path so both build the report
+    identically."""
+    assumptions: list[Assumption] = []
+    supplied: list[SuppliedEntry] = []
+    preserved: list[PreservedEntry] = []
+    removed: list[RemovedEntry] = []
+    plan_additions: set[str] = set()
+    for applied in applied_list:
+        assumptions.append(
+            Assumption(
+                id=applied.id,
+                scenario=applied.scenario,
+                choice=applied.choice,
+                parameters=applied.parameters,
+                origin=applied.origin,  # type: ignore[arg-type]
+                description=applied.description,
+            )
+        )
+        for sup in applied.supplied:
+            supplied.append(
+                SuppliedEntry(path=sup.path, from_assumption=applied.id, detail=sup.detail)
+            )
+            plan_additions.add(sup.path)  # a fabricated field must be in the write_plan.
+        for pres in applied.preserved:
+            # A selective-reductive choice's *retained* genuine data (e.g. the constraint subset
+            # `project` keeps) — Preserved (and written), never Supplied (P4).
+            preserved.append(PreservedEntry(path=pres.path, detail=pres.detail))
+            plan_additions.add(pres.path)
+        for drop in applied.removed:
+            removed.append(RemovedEntry(path=drop.path, reason=drop.reason, detail=drop.detail))
+    return assumptions, supplied, preserved, removed, plan_additions
 
 
 def _utc_now() -> str:
@@ -420,6 +537,49 @@ def _append_recovery_records(
     )
 
 
+def _is_split_all(assumptions: list[Assumption]) -> bool:
+    """True iff a ``frame_selection=split_all`` choice was applied — the signal for
+    one-file-per-frame export (Part 4 §3.3). The applied Assumption's ``scenario``/``choice`` is the
+    sole signal; the recovered object still carries every frame."""
+    return any(a.scenario == "frame_selection" and a.choice == "split_all" for a in assumptions)
+
+
+def _single_frame_slice(obj: CanonicalObject, i: int) -> CanonicalObject:
+    """A single-structure copy of ``obj`` holding only frame ``i`` (re-indexed 0), for one
+    ``split_all`` output file and its validation reference. Per-frame custom arrays are sliced to
+    the kept frame (Part 2 §3.10); ``trajectory`` is dropped (a lone frame is not a trajectory)."""
+    frame = obj.frames[i].model_copy(update={"index": 0})
+    um = obj.user_metadata
+    sliced: dict[str, Any] = {}
+    for key, val in um.custom_per_frame.items():
+        sliced[key] = val[i : i + 1] if isinstance(val, np.ndarray) else [val[i]]
+    new_um = um.model_copy(update={"custom_per_frame": sliced})
+    return obj.model_copy(update={"frames": [frame], "trajectory": None, "user_metadata": new_um})
+
+
+def _merge_split_validations(validations: list[ValidationReport]) -> ValidationReport:
+    """Merge the per-file Validation Reports of a ``split_all`` conversion into one (Part 5 §3: one
+    report per completed conversion). The aggregate ``status`` is the worst across files; each
+    file's checks are carried through, tagged with ``split_file_index`` so a failure is located."""
+    rank = {"passed": 0, "passed_with_warnings": 1, "failed": 2}
+    status = max((v.status for v in validations), key=lambda s: rank[s])
+    checks = [
+        c.model_copy(update={"measured": {**c.measured, "split_file_index": i}})
+        for i, v in enumerate(validations)
+        for c in v.checks
+    ]
+    return ValidationReport(
+        report_id=str(uuid.uuid4()),
+        conversion_report_id=validations[0].conversion_report_id,
+        created_at=_utc_now(),
+        status=status,
+        checks=checks,
+        tolerance_profile=validations[0].tolerance_profile,
+        reparse_issues=[issue for v in validations for issue in v.reparse_issues],
+        schema_version=validations[0].schema_version,
+    )
+
+
 def build_expected_object(
     source: CanonicalObject, write_plan: set[str], target_format_id: str
 ) -> CanonicalObject:
@@ -457,9 +617,9 @@ def _apply_write_plan(
     user_metadata = UserMetadata(
         tags=um.tags if "user_metadata.tags" in plan else [],
         annotations=um.annotations if "user_metadata.annotations" in plan else {},
-        custom_global=um.custom_global if "user_metadata.custom_global" in plan else {},
-        custom_per_atom=um.custom_per_atom if "user_metadata.custom_per_atom" in plan else {},
-        custom_per_frame=um.custom_per_frame if "user_metadata.custom_per_frame" in plan else {},
+        custom_global=_kept_custom(um.custom_global, "user_metadata.custom_global", plan),
+        custom_per_atom=_kept_custom(um.custom_per_atom, "user_metadata.custom_per_atom", plan),
+        custom_per_frame=_kept_custom(um.custom_per_frame, "user_metadata.custom_per_frame", plan),
     )
 
     provenance = source.provenance.model_copy(
@@ -487,6 +647,17 @@ def _apply_write_plan(
         provenance=provenance,
         user_metadata=user_metadata,
     )
+
+
+def _kept_custom(container: dict[str, Any], container_path: str, plan: set[str]) -> dict[str, Any]:
+    """Filter a ``custom_*`` container against the write_plan (Part 4 §1). A container-level plan
+    entry keeps the whole container (a FULL/PARTIAL target that writes any key — e.g. extXYZ);
+    otherwise only keys whose per-key path is planned survive (a target that writes only specific
+    keys — e.g. plain XYZ's ``xyz:comment``). The per-key path format mirrors ``field_presence()``
+    exactly (``schema.presence``), so a preserved per-key path round-trips through this filter."""
+    if container_path in plan:
+        return dict(container)
+    return {k: v for k, v in container.items() if f"{container_path}['{k}']" in plan}
 
 
 def _filter_frame(frame: Frame, plan: set[str]) -> Frame:
@@ -528,24 +699,38 @@ def _filter_frame(frame: Frame, plan: set[str]) -> Frame:
     )
 
 
-def _assert_completeness(report: ConversionReport, source: CanonicalObject) -> None:
+def _assert_completeness(
+    report: ConversionReport,
+    source: CanonicalObject,
+    fabricated_at_parse: frozenset[str] | set[str] = frozenset(),
+) -> None:
     """The completeness invariant (Part 4 §2), asserted at finalization (review §4.5).
 
     Every source-present/`mixed` path (bar the derived mirror) must appear in `preserved` ∪
     `removed`; every `supplied` path must be absent on the source and trace to an Assumption.
     A violation is silent loss (P1) or silent fabrication (P4) — the two defects this whole
-    project exists to make impossible — so it raises unconditionally, never merely logs."""
+    project exists to make impossible — so it raises unconditionally, never merely logs.
+
+    ``fabricated_at_parse`` names paths a *parse-time* recovery fabricated (e.g. ``atoms.symbols``
+    via ``missing_species``). They are present in ``source`` (the object is already recovered) but
+    were absent from the original file, so they are treated as absent-at-source: excluded from the
+    silent-loss sweep (they belong in `supplied`, not `preserved`) and permitted in `supplied`
+    (their fabrication is honest, not fabrication-of-existing-data)."""
     presence = source.field_presence()
     accounted = {e.path for e in report.preserved} | {e.path for e in report.removed}
     for entry in presence.entries:
-        if entry.status in ("present", "mixed") and entry.path not in _DERIVED_PATHS:
+        if (
+            entry.status in ("present", "mixed")
+            and entry.path not in _DERIVED_PATHS
+            and entry.path not in fabricated_at_parse
+        ):
             if entry.path not in accounted:
                 raise CompletenessInvariantError(
                     f"source-present path {entry.path!r} is in neither preserved nor removed — "
                     "silent loss (P1)"
                 )
 
-    source_present = set(presence.present_paths())
+    source_present = set(presence.present_paths()) - set(fabricated_at_parse)
     assumption_ids = {a.id for a in report.assumptions}
     for supplied in report.supplied:
         if supplied.path in source_present:

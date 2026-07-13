@@ -44,6 +44,27 @@ class FormatCapabilities(BaseModel):
     max_frames: int | None = None  # None = unlimited; 1 = single-structure format.
     # Canonical paths that MUST be present to write this format (write side only). Drives Recovery.
     required_fields: list[str] = Field(default_factory=list)
+    # Whether the format can express an open (non-periodic) cell, `pbc=(F,F,F)` (write side). Drives
+    # the ✳`non_periodic` option of the `missing_lattice` recovery scenario (Part 4 §3.3): a lattice
+    # a periodic-only target *requires* can be fabricated as an open box only for a target that can
+    # say "not periodic" — extXYZ yes, POSCAR never. An explicit, machine-readable flag rather than
+    # a prose reading of the `cell.pbc` note (DECISIONS.md D35). Absent/False = fully-periodic only.
+    allows_open_boundaries: bool = False
+    # The constraint `kind` values this format can represent (write side; Part 2 §3.6, Part 4 §3.3).
+    # When `dynamics.constraints` is PARTIAL, this is the machine-readable subset the
+    # `constraint_representation` recovery `project` choice keeps (the remainder → `removed`) — e.g.
+    # POSCAR declares `["selective_dynamics"]`. Empty for a format that represents no constraints.
+    representable_constraint_kinds: list[str] = Field(default_factory=list)
+    # For a `custom_*` container the format can hold only *specific* keys, the exact writable set
+    # keyed by container path (write side; Part 3 §4.2). The machine-readable analogue of
+    # `representable_constraint_kinds` for dynamic custom keys: a present key **outside** the set is
+    # reported `removed` in pre-flight rather than predicted-preserved and then silently dropped by
+    # the exporter — and only the listed keys enter the write plan, so `canonical′` (the Validation
+    # Engine's reference) matches what the exporter actually writes. Plain XYZ declares
+    # `{"user_metadata.custom_per_frame": ["xyz:comment"]}` — it holds one free-text comment line
+    # per frame, so a foreign per-frame key (e.g. an extXYZ `config_type`) is honestly dropped.
+    # Empty = no per-key restriction; the container's `fields` level governs every key uniformly.
+    writable_custom_keys: dict[str, list[str]] = Field(default_factory=dict)
     native_coordinate_system: Literal["cartesian", "fractional", "both"]
     lossy_notes: list[str] = Field(default_factory=list)  # Format-level caveats -> Warnings.
     # Declared decimal precision per canonical field path (write side) — the machine-readable
