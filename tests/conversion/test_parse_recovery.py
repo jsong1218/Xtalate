@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from xtalate.capabilities import Registry
 from xtalate.conversion import ConversionEngine, parse_with_recovery
 from xtalate.registry import default_registry
 from xtalate.sdk import ParseError
@@ -46,7 +47,7 @@ Direct
 _CORRUPT_XYZ = b"2\nf0\nH 0 0 0\nH 0 0 0.8\n2\nf1\nH 0 0 0\nH 0 0 0.9\n2\nf2\nH 0 0 0\n"
 
 
-def _reg():  # type: ignore[no-untyped-def]
+def _reg() -> Registry:
     return default_registry()
 
 
