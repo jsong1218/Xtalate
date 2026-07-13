@@ -102,6 +102,54 @@ class XyzParser(ParserPlugin):
 
     def parse(self, stream: BinaryIO, *, filename: str | None) -> ParseResult:
         lines = decode_text(stream.read(), format_id=FORMAT_ID).splitlines()
+        frames, comments, _corrupt = self._read_frames(lines, truncate=False)
+        return self._assemble(frames, comments, filename)
+
+    def parse_recover(
+        self,
+        stream: BinaryIO,
+        *,
+        filename: str | None,
+        hint: str,
+        choice: str,
+        parameters: dict[str, object],
+    ) -> ParseResult:
+        """Recover a trajectory with a corrupt final frame by truncating at the last valid one
+        (``truncate_at_last_valid_frame`` → ``truncate``, Part 4 §3.3).
+
+        Only ``truncate`` reaches here — ``abort`` is the caller re-raising the original error, and
+        is handled in the orchestration, not the parser. Re-reads the file in stop-on-corrupt mode
+        and records the truncation as a warning ``ParseIssue`` so the dropped tail is not silent."""
+        if hint != "truncate_at_last_valid_frame":
+            raise NotImplementedError(f"xyz parse_recover does not handle hint {hint!r}")
+        if choice != "truncate":
+            raise NotImplementedError(
+                f"xyz parse_recover applies only the 'truncate' choice (got {choice!r})"
+            )
+        lines = decode_text(stream.read(), format_id=FORMAT_ID).splitlines()
+        frames, comments, corrupt = self._read_frames(lines, truncate=True)
+        if corrupt is None:
+            # The file re-parsed cleanly (the corruption was transient / already absent) — nothing
+            # to truncate; return the clean parse without inventing a truncation record.
+            return self._assemble(frames, comments, filename)
+        note = ParseIssue(
+            severity="warning",
+            code="XYZ_TRUNCATED",
+            message=(
+                f"kept frames 0..{len(frames) - 1} and discarded the corrupt tail beginning at "
+                f"frame {len(frames)} ({corrupt.message})"
+            ),
+            location=corrupt.location,
+        )
+        return self._assemble(frames, comments, filename, extra_issues=[note])
+
+    def _read_frames(
+        self, lines: list[str], *, truncate: bool
+    ) -> tuple[list[Frame], list[JsonValue], ParseIssue | None]:
+        """Read every frame. With ``truncate=False`` a corrupt frame raises (the normal contract);
+        with ``truncate=True`` it *stops* at the last valid frame and returns the good prefix plus
+        the corrupt frame's issue — but only if at least one valid frame precedes it (truncating to
+        nothing is not a recovery). Returns ``(frames, comments, corrupt_issue_or_None)``."""
         frames: list[Frame] = []
         comments: list[JsonValue] = []
         i = 0
@@ -117,133 +165,156 @@ class XyzParser(ParserPlugin):
 
         frame_index = 0
         while i < n_lines:
-            header = lines[i].strip()
-            if header == "":
+            if lines[i].strip() == "":
                 i += 1
                 continue  # tolerate blank separators between frames
             try:
-                count = int(header)
+                frame, comment, i = self._read_one_frame(lines, i, frame_index)
+            except ParseError as exc:
+                if truncate and frames:
+                    return frames, comments, exc.issues[0]
+                raise
+            frames.append(frame)
+            comments.append(comment)
+            frame_index += 1
+        return frames, comments, None
+
+    def _read_one_frame(
+        self, lines: list[str], i: int, frame_index: int
+    ) -> tuple[Frame, JsonValue, int]:
+        """Read the single frame whose non-blank header is at line ``i``. Returns the frame, its
+        comment line, and the next line index. Raises ``ParseError`` on any malformation — mid-file
+        truncation-recoverable corruption carries ``recovery_hint="truncate_at_last_valid_frame"``.
+        """
+        n_lines = len(lines)
+        header = lines[i].strip()
+        try:
+            count = int(header)
+        except ValueError as exc:
+            raise ParseError(
+                [
+                    ParseIssue(
+                        severity="error",
+                        code="XYZ_MALFORMED_HEADER",
+                        message=f"expected an integer atom count, found {header!r}",
+                        location=f"line {i + 1}",
+                    )
+                ]
+            ) from exc
+        if count <= 0:
+            raise ParseError(
+                [
+                    ParseIssue(
+                        severity="error",
+                        code="XYZ_MALFORMED_HEADER",
+                        message=f"atom count must be positive, found {count}",
+                        location=f"line {i + 1}",
+                    )
+                ]
+            )
+        # Comment line (may be empty; the line must still exist).
+        if i + 1 >= n_lines:
+            raise ParseError(
+                [
+                    ParseIssue(
+                        severity="error",
+                        code="XYZ_INCONSISTENT_ATOM_COUNT",
+                        message=(
+                            f"frame {frame_index} declares {count} atoms but the file ends "
+                            "before its comment line and coordinates"
+                        ),
+                        location=f"frame {frame_index}",
+                        recovery_hint="truncate_at_last_valid_frame",
+                    )
+                ]
+            )
+        comment = lines[i + 1]
+        body_start = i + 2
+        body_end = body_start + count
+        if body_end > n_lines:
+            found = n_lines - body_start
+            raise ParseError(
+                [
+                    ParseIssue(
+                        severity="error",
+                        code="XYZ_INCONSISTENT_ATOM_COUNT",
+                        message=(
+                            f"frame {frame_index} declares {count} atoms but only {found} "
+                            "coordinate lines are present before end of file"
+                        ),
+                        location=f"frame {frame_index}",
+                        recovery_hint="truncate_at_last_valid_frame",
+                    )
+                ]
+            )
+
+        symbols: list[str] = []
+        positions: list[list[float]] = []
+        for j in range(body_start, body_end):
+            parts = lines[j].split()
+            if len(parts) < 4:
+                # Fewer tokens than "<symbol> x y z" means the declared count is wrong:
+                # a coordinate row is missing (Part 3 §5 rule 4 — mid-file corruption).
+                raise ParseError(
+                    [
+                        ParseIssue(
+                            severity="error",
+                            code="XYZ_INCONSISTENT_ATOM_COUNT",
+                            message=(
+                                f"frame {frame_index} declares {count} atoms but line "
+                                f"{j + 1} is not a '<symbol> x y z' coordinate row: "
+                                f"{lines[j]!r}"
+                            ),
+                            location=f"frame {frame_index}",
+                            recovery_hint="truncate_at_last_valid_frame",
+                        )
+                    ]
+                )
+            symbol = parts[0]
+            if not is_valid_symbol(symbol):
+                raise ParseError(
+                    [
+                        ParseIssue(
+                            severity="error",
+                            code="XYZ_INVALID_SYMBOL",
+                            message=(
+                                f"unknown element symbol {symbol!r} at line {j + 1} "
+                                "(use 'X' for a genuinely unknown species, Part 2 §3.3)"
+                            ),
+                            location=f"line {j + 1}",
+                        )
+                    ]
+                )
+            try:
+                xyz = [float(parts[1]), float(parts[2]), float(parts[3])]
             except ValueError as exc:
                 raise ParseError(
                     [
                         ParseIssue(
                             severity="error",
-                            code="XYZ_MALFORMED_HEADER",
-                            message=f"expected an integer atom count, found {header!r}",
-                            location=f"line {i + 1}",
+                            code="XYZ_MALFORMED_COORDINATE",
+                            message=f"non-numeric coordinate at line {j + 1}: {lines[j]!r}",
+                            location=f"line {j + 1}",
                         )
                     ]
                 ) from exc
-            if count <= 0:
-                raise ParseError(
-                    [
-                        ParseIssue(
-                            severity="error",
-                            code="XYZ_MALFORMED_HEADER",
-                            message=f"atom count must be positive, found {count}",
-                            location=f"line {i + 1}",
-                        )
-                    ]
-                )
-            # Comment line (may be empty; the line must still exist).
-            if i + 1 >= n_lines:
-                raise ParseError(
-                    [
-                        ParseIssue(
-                            severity="error",
-                            code="XYZ_INCONSISTENT_ATOM_COUNT",
-                            message=(
-                                f"frame {frame_index} declares {count} atoms but the file ends "
-                                "before its comment line and coordinates"
-                            ),
-                            location=f"frame {frame_index}",
-                            recovery_hint="truncate_at_last_valid_frame",
-                        )
-                    ]
-                )
-            comment = lines[i + 1]
-            body_start = i + 2
-            body_end = body_start + count
-            if body_end > n_lines:
-                found = n_lines - body_start
-                raise ParseError(
-                    [
-                        ParseIssue(
-                            severity="error",
-                            code="XYZ_INCONSISTENT_ATOM_COUNT",
-                            message=(
-                                f"frame {frame_index} declares {count} atoms but only {found} "
-                                "coordinate lines are present before end of file"
-                            ),
-                            location=f"frame {frame_index}",
-                            recovery_hint="truncate_at_last_valid_frame",
-                        )
-                    ]
-                )
+            symbols.append(symbol)
+            positions.append(xyz)
 
-            symbols: list[str] = []
-            positions: list[list[float]] = []
-            for j in range(body_start, body_end):
-                parts = lines[j].split()
-                if len(parts) < 4:
-                    # Fewer tokens than "<symbol> x y z" means the declared count is wrong:
-                    # a coordinate row is missing (Part 3 §5 rule 4 — mid-file corruption).
-                    raise ParseError(
-                        [
-                            ParseIssue(
-                                severity="error",
-                                code="XYZ_INCONSISTENT_ATOM_COUNT",
-                                message=(
-                                    f"frame {frame_index} declares {count} atoms but line "
-                                    f"{j + 1} is not a '<symbol> x y z' coordinate row: "
-                                    f"{lines[j]!r}"
-                                ),
-                                location=f"frame {frame_index}",
-                                recovery_hint="truncate_at_last_valid_frame",
-                            )
-                        ]
-                    )
-                symbol = parts[0]
-                if not is_valid_symbol(symbol):
-                    raise ParseError(
-                        [
-                            ParseIssue(
-                                severity="error",
-                                code="XYZ_INVALID_SYMBOL",
-                                message=(
-                                    f"unknown element symbol {symbol!r} at line {j + 1} "
-                                    "(use 'X' for a genuinely unknown species, Part 2 §3.3)"
-                                ),
-                                location=f"line {j + 1}",
-                            )
-                        ]
-                    )
-                try:
-                    xyz = [float(parts[1]), float(parts[2]), float(parts[3])]
-                except ValueError as exc:
-                    raise ParseError(
-                        [
-                            ParseIssue(
-                                severity="error",
-                                code="XYZ_MALFORMED_COORDINATE",
-                                message=f"non-numeric coordinate at line {j + 1}: {lines[j]!r}",
-                                location=f"line {j + 1}",
-                            )
-                        ]
-                    ) from exc
-                symbols.append(symbol)
-                positions.append(xyz)
+        frame = Frame(
+            index=frame_index,
+            atoms=AtomsBlock(symbols=symbols, positions=np.asarray(positions, dtype=float)),
+        )
+        return frame, comment, body_end
 
-            frames.append(
-                Frame(
-                    index=frame_index,
-                    atoms=AtomsBlock(symbols=symbols, positions=np.asarray(positions, dtype=float)),
-                )
-            )
-            comments.append(comment)
-            frame_index += 1
-            i = body_end
-
+    def _assemble(
+        self,
+        frames: list[Frame],
+        comments: list[JsonValue],
+        filename: str | None,
+        *,
+        extra_issues: list[ParseIssue] | None = None,
+    ) -> ParseResult:
         # Comment lines are information — one per frame, carried verbatim (§6.1).
         user_metadata = UserMetadata(custom_per_frame={_COMMENT_KEY: comments})
         provenance = build_provenance(
@@ -264,7 +335,7 @@ class XyzParser(ParserPlugin):
             provenance=provenance,
             user_metadata=user_metadata,
         )
-        return ParseResult(canonical=canonical)
+        return ParseResult(canonical=canonical, issues=extra_issues or [])
 
     def capabilities(self) -> FormatCapabilities:
         full = FieldCapability(level=CapabilityLevel.FULL)

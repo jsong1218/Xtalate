@@ -253,6 +253,66 @@ def test_constraint_drop_all_completes_and_removes_the_constraints() -> None:
     assert result.canonical_out.frames[0].dynamics.constraints is None
 
 
+# --- frame_selection=split_all end to end (Slice 2, Part 4 §3.3) ---------------------------------
+
+
+def test_split_all_writes_one_output_per_frame_and_validates_each() -> None:
+    # A 2-frame XYZ trajectory → POSCAR with split_all: `output` is None, `outputs` carries one
+    # single-structure file per frame, and the merged validation covers every file.
+    reg = _registry()
+    source = _parse(reg, "xyz", GOLDEN / "xyz" / "water-traj" / "water_traj.xyz")
+    n = source.frame_count
+    result = ConversionEngine(reg).convert(
+        source,
+        source_format_id="xyz",
+        target_format_id="poscar",
+        recovery_choices={
+            "frame_selection": {"choice": "split_all"},
+            "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 2.0}},
+        },
+    )
+    assert result.report.status == "completed"
+    assert result.output is None
+    assert result.outputs is not None and len(result.outputs) == n
+    # Each split file re-parses as a single-structure POSCAR.
+    for chunk in result.outputs:
+        assert reg.get_parser("poscar").parse(io.BytesIO(chunk), filename="POSCAR").canonical
+    # One frame_selection Assumption for the split (no per-frame Assumptions).
+    assert [a.choice for a in result.report.assumptions if a.scenario == "frame_selection"] == [
+        "split_all"
+    ]
+    assert result.validation is not None
+    assert result.validation.status in ("passed", "passed_with_warnings")
+    # Merged validation tags each check with the file it came from.
+    assert {c.measured.get("split_file_index") for c in result.validation.checks} == set(range(n))
+
+
+def test_upload_reference_lattice_end_to_end() -> None:
+    # A no-lattice single-frame XYZ borrows its POSCAR lattice from a matching reference structure.
+    reg = _registry()
+    xyz = b"2\nf\nH 0 0 0\nH 0 0 0.8\n"
+    source = reg.get_parser("xyz").parse(io.BytesIO(xyz), filename="t.xyz").canonical
+    ref_poscar = b"ref\n1.0\n 5 0 0\n 0 5 0\n 0 0 5\nH\n2\nDirect\n 0 0 0\n 0.1 0.1 0.1\n"
+    reference = reg.get_parser("poscar").parse(io.BytesIO(ref_poscar), filename="POSCAR").canonical
+    result = ConversionEngine(reg).convert(
+        source,
+        source_format_id="xyz",
+        target_format_id="poscar",
+        recovery_choices={
+            "missing_lattice": {
+                "choice": "upload_reference",
+                "parameters": {"reference": reference},
+            }
+        },
+    )
+    assert result.report.status == "completed"
+    assert "cell.lattice_vectors" in {s.path for s in result.report.supplied}
+    assert result.validation is not None and result.validation.status in (
+        "passed",
+        "passed_with_warnings",
+    )
+
+
 # --- completeness invariant (review §4.5) ---------------------------------------------
 
 

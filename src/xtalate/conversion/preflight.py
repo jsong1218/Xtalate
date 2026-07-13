@@ -185,11 +185,14 @@ def build_preflight(
 def _scenario_options(scenario: str, caps: FormatCapabilities) -> list[str]:
     """The honest, pair-specific option list for ``scenario`` given the target's capabilities
     (Part 4 §3.3). ``non_periodic`` only when the target can express an open cell; ``split_all``
-    only when the target supports multi-file output (no v0.1 format does yet)."""
+    only when multi-file output is supported — which the Slice-2 ``ConversionResult.outputs`` path
+    now provides for every single-structure target, so it is always available where
+    ``frame_selection`` triggers (only single-structure targets, whose ``max_frames`` a trajectory
+    exceeds)."""
     return available_options(
         scenario,
         target_can_be_nonperiodic=caps.allows_open_boundaries,
-        target_supports_multifile=False,
+        target_supports_multifile=True,
     )
 
 

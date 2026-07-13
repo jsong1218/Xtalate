@@ -36,6 +36,33 @@ class ParserPlugin(ABC):
         convention (Part 2 §2: no defaulting), convert to canonical units, record source
         units / original_coordinate_system, and append a "parse" ConversionRecord."""
 
+    def parse_recover(
+        self,
+        stream: BinaryIO,
+        *,
+        filename: str | None,
+        hint: str,
+        choice: str,
+        parameters: dict[str, object],
+    ) -> ParseResult:
+        """Re-parse a file that raised a *recoverable* ``ParseError`` (Part 4 §3.3), applying the
+        caller's recovery ``choice`` for the error's ``recovery_hint``.
+
+        Optional (additive to the frozen ``parse`` contract, like
+        ``ExporterPlugin.atom_permutation`` — DECISIONS.md D23/D38): a parser overrides it *only* if
+        it emits recoverable hints (``supply_species``, ``truncate_at_last_valid_frame``). The
+        returned ``ParseResult`` must carry a **warning** ``ParseIssue`` documenting what the
+        recovery did, so the outcome is never silent. The caller
+        (``conversion.parse_with_recovery``) maps the hint to a scenario, records one
+        ``Assumption`` per applied choice, and threads it
+        into the Conversion Report; the parser performs only the mechanical re-read. The default
+        refuses — a parser that raised a recoverable hint but did not override this is a bug,
+        surfaced loudly rather than silently."""
+        raise NotImplementedError(
+            f"{type(self).__name__} raised a recoverable parse error (hint {hint!r}) but "
+            "implements no parse_recover hook"
+        )
+
     @abstractmethod
     def capabilities(self) -> FormatCapabilities:
         """This format's read-side capability declaration (§4). Assembled into the matrix

@@ -191,6 +191,26 @@ def _apply_frame_selection(
     code = _choice_code(choice, scenario)
     params = choice.get("parameters", {}) or {}
     n = canonical.frame_count
+
+    if code == "split_all":
+        # Keep every frame; the ConversionEngine writes one single-structure file per frame
+        # (Part 4 §3.3). No frame is dropped, so there is no `removed` entry — the split changes
+        # the output from one file to a set, which is the recorded choice. The selected-frame index
+        # threaded onward is 0 (a chained bounding box, an exotic combination, boxes on frame 0).
+        assumption = AppliedAssumption(
+            id=aid,
+            scenario="frame_selection",
+            choice="split_all",
+            parameters={"frame_count": n},
+            origin=origin,
+            description=(
+                f"All {n} frames retained; the single-structure target receives one file per "
+                "frame. No frame is dropped — the split is a recorded choice because it turns one "
+                "output into a set of files, an outcome the caller must ask for explicitly."
+            ),
+        )
+        return canonical, assumption, 0
+
     if code == "first":
         index = 0
     elif code == "last":
@@ -362,6 +382,18 @@ def _apply_missing_lattice(
             "target. The source expressed no lattice — this cell is an artifact of conversion, "
             "not simulation data."
         )
+    elif code == "upload_reference":
+        lattice = _lattice_from_reference(params.get("reference"), canonical)
+        new_frames = [_frame_with_cell(f, lattice, pbc) for f in canonical.frames]
+        report_params = {
+            "reference_atom_count": canonical.frames[0].atoms.positions.shape[0],
+            "lattice_ang": lattice.tolist(),
+        }
+        description = (
+            "Lattice taken from a second uploaded reference structure whose atom count matches the "
+            "source; pbc set to (T,T,T) as required by the target. The source file expressed no "
+            "lattice — this cell is borrowed from the reference, not present in the source."
+        )
     else:  # "bounding_box"
         padding = params.get("padding_ang")
         if not isinstance(padding, (int, float)) or padding < 0:
@@ -433,6 +465,33 @@ def _frame_with_cell(
             masses=atoms.masses,
         )
     return frame.model_copy(update={"atoms": atoms, "cell": Cell(lattice_vectors=lattice, pbc=pbc)})
+
+
+def _lattice_from_reference(ref: Any, canonical: CanonicalObject) -> np.ndarray:
+    """Borrow a 3×3 lattice from a second parsed structure (``upload_reference``, Part 4 §3.3).
+
+    The reference is a full ``CanonicalObject`` the caller (CLI) parsed and injected into the choice
+    ``parameters``; recovery reads its first frame's lattice after checking it *has* one and that
+    its atom count matches the source — the compatibility guard the catalog requires, so a lattice
+    is never borrowed from an unrelated structure of a different size."""
+    if not isinstance(ref, CanonicalObject):
+        raise RecoveryError(
+            "missing_lattice 'upload_reference' needs a parsed reference structure in "
+            "parameters['reference'] (the CLI supplies it from file=PATH)"
+        )
+    ref_cell = ref.frames[0].cell
+    if ref_cell is None or ref_cell.lattice_vectors is None:
+        raise RecoveryError(
+            "missing_lattice 'upload_reference': the reference structure has no lattice to borrow"
+        )
+    src_natoms = canonical.frames[0].atoms.positions.shape[0]
+    ref_natoms = ref.frames[0].atoms.positions.shape[0]
+    if src_natoms != ref_natoms:
+        raise RecoveryError(
+            "missing_lattice 'upload_reference': atom-count mismatch — source has "
+            f"{src_natoms} atoms, reference has {ref_natoms}"
+        )
+    return np.asarray(ref_cell.lattice_vectors, dtype=np.float64)
 
 
 def _as_lattice(raw: Any) -> np.ndarray:

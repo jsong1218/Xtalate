@@ -328,3 +328,110 @@ def test_three_scenarios_resolve_in_dependency_order() -> None:
         ("A2", "constraint_representation"),
         ("A3", "missing_lattice"),
     ]
+
+
+# --- missing_lattice: upload_reference (Slice 2, Part 4 §3.3) -------------------------------------
+
+_REF_POSCAR = b"""ref
+1.0
+  5.0  0.0  0.0
+  0.0  6.0  0.0
+  0.0  0.0  7.0
+O H
+1 2
+Direct
+  0.0 0.0 0.0
+  0.1 0.1 0.1
+  0.2 0.2 0.2
+"""
+
+
+def _reference() -> CanonicalObject:
+    reg = _registry()
+    return reg.get_parser("poscar").parse(io.BytesIO(_REF_POSCAR), filename="POSCAR").canonical
+
+
+def test_upload_reference_borrows_the_reference_lattice() -> None:
+    # A no-lattice source (3 atoms) borrows the 3×3 lattice from a 3-atom reference structure;
+    # this is fabricative — the cell did not exist in the source — so it supplies cell fields.
+    result = RecoveryEngine().resolve(
+        _source(),
+        [
+            UnresolvedScenario(scenario="frame_selection"),
+            UnresolvedScenario(
+                scenario="missing_lattice",
+                path="cell.lattice_vectors",
+                options=["manual_input", "upload_reference", "bounding_box"],
+            ),
+        ],
+        recovery_choices={
+            "frame_selection": {"choice": "first"},
+            "missing_lattice": {
+                "choice": "upload_reference",
+                "parameters": {"reference": _reference()},
+            },
+        },
+    )
+    assert result.canonical is not None
+    cell = result.canonical.frames[0].cell
+    assert cell is not None
+    assert np.allclose(np.diag(np.asarray(cell.lattice_vectors, dtype=float)), [5.0, 6.0, 7.0])
+    (assumption,) = [a for a in result.assumptions if a.scenario == "missing_lattice"]
+    assert assumption.choice == "upload_reference"
+    # Fabricative bright line: the borrowed cell is a SuppliedField, never a PreservedField.
+    assert {s.path for s in assumption.supplied} == {"cell.lattice_vectors", "cell.pbc"}
+
+
+def test_upload_reference_rejects_atom_count_mismatch() -> None:
+    reg = _registry()
+    # A 2-atom reference against the 3-atom water source.
+    two_atom = (
+        reg.get_parser("poscar")
+        .parse(
+            io.BytesIO(_REF_POSCAR.replace(b"1 2\n", b"1 1\n").replace(b"  0.2 0.2 0.2\n", b"")),
+            filename="POSCAR",
+        )
+        .canonical
+    )
+    with pytest.raises(RecoveryError, match="atom-count mismatch"):
+        RecoveryEngine().resolve(
+            _source(),
+            [
+                UnresolvedScenario(scenario="frame_selection"),
+                UnresolvedScenario(scenario="missing_lattice", path="cell.lattice_vectors"),
+            ],
+            recovery_choices={
+                "frame_selection": {"choice": "first"},
+                "missing_lattice": {
+                    "choice": "upload_reference",
+                    "parameters": {"reference": two_atom},
+                },
+            },
+        )
+
+
+# --- frame_selection: split_all (Slice 2, Part 4 §3.3) -------------------------------------------
+
+
+def test_split_all_keeps_every_frame_and_records_one_assumption() -> None:
+    # split_all does not reduce — every frame is retained (the ConversionEngine emits one file each)
+    # — and records exactly one Assumption with no removed entries (nothing is dropped).
+    src = _source()
+    n = src.frame_count
+    assert n > 1
+    result = RecoveryEngine().resolve(
+        src,
+        [
+            UnresolvedScenario(
+                scenario="frame_selection", options=["first", "last", "index", "split_all"]
+            )
+        ],
+        recovery_choices={"frame_selection": {"choice": "split_all"}},
+    )
+    assert result.canonical is not None
+    assert result.canonical.frame_count == n  # no reduction
+    (assumption,) = result.assumptions
+    assert assumption.scenario == "frame_selection"
+    assert assumption.choice == "split_all"
+    assert assumption.removed == []  # nothing dropped
+    assert assumption.supplied == []  # nothing fabricated

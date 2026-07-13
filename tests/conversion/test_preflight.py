@@ -116,12 +116,14 @@ def test_single_frame_xyz_to_poscar_only_needs_lattice() -> None:
 
 def test_missing_lattice_scenario_carries_honest_options_excluding_non_periodic() -> None:
     # POSCAR is periodic-only, so the detected scenario's own option list excludes non_periodic —
-    # the same list the engine validates against and the refusal report shows (no drift).
+    # the same list the engine validates against and the refusal report shows (no drift). It does
+    # include upload_reference (Slice 2), which any target can offer.
     reg = _registry()
     source = _parse(reg, "xyz", GOLDEN / "xyz" / "water-traj" / "water_traj.xyz")
     diff = build_preflight(source, _matrix(reg), "poscar")
     lattice = next(s for s in diff.unresolved if s.scenario == "missing_lattice")
-    assert lattice.options == ["manual_input", "bounding_box"]
+    assert lattice.options == ["manual_input", "upload_reference", "bounding_box"]
+    assert "non_periodic" not in lattice.options
 
 
 # --- constraint_representation trigger (M7) ------------------------------------------------------

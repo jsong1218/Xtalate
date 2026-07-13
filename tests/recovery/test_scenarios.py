@@ -41,13 +41,18 @@ def test_each_scenario_has_its_hazard_class(scenario: str, hazard: HazardClass) 
 
 
 def test_missing_lattice_excludes_non_periodic_for_periodic_only_targets() -> None:
-    # POSCAR cannot express pbc=(F,F,F), so non_periodic is honestly not offered.
-    assert available_options("missing_lattice") == ["manual_input", "bounding_box"]
+    # POSCAR cannot express pbc=(F,F,F), so non_periodic is honestly not offered; upload_reference
+    # (Slice 2) is always offered where a second structure can supply the lattice.
+    assert available_options("missing_lattice") == [
+        "manual_input",
+        "upload_reference",
+        "bounding_box",
+    ]
 
 
 def test_missing_lattice_offers_non_periodic_only_when_target_supports_it() -> None:
     opts = available_options("missing_lattice", target_can_be_nonperiodic=True)
-    assert opts == ["manual_input", "bounding_box", "non_periodic"]
+    assert opts == ["manual_input", "upload_reference", "bounding_box", "non_periodic"]
 
 
 # --- frame_selection: split_all is ✳-conditional (needs multi-file output) -----------------------
@@ -69,6 +74,17 @@ def test_constraint_representation_options() -> None:
     assert available_options("constraint_representation") == ["project", "drop_all"]
 
 
+# --- parse-time scenarios: options computed for the refusal path (Slice 2) -----------------------
+
+
+def test_missing_species_options() -> None:
+    assert available_options("missing_species") == ["species_map", "upload_reference"]
+
+
+def test_truncate_corrupt_tail_options() -> None:
+    assert available_options("truncate_corrupt_tail") == ["truncate", "abort"]
+
+
 # --- scenarios that refuse in this version (empty offered list) ----------------------------------
 
 
@@ -78,8 +94,6 @@ def test_constraint_representation_options() -> None:
         "missing_velocities",  # choices land in M8
         "missing_masses",  # choices land in M8
         "missing_energy",  # deliberately optionless — no synthetic energy exists (Part 4 §3.3)
-        "missing_species",  # parse-time resolver — v0.2 Slice 2
-        "truncate_corrupt_tail",  # parse-time resolver — v0.2 Slice 2
     ],
 )
 def test_scenario_offers_no_options_in_this_version(scenario: str) -> None:

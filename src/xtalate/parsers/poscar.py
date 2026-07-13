@@ -17,6 +17,7 @@ elements.
 
 from __future__ import annotations
 
+from io import BytesIO
 from typing import BinaryIO
 
 import numpy as np
@@ -67,6 +68,21 @@ def _error(
             )
         ]
     )
+
+
+def _reference_symbols(ref: object) -> list[str]:
+    """Per-atom symbols of a parsed ``upload_reference`` structure (Part 4 §3.3). Typed ``object``
+    so this module needs no import from the ``recovery`` layer above it; the caller (CLI) injects a
+    ``CanonicalObject``, and we read only its first frame's symbols by duck-typing."""
+    frames = getattr(ref, "frames", None)
+    if not frames:
+        raise _error(
+            "POSCAR_MISSING_SPECIES",
+            "upload_reference needs a parsed reference structure in parameters['reference']",
+            location="line 6",
+            hint="supply_species",
+        )
+    return [str(s) for s in frames[0].atoms.symbols]
 
 
 def _all_ints(tokens: list[str]) -> bool:
@@ -384,6 +400,114 @@ class PoscarParser(ParserPlugin):
             user_metadata=UserMetadata(custom_global=custom_global),
         )
         return ParseResult(canonical=canonical, issues=issues)
+
+    def parse_recover(
+        self,
+        stream: BinaryIO,
+        *,
+        filename: str | None,
+        hint: str,
+        choice: str,
+        parameters: dict[str, object],
+    ) -> ParseResult:
+        """Recover a VASP-4 POSCAR (counts, no species line) by supplying element symbols
+        (``supply_species``, Part 4 §3.3).
+
+        The mechanical trick keeps the recovery honest and duplication-free: synthesize the missing
+        species line, splice it in ahead of the counts line, and re-run the *ordinary* ``parse`` on
+        the patched text — so coordinates, selective dynamics, and the CONTCAR tail are read by
+        exactly the same code path, and the supplied symbols are validated by the same
+        ``is_valid_symbol`` check. A warning ``ParseIssue`` records that the symbols were supplied,
+        never invented."""
+        if hint != "supply_species":
+            raise NotImplementedError(f"poscar parse_recover does not handle hint {hint!r}")
+        lines = decode_text(stream.read(), format_id=self.format_id).splitlines()
+        if len(lines) < 7:
+            raise _error("POSCAR_MALFORMED", "file is too short to be a POSCAR (need >= 7 lines)")
+        counts_tokens = lines[5].split()
+        if not _all_ints(counts_tokens):
+            raise _error(
+                "POSCAR_MALFORMED",
+                "parse_recover(supply_species) expects a VASP-4 counts line (all integers) at "
+                f"line 6, found {lines[5]!r}",
+                location="line 6",
+            )
+        counts = [int(t) for t in counts_tokens]
+        species = self._recover_species(choice, parameters, counts)
+        if len(species) != len(counts):
+            raise _error(
+                "POSCAR_MISSING_SPECIES",
+                f"supply_species needs one symbol per count group ({len(counts)} groups for counts "
+                f"{counts}); got {species}",
+                location="line 6",
+                hint="supply_species",
+            )
+        # Splice the synthesized species line in ahead of the counts line -> a VASP-5 layout.
+        patched = "\n".join([*lines[:5], " ".join(species), *lines[5:]])
+        result = self.parse(BytesIO(patched.encode("utf-8")), filename=filename)
+        note = ParseIssue(
+            severity="warning",
+            code="POSCAR_SPECIES_SUPPLIED",
+            message=(
+                f"element symbols {species} supplied via recovery choice {choice!r}; the source "
+                "VASP-4 POSCAR listed only atom counts (Part 4 §3.3)"
+            ),
+            location="line 6",
+        )
+        return ParseResult(canonical=result.canonical, issues=[*result.issues, note])
+
+    @staticmethod
+    def _recover_species(
+        choice: str, parameters: dict[str, object], counts: list[int]
+    ) -> list[str]:
+        """Resolve the ordered species list for ``supply_species`` (Part 4 §3.3): either from an
+        explicit ``species_map`` (ordered symbols, one per count group) or from a matching
+        ``upload_reference`` structure whose per-atom symbols align with the count groups."""
+        if choice == "species_map":
+            raw = parameters.get("species")
+            if isinstance(raw, str):
+                # CLI passes a colon/space-delimited string (commas are the --recover separator).
+                return [s for s in raw.replace(":", " ").split() if s]
+            if isinstance(raw, (list, tuple)):
+                return [str(s) for s in raw]
+            raise _error(
+                "POSCAR_MISSING_SPECIES",
+                "species_map needs a 'species' parameter (ordered symbols, one per count group)",
+                location="line 6",
+                hint="supply_species",
+            )
+        if choice == "upload_reference":
+            ref = parameters.get("reference")
+            ref_symbols = _reference_symbols(ref)
+            if sum(counts) != len(ref_symbols):
+                raise _error(
+                    "POSCAR_MISSING_SPECIES",
+                    f"upload_reference atom-count mismatch: POSCAR has {sum(counts)} atoms, "
+                    f"reference has {len(ref_symbols)}",
+                    location="line 6",
+                    hint="supply_species",
+                )
+            species: list[str] = []
+            pos = 0
+            for c in counts:
+                group = ref_symbols[pos : pos + c]
+                if len(set(group)) != 1:
+                    raise _error(
+                        "POSCAR_MISSING_SPECIES",
+                        "upload_reference symbols do not align with the POSCAR count groups "
+                        f"(group of {c} at atom {pos} is not one element: {group})",
+                        location="line 6",
+                        hint="supply_species",
+                    )
+                species.append(group[0])
+                pos += c
+            return species
+        raise _error(
+            "POSCAR_MISSING_SPECIES",
+            f"supply_species has no choice {choice!r} (offered: species_map, upload_reference)",
+            location="line 6",
+            hint="supply_species",
+        )
 
     @staticmethod
     def _parse_tail(

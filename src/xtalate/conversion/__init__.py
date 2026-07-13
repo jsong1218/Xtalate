@@ -15,6 +15,7 @@ from xtalate.conversion.engine import (
     ConversionResult,
     build_expected_object,
 )
+from xtalate.conversion.parse_recovery import ParseRecovery, parse_with_recovery
 from xtalate.conversion.preflight import (
     PreflightDiff,
     build_preflight,
@@ -36,6 +37,7 @@ __all__ = [
     "ConversionEngine",
     "ConversionReport",
     "ConversionResult",
+    "ParseRecovery",
     "PreflightDiff",
     "PreservedEntry",
     "RemovedEntry",
@@ -45,4 +47,5 @@ __all__ = [
     "build_expected_object",
     "build_preflight",
     "capability_path",
+    "parse_with_recovery",
 ]
