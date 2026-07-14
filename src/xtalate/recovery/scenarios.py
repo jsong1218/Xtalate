@@ -106,6 +106,8 @@ def available_options(
     *,
     target_can_be_nonperiodic: bool = False,
     target_supports_multifile: bool = False,
+    target_field_optional: bool = False,
+    permissive_mode: bool = False,
 ) -> list[str]:
     """The *computed* option list for ``scenario`` (Part 4 §3.3), honestly excluding choices not
     offered for this pair or not implemented in this version.
@@ -123,10 +125,15 @@ def available_options(
     ``constraint_representation``: ``project`` (map to the target's representable subset, remainder
     to ``removed``) / ``drop_all``.
 
-    Every other registered scenario returns ``[]`` in this version: ``missing_velocities`` /
-    ``missing_masses`` (choices land in M8), ``missing_energy`` (deliberately optionless — no
-    synthetic energy exists), and the parse-time ``missing_species`` / ``truncate_corrupt_tail``
-    (Slice-2 resolver). ``[]`` means "no preset can resolve this here" — the scenario refuses.
+    ``missing_velocities`` (M8): ``zero_init`` / ``maxwell_boltzmann`` / ``upload_reference``, plus
+    ✳``omit`` only when ``target_field_optional and permissive_mode`` (the catalog footnote — the
+    resolver applies ``omit`` under exactly those conditions, so honesty requires offering it only
+    then). ``missing_masses`` (M8): ``standard_masses`` / ``manual_input``.
+
+    Every other registered scenario returns ``[]`` in this version: ``missing_energy`` (deliberately
+    optionless — no synthetic energy exists), and the parse-time ``missing_species`` /
+    ``truncate_corrupt_tail`` (Slice-2 resolver, applied via ``parse_recover``). ``[]`` means "no
+    preset can resolve this here" — the scenario refuses.
     """
     if scenario == "missing_lattice":
         # `upload_reference` (lattice taken from a second structure, atom-count-checked) lands in
@@ -142,6 +149,18 @@ def available_options(
         return options
     if scenario == "constraint_representation":
         return ["project", "drop_all"]
+    if scenario == "missing_velocities":
+        # M8: a target that can hold velocities but has none on the source (opt-in emission).
+        # `omit` (leave velocities absent) is offered only when the target field is optional *and*
+        # the mode is permissive — the catalog's own ✳ footnote (Part 4 §3.3); in strict mode, or
+        # for a field the target requires, it is absent so naming it refuses.
+        options = ["zero_init", "maxwell_boltzmann", "upload_reference"]
+        if target_field_optional and permissive_mode:
+            options.append("omit")
+        return options
+    if scenario == "missing_masses":
+        # M8: IUPAC standard atomic weights (a reported default) or a caller-supplied list.
+        return ["standard_masses", "manual_input"]
     if scenario == "missing_species":
         # Parse-time scenario, resolved in Slice 2: an ordered symbol / type→element map, or the
         # symbols read from a matching reference structure (Part 4 §3.3).

@@ -172,7 +172,11 @@ class PoscarExporter(ExporterPlugin):
                     "represented.",
                 ),
                 "cell.space_group": none,
-                "dynamics.velocities": full,
+                "dynamics.velocities": FieldCapability(
+                    level=CapabilityLevel.FULL,
+                    notes="Written as a Cartesian Å/fs velocity block (canonical unit, no "
+                    "rescale). Direct-mode velocity export is not offered in v0.2 (M8 cut line).",
+                ),
                 "dynamics.forces": none,
                 "dynamics.constraints": FieldCapability(
                     level=CapabilityLevel.PARTIAL,

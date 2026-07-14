@@ -201,6 +201,46 @@ def test_velocity_and_predictor_tail_carried_through() -> None:
     assert any("velocity block read from the CONTCAR tail" in n for n in obj.provenance.parse_notes)
 
 
+def test_direct_mode_velocities_converted_via_lattice() -> None:
+    # A CONTCAR whose velocity block is in Direct (fractional) mode: v_cart = v_frac @ lattice, the
+    # same transform the coordinates use (§4). Lattice diag(2,3,4) makes the conversion observable.
+    with_direct_vel = (
+        b"md\n1.0\n"
+        b"  2.0 0.0 0.0\n  0.0 3.0 0.0\n  0.0 0.0 4.0\n"
+        b"H\n1\nDirect\n  0.0 0.0 0.0\n"
+        b"\nDirect\n  0.5 1.0 0.25\n"
+    )
+    result = parse_bytes(make_contcar_parser(), with_direct_vel)
+    obj = result.canonical
+    assert obj.frames[0].dynamics.velocities is not None
+    np.testing.assert_allclose(obj.frames[0].dynamics.velocities[0], [1.0, 3.0, 1.0])
+    assert obj.provenance.source_units.get("velocities") == "direct"
+    assert any("Direct-mode velocities converted" in n for n in obj.provenance.parse_notes)
+
+
+def test_ambiguous_velocity_mode_read_as_direct_with_warning() -> None:
+    # A velocity mode line beginning with neither C/K nor D is read as Direct (VASP's default rule)
+    # and warned about, mirroring the coordinate-mode handling (§4).
+    with_ambiguous_vel = (
+        b"md\n1.0\n"
+        b"  2.0 0.0 0.0\n  0.0 3.0 0.0\n  0.0 0.0 4.0\n"
+        b"H\n1\nDirect\n  0.0 0.0 0.0\n"
+        b"\nfoo\n  0.5 1.0 0.25\n"
+    )
+    result = parse_bytes(make_contcar_parser(), with_ambiguous_vel)
+    velocities = result.canonical.frames[0].dynamics.velocities
+    assert velocities is not None
+    np.testing.assert_allclose(velocities[0], [1.0, 3.0, 1.0])
+    assert any(i.code == "POSCAR_AMBIGUOUS_VELOCITY_MODE" for i in result.issues)
+
+
+def test_velocity_absent_is_none_never_zero_filled() -> None:
+    # A plain POSCAR with no tail: velocities stay absent (None), never invented as zeros (P3).
+    obj = parse_bytes(make_poscar_parser(), (GOLDEN / "POSCAR").read_bytes()).canonical
+    assert obj.frames[0].dynamics.velocities is None
+    assert "velocities" not in obj.provenance.source_units
+
+
 _VASP4 = b"vasp4\n1.0\n 4 0 0\n 0 4 0\n 0 0 4\n2 1\nDirect\n 0 0 0\n 0.5 0.5 0.5\n 0.25 0.25 0.25\n"
 
 

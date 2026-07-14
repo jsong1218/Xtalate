@@ -30,7 +30,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import ase.data
 import numpy as np
+from ase import units as ase_units
 
 from xtalate.recovery.scenarios import (
     SCENARIO_HAZARD,
@@ -38,10 +40,19 @@ from xtalate.recovery.scenarios import (
     available_options,
 )
 from xtalate.schema import AtomsBlock, CanonicalObject, Cell, Frame
+from xtalate.schema.elements import atomic_number
 
 # Resolution order (Part 4 §3.3): frame_selection first (a bounding box is computed on the chosen
-# frame), then constraint projection (frame-independent), then the fabricated lattice.
-_DEP_ORDER = ("frame_selection", "constraint_representation", "missing_lattice")
+# frame), then constraint projection (frame-independent), then the fabricated lattice, then the
+# velocity family. `missing_masses` resolves *before* `missing_velocities` so a chained
+# `maxwell_boltzmann` reads the masses the mass resolver has already written into the object.
+_DEP_ORDER = (
+    "frame_selection",
+    "constraint_representation",
+    "missing_lattice",
+    "missing_masses",
+    "missing_velocities",
+)
 
 
 class RecoveryError(ValueError):
@@ -52,10 +63,18 @@ class RecoveryError(ValueError):
 
 @dataclass
 class SuppliedField:
-    """One canonical field a fabricative recovery wrote into the object (Part 4 §2, `supplied`)."""
+    """One canonical field a fabricative recovery wrote into the object (Part 4 §2, `supplied`).
+
+    ``in_write_plan`` is ``True`` for a field the target will actually write; ``False`` for one
+    fabricated purely to *feed another recovery* that the target cannot itself store — the chained
+    ``missing_masses`` masses that seed a Maxwell–Boltzmann velocity draw but are dropped when the
+    target (POSCAR) has no mass field. Such a field is still recorded in ``supplied`` (the audit
+    trail the user asked for), but is kept out of the write plan so validation does not expect it in
+    the output (D47)."""
 
     path: str
     detail: str | None = None
+    in_write_plan: bool = True
 
 
 @dataclass
@@ -154,6 +173,10 @@ class RecoveryEngine:
                 working, applied = _apply_constraint_representation(
                     working, aid, choice, origin, match
                 )
+            elif scenario_code == "missing_masses":
+                working, applied = _apply_missing_masses(working, aid, choice, origin, match)
+            elif scenario_code == "missing_velocities":
+                working, applied = _apply_missing_velocities(working, aid, choice, origin, match)
             else:  # missing_lattice
                 working, applied = _apply_missing_lattice(
                     working, aid, choice, origin, match, computed_on_frame=selected_source_index
@@ -506,3 +529,257 @@ def _as_lattice(raw: Any) -> np.ndarray:
             f"missing_lattice 'manual_input' needs a 3×3 lattice, got shape {lattice.shape}"
         )
     return lattice
+
+
+def _apply_missing_masses(
+    canonical: CanonicalObject,
+    aid: str,
+    choice: dict[str, Any],
+    origin: str,
+    scenario: UnresolvedScenario,
+) -> tuple[CanonicalObject, AppliedAssumption]:
+    """Fabricate the per-atom masses a target requires, or that another recovery (Maxwell–Boltzmann)
+    needs to seed a velocity draw (fabricative, Part 4 §3.1, §3.3).
+
+    ``standard_masses`` looks up IUPAC standard atomic weights (a *reported default*);
+    ``manual_input`` takes a caller-supplied list. Either way one ``Assumption`` and one
+    ``SuppliedField('atoms.masses')`` are recorded — the masses did not exist in the source, so they
+    are filed as created, never a silent fill (**P4**). ``scenario.params['emit']`` is ``False``
+    when the target cannot store masses (e.g. POSCAR): the masses still feed a chained draw, are in
+    ``supplied``, but stay
+    out of the write plan (``in_write_plan=False``) so validation does not expect them in the output
+    (D47)."""
+    code = _choice_code(choice, scenario)
+    params = choice.get("parameters", {}) or {}
+    symbols = list(canonical.frames[0].atoms.symbols)
+    n = len(symbols)
+    emit = bool(scenario.params.get("emit", True))
+
+    if code == "standard_masses":
+        masses = _standard_masses(symbols)
+        report_params: dict[str, Any] = {
+            "source": "ASE atomic_masses (IUPAC standard atomic weights)"
+        }
+        source_desc = "IUPAC standard atomic weights"
+    else:  # manual_input
+        masses = _as_masses(params.get("masses"), n)
+        report_params = {"masses_u": masses.tolist()}
+        source_desc = "caller-supplied per-atom masses"
+
+    new_frames = [_frame_with_masses(f, masses) for f in canonical.frames]
+    updated = canonical.model_copy(update={"frames": new_frames})
+    if emit:
+        supplied_detail = (
+            f"Per-atom masses fabricated from {source_desc} — not present in the source."
+        )
+    else:
+        supplied_detail = (
+            f"Per-atom masses fabricated from {source_desc} to seed velocity initialization; not "
+            "written to the target, which cannot store masses."
+        )
+    assumption = AppliedAssumption(
+        id=aid,
+        scenario="missing_masses",
+        choice=code,
+        parameters=report_params,
+        origin=origin,
+        description=(
+            f"Filled masses for {n} atom(s) via {code!r} ({source_desc}). The source expressed no "
+            "masses — these are a recorded default, never a silent fill (**P4**)."
+        ),
+        supplied=[SuppliedField(path="atoms.masses", detail=supplied_detail, in_write_plan=emit)],
+    )
+    return updated, assumption
+
+
+def _apply_missing_velocities(
+    canonical: CanonicalObject,
+    aid: str,
+    choice: dict[str, Any],
+    origin: str,
+    scenario: UnresolvedScenario,
+) -> tuple[CanonicalObject, AppliedAssumption]:
+    """Fabricate the velocities a target requires or the user asked it to emit (fabricative, Part 4
+    §3.1, §3.3).
+
+    Four choices: ``zero_init`` (an explicit rest state — *data* per Part 2 §2 rule 3),
+    ``maxwell_boltzmann`` (sampled at ``temperature_K`` with a recorded ``seed``),
+    ``upload_reference`` (borrowed from a second structure, shape-checked), and ✳``omit`` (leave
+    velocities absent — the only choice that fabricates nothing, offered solely when the target
+    field is optional and mode is permissive). Every choice but ``omit`` records one
+    ``SuppliedField('dynamics.velocities')``."""
+    code = _choice_code(choice, scenario)
+    params = choice.get("parameters", {}) or {}
+    n = canonical.frames[0].atoms.positions.shape[0]
+
+    if code == "omit":
+        # The one choice that fabricates nothing: velocities stay absent (P3). No SuppliedField.
+        assumption = AppliedAssumption(
+            id=aid,
+            scenario="missing_velocities",
+            choice="omit",
+            parameters={},
+            origin=origin,
+            description=(
+                "Velocity emission omitted: the target's velocity field is optional and the mode "
+                "is permissive, so no velocities are fabricated and the field is left absent (P3)."
+            ),
+        )
+        return canonical, assumption
+
+    if code == "zero_init":
+        velocities = np.zeros((n, 3), dtype=np.float64)
+        report_params: dict[str, Any] = {}
+        description = (
+            "Velocities initialized to an explicit rest state (all zero). Per Part 2 §2 rule 3 an "
+            "all-zero velocity field is *data* (the system stated at rest), distinct from absence, "
+            "so it is a recorded choice, never a silent fill."
+        )
+    elif code == "maxwell_boltzmann":
+        temperature_k = _as_temperature(params.get("temperature_K"))
+        seed = params.get("seed")
+        if not isinstance(seed, int) or isinstance(seed, bool):
+            raise RecoveryError(
+                f"missing_velocities 'maxwell_boltzmann' needs an integer seed, got {seed!r}"
+            )
+        masses = canonical.frames[0].atoms.masses
+        if masses is None:
+            raise RecoveryError(
+                "missing_velocities 'maxwell_boltzmann' needs per-atom masses; supply them via a "
+                "missing_masses recovery choice (they chain in dependency order)"
+            )
+        velocities = _maxwell_boltzmann(np.asarray(masses, dtype=np.float64), temperature_k, seed)
+        report_params = {"temperature_K": temperature_k, "seed": seed}
+        description = (
+            f"Velocities sampled from a Maxwell–Boltzmann distribution at {temperature_k} K "
+            f"(seed {seed}); each Cartesian component drawn independently with variance kT/mᵢ. The "
+            "raw per-atom sample is emitted unchanged — no center-of-mass drift is removed, since "
+            "that would be an unrequested transformation contrary to the transparent-converter "
+            "mission (D43). Temperature and seed are recorded so the draw is exactly reproducible "
+            "(R11)."
+        )
+    else:  # upload_reference
+        velocities = _velocities_from_reference(params.get("reference"), n)
+        report_params = {"reference_atom_count": n}
+        description = (
+            "Velocities taken from a second uploaded reference structure whose atom count matches "
+            "the source. The source expressed no velocities — these are borrowed from the "
+            "reference, not present in the source."
+        )
+
+    new_frames = [_frame_with_velocities(f, velocities) for f in canonical.frames]
+    updated = canonical.model_copy(update={"frames": new_frames})
+    assumption = AppliedAssumption(
+        id=aid,
+        scenario="missing_velocities",
+        choice=code,
+        parameters=report_params,
+        origin=origin,
+        description=description,
+        supplied=[
+            SuppliedField(
+                path="dynamics.velocities",
+                detail="Per-atom velocities fabricated by recovery — not present in the source.",
+            )
+        ],
+    )
+    return updated, assumption
+
+
+def _maxwell_boltzmann(masses: np.ndarray, temperature_k: float, seed: int) -> np.ndarray:
+    """Sample velocities (Å/fs) from a Maxwell–Boltzmann distribution at ``temperature_k`` (K).
+
+    Each atom's Cartesian component is an independent Gaussian with standard deviation
+    ``sqrt(kB·T/mᵢ)``, so the per-component variance is exactly ``kT/mᵢ``. Determinism is by a local
+    ``np.random.default_rng(seed)`` — never the global ``np.random`` state (D45). The raw sample is
+    returned unchanged: no center-of-mass drift removal, no temperature rescaling (D43). The unit
+    factor is ``ase.units.fs`` — the same ASE-velocity → Å/fs conversion the extXYZ parser uses — so
+    no hand-rolled constant can drift from the rest of the codebase."""
+    rng = np.random.default_rng(seed)
+    sigma = np.sqrt(ase_units.kB * temperature_k / masses) * ase_units.fs
+    sample: np.ndarray = rng.standard_normal((masses.shape[0], 3)) * sigma[:, None]
+    return sample
+
+
+def _standard_masses(symbols: list[str]) -> np.ndarray:
+    """IUPAC standard atomic weights (u) for ``symbols`` from ``ase.data.atomic_masses`` (D44). The
+    reserved unknown species ``"X"`` (Z = 0) has no standard weight and is refused — the caller must
+    supply masses via ``manual_input``."""
+    masses = np.empty(len(symbols), dtype=np.float64)
+    for i, sym in enumerate(symbols):
+        z = atomic_number(sym)
+        if z == 0:
+            raise RecoveryError(
+                "missing_masses 'standard_masses' has no standard weight for the unknown species "
+                f"'X' at atom {i}; supply masses via manual_input"
+            )
+        masses[i] = float(ase.data.atomic_masses[z])
+    return masses
+
+
+def _as_masses(raw: Any, n: int) -> np.ndarray:
+    try:
+        masses = np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise RecoveryError(f"missing_masses 'manual_input' masses are not numeric: {exc}") from exc
+    if masses.shape != (n,):
+        raise RecoveryError(
+            f"missing_masses 'manual_input' needs {n} masses (one per atom); got {masses.shape}"
+        )
+    if bool(np.any(masses <= 0)):
+        raise RecoveryError("missing_masses 'manual_input' masses must all be positive")
+    return masses
+
+
+def _as_temperature(raw: Any) -> float:
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise RecoveryError(
+            f"missing_velocities 'maxwell_boltzmann' needs a numeric temperature_K, got {raw!r}"
+        )
+    temperature_k = float(raw)
+    if temperature_k <= 0:
+        raise RecoveryError(
+            "missing_velocities 'maxwell_boltzmann' temperature_K must be positive, got "
+            f"{temperature_k}"
+        )
+    return temperature_k
+
+
+def _velocities_from_reference(ref: Any, n: int) -> np.ndarray:
+    """Borrow per-atom velocities from a second parsed structure (``upload_reference``, Part 4
+    §3.3), shape-checked against the source atom count so velocities are never taken from a
+    structure of a different size."""
+    if not isinstance(ref, CanonicalObject):
+        raise RecoveryError(
+            "missing_velocities 'upload_reference' needs a parsed reference structure in "
+            "parameters['reference'] (the CLI supplies it from file=PATH)"
+        )
+    ref_vel = ref.frames[0].dynamics.velocities
+    if ref_vel is None:
+        raise RecoveryError(
+            "missing_velocities 'upload_reference': the reference structure has no velocities to "
+            "borrow"
+        )
+    ref_vel = np.asarray(ref_vel, dtype=np.float64)
+    if ref_vel.shape != (n, 3):
+        raise RecoveryError(
+            "missing_velocities 'upload_reference': shape mismatch — source has "
+            f"{n} atoms, reference velocities are shape {ref_vel.shape}"
+        )
+    return ref_vel
+
+
+def _frame_with_masses(frame: Frame, masses: np.ndarray) -> Frame:
+    atoms = frame.atoms
+    return frame.model_copy(
+        update={
+            "atoms": AtomsBlock(
+                symbols=list(atoms.symbols), positions=atoms.positions, masses=masses
+            )
+        }
+    )
+
+
+def _frame_with_velocities(frame: Frame, velocities: np.ndarray) -> Frame:
+    new_dynamics = frame.dynamics.model_copy(update={"velocities": velocities})
+    return frame.model_copy(update={"dynamics": new_dynamics})

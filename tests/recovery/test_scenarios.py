@@ -88,19 +88,41 @@ def test_truncate_corrupt_tail_options() -> None:
 # --- scenarios that refuse in this version (empty offered list) ----------------------------------
 
 
-@pytest.mark.parametrize(
-    "scenario",
-    [
-        "missing_velocities",  # choices land in M8
-        "missing_masses",  # choices land in M8
-        "missing_energy",  # deliberately optionless — no synthetic energy exists (Part 4 §3.3)
-    ],
-)
-def test_scenario_offers_no_options_in_this_version(scenario: str) -> None:
-    # An empty offered list means "no preset can resolve this here" — the scenario refuses,
-    # honestly, rather than offering a choice the version cannot honor.
-    assert available_options(scenario) == []
+def test_missing_energy_offers_no_options() -> None:
+    # `missing_energy` is deliberately optionless — no scientifically defensible synthetic energy
+    # exists, so it always refuses without a preset (Part 4 §3.3).
+    assert available_options("missing_energy") == []
 
 
 def test_unknown_scenario_has_no_options() -> None:
     assert available_options("not_a_scenario") == []
+
+
+# --- M8 velocity/mass scenario option lists ------------------------------------------------------
+
+
+def test_missing_velocities_options_base() -> None:
+    # The fabricative choices always offered where velocity emission is requested (Part 4 §3.3).
+    assert available_options("missing_velocities") == [
+        "zero_init",
+        "maxwell_boltzmann",
+        "upload_reference",
+    ]
+
+
+def test_missing_velocities_offers_omit_only_when_optional_and_permissive() -> None:
+    # ✳`omit` is offered only when the target field is optional *and* the mode is permissive — the
+    # exact conditions under which the resolver applies it (honest lists, P5).
+    assert "omit" in available_options(
+        "missing_velocities", target_field_optional=True, permissive_mode=True
+    )
+    assert "omit" not in available_options(
+        "missing_velocities", target_field_optional=True, permissive_mode=False
+    )
+    assert "omit" not in available_options(
+        "missing_velocities", target_field_optional=False, permissive_mode=True
+    )
+
+
+def test_missing_masses_options() -> None:
+    assert available_options("missing_masses") == ["standard_masses", "manual_input"]
