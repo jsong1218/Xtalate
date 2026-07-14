@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 from xtalate.capabilities import Registry
-from xtalate.conversion import ConversionEngine
+from xtalate.conversion import ConversionEngine, ConversionResult
 from xtalate.exporters import builtin_exporters
 from xtalate.parsers import builtin_parsers
 from xtalate.recovery import RecoveryError
@@ -120,7 +120,7 @@ def test_velocity_request_when_source_already_has_velocities_errors() -> None:
 # --- the flagship done-criterion -----------------------------------------------------------------
 
 
-def _convert_done_criterion(reg: Registry, source: CanonicalObject) -> object:
+def _convert_done_criterion(reg: Registry, source: CanonicalObject) -> ConversionResult:
     return ConversionEngine(reg).convert(
         source,
         source_format_id="extxyz",
@@ -198,6 +198,7 @@ def test_mb_chain_records_two_assumptions_and_traces_masses() -> None:
     assert result.validation is not None
     assert result.validation.status in ("passed", "passed_with_warnings")
     # POSCAR cannot store masses, so the output carries none — the audit trail is in the report.
+    assert result.output is not None
     reparsed = _parse(reg, "poscar", result.output, "POSCAR")
     assert reparsed.frames[0].atoms.masses is None
     assert reparsed.frames[0].dynamics.velocities is not None
@@ -229,6 +230,8 @@ def test_mb_velocities_are_deterministic_end_to_end() -> None:
     source = _parse(reg, "extxyz", _TRAJ_WITH_MASSES, "traj.extxyz")
     a = _convert_done_criterion(reg, source)
     b = _convert_done_criterion(reg, source)
+    assert a.output is not None
+    assert b.output is not None
     va = _parse(reg, "poscar", a.output, "POSCAR").frames[0].dynamics.velocities
     vb = _parse(reg, "poscar", b.output, "POSCAR").frames[0].dynamics.velocities
     np.testing.assert_array_equal(va, vb)

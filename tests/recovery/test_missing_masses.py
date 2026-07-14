@@ -79,7 +79,9 @@ def test_manual_input_supplies_the_given_masses() -> None:
         {"missing_masses": {"choice": "manual_input", "parameters": {"masses": [12.0, 16.0]}}},
     )
     assert result.canonical is not None
-    np.testing.assert_allclose(result.canonical.frames[0].atoms.masses, [12.0, 16.0])
+    masses = result.canonical.frames[0].atoms.masses
+    assert masses is not None
+    np.testing.assert_allclose(masses, [12.0, 16.0])
     (assumption,) = result.assumptions
     assert assumption.parameters == {"masses_u": [12.0, 16.0]}
 

@@ -163,9 +163,11 @@ def test_upload_reference_borrows_velocities_shape_checked() -> None:
         {"missing_velocities": {"choice": "upload_reference", "parameters": {"reference": ref}}},
     )
     assert result.canonical is not None
-    np.testing.assert_allclose(
-        result.canonical.frames[0].dynamics.velocities, ref.frames[0].dynamics.velocities
-    )
+    recovered = result.canonical.frames[0].dynamics.velocities
+    expected = ref.frames[0].dynamics.velocities
+    assert recovered is not None
+    assert expected is not None
+    np.testing.assert_allclose(recovered, expected)
 
 
 def test_upload_reference_rejects_shape_mismatch() -> None:

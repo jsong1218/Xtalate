@@ -16,7 +16,7 @@ from xtalate.recovery.engine import _maxwell_boltzmann
 
 def _expected_variance(mass_u: float, temperature_k: float) -> float:
     # σ² = kB·T/m in ASE velocity units, scaled to (Å/fs)² by ase.units.fs² (the codebase's factor).
-    return ase_units.kB * temperature_k / mass_u * ase_units.fs**2
+    return float(ase_units.kB * temperature_k / mass_u * ase_units.fs**2)
 
 
 def test_per_component_variance_matches_kT_over_m() -> None:

@@ -228,7 +228,9 @@ def test_ambiguous_velocity_mode_read_as_direct_with_warning() -> None:
         b"\nfoo\n  0.5 1.0 0.25\n"
     )
     result = parse_bytes(make_contcar_parser(), with_ambiguous_vel)
-    np.testing.assert_allclose(result.canonical.frames[0].dynamics.velocities[0], [1.0, 3.0, 1.0])
+    velocities = result.canonical.frames[0].dynamics.velocities
+    assert velocities is not None
+    np.testing.assert_allclose(velocities[0], [1.0, 3.0, 1.0])
     assert any(i.code == "POSCAR_AMBIGUOUS_VELOCITY_MODE" for i in result.issues)
 
 
