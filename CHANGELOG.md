@@ -10,6 +10,33 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ### Added
 
+- **POSCAR velocity block + Maxwell–Boltzmann velocity/mass recovery (v0.2 M8).** The one deliberate
+  v0.1 format deferral lands, together with the two velocity-family recovery scenarios it unlocks.
+  - **POSCAR/CONTCAR Direct-mode velocities.** The velocity block is now read in both Cartesian
+    (Å/fs, stored verbatim) and Direct (fractional) conventions; Direct velocities are converted to
+    Cartesian Å/fs via the lattice, with a parse note, and an ambiguous mode line is read as Direct
+    with a `POSCAR_AMBIGUOUS_VELOCITY_MODE` warning. Absence is preserved (`velocities = None`, never
+    zero-filled). Export stays Cartesian (Direct-mode export is the M8 cut line).
+  - **`missing_velocities`** resolves with `zero_init` (an explicit rest state), `maxwell_boltzmann`
+    (`temperature_K`, `seed` — both recorded for reproducibility; the raw sample is emitted with no
+    centre-of-mass-drift removal, `docs/DECISIONS.md` D43/D45), `upload_reference` (velocities
+    borrowed from a second structure, shape-checked), and ✳`omit` (leave velocities absent — offered
+    only when the target field is optional and the mode is permissive).
+  - **`missing_masses`** resolves with `standard_masses` (IUPAC standard atomic weights from ASE, a
+    *reported default* — D44) and `manual_input`. A `maxwell_boltzmann` draw over a source without
+    masses **chains** a `missing_masses` recovery, resolving masses first and recording two
+    Assumptions; for a target that cannot store masses (POSCAR) the masses are audited in `supplied`
+    but not written (D47).
+  - **Opt-in emission.** Velocity/mass fabrication is requested by supplying the recovery choice —
+    it is never auto-triggered, since no v0.1 target *requires* these fields. The wiring lives in
+    `ConversionEngine.convert` via a new `on_demand_fabricative_scenarios` helper (D46), which
+    refuses incoherent requests (field already present on the source; or emission to a target that
+    cannot store it) as caller errors.
+  - CLI: `xtalate convert traj.extxyz --to poscar --recover missing_lattice=… --recover
+    frame_selection=last --recover missing_velocities=maxwell_boltzmann,temperature_K=300,seed=42`
+    produces a POSCAR with a velocity block, byte-identical on re-run. See `docs/DECISIONS.md`
+    D43–D47.
+
 - **Recovery scenario catalog completion — Slice 2 (v0.2 M7).** The remaining catalog resolvers land,
   completing M7 for the four v0.1 formats.
   - **Parse-time recovery.** `missing_species` (a VASP-4 POSCAR with atom counts but no element

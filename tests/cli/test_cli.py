@@ -95,6 +95,98 @@ def test_convert_with_recovery_succeeds(tmp_path: Path, capsys: pytest.CaptureFi
     assert "Conversion Report" in printed and "Validation Report" in printed
 
 
+_MB_TRAJ = (
+    b"2\nProperties=species:S:1:pos:R:3:masses:R:1\nC 0.0 0.0 0.0 12.011\nO 1.1 0.0 0.0 15.999\n"
+    b"2\nProperties=species:S:1:pos:R:3:masses:R:1\nC 0.0 0.0 0.0 12.011\nO 1.25 0.0 0.0 15.999\n"
+)
+
+
+def test_convert_maxwell_boltzmann_chain_via_cli(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A plain XYZ trajectory has no masses, so `maxwell_boltzmann` chains `missing_masses`; the CLI
+    # must parse `temperature_K`/`seed` and thread both recoveries through to a completed convert.
+    out = tmp_path / "POSCAR"
+    conv = tmp_path / "conv.json"
+    val = tmp_path / "val.json"
+    code = main(
+        [
+            "convert",
+            WATER,
+            "--to",
+            "poscar",
+            "-o",
+            str(out),
+            "--recover",
+            "frame_selection=last",
+            "--recover",
+            "missing_lattice=bounding_box,padding_ang=5.0",
+            "--recover",
+            "missing_masses=standard_masses",
+            "--recover",
+            "missing_velocities=maxwell_boltzmann,temperature_K=300,seed=42",
+            "--report",
+            str(conv),
+            "--validation-report",
+            str(val),
+        ]
+    )
+    assert code == EXIT_OK
+    report = json.loads(conv.read_text())
+    assert report["status"] == "completed"
+    supplied = {e["path"] for e in report["supplied"]}
+    assert {"dynamics.velocities", "atoms.masses"} <= supplied
+    assert json.loads(val.read_text())["status"] in ("passed", "passed_with_warnings")
+
+
+def test_convert_maxwell_boltzmann_is_byte_identical_on_rerun(tmp_path: Path) -> None:
+    args = [
+        "convert",
+        WATER,
+        "--to",
+        "poscar",
+        "--recover",
+        "frame_selection=last",
+        "--recover",
+        "missing_lattice=bounding_box,padding_ang=5.0",
+        "--recover",
+        "missing_masses=standard_masses",
+        "--recover",
+        "missing_velocities=maxwell_boltzmann,temperature_K=300,seed=42",
+    ]
+    first = tmp_path / "POSCAR1"
+    second = tmp_path / "POSCAR2"
+    assert main([*args, "-o", str(first)]) == EXIT_OK
+    assert main([*args, "-o", str(second)]) == EXIT_OK
+    assert first.read_bytes() == second.read_bytes()
+
+
+def test_convert_done_criterion_masses_source(tmp_path: Path) -> None:
+    # The literal done-criterion command: the source already carries masses, so only the three
+    # documented `--recover` flags are needed (no explicit missing_masses).
+    traj = tmp_path / "traj.extxyz"
+    traj.write_bytes(_MB_TRAJ)
+    out = tmp_path / "POSCAR"
+    code = main(
+        [
+            "convert",
+            str(traj),
+            "--to",
+            "poscar",
+            "-o",
+            str(out),
+            "--recover",
+            "missing_lattice=bounding_box,padding_ang=5.0",
+            "--recover",
+            "frame_selection=last",
+            "--recover",
+            "missing_velocities=maxwell_boltzmann,temperature_K=300,seed=42",
+        ]
+    )
+    assert code == EXIT_OK
+    assert out.exists()
+
+
 def test_convert_refused_without_presets(tmp_path: Path) -> None:
     out = tmp_path / "POSCAR"
     assert main(["convert", WATER, "--to", "poscar", "-o", str(out)]) == EXIT_REFUSED

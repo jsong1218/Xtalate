@@ -38,7 +38,11 @@ import numpy as np
 from xtalate import __version__
 from xtalate.capabilities import Registry
 from xtalate.conversion.parse_recovery import ParseRecovery
-from xtalate.conversion.preflight import PreflightDiff, build_preflight
+from xtalate.conversion.preflight import (
+    PreflightDiff,
+    build_preflight,
+    on_demand_fabricative_scenarios,
+)
 from xtalate.conversion.report import (
     Assumption,
     ConversionReport,
@@ -170,6 +174,13 @@ class ConversionEngine:
             parse_issues = [*parse_issues, *parse_recovery.issues]
         matrix = self._registry.capability_matrix()
         diff = build_preflight(source, matrix, target_format_id)
+        # Opt-in fabricative scenarios (velocity/mass emission) the user requested via
+        # `recovery_choices` — not auto-detected by the diff, since the target does not *require*
+        # these fields (Part 4 §3.3, D46). Merged with the diff's scenarios before recovery.
+        on_demand = on_demand_fabricative_scenarios(
+            source, matrix, target_format_id, recovery_choices, mode=mode
+        )
+        all_scenarios = [*diff.unresolved, *on_demand]
 
         # Parse-time recovery Assumptions (applied before the object existed) are merged ahead of
         # pre-flight recovery. Their fabricated paths are already present in `source` (it is the
@@ -181,8 +192,8 @@ class ConversionEngine:
         # --- Pre-flight recovery (Part 4 §3) ---------------------------------------------
         recovered = source
         recovery_applied: list[AppliedAssumption] = []
-        if diff.unresolved:
-            outcome = self._recovery.resolve(source, diff.unresolved, recovery_choices)
+        if all_scenarios:
+            outcome = self._recovery.resolve(source, all_scenarios, recovery_choices)
             if outcome.canonical is None:
                 # Refusal after a successful parse-time recovery still carries that recovery's
                 # Assumptions/supplied so the refused report is complete (Part 4 §2, §3.3).
@@ -481,7 +492,12 @@ def _map_assumptions(
             supplied.append(
                 SuppliedEntry(path=sup.path, from_assumption=applied.id, detail=sup.detail)
             )
-            plan_additions.add(sup.path)  # a fabricated field must be in the write_plan.
+            # A fabricated field enters the write_plan so it is exported and validated — *unless* it
+            # was fabricated only to feed another recovery and the target cannot store it (chained
+            # `missing_masses` masses seeding a Maxwell–Boltzmann draw on POSCAR): those are audited
+            # in `supplied` but kept out of the write_plan so validation doesn't expect them (D47).
+            if sup.in_write_plan:
+                plan_additions.add(sup.path)
         for pres in applied.preserved:
             # A selective-reductive choice's *retained* genuine data (e.g. the constraint subset
             # `project` keeps) — Preserved (and written), never Supplied (P4).

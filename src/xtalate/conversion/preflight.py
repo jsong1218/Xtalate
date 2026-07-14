@@ -31,10 +31,11 @@ object, calls an exporter, or resolves a recovery.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from xtalate.capabilities import CapabilityMatrix
 from xtalate.conversion.report import PreservedEntry, RemovedEntry, ReportWarning
-from xtalate.recovery import UnresolvedScenario, available_options
+from xtalate.recovery import RecoveryError, UnresolvedScenario, available_options
 from xtalate.schema import CanonicalObject
 from xtalate.sdk import CapabilityLevel, FormatCapabilities
 
@@ -57,6 +58,15 @@ _REQUIRED_FIELD_SCENARIOS = {
 
 # The container-level capability key governing per-atom constraint representation (Part 4 §3.3).
 _CONSTRAINTS = "dynamics.constraints"
+
+# Opt-in fabricative scenarios: a canonical field the target *can* write but does not *require*, so
+# the pre-flight diff never demands it. Emission is requested by the user supplying a recovery
+# choice for the scenario (Part 4 §3.3, "user requests velocity emission for a target that supports
+# them") — see `on_demand_fabricative_scenarios`.
+_OPT_IN_FABRICATIVE = {
+    "missing_velocities": "dynamics.velocities",
+    "missing_masses": "atoms.masses",
+}
 
 
 @dataclass
@@ -213,6 +223,76 @@ def _scenario_options(scenario: str, caps: FormatCapabilities) -> list[str]:
         target_can_be_nonperiodic=caps.allows_open_boundaries,
         target_supports_multifile=True,
     )
+
+
+def on_demand_fabricative_scenarios(
+    source: CanonicalObject,
+    matrix: CapabilityMatrix,
+    target_format_id: str,
+    recovery_choices: dict[str, dict[str, Any]],
+    *,
+    mode: str,
+) -> list[UnresolvedScenario]:
+    """The opt-in fabricative scenarios a *user-supplied* recovery choice pulls in (Part 4 §3.3).
+
+    Unlike ``build_preflight``'s triggers (a target-*required* field absent, or too many frames),
+    velocity/mass emission is **opt-in**: the target *can* write the field but does not require it,
+    so nothing is fabricated unless the user asks by supplying a recovery choice. This is kept
+    deliberately out of ``build_preflight`` (which must stay pure and choice-independent so the
+    pre-flight *draft* means the same thing before any choice is made, D46);
+    ``ConversionEngine.convert`` is the sole caller, merging these with ``diff.unresolved`` first.
+
+    For each opt-in scenario the user asked for — plus ``missing_masses`` pulled in by a chained
+    ``maxwell_boltzmann`` velocity choice when masses are absent — this emits an
+    ``UnresolvedScenario``, or raises ``RecoveryError`` (a caller error, not a refusal) when the
+    request is incoherent: the
+    field is already present on the source (fabrication would overwrite real data, **P4**), or the
+    user asked to *emit* a field the target cannot store. A chained ``missing_masses`` for a target
+    that cannot store masses (POSCAR) is legal — ``params['emit']=False`` marks it as feeding the
+    velocity draw only, recorded in ``supplied`` but never written (D47)."""
+    presence = source.field_presence()
+    scenarios: list[UnresolvedScenario] = []
+    for scenario, path in _OPT_IN_FABRICATIVE.items():
+        requested = scenario in recovery_choices
+        chained = (
+            scenario == "missing_masses"
+            and recovery_choices.get("missing_velocities", {}).get("choice") == "maxwell_boltzmann"
+            and presence.status_of("atoms.masses") == "absent"
+        )
+        if not (requested or chained):
+            continue
+        if presence.status_of(path) != "absent":
+            raise RecoveryError(
+                f"{scenario!r}: {path!r} is already present on the source; fabricating it would "
+                "overwrite real data (P4) — remove the recovery choice"
+            )
+        emit = (
+            matrix.field_capability(target_format_id, "write", path).level != CapabilityLevel.NONE
+        )
+        if requested and not chained and not emit:
+            raise RecoveryError(
+                f"{scenario!r}: target {target_format_id!r} cannot write {path!r}, so it cannot be "
+                "emitted — drop the recovery choice or choose a target that supports it"
+            )
+        detail = (
+            f"user requested emission of {path}, absent on source"
+            if emit
+            else f"{path} fabricated to seed a velocity draw only (target cannot store it)"
+        )
+        scenarios.append(
+            UnresolvedScenario(
+                scenario=scenario,
+                path=path,
+                detail=detail,
+                options=available_options(
+                    scenario,
+                    target_field_optional=True,
+                    permissive_mode=(mode == "permissive"),
+                ),
+                params={"emit": emit},
+            )
+        )
+    return scenarios
 
 
 def _custom_key(path: str) -> str:

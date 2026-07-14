@@ -97,6 +97,20 @@ def _all_ints(tokens: list[str]) -> bool:
     return True
 
 
+def _is_numeric_triple(line: str) -> bool:
+    """True if ``line``'s first three whitespace-separated tokens all parse as floats — the
+    signature of a coordinate/velocity data row, distinguishing it from a mode/label line."""
+    tokens = line.split()
+    if len(tokens) < 3:
+        return False
+    try:
+        for t in tokens[:3]:
+            float(t)
+    except ValueError:
+        return False
+    return True
+
+
 def _floats(line: str, code: str, location: str) -> list[float]:
     try:
         return [float(t) for t in line.split()]
@@ -343,17 +357,42 @@ class PoscarParser(ParserPlugin):
             ]
 
         # --- optional velocity / predictor-corrector tail (CONTCAR) -------------------
-        velocities, predictor = self._parse_tail(lines, cursor, n_atoms)
+        raw_velocities, vel_mode, predictor = self._parse_tail(lines, cursor, n_atoms)
         parse_notes = [coord_note, _PBC_NOTE, f"{_SCALE_NOTE_PREFIX}{scale_token}"]
-        if velocities is not None:
-            # VASP writes the velocity block in Å/fs — already the canonical velocity unit (§3.1) —
-            # so it is stored verbatim, no conversion. Annotate the source unit and note the block
-            # so a reader can see the velocities came from the file, not from a default (§2 rule 3).
-            source_units["velocities"] = "angstrom/fs"
-            parse_notes.append(
-                "velocity block read from the CONTCAR tail in Å/fs "
-                "(canonical unit; stored verbatim)."
-            )
+        velocities: np.ndarray | None = None
+        if raw_velocities is not None:
+            raw_vel = np.asarray(raw_velocities, dtype=float)
+            if vel_mode == "cartesian":
+                # Cartesian velocities are in Å/fs — already the canonical velocity unit (§3.1) — so
+                # they are stored verbatim, no conversion. Annotate the source unit and note the
+                # block so a reader can see the velocities came from the file, not a default
+                # (§2 rule 3).
+                velocities = raw_vel
+                source_units["velocities"] = "angstrom/fs"
+                parse_notes.append(
+                    "velocity block read from the CONTCAR tail in Å/fs "
+                    "(canonical unit; stored verbatim)."
+                )
+            else:  # "direct" or "ambiguous"
+                # Direct-mode velocities are fractional; convert to Cartesian Å/fs with the same
+                # lattice matrix used for the coordinates (§4), so a Direct CONTCAR tail is read as
+                # faithfully as a Cartesian one.
+                velocities = raw_vel @ lattice
+                source_units["velocities"] = "direct"
+                parse_notes.append(
+                    "Direct-mode velocities converted to Cartesian Å/fs via the lattice (§4)."
+                )
+                if vel_mode == "ambiguous":
+                    issues.append(
+                        ParseIssue(
+                            severity="warning",
+                            code="POSCAR_AMBIGUOUS_VELOCITY_MODE",
+                            message=(
+                                "velocity-block mode line does not begin with C/K (Cartesian) or "
+                                "D (Direct); read as Direct/fractional per VASP's default rule (§4)"
+                            ),
+                        )
+                    )
         custom_global: dict[str, JsonValue] = {_COMMENT_KEY: title}
         if predictor is not None:
             custom_global[_PREDICTOR_KEY] = predictor
@@ -369,7 +408,7 @@ class PoscarParser(ParserPlugin):
 
         cell = Cell(lattice_vectors=lattice, pbc=(True, True, True))
         dynamics = Dynamics(
-            velocities=None if velocities is None else np.asarray(velocities, dtype=float),
+            velocities=velocities,
             constraints=constraints,
         )
         # The scaling factor is *already folded into* the returned lattice vectors (§4), so it is
@@ -512,20 +551,36 @@ class PoscarParser(ParserPlugin):
     @staticmethod
     def _parse_tail(
         lines: list[str], cursor: int, n_atoms: int
-    ) -> tuple[list[list[float]] | None, str | None]:
+    ) -> tuple[list[list[float]] | None, str | None, str | None]:
         """Read an optional velocity block and predictor-corrector remainder after the
-        coordinates. Velocities are the first ``n_atoms`` rows of three floats (an optional
-        single mode line is skipped); anything after them is carried verbatim (§3 n.12)."""
+        coordinates. Velocities are the first ``n_atoms`` rows of three floats, optionally preceded
+        by a coordinate-mode line; anything after them is carried verbatim (§3 n.12).
+
+        Returns ``(velocities, mode, predictor)`` where ``mode`` is ``"cartesian"`` (an explicit
+        C/K mode line, or none at all — Cartesian Å/fs by convention), ``"direct"`` (a Direct/
+        fractional mode line), or ``"ambiguous"`` (a mode line beginning with neither C/K nor D,
+        read as Direct per VASP's default rule, §4). ``mode`` is ``None`` iff no clean velocity
+        block is present."""
         # Skip a single blank separator line.
         i = cursor
         while i < len(lines) and lines[i].strip() == "":
             i += 1
         if i >= len(lines):
-            return None, None
-        # An optional mode line (e.g. 'Cartesian') precedes the velocities in some writers.
-        first = lines[i].split()
-        if len(first) < 3:
-            i += 1  # treat as a mode/label line
+            return None, None, None
+        # An optional mode line (e.g. 'Cartesian'/'Direct') precedes the velocities in some writers.
+        # It is a mode line iff its first three tokens are not all numeric — a bare label, never a
+        # coordinate triple. An absent mode line means Cartesian Å/fs by convention.
+        mode = "cartesian"
+        if not _is_numeric_triple(lines[i]):
+            mode_char = lines[i].strip()[:1].lower()
+            mode = (
+                "cartesian"
+                if mode_char in ("c", "k")
+                else "direct"
+                if mode_char == "d"
+                else "ambiguous"
+            )
+            i += 1
         velocities: list[list[float]] = []
         for _ in range(n_atoms):
             if i >= len(lines):
@@ -536,12 +591,13 @@ class PoscarParser(ParserPlugin):
             except (ValueError, IndexError):
                 break
             i += 1
-        vel_out = velocities if len(velocities) == n_atoms else None
-        if vel_out is None:
-            i = cursor  # velocities not cleanly present; the whole tail is predictor data
+        if len(velocities) != n_atoms:
+            # velocities not cleanly present; the whole tail (from the cursor) is predictor data.
+            remainder = "\n".join(lines[cursor:]).strip("\n")
+            return None, None, remainder if remainder.strip() else None
         remainder = "\n".join(lines[i:]).strip("\n")
         predictor = remainder if remainder.strip() else None
-        return vel_out, predictor
+        return velocities, mode, predictor
 
     # -- capabilities ------------------------------------------------------------------
 
@@ -559,7 +615,11 @@ class PoscarParser(ParserPlugin):
                     level=CapabilityLevel.PARTIAL,
                     notes="Always (T,T,T) by format definition; POSCAR carries no explicit PBC.",
                 ),
-                "dynamics.velocities": full,
+                "dynamics.velocities": FieldCapability(
+                    level=CapabilityLevel.FULL,
+                    notes="CONTCAR-tail velocity block; both Cartesian and Direct conventions are "
+                    "read, Direct converted to Cartesian Å/fs via the lattice.",
+                ),
                 "dynamics.constraints": FieldCapability(
                     level=CapabilityLevel.PARTIAL,
                     notes="Only per-axis fixed-atom masks (selective dynamics).",
