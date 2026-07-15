@@ -9,10 +9,10 @@ golden, yielding a lattice of source objects. ``test_report_completeness`` drive
 ``(mutant, target)`` pair through ``ConversionEngine.convert`` with fixed recovery presets and
 asserts both properties (``_properties``) on each report.
 
-Stage 2 (hypothesis strategies over randomized objects, with shrinking) is **cut for v0.2** with a
-tracking issue — see ``CHANGELOG.md`` Unreleased and ``docs/DECISIONS.md`` D50. Stage 1 is the part
-the plan's cut line names non-negotiable; it covers the whole optional-field lattice determin-
-istically by construction.
+Stage 2 (hypothesis strategies over randomized objects, with shrinking) lives in ``_strategies`` /
+``test_report_completeness_hypothesis`` and complements this deterministic sweep. Stage 1 is the
+part the plan's cut line names non-negotiable; it covers the whole optional-field lattice determin-
+istically by construction, and it merges before stage 2 (D50).
 
 Every mutant is a *valid* Canonical Object by construction: mutations operate on the golden's
 JSON dump and re-validate through the real model validators (absence convention, constant-N,

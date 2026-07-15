@@ -200,6 +200,25 @@ def _choice_code(choice: dict[str, Any], scenario: UnresolvedScenario) -> str:
     return code
 
 
+# Canonical categories that live on ``Frame`` (Part 2 §3.5): a path under one of these is per-frame
+# data, so a frame reduction can eliminate it. Root categories (trajectory/simulation/user_metadata)
+# are not lost by frame_selection and are accounted for by the capability diff instead.
+_PER_FRAME_PREFIXES = ("frame.", "atoms.", "cell.", "dynamics.", "electronic.")
+
+
+def _per_frame_paths_lost(before: CanonicalObject, after: CanonicalObject) -> list[str]:
+    """Per-frame canonical paths present in ``before`` but absent in the reduced ``after`` object —
+    the fields a frame reduction eliminates entirely (present only in dropped frames). Derived from
+    the object's own presence map so it stays correct as the schema grows (**P6**); ``atoms``
+    symbols/positions survive into the retained frame and never appear here."""
+    after_presence = after.field_presence()
+    return [
+        path
+        for path in before.field_presence().present_paths()
+        if path.startswith(_PER_FRAME_PREFIXES) and after_presence.status_of(path) == "absent"
+    ]
+
+
 def _apply_frame_selection(
     canonical: CanonicalObject,
     aid: str,
@@ -262,6 +281,29 @@ def _apply_frame_selection(
         update={"frames": [reduced_frame], "trajectory": None, "user_metadata": new_um}
     )
     dropped = n - 1
+    removed = [
+        FrameDrop(
+            path="atoms.positions",
+            reason="Target format stores a single structure (max_frames = 1).",
+            detail=f"{dropped} of {n} frames dropped; frame {index} retained per {aid}.",
+        )
+    ]
+    # A per-frame field that lived *only* in the dropped frames (a `mixed` path, present in the
+    # source but absent from the retained frame — e.g. constraints on frame 3 of a 4-frame run) is
+    # eliminated entirely by the reduction. The reduction is the operation that loses it, so it must
+    # be recorded here, or it lands in neither `preserved` nor `removed` and the completeness
+    # invariant fires (P1). Without this, a `constraint_representation` running *after* frame_
+    # selection (dependency order) sees a constraint-free object and records nothing — silent loss.
+    # Root losses (e.g. `trajectory.timestep`) are the capability diff's job, so this is per-frame.
+    lost = _per_frame_paths_lost(canonical, reduced)
+    for path in lost:
+        removed.append(
+            FrameDrop(
+                path=path,
+                reason="Present only in dropped frame(s); the retained frame carries no value.",
+                detail=f"{path} appeared in the source but not in retained frame {index}.",
+            )
+        )
     assumption = AppliedAssumption(
         id=aid,
         scenario="frame_selection",
@@ -273,13 +315,7 @@ def _apply_frame_selection(
             f"{dropped} frame(s) are dropped. Which frame survives changes the scientific "
             "meaning of the output, so this is a recorded choice, not a silent default."
         ),
-        removed=[
-            FrameDrop(
-                path="atoms.positions",
-                reason="Target format stores a single structure (max_frames = 1).",
-                detail=f"{dropped} of {n} frames dropped; frame {index} retained per {aid}.",
-            )
-        ],
+        removed=removed,
     )
     return reduced, assumption, index
 
@@ -342,6 +378,21 @@ def _apply_constraint_representation(
                     f"{total_dropped} constraint(s) dropped across frames: "
                     f"{dict(sorted(dropped_counts.items()))}."
                 ),
+            )
+        )
+    # The path can be *present* yet contribute zero kept and zero dropped constraints: an
+    # explicitly-unconstrained ``constraints=[]`` ("no constraints" is itself data, §3.6) in the
+    # remaining frame(s), reached when frame_selection dropped the frame that held the real
+    # constraints. The resolver still nulls it out of the write plan, so that present path becomes
+    # absent — a removal that must be recorded, or the pending `dynamics.constraints` lands in
+    # neither preserved nor removed and the completeness invariant fires (P1).
+    input_present = any(frame.dynamics.constraints is not None for frame in canonical.frames)
+    if input_present and kept_total == 0 and total_dropped == 0:
+        removed.append(
+            FrameDrop(
+                path="dynamics.constraints",
+                reason="Target does not record an explicitly-unconstrained (empty) constraint set.",
+                detail="Source declared no constraints on the retained frame(s); not written.",
             )
         )
 

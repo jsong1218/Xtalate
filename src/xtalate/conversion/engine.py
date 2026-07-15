@@ -253,7 +253,11 @@ class ConversionEngine:
 
         preflight_preserved = [e for e in diff.preserved if e.path not in fabricated_at_parse]
         preserved = [*preflight_preserved, *recovery_preserved]
-        removed = [*diff.removed, *recovery_removed]
+        # A per-frame path a capability-NONE target already routes to `diff.removed` can *also* be
+        # reported lost by `frame_selection` when it lived only in dropped frames — one removal, two
+        # detectors. Dedupe by path (the capability diff's entry wins, as the more fundamental
+        # reason) so the report never lists the same path removed twice.
+        removed = _dedupe_removed([*diff.removed, *recovery_removed])
 
         # --- Strict-mode gating (Part 4 §4) ----------------------------------------------
         if mode == "strict":
@@ -512,6 +516,20 @@ def _map_assumptions(
         for drop in applied.removed:
             removed.append(RemovedEntry(path=drop.path, reason=drop.reason, detail=drop.detail))
     return assumptions, supplied, preserved, removed, plan_additions
+
+
+def _dedupe_removed(entries: list[RemovedEntry]) -> list[RemovedEntry]:
+    """Collapse ``removed`` entries that share a canonical path to the first occurrence, preserving
+    order. The same field can be flagged lost by two detectors (a capability-NONE target *and* a
+    frame reduction that dropped its only frame); the completeness invariant is path-level, so one
+    entry per path keeps the report honest without redundancy."""
+    seen: set[str] = set()
+    deduped: list[RemovedEntry] = []
+    for entry in entries:
+        if entry.path not in seen:
+            seen.add(entry.path)
+            deduped.append(entry)
+    return deduped
 
 
 def _utc_now() -> str:

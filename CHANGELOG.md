@@ -27,15 +27,34 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
     presets, asserting both properties on every report — including refused reports, which must still
     satisfy the completeness invariant. Every mutant re-validates through the model validators, so an
     invariant-violating mutation fails loudly at generation rather than producing a dead test.
+  - **Stage-2 generator — hypothesis strategies over randomized objects** (`tests/property/
+    _strategies.py`, `test_report_completeness_hypothesis.py`): randomized Canonical Objects with
+    independent presence draws across all categories and **shrinking** on failure, exercising the
+    field-*combinations* and multi-field `mixed` configs the one-at-a-time sweep cannot. Bounded to
+    `max_examples=200` for the PR suite (Part 8 §5); v0.3's nightly workflow hosts the extended budget.
+    Adds **`hypothesis`** as a **test-only** dev dependency (`docs/DECISIONS.md` D50) — the
+    minimal-dependency posture governs runtime deps, which are unchanged.
   - **Independent-guard proof** (M10 done-means): feeding a tampered report — one `removed` entry
     dropped, or a `supplied` entry's Assumption removed — to the property checker is caught as silent
     loss / silent fabrication, demonstrating the property catches the class of bug the runtime
     assertion does, without the runtime assertion in the loop. A non-vacuity guard asserts the
     stage-1 lattice actually exercises both `removed` and `supplied` across its pairs.
-  - **Stage 2 cut for v0.2 with a tracking issue** (`docs/DECISIONS.md` D50): hypothesis strategies
-    over randomized Canonical Objects with shrinking are deferred to v0.3's nightly budget, per the
-    plan's cut line ("stage-2 randomization depth — never stage 1"). No new dependency is added; the
-    stage-1 lattice is green with **zero waivers/skips**.
+
+### Fixed
+
+- **`frame_selection` no longer silently drops a per-frame field that lived only in a dropped
+  frame (v0.2 M10).** Found by the stage-2 property test. When `frame_selection` reduced a trajectory
+  to one structure, a per-frame path present *only* in the dropped frames (e.g. a `mixed`
+  `dynamics.constraints`) was eliminated with no `removed` entry — silent loss (**P1**) that the
+  runtime completeness invariant caught as a crash. `frame_selection` now records a `removed` entry
+  for every per-frame path the reduction eliminates (`recovery.engine._per_frame_paths_lost`), and
+  `conversion.engine` dedupes `removed` by path so a NONE-capability field flagged by both the
+  capability diff and the reduction is listed once. Regression fixtures in
+  `tests/conversion/test_frame_reduction_completeness.py`.
+- **`constraint_representation=drop_all` now records the removal of an explicitly-unconstrained
+  `constraints=[]` (v0.2 M10).** Also found by stage 2: an empty (present, §3.6) constraint list on
+  the retained frame was nulled out of the write plan with a zero dropped-count and recorded in
+  neither `preserved` nor `removed`. It is now reported `removed`.
 
 - **Cross-format round-trip matrix suites + custom tolerance-table files (v0.2 M9).** v0.1 proved
   *identity* round-trips (`A → Canonical → A`); v0.2 adds the cross-format matrix that catches

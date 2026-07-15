@@ -15,10 +15,9 @@ suite drives every ``(mutant, target)`` pair through the real Conversion Engine 
 presets, asserting both properties (``_properties``) on each report — including refused reports,
 which must still satisfy the completeness invariant (Part 4 §2, §3.3).
 
-Stage 2 (hypothesis strategies over randomized objects, with shrinking) is cut for v0.2 with a
-tracking issue (``CHANGELOG.md`` Unreleased; ``docs/DECISIONS.md`` D50); the plan's cut line names
-stage-2 *randomization depth* cuttable and stage 1 non-negotiable. **Zero waivers/skips** — a red
-property is a stop-the-line event, never an ``xfail`` (v0.2 standing rule 3).
+Stage 2 (hypothesis strategies over randomized objects, with shrinking) is the companion suite
+``test_report_completeness_hypothesis`` (D50); this stage-1 sweep merges before it. **Zero waivers
+/skips** — a red property is a stop-the-line event, never an ``xfail`` (v0.2 standing rule 3).
 """
 
 from __future__ import annotations
