@@ -193,9 +193,7 @@ def _as_positive(quantity: str, field: str, value: object) -> float:
     """Coerce a tolerance-table threshold to a non-negative float, or raise an actionable error.
     Bools are rejected explicitly (``True``/``False`` are ``int`` subclasses in Python)."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(
-            f"quantity {quantity!r}: {field!r} must be a number, got {value!r}"
-        )
+        raise ValueError(f"quantity {quantity!r}: {field!r} must be a number, got {value!r}")
     if value < 0:
         raise ValueError(f"quantity {quantity!r}: {field!r} must be non-negative, got {value:g}")
     return float(value)

@@ -138,9 +138,9 @@ def comparable_subspace(matrix: CapabilityMatrix, a: str, b: str) -> set[str]:
     return roundtrippable(matrix, a, b) & roundtrippable(matrix, b, a)
 
 
-def unexpressible_source_paths(matrix: CapabilityMatrix, present_paths: list[str], target: str) -> (
-    set[str]
-):
+def unexpressible_source_paths(
+    matrix: CapabilityMatrix, present_paths: list[str], target: str
+) -> set[str]:
     """Source-present leaf paths the ``target`` cannot express at all (write capability NONE) — the
     "fields outside the intersection asserted absent" of Part 8 §2.2. Used by the two-hop suite to
     check the pre-flight routed them to ``removed``, the matrix→absence linkage at test time."""

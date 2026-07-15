@@ -142,6 +142,7 @@ Dependency direction is strict and acyclic — enforced physically by an `import
 
 ## Working Rules for This Project
 
+- **Run the lint gate before every commit/PR.** CI (`.github/workflows`) runs, in order, `ruff check .`, `ruff format --check .`, `mypy`, and `pytest` on Python 3.11 and 3.13. Run all four locally (from the `.venv`: `source .venv/bin/activate`) before pushing — `ruff format --check` (the format case) fails independently of `ruff check` (the lint case), so a green `ruff check` does **not** mean formatting is clean. If `ruff format --check` reports files, run `ruff format .` to fix them.
 - **Terminology is binding.** Reuse exact field names, endpoint paths, report field names, and component names already established. If a name seems wrong, say so explicitly and explain why — never rename silently.
 - **Write for an isolated reader.** Every doc must stand alone for a contributor or a planning agent who has not read the master prompt directly, while staying consistent with the rest of `docs/`.
 - **Justify nontrivial decisions.** Name at least one reasonable rejected alternative for each nontrivial architectural or design choice.

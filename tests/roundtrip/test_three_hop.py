@@ -39,12 +39,7 @@ _PAIRS: list[tuple[str, str]] = [
 # source fixture (the anchor). `contcar` is a target-only format (no golden source, Part 3 §6.1), so
 # `poscar↔contcar` runs as `poscar → contcar → poscar` only.
 _WITH_GOLDEN = set(_matrix.source_formats_with_golden())
-_DIRECTED = [
-    (x, y)
-    for a, b in _PAIRS
-    for x, y in ((a, b), (b, a))
-    if x in _WITH_GOLDEN
-]
+_DIRECTED = [(x, y) for a, b in _PAIRS for x, y in ((a, b), (b, a)) if x in _WITH_GOLDEN]
 
 
 def _convert(source: CanonicalObject, src_fmt: str, tgt_fmt: str) -> bytes:
@@ -74,9 +69,9 @@ def _convert(source: CanonicalObject, src_fmt: str, tgt_fmt: str) -> bytes:
 )
 def test_three_hop_return(a: str, b: str) -> None:
     golden = _matrix.golden_source(a)
-    canonical = _REGISTRY.get_parser(a).parse(
-        io.BytesIO(golden.source), filename=golden.filename
-    ).canonical
+    canonical = (
+        _REGISTRY.get_parser(a).parse(io.BytesIO(golden.source), filename=golden.filename).canonical
+    )
     # The external-truth anchor: A's parse must match its hand-verified expected object, so a
     # symmetric bug in B cannot be excused by an equally-wrong A implementation (Part 8 §2.3, §3).
     assert_matches_golden(canonical, golden.expected_json)
