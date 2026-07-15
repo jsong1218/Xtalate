@@ -10,6 +10,33 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ### Added
 
+- **Report-completeness property test (v0.2 M10).** The single most important test in the repository
+  (`docs/MASTER_SPEC.md` Part 8 §1.2), mechanically enforcing **P1** (no silent loss) and **P4** (no
+  misfiled fabrication) over conversions that *have not happened yet* — the test-time generalization
+  of the v0.1-M4 runtime completeness assertion.
+  - **Two properties, re-derived in test code** (`tests/property/_properties.py`, deliberately not
+    importing the production guard so it is an independent check — D50): **Property 1 — the
+    completeness invariant** (every source-`present`/`mixed` path appears in `preserved` ∪ `removed`;
+    every `supplied` entry names a source-`absent` path traced to a recorded Assumption) and
+    **Property 2 — absence conformance** (every `removed` path is absent in the re-parsed output).
+  - **Stage-1 generator — parametrized golden mutations** (`tests/property/_generators.py`):
+    systematically nulls or populates **each optional canonical field-path** of the worked-example
+    goldens (all eight schema categories reached) plus a per-frame `mixed` configuration, yielding 59
+    valid Canonical Objects; `tests/property/test_report_completeness.py` drives every `(mutant,
+    target)` pair through the real Conversion Engine under the `strict` profile with fixed recovery
+    presets, asserting both properties on every report — including refused reports, which must still
+    satisfy the completeness invariant. Every mutant re-validates through the model validators, so an
+    invariant-violating mutation fails loudly at generation rather than producing a dead test.
+  - **Independent-guard proof** (M10 done-means): feeding a tampered report — one `removed` entry
+    dropped, or a `supplied` entry's Assumption removed — to the property checker is caught as silent
+    loss / silent fabrication, demonstrating the property catches the class of bug the runtime
+    assertion does, without the runtime assertion in the loop. A non-vacuity guard asserts the
+    stage-1 lattice actually exercises both `removed` and `supplied` across its pairs.
+  - **Stage 2 cut for v0.2 with a tracking issue** (`docs/DECISIONS.md` D50): hypothesis strategies
+    over randomized Canonical Objects with shrinking are deferred to v0.3's nightly budget, per the
+    plan's cut line ("stage-2 randomization depth — never stage 1"). No new dependency is added; the
+    stage-1 lattice is green with **zero waivers/skips**.
+
 - **Cross-format round-trip matrix suites + custom tolerance-table files (v0.2 M9).** v0.1 proved
   *identity* round-trips (`A → Canonical → A`); v0.2 adds the cross-format matrix that catches
   parser/exporter **asymmetry**, plus the deferred tolerance-file feature.
