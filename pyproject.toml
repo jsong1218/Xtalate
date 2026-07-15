@@ -32,10 +32,14 @@ classifiers = [
 # Core runtime dependencies. pydantic + numpy are needed from M1 (the canonical
 # schema). ASE — the sole scientific-I/O dependency (DECISIONS.md D7) — is added
 # when the extXYZ parser lands (M3c), to keep the early dependency surface small.
+# PyYAML lands with M9 (DECISIONS.md D48): the config language for custom tolerance-table
+# files (--tolerance-profile FILE) and the golden-corpus manifests M11 governs — the repo's
+# existing config format, so one parser serves both rather than two config languages.
 dependencies = [
     "pydantic>=2.7",
     "numpy>=1.26",
     "ase>=3.29,<4",
+    "pyyaml>=6",
 ]
 
 [project.optional-dependencies]
@@ -44,6 +48,7 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.10",
     "import-linter>=2.0",
+    "types-PyYAML>=6",
 ]
 
 [project.scripts]

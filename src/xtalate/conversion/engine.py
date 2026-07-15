@@ -159,7 +159,7 @@ class ConversionEngine:
         parse_recovery: ParseRecovery | None = None,
         acknowledge_loss: bool = False,
         acknowledge_parse_warnings: bool = False,
-        tolerance_profile: str = "default",
+        tolerance_profile: str | ToleranceProfile = "default",
     ) -> ConversionResult:
         """Run the conversion end to end and produce the final report (Part 4 §1).
 
@@ -331,7 +331,13 @@ class ConversionEngine:
         )
         _assert_completeness(report, source, fabricated_at_parse)
 
-        tolerance = ToleranceProfile.named(tolerance_profile)
+        # A caller may pass a named profile string (the common case) or a fully-built
+        # ToleranceProfile — e.g. a custom table loaded from a file by the CLI (Part 5 §4.4).
+        tolerance = (
+            tolerance_profile
+            if isinstance(tolerance_profile, ToleranceProfile)
+            else ToleranceProfile.named(tolerance_profile)
+        )
 
         # `frame_selection=split_all` (Part 4 §3.3): the single-structure target receives one file
         # per retained frame. Each file is exported and validated against its own single-frame

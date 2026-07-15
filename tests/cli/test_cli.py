@@ -245,6 +245,69 @@ def test_convert_unknown_tolerance_profile_is_usage_error() -> None:
     assert code == EXIT_USAGE
 
 
+# --- custom tolerance-table files (M9, Part 5 §4.4) ----------------------------------------------
+
+_CUSTOM_TABLE = "name: tight-forces\nquantities:\n  forces: {warn: 1.0e-8, fail: 1.0e-6}\n"
+
+
+def test_convert_with_custom_tolerance_file(tmp_path: Path) -> None:
+    table = tmp_path / "custom.yaml"
+    table.write_text(_CUSTOM_TABLE)
+    conv = tmp_path / "conv.json"
+    val = tmp_path / "val.json"
+    code = main(
+        [
+            "convert",
+            CO_IN_CELL,
+            "--to",
+            "extxyz",
+            "-o",
+            str(tmp_path / "out.extxyz"),
+            "--tolerance-profile",
+            str(table),
+            "--report",
+            str(conv),
+            "--validation-report",
+            str(val),
+        ]
+    )
+    assert code == EXIT_OK
+    # The custom profile's name is embedded in the Validation Report, keeping it self-contained.
+    assert json.loads(val.read_text())["tolerance_profile"]["name"] == "tight-forces"
+
+
+def test_validate_rethreshold_with_custom_tolerance_file(tmp_path: Path) -> None:
+    # The M9 done-means: `--tolerance-profile ./custom.yaml` re-thresholds a stored report offline.
+    val = tmp_path / "val.json"
+    main(
+        [
+            "convert",
+            CO_IN_CELL,
+            "--to",
+            "extxyz",
+            "-o",
+            str(tmp_path / "out.extxyz"),
+            "--validation-report",
+            str(val),
+        ]
+    )
+    table = tmp_path / "custom.yaml"
+    table.write_text(_CUSTOM_TABLE)
+    code = main(["validate", "--validation-report", str(val), "--tolerance-profile", str(table)])
+    assert code == EXIT_OK
+
+
+def test_convert_malformed_tolerance_file_is_usage_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    table = tmp_path / "bad.yaml"
+    table.write_text("quantities:\n  bogus: {warn: 1.0e-6, fail: 1.0e-4}\n")
+    code = main(["convert", CO_IN_CELL, "--to", "extxyz", "--tolerance-profile", str(table)])
+    assert code == EXIT_USAGE
+    err = capsys.readouterr().err
+    assert "unknown tolerance quantity" in err and "Traceback" not in err
+
+
 # --- convert: Slice 2 recovery paths -------------------------------------------------------------
 
 _VASP4_POSCAR = """vasp4

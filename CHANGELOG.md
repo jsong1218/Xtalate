@@ -10,6 +10,33 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ### Added
 
+- **Cross-format round-trip matrix suites + custom tolerance-table files (v0.2 M9).** v0.1 proved
+  *identity* round-trips (`A → Canonical → A`); v0.2 adds the cross-format matrix that catches
+  parser/exporter **asymmetry**, plus the deferred tolerance-file feature.
+  - **Two-hop suite** (`A → Canonical → B → Canonical′`, `tests/roundtrip/test_two_hop.py`):
+    parametrized over **every `(source, target)` pair enumerated from the registry**, driven through
+    the real Conversion + Validation engines under the **`strict`** profile, with fabricative/
+    selective gaps resolved by fixed recovery presets so Assumption recording is exercised end to end.
+    The comparable subspace is **computed from the Capability Matrix at test time, never hand-listed**
+    (`tests/roundtrip/_matrix.py`); reusing the Validation Engine's diff is deliberate (D49).
+  - **Three-hop return** (`A → B → A`, `test_three_hop.py`): the symmetric-bug catcher over the
+    curated high-risk pairs (`xyz↔extxyz`, `poscar↔extxyz`, `poscar↔contcar`), each anchored to its
+    golden `expected.canonical.json` and diffed over the matrix-computed subspace by a dedicated
+    comparator (`_compare.py`). Velocity round-trips (POSCAR↔extXYZ) join automatically via M8's
+    capability rows — the matrix, not a hand-list, governs coverage.
+  - **Registry-driven enumeration** (`test_matrix_enumeration.py`): registering a dummy in-test
+    format grows the enumerated targets, sources, and pair list — and the comparable-subspace
+    machinery answers for it — with zero suite edits, the mechanical guarantee behind **P6**.
+  - **Custom tolerance-table files.** `--tolerance-profile FILE` now accepts a YAML/JSON table
+    (`ToleranceProfile.from_mapping`) of per-quantity `{warn, fail}` overrides on the `default`
+    bases; omitted quantities inherit their default. The non-configurable Part 5 §4.4 rules are
+    enforced by rejection (the `k_*` multipliers and representational-bound floor are fixed; discrete
+    checks admit no tolerance), with actionable errors. `xtalate convert … --tolerance-profile
+    ./custom.yaml` and `xtalate validate --validation-report … --tolerance-profile ./custom.yaml`
+    (offline re-threshold) both work; the profile name is embedded in the Validation Report.
+  - **New dependency: PyYAML** (`[project].dependencies`) — the config language for tolerance tables
+    and the golden-corpus manifests M11 governs (D48). See `docs/DECISIONS.md` D48–D49.
+
 - **POSCAR velocity block + Maxwell–Boltzmann velocity/mass recovery (v0.2 M8).** The one deliberate
   v0.1 format deferral lands, together with the two velocity-family recovery scenarios it unlocks.
   - **POSCAR/CONTCAR Direct-mode velocities.** The velocity block is now read in both Cartesian
