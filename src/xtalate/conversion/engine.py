@@ -770,13 +770,19 @@ def _assert_completeness(
                     "silent loss (P1)"
                 )
 
-    source_present = set(presence.present_paths()) - set(fabricated_at_parse)
+    # A supplied path may legitimately have been *present* on the source when that source value was
+    # itself accounted as `removed` — the honest "dropped the original, fabricated a replacement"
+    # case (a `mixed` cell whose cell-bearing frame frame_selection drops, then missing_lattice
+    # rebuilds a lattice for the retained frame). Both facts are in the report, so it is not silent;
+    # excluding `removed` paths keeps the P4 check catching only fabrication over *kept* data.
+    removed_paths = {e.path for e in report.removed}
+    source_present = set(presence.present_paths()) - set(fabricated_at_parse) - removed_paths
     assumption_ids = {a.id for a in report.assumptions}
     for supplied in report.supplied:
         if supplied.path in source_present:
             raise CompletenessInvariantError(
-                f"supplied path {supplied.path!r} was present on the source — silent "
-                "fabrication (P4)"
+                f"supplied path {supplied.path!r} was present on the source and not removed — "
+                "silent fabrication over kept data (P4)"
             )
         if supplied.from_assumption not in assumption_ids:
             raise CompletenessInvariantError(

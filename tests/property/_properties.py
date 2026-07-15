@@ -58,13 +58,18 @@ def completeness_violations(
                 "removed — silent loss (P1)"
             )
 
-    source_present = set(presence.present_paths()) - set(fabricated_at_parse)
+    # A supplied path present on the source is honest fabrication when that source value was itself
+    # recorded `removed` (original dropped, replacement fabricated — a `mixed` cell whose cell-frame
+    # frame_selection dropped, then re-supplied by missing_lattice). Excluding `removed` paths
+    # leaves the P4 check catching only fabrication over *kept* source data.
+    removed_paths = {e.path for e in report.removed}
+    source_present = set(presence.present_paths()) - set(fabricated_at_parse) - removed_paths
     assumption_ids = {a.id for a in report.assumptions}
     for supplied in report.supplied:
         if supplied.path in source_present:
             violations.append(
-                f"supplied path {supplied.path!r} was present on the source — silent "
-                "fabrication (P4)"
+                f"supplied path {supplied.path!r} was present on the source and not removed — "
+                "silent fabrication over kept data (P4)"
             )
         if supplied.from_assumption not in assumption_ids:
             violations.append(

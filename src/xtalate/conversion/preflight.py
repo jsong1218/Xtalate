@@ -184,13 +184,21 @@ def build_preflight(
             )
         )
     for required in caps.required_fields:
-        if presence.status_of(required) == "absent":
+        # A required per-frame field that is *not uniformly present* (``absent`` everywhere, or
+        # ``mixed`` — present in some frames only) may be missing from the frame that survives a
+        # ``frame_selection`` reduction, so the recovery scenario is offered here and resolved
+        # lazily against the post-reduction object (``recovery.engine``): it fabricates only when
+        # the retained frame actually lacks the field, and no-ops when it carries a real value.
+        # Offering it only on a fully-``absent`` field left a ``mixed`` cell to reach a lattice-
+        # requiring exporter with no cell and crash (Part 4 §3.3; the M10 stage-2 test found it).
+        if presence.status_of(required) != "present":
             scenario = _REQUIRED_FIELD_SCENARIOS.get(required, "missing_required_field")
+            status = presence.status_of(required)
             diff.unresolved.append(
                 UnresolvedScenario(
                     scenario=scenario,
                     path=required,
-                    detail=f"target requires {required}, absent on source",
+                    detail=f"target requires {required}, {status} on source",
                     options=_scenario_options(scenario, caps),
                 )
             )

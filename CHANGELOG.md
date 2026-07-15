@@ -55,6 +55,18 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
   `constraints=[]` (v0.2 M10).** Also found by stage 2: an empty (present, §3.6) constraint list on
   the retained frame was nulled out of the write plan with a zero dropped-count and recorded in
   neither `preserved` nor `removed`. It is now reported `removed`.
+- **A `mixed` cell converted to a lattice-requiring target no longer crashes the exporter (v0.2
+  M10, D51).** A cell present in only some frames (`mixed`) whose cell-bearing frame `frame_selection`
+  dropped left the POSCAR/CONTCAR exporter with no lattice and raised `ValueError`, because
+  `missing_lattice` was detected only on a fully-`absent` required field. Pre-flight now offers
+  `missing_lattice` on any *not-uniformly-present* required field, and the Recovery Engine resolves it
+  **lazily** against the retained frame: fabricate a lattice for the cell-less frame (with a preset,
+  never overwriting a real cell), refuse cleanly (without one), or no-op when the retained frame kept
+  a real cell. The completeness invariant's P4 supplied-check is correspondingly relaxed to permit a
+  path that is *both* `removed` (the dropped frame's cell) and `supplied` (the fabricated
+  replacement) — honest, since both are reported. Regression fixtures in
+  `tests/conversion/test_frame_reduction_completeness.py`; the M10 stage-2 generator now exercises
+  `mixed` cells freely.
 
 - **Cross-format round-trip matrix suites + custom tolerance-table files (v0.2 M9).** v0.1 proved
   *identity* round-trips (`A → Canonical → A`); v0.2 adds the cross-format matrix that catches

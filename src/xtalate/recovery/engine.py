@@ -145,11 +145,18 @@ class RecoveryEngine:
         no partially-recovered object is ever produced (a half-recovered structure presented as
         complete would be the very silent failure this engine exists to prevent)."""
         # A scenario is unresolvable if v0.1 does not know how to resolve it, or the caller
-        # supplied no choice for it. Both refuse (Part 4 §3.2).
+        # supplied no choice for it. Both refuse (Part 4 §3.2). ``missing_lattice`` is exempt from
+        # this upfront check *only when the source cell is `mixed`* (present in some frames).
+        # Whether it is needed then depends on which frame ``frame_selection`` keeps, so its
+        # necessity — and any refusal for a missing choice — is decided *lazily* in the loop against
+        # the post-reduction object. A fully-``absent`` cell definitely needs it regardless of the
+        # frame chosen, so it stays in the upfront list (and its refusal names it, as before).
+        lattice_deferred = _mixed_cell(source)
         unresolved = [
             s
             for s in scenarios
-            if s.scenario not in SCENARIO_HAZARD or s.scenario not in recovery_choices
+            if not (s.scenario == "missing_lattice" and lattice_deferred)
+            and (s.scenario not in SCENARIO_HAZARD or s.scenario not in recovery_choices)
         ]
         if unresolved:
             return RecoveryResult(canonical=None, assumptions=[], unresolved=unresolved)
@@ -162,6 +169,15 @@ class RecoveryEngine:
             match = next((s for s in scenarios if s.scenario == scenario_code), None)
             if match is None:
                 continue
+            if scenario_code == "missing_lattice":
+                # Resolved lazily against the *working* (post-frame_selection) object: the source
+                # cell may have been present but dropped, present and retained, or never there.
+                if _cell_present(working):
+                    continue  # the retained frame carries a real cell — no-op, no Assumption.
+                if "missing_lattice" not in recovery_choices:
+                    # The retained frame lacks the required cell and no choice was supplied — refuse
+                    # cleanly (Part 4 §3.2), never let the cell-less object reach the exporter.
+                    return RecoveryResult(canonical=None, assumptions=[], unresolved=[match])
             aid = f"A{counter}"
             counter += 1
             choice = recovery_choices[scenario_code]
@@ -217,6 +233,21 @@ def _per_frame_paths_lost(before: CanonicalObject, after: CanonicalObject) -> li
         for path in before.field_presence().present_paths()
         if path.startswith(_PER_FRAME_PREFIXES) and after_presence.status_of(path) == "absent"
     ]
+
+
+def _cell_present(obj: CanonicalObject) -> bool:
+    """True iff every frame carries a cell — i.e. ``cell.lattice_vectors`` is *uniformly* present
+    (a ``Cell`` always holds its required ``lattice_vectors``). ``missing_lattice`` fabricates only
+    when this is False, so a frame that already has a real lattice is never overwritten (P4)."""
+    return all(frame.cell is not None for frame in obj.frames)
+
+
+def _mixed_cell(obj: CanonicalObject) -> bool:
+    """True iff the cell is present in *some but not all* frames — the ``mixed`` case where whether
+    ``missing_lattice`` is needed depends on which frame ``frame_selection`` keeps, so it is
+    deferred to the lazy in-loop check rather than an upfront refusal."""
+    cells = [frame.cell is not None for frame in obj.frames]
+    return any(cells) and not all(cells)
 
 
 def _apply_frame_selection(
@@ -438,18 +469,28 @@ def _apply_missing_lattice(
 ) -> tuple[CanonicalObject, AppliedAssumption]:
     """Fabricate the target-required lattice the source lacks (fabricative, Part 4 §3.1).
 
-    Writes ``cell.lattice_vectors`` and ``cell.pbc`` into every frame and records an
-    ``Assumption`` **and** two ``SuppliedField`` entries — the cell did not exist in the source,
-    so it is filed as created, never carried (**P4**). ``pbc`` is set to (T,T,T): POSCAR, the only
+    Writes ``cell.lattice_vectors`` and ``cell.pbc`` into the frames that **lack** a cell and
+    records an ``Assumption`` **and** two ``SuppliedField`` entries — the cell did not exist in
+    those frames, so it is filed as created, never carried (**P4**). A frame that already carries a
+    real cell (a ``mixed`` source whose cell-bearing frame survived) is left untouched — fabricating
+    over it would be silent overwrite of genuine data. ``pbc`` is set to (T,T,T): POSCAR, the only
     v0.1 lattice-requiring target, is fully periodic by definition (Part 3 §3 n.3)."""
     code = _choice_code(choice, scenario)
     params = choice.get("parameters", {}) or {}
     pbc = (True, True, True)
 
+    def _fabricate(lattice: np.ndarray, shift: np.ndarray | None = None) -> list[Frame]:
+        # Only cell-less frames receive the fabricated lattice; frames with a real cell pass
+        # through unchanged (so does the bounding-box ``shift``, which must not move a real frame).
+        return [
+            _frame_with_cell(f, lattice, pbc, shift=shift) if f.cell is None else f
+            for f in canonical.frames
+        ]
+
     if code == "manual_input":
         raw = params.get("lattice")
         lattice = _as_lattice(raw)
-        new_frames = [_frame_with_cell(f, lattice, pbc) for f in canonical.frames]
+        new_frames = _fabricate(lattice)
         report_params: dict[str, Any] = {"lattice_ang": lattice.tolist()}
         description = (
             "Lattice supplied manually by the caller; pbc set to (T,T,T) as required by the "
@@ -458,7 +499,7 @@ def _apply_missing_lattice(
         )
     elif code == "upload_reference":
         lattice = _lattice_from_reference(params.get("reference"), canonical)
-        new_frames = [_frame_with_cell(f, lattice, pbc) for f in canonical.frames]
+        new_frames = _fabricate(lattice)
         report_params = {
             "reference_atom_count": canonical.frames[0].atoms.positions.shape[0],
             "lattice_ang": lattice.tolist(),
@@ -475,11 +516,12 @@ def _apply_missing_lattice(
                 f"missing_lattice 'bounding_box' needs a non-negative padding_ang, got {padding!r}"
             )
         padding = float(padding)
-        # Box is computed on the (already-selected) single frame; if several frames remain the
-        # same box is applied to each (no v0.1 pair reaches here multi-frame).
-        positions = canonical.frames[0].atoms.positions
-        lattice, shift = _bounding_box(positions, padding)
-        new_frames = [_frame_with_cell(f, lattice, pbc, shift=shift) for f in canonical.frames]
+        # Box is computed on the first cell-less frame's positions; a `mixed` source is always
+        # reduced to a single frame by frame_selection before this runs, so that frame is the one
+        # cell-less frame the box is built for (no v0.1 pair reaches here multi-frame).
+        boxed_frame = next(f for f in canonical.frames if f.cell is None)
+        lattice, shift = _bounding_box(boxed_frame.atoms.positions, padding)
+        new_frames = _fabricate(lattice, shift=shift)
         report_params = {"padding_ang": padding, "computed_on_frame": computed_on_frame}
         description = (
             f"Lattice constructed as the axis-aligned bounding box of frame {computed_on_frame}'s "

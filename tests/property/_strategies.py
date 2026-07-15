@@ -14,14 +14,12 @@ tame, finite ranges and lattices are diagonal-dominant (hence invertible) — st
 **report machinery** over random presence configurations, not exporter numerical robustness, so it
 deliberately avoids the NaN/inf/singular-cell inputs that would test a different thing.
 
-One presence configuration is held uniform on purpose: **cell presence is per-object, not
-per-frame** (see ``_frame``). A `mixed` cell plus ``frame_selection`` picking a cell-less frame
-exposes a *recovery-detection* gap — ``missing_lattice`` is offered only when the source cell reads
-`absent`,
-not `mixed`, so a POSCAR export can crash for want of a lattice. That is a recovery-engine bug
-(tracked separately for an M7-style fix: ``missing_lattice`` must trigger on a not-uniformly-present
-required field and fabricate only for the cell-less frames without overwriting a real cell), *not* a
-report-completeness one, so this generator does not manufacture it while probing the M10 properties.
+Every optional field — **including the cell** — is an independent per-frame presence draw, so a
+`mixed` cell (present in some frames only) is generated freely. That configuration once tripped a
+recovery-detection gap (``frame_selection`` selecting a cell-less frame left a POSCAR export without
+a lattice); the recovery engine now offers ``missing_lattice`` on any *not-uniformly-present*
+required field and resolves it lazily against the retained frame (fabricate, refuse, or no-op — see
+``recovery.engine`` and ``docs/DECISIONS.md`` D51), so the generator no longer has to avoid it.
 """
 
 from __future__ import annotations
@@ -99,17 +97,11 @@ def _maybe(draw: st.DrawFn, value_strategy: st.SearchStrategy[Any]) -> Any:
 
 
 @st.composite
-def _frame(
-    draw: st.DrawFn, index: int, symbols: list[str], n: int, has_cell: bool
-) -> dict[str, Any]:
-    # ``has_cell`` is decided once per object and applied uniformly to every frame, deliberately
-    # *not* an independent per-frame draw. A `mixed` cell (present in some frames only) with
-    # ``frame_selection`` picking a cell-less frame trips a *separate* recovery-detection gap — the
-    # POSCAR-required lattice is never offered as `missing_lattice` when the source cell reads
-    # `mixed`, and the exporter crashes. That is a recovery-engine bug (tracked; see this module's
-    # docstring), not a report-completeness one, so stage 2 holds cell presence uniform to keep the
-    # generator on the completeness properties it exists to probe. Every *other* field stays an
-    # independent per-frame draw, so `mixed` configurations (constraints, forces, …) are exercised.
+def _frame(draw: st.DrawFn, index: int, symbols: list[str], n: int) -> dict[str, Any]:
+    # Every optional field, cell included, is an independent per-frame draw, so `mixed`
+    # configurations (constraints, forces, and the cell itself) arise freely — the recovery engine
+    # now handles a `mixed` cell reduced to a cell-less frame by fabricating, refusing, or no-op'ing
+    # `missing_lattice` lazily (D51), so the generator no longer holds cell presence uniform.
     return {
         "index": index,
         "time": _maybe(draw, _floats),
@@ -118,7 +110,7 @@ def _frame(
             "positions": draw(_vecs(n)),
             "masses": _maybe(draw, st.lists(_pos_floats, min_size=n, max_size=n)),
         },
-        "cell": draw(_cell()) if has_cell else None,
+        "cell": _maybe(draw, _cell()),
         "dynamics": {
             "velocities": _maybe(draw, _vecs(n)),
             "forces": _maybe(draw, _vecs(n)),
@@ -160,9 +152,8 @@ def canonical_objects(draw: st.DrawFn) -> CanonicalObject:
     n = draw(st.integers(min_value=1, max_value=4))
     f = draw(st.integers(min_value=1, max_value=3))
     symbols = draw(st.lists(st.sampled_from(_ELEMENTS), min_size=n, max_size=n))
-    has_cell = draw(st.booleans())  # uniform across frames — see _frame for why.
 
-    frames = [draw(_frame(i, symbols, n, has_cell)) for i in range(f)]
+    frames = [draw(_frame(i, symbols, n)) for i in range(f)]
 
     data: dict[str, Any] = {
         "schema_version": "0.1.0",
