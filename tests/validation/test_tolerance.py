@@ -54,3 +54,52 @@ def test_as_dict_is_self_contained() -> None:
     assert d["positions_warn_ang"] == 1e-5
     assert d["k_warn"] == K_WARN
     assert d["representational_bound_floor"] == "enabled"
+
+
+# --- Custom tolerance tables (M9, Part 5 §4.4) ---------------------------------------------------
+
+
+def test_from_mapping_partial_override_inherits_defaults() -> None:
+    # Only `forces` is tightened; every omitted quantity keeps the default base.
+    p = ToleranceProfile.from_mapping(
+        "custom", {"quantities": {"forces": {"warn": 1e-8, "fail": 1e-6}}}
+    )
+    assert _pair(p.effective("forces")) == (1e-8, 1e-6)
+    assert _pair(p.effective("positions")) == (1e-5, 1e-3)  # inherited
+    d = p.as_dict()
+    assert d["name"] == "custom"
+    assert (d["forces_warn"], d["forces_fail"]) == (1e-8, 1e-6)
+
+
+def test_from_mapping_name_key_overrides_passed_name() -> None:
+    p = ToleranceProfile.from_mapping("stem", {"name": "tight", "quantities": {}})
+    assert p.name == "tight"
+
+
+def test_from_mapping_representational_floor_still_applies() -> None:
+    # §4.4: the representational-bound floor is never disabled, even for a custom table stricter
+    # than the format's precision.
+    p = ToleranceProfile.from_mapping(
+        "custom", {"quantities": {"positions": {"warn": 1e-12, "fail": 1e-10}}}
+    )
+    eff = p.effective("positions", representational_bound=1e-2)
+    assert eff.fail == pytest.approx(K_FAIL * 1e-2)
+
+
+@pytest.mark.parametrize(
+    ("mapping", "match"),
+    [
+        ({"quantities": {"bogus": {"warn": 1e-6, "fail": 1e-4}}}, "unknown tolerance quantity"),
+        ({"quantities": {"forces": {"warn": 1e-4, "fail": 1e-6}}}, "must not exceed fail"),
+        ({"quantities": {"forces": {"warn": -1.0, "fail": 1e-4}}}, "must be non-negative"),
+        ({"quantities": {"forces": {"warn": "x", "fail": 1e-4}}}, "must be a number"),
+        ({"quantities": {"forces": {"warn": 1e-6}}}, r"exactly \{warn, fail\}"),
+        ({"k_warn": 5, "quantities": {}}, "unknown top-level key"),
+        ({"quantities": {"pbc": {"warn": 1e-6, "fail": 1e-4}}}, "unknown tolerance quantity"),
+    ],
+)
+def test_from_mapping_rejects_bad_tables_with_actionable_errors(
+    mapping: dict[str, object], match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        ToleranceProfile.from_mapping("custom", mapping)

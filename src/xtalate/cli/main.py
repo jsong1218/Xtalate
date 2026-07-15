@@ -20,6 +20,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from xtalate import __version__
 from xtalate.capabilities import Registry
 from xtalate.cli import render
@@ -119,7 +121,7 @@ def _cmd_inspect(args: argparse.Namespace, registry: Registry) -> int:
 
 def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
     data = _read_bytes(args.file)
-    tolerance_name = _tolerance_name(args.tolerance_profile)
+    tolerance = _resolve_tolerance(args.tolerance_profile)
     recovery_choices = _parse_recover(args.recover)
     _inject_references(registry, recovery_choices)
     # parse-time recovery (missing_species / truncate_corrupt_tail) is applied here, before the
@@ -142,7 +144,7 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
         parse_recovery=parsed,
         acknowledge_loss=args.acknowledge_loss,
         acknowledge_parse_warnings=args.acknowledge_parse_warnings,
-        tolerance_profile=tolerance_name,
+        tolerance_profile=tolerance,
     )
     report = result.report
 
@@ -263,7 +265,7 @@ def _validate_full_reparse(args: argparse.Namespace, registry: Registry) -> Vali
         output=output_bytes,
         target_format_id=target_format,
         conversion_report=conversion,
-        tolerance=ToleranceProfile.named(_tolerance_name(args.tolerance_profile)),
+        tolerance=_resolve_tolerance(args.tolerance_profile),
     )
 
 
@@ -274,7 +276,7 @@ def _validate_rethreshold(args: argparse.Namespace) -> ValidationReport:
             "re-thresholding needs --validation-report REPORT.json (and no --source/--output)"
         )
     stored = ValidationReport.model_validate_json(Path(args.validation_report).read_text())
-    return rethreshold(stored, ToleranceProfile.named(_tolerance_name(args.tolerance_profile)))
+    return rethreshold(stored, _resolve_tolerance(args.tolerance_profile))
 
 
 # --- shared helpers ------------------------------------------------------------------------------
@@ -355,14 +357,33 @@ def _coerce(value: str) -> Any:
     return value
 
 
-def _tolerance_name(value: str | None) -> str:
-    """v0.1 supports only named profiles (default/strict/loose); a FILE table is a v0.2 seam."""
-    name = value or "default"
+_NAMED_PROFILES = ("default", "strict", "loose")
+
+
+def _resolve_tolerance(value: str | None) -> ToleranceProfile:
+    """Resolve ``--tolerance-profile`` to a :class:`ToleranceProfile` (Part 5 §4.4).
+
+    ``None`` or a named profile (``default``/``strict``/``loose``) resolves by name; anything else
+    is treated as a path to a custom tolerance-table file (YAML or JSON — ``yaml.safe_load`` parses
+    both). A bad name, a missing file, or a malformed/invalid table surfaces as a clean usage error
+    (exit 1), never a traceback."""
+    if value is None or value in _NAMED_PROFILES:
+        return ToleranceProfile.named(value or "default")
+
+    path = Path(value)
+    if not path.is_file():
+        raise _UsageError(
+            f"--tolerance-profile {value!r} is neither a named profile "
+            f"({', '.join(_NAMED_PROFILES)}) nor a readable file"
+        )
     try:
-        ToleranceProfile.named(name)
+        mapping = yaml.safe_load(path.read_text())
+    except (OSError, yaml.YAMLError) as exc:
+        raise _UsageError(f"cannot read tolerance-table file {value!r}: {exc}") from exc
+    try:
+        return ToleranceProfile.from_mapping(path.stem, mapping)
     except ValueError as exc:
-        raise _UsageError(str(exc)) from exc
-    return name
+        raise _UsageError(f"invalid tolerance-table file {value!r}: {exc}") from exc
 
 
 def _convert_exit_code(
@@ -464,7 +485,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_convert.add_argument("--acknowledge-loss", action="store_true")
     p_convert.add_argument("--acknowledge-parse-warnings", action="store_true")
-    p_convert.add_argument("--tolerance-profile", metavar="NAME", help="default|strict|loose.")
+    p_convert.add_argument(
+        "--tolerance-profile",
+        metavar="NAME|FILE",
+        help="default|strict|loose, or a custom tolerance-table file (YAML/JSON).",
+    )
     p_convert.add_argument("--report", metavar="PATH", help="Write the ConversionReport JSON here.")
     p_convert.add_argument(
         "--validation-report", metavar="PATH", help="Write the ValidationReport JSON here."
@@ -490,7 +515,11 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Write the report (full re-parse), or — alone — read it to re-threshold.",
     )
-    p_validate.add_argument("--tolerance-profile", metavar="NAME", help="default|strict|loose.")
+    p_validate.add_argument(
+        "--tolerance-profile",
+        metavar="NAME|FILE",
+        help="default|strict|loose, or a custom tolerance-table file (YAML/JSON).",
+    )
     p_validate.add_argument("--json", action="store_true", help="Print the ValidationReport JSON.")
 
     p_caps = sub.add_parser("capabilities", help="Print the Capability Matrix.")

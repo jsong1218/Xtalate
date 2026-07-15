@@ -77,16 +77,80 @@ class ToleranceProfile:
     @classmethod
     def named(cls, name: str) -> ToleranceProfile:
         """The profile called ``name`` (``default``/``strict``/``loose``). Unknown names raise —
-        v0.1 offers no custom tables, so a typo is a caller error, not a silent fallback to default
-        (which would validate under a bar the caller did not ask for)."""
+        a typo is a caller error, not a silent fallback to default (which would validate under a bar
+        the caller did not ask for). Custom tables come from :meth:`from_mapping` (Part 5 §4.4)."""
         try:
             scale = _SCALES[name]
         except KeyError:
             raise ValueError(
-                f"unknown tolerance profile {name!r}; v0.1 offers {sorted(_SCALES)!r}"
+                f"unknown tolerance profile {name!r}; named profiles are {sorted(_SCALES)!r} "
+                "(or pass a custom tolerance-table file)"
             ) from None
         bases = {q: Bounds(b.warn * scale, b.fail * scale) for q, b in _BASES.items()}
         return cls(name, bases)
+
+    @classmethod
+    def from_mapping(cls, name: str, mapping: dict[str, object]) -> ToleranceProfile:
+        """A custom profile from a parsed tolerance-table mapping (Part 5 §4.4, the v0.2 seam).
+
+        The mapping is the deserialized custom table (from a YAML/JSON file; the file I/O and format
+        parsing belong to the caller — the CLI — so this stays a pure, independently-testable
+        validator). Shape::
+
+            name: my-tight-forces          # optional; overrides the passed-in ``name``
+            quantities:
+              positions: { warn: 1.0e-6, fail: 1.0e-4 }
+              forces:    { warn: 1.0e-8, fail: 1.0e-6 }
+              # any omitted quantity inherits the ``default`` base
+
+        Only the §4.3 per-quantity bases are configurable. The two §4.4 rules that are *never*
+        configurable are enforced by rejection, not silent acceptance: the ``k_warn``/``k_fail``
+        multipliers and the representational-bound floor are fixed, and discrete checks (counts,
+        species, ``pbc``, presence) admit no tolerance — a table naming any of those, or an unknown
+        quantity, raises with an actionable message rather than being ignored.
+        """
+        if not isinstance(mapping, dict):
+            raise ValueError(
+                "tolerance table must be a mapping (an object with a 'quantities' key), "
+                f"got {type(mapping).__name__}"
+            )
+        unknown_top = set(mapping) - {"name", "quantities"}
+        if unknown_top:
+            # `k_warn`/`k_fail`/`representational_bound_floor` are the non-configurable knobs of
+            # §4.4; naming them (or anything else at top level) is rejected, not quietly dropped.
+            raise ValueError(
+                f"unknown top-level key(s) in tolerance table: {sorted(unknown_top)}; only 'name' "
+                "and 'quantities' are configurable (the k_warn/k_fail multipliers and the "
+                "representational-bound floor are fixed per Part 5 §4.4)"
+            )
+        profile_name = mapping.get("name", name)
+        if not isinstance(profile_name, str):
+            raise ValueError(f"tolerance table 'name' must be a string, got {profile_name!r}")
+
+        quantities = mapping.get("quantities", {})
+        if not isinstance(quantities, dict):
+            raise ValueError("tolerance table 'quantities' must be a mapping")
+        valid = sorted(_BASES)
+        bases = dict(_BASES)  # omitted quantities inherit the default base.
+        for quantity, pair in quantities.items():
+            if quantity not in _BASES:
+                raise ValueError(
+                    f"unknown tolerance quantity {quantity!r}; configurable quantities are {valid} "
+                    "(discrete checks — counts, species, pbc, presence — admit no tolerance, "
+                    "Part 5 §4.4)"
+                )
+            if not isinstance(pair, dict) or set(pair) != {"warn", "fail"}:
+                raise ValueError(
+                    f"quantity {quantity!r} must map to exactly {{warn, fail}}, got {pair!r}"
+                )
+            warn = _as_positive(quantity, "warn", pair.get("warn"))
+            fail = _as_positive(quantity, "fail", pair.get("fail"))
+            if warn > fail:
+                raise ValueError(
+                    f"quantity {quantity!r}: warn ({warn:g}) must not exceed fail ({fail:g})"
+                )
+            bases[quantity] = Bounds(warn, fail)
+        return cls(profile_name, bases)
 
     def quantities(self) -> list[str]:
         return list(self._bases)
@@ -123,3 +187,13 @@ class ToleranceProfile:
         out["k_fail"] = K_FAIL
         out["representational_bound_floor"] = "enabled"
         return out
+
+
+def _as_positive(quantity: str, field: str, value: object) -> float:
+    """Coerce a tolerance-table threshold to a non-negative float, or raise an actionable error.
+    Bools are rejected explicitly (``True``/``False`` are ``int`` subclasses in Python)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"quantity {quantity!r}: {field!r} must be a number, got {value!r}")
+    if value < 0:
+        raise ValueError(f"quantity {quantity!r}: {field!r} must be non-negative, got {value:g}")
+    return float(value)
