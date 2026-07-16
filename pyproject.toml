@@ -43,12 +43,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# hypothesis is a *test-only* dependency (M10 stage 2, DECISIONS.md D50): property-based
+# generation of randomized Canonical Objects with shrinking. It ships no runtime code — the
+# minimal-dependency posture (D4/D7) applies to `[project].dependencies`, not the dev extras.
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
     "mypy>=1.10",
     "import-linter>=2.0",
     "types-PyYAML>=6",
+    "hypothesis>=6.100",
 ]
 
 [project.scripts]

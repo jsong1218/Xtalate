@@ -253,7 +253,11 @@ class ConversionEngine:
 
         preflight_preserved = [e for e in diff.preserved if e.path not in fabricated_at_parse]
         preserved = [*preflight_preserved, *recovery_preserved]
-        removed = [*diff.removed, *recovery_removed]
+        # A per-frame path a capability-NONE target already routes to `diff.removed` can *also* be
+        # reported lost by `frame_selection` when it lived only in dropped frames — one removal, two
+        # detectors. Dedupe by path (the capability diff's entry wins, as the more fundamental
+        # reason) so the report never lists the same path removed twice.
+        removed = _dedupe_removed([*diff.removed, *recovery_removed])
 
         # --- Strict-mode gating (Part 4 §4) ----------------------------------------------
         if mode == "strict":
@@ -514,6 +518,20 @@ def _map_assumptions(
     return assumptions, supplied, preserved, removed, plan_additions
 
 
+def _dedupe_removed(entries: list[RemovedEntry]) -> list[RemovedEntry]:
+    """Collapse ``removed`` entries that share a canonical path to the first occurrence, preserving
+    order. The same field can be flagged lost by two detectors (a capability-NONE target *and* a
+    frame reduction that dropped its only frame); the completeness invariant is path-level, so one
+    entry per path keeps the report honest without redundancy."""
+    seen: set[str] = set()
+    deduped: list[RemovedEntry] = []
+    for entry in entries:
+        if entry.path not in seen:
+            seen.add(entry.path)
+            deduped.append(entry)
+    return deduped
+
+
 def _utc_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -752,13 +770,19 @@ def _assert_completeness(
                     "silent loss (P1)"
                 )
 
-    source_present = set(presence.present_paths()) - set(fabricated_at_parse)
+    # A supplied path may legitimately have been *present* on the source when that source value was
+    # itself accounted as `removed` — the honest "dropped the original, fabricated a replacement"
+    # case (a `mixed` cell whose cell-bearing frame frame_selection drops, then missing_lattice
+    # rebuilds a lattice for the retained frame). Both facts are in the report, so it is not silent;
+    # excluding `removed` paths keeps the P4 check catching only fabrication over *kept* data.
+    removed_paths = {e.path for e in report.removed}
+    source_present = set(presence.present_paths()) - set(fabricated_at_parse) - removed_paths
     assumption_ids = {a.id for a in report.assumptions}
     for supplied in report.supplied:
         if supplied.path in source_present:
             raise CompletenessInvariantError(
-                f"supplied path {supplied.path!r} was present on the source — silent "
-                "fabrication (P4)"
+                f"supplied path {supplied.path!r} was present on the source and not removed — "
+                "silent fabrication over kept data (P4)"
             )
         if supplied.from_assumption not in assumption_ids:
             raise CompletenessInvariantError(
