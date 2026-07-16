@@ -30,7 +30,7 @@ change behind the same interface (P6), never a change to the guarantee's shape.
 - **Recovery-needing conversions** (a target with a frame cap or a recovery-able required field,
   e.g. `→ POSCAR`) fall back to the materialized `convert`, whose peak *is* `∝ frame_count`. Making
   the recovery interplay chunk-aware (`frame_selection` single-pass, `bounding_box` on the selected
-  frame) is the remaining M12 conversion work (DECISIONS.md D56).
+  frame) lands with M13's XDATCAR, the format that exercises it (DECISIONS.md D56).
 - **Validation** on the streaming path is itself chunk-aware (`validation.streaming.validate_stream`,
   M12 deliverable 4): the expected object is re-read and filtered on the fly, the output is re-parsed
   as a stream, and the two are diffed frame-pairwise — so validation holds one frame pair resident

@@ -148,6 +148,24 @@ def test_convert_stream_strict_refuses_unacknowledged_loss() -> None:
     assert result.validation is None
 
 
+def test_convert_stream_mid_stream_error_leaves_no_output(engine: ConversionEngine) -> None:
+    # A source corrupt at frame 2 must raise (Part 3 §5) — no ConversionResult, and the partial
+    # output written for frames 0–1 is discarded so nothing masquerades as a completed conversion.
+    from xtalate.sdk import ParseError
+
+    data = _traj(2) + b"3\ncomment\nO 0.0 0.0 0.0\n"  # two good frames, then a truncated third
+    out = io.BytesIO()
+    with pytest.raises(ParseError) as exc:
+        engine.convert_stream(
+            io.BytesIO(data),
+            source_format_id="extxyz",
+            target_format_id="extxyz",
+            output=out,
+        )
+    assert any(i.location == "frame 2" for i in exc.value.issues)
+    assert out.getvalue() == b""  # partial output cleared — no half-written masquerade
+
+
 def test_convert_stream_completes_and_validates(engine: ConversionEngine) -> None:
     out = io.BytesIO()
     result = engine.convert_stream(

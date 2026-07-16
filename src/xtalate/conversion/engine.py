@@ -65,7 +65,14 @@ from xtalate.schema import (
     UserMetadata,
 )
 from xtalate.schema.paths import DERIVED_PATHS as _DERIVED_PATHS
-from xtalate.sdk import CapabilityLevel, ExporterPlugin, ParseIssue, StreamFrame, StreamHeader
+from xtalate.sdk import (
+    CapabilityLevel,
+    ExporterPlugin,
+    ParseError,
+    ParseIssue,
+    StreamFrame,
+    StreamHeader,
+)
 from xtalate.validation import ToleranceProfile, ValidationEngine, ValidationReport
 
 _SIMULATION_FIELDS = (
@@ -490,9 +497,20 @@ class ConversionEngine:
                 counters["frames"] += 1
                 yield _filter_stream_frame(sf, write_plan)
 
-        # The exporter writes each planned frame as it is yielded — the single streamed pass.
+        # The exporter writes each planned frame as it is yielded — the single streamed pass. A
+        # ``ParseError`` raised by the source mid-stream (frame k corrupt) propagates through here
+        # (Part 3 §5): frames 0..k-1 may already be in ``output``, so that partial write is dropped
+        # and the error re-raised — ``convert_stream`` returns *no* ConversionResult on failure, and
+        # a half-written output can never masquerade as a completed conversion (M12 deliverable 5).
+        # (The opt-in ``truncate_at_last_valid_frame`` *recovery* — keep the good prefix and proceed
+        # — lands with M13's XDATCAR, the streaming format that raises that recoverable hint; extXYZ
+        # streaming raises a non-recoverable error here.)
         filtered_header = _filter_stream_header(header, write_plan)
-        exporter.export_stream(filtered_header, _planned_frames(), output)
+        try:
+            exporter.export_stream(filtered_header, _planned_frames(), output)
+        except ParseError:
+            _discard_partial_output(output)
+            raise
 
         presence = acc.result()
         diff = build_preflight_from_presence(
@@ -913,6 +931,18 @@ def _seekable(stream: Any) -> bool:
         return bool(stream.seekable())
     except AttributeError:
         return hasattr(stream, "seek") and hasattr(stream, "read")
+
+
+def _discard_partial_output(output: Any) -> None:
+    """Best-effort clear of a partially-written output stream after a mid-stream failure (Part 3 §5,
+    M12): truncate to empty so no half-written frames linger. A stream that cannot be truncated
+    (a non-seekable sink) is left as-is — the caller still gets no ConversionResult, so nothing
+    presents the partial bytes as a completed conversion; this just clears debris when it can."""
+    try:
+        output.seek(0)
+        output.truncate()
+    except (AttributeError, OSError, ValueError):
+        pass
 
 
 def _capability_write_plan(caps: Any) -> set[str]:

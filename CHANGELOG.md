@@ -26,10 +26,13 @@ Schema stays `0.1.0`; no normative report/field shapes change.
   Report** to the materialized `convert` (standing rule 3). Validation is chunk-aware too
   (`validation.streaming.validate_stream`): expected and re-parsed-output frames are diffed
   frame-pairwise over streams, so `convert_stream` is sub-linear end to end and its `ValidationReport`
-  is byte-identical to the batch engine's. The milestone gate,
+  is byte-identical to the batch engine's. Mid-stream errors honor Part 3 §5: a `ParseError` at frame
+  k propagates, the partial output is discarded, and no `ConversionResult` is returned — a half-written
+  output never masquerades as a completed conversion. The milestone gate,
   `tests/streaming/test_streaming_memory.py`, proves the sub-linear-in-frames property against a
-  committed deterministic generator. (Remaining M12 work — the streaming recovery interplay and
-  mid-stream error wiring — builds on this spine; see D56.)
+  committed deterministic generator. (The streaming `frame_selection`/`bounding_box` recovery
+  interplay and the truncate-recovery half land with M13's XDATCAR, which exercises them; the seam is
+  in place — see D56.)
 - **A CONTCAR-with-velocities golden case** (`tests/golden/contcar/co-md-restart/`). CONTCAR was a
   round-trip *target* only; this synthetic case gives it a golden *source* with a Cartesian velocity
   block, so velocities now flow through the identity, two-hop, and three-hop round-trip matrices and
