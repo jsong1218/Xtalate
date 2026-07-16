@@ -21,13 +21,18 @@ Provenance is intentionally excluded: it is Xtalate's own always-populated recor
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sized
-from typing import TYPE_CHECKING, Any, Literal
+from collections.abc import Callable, Iterable, Sized
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from xtalate.schema.models import CanonicalObject, Frame
+    from xtalate.schema.models import (
+        CanonicalObject,
+        Frame,
+        SimulationMetadata,
+        TrajectoryMetadata,
+    )
 
 Status = Literal["present", "absent", "mixed"]
 
@@ -150,3 +155,120 @@ def compute_field_presence(obj: CanonicalObject) -> PresenceMap:
         )
 
     return PresenceMap(schema_version=obj.schema_version, entries=entries)
+
+
+class PresenceAccumulator:
+    """Single-pass field-presence computation over a *streamed* trajectory (§3.11; M12).
+
+    The streaming twin of ``compute_field_presence``: it reproduces that function's exact
+    ``PresenceMap`` — same per-frame ``present``/``absent``/``mixed`` trichotomy, same root-level
+    classification, same entry order — without ever holding all frames in memory. It reuses the
+    *identical* ``_PER_FRAME``/``_ROOT`` getters so a streamed and a materialized object can never
+    disagree about presence (standing rule 3: any such divergence is a stop-the-line bug).
+
+    Usage is header-then-frames-then-result: ``observe_header`` once (root-level fields and the
+    frame-invariant custom keys), ``observe_frame`` per streamed frame (accumulating per-frame
+    present counts and the union of per-frame custom keys), then ``result()``.
+    """
+
+    def __init__(self, schema_version: str) -> None:
+        self._schema_version = schema_version
+        self._n_frames = 0
+        # For each per-frame path: the frame indices where it is present (Part 2 §3.11 rule 2).
+        self._present_frames: dict[str, list[int]] = {path: [] for path, _ in _PER_FRAME}
+        self._root_status: dict[str, Status] = {path: "absent" for path, _ in _ROOT}
+        self._custom_global_keys: list[str] = []
+        self._custom_per_atom_keys: list[str] = []
+        self._custom_per_frame_keys: list[str] = []  # union in first-seen order
+        self._header_seen = False
+
+    def observe_header(
+        self,
+        *,
+        trajectory: TrajectoryMetadata | None,
+        simulation: SimulationMetadata | None,
+        tags: Iterable[str],
+        annotations: dict[str, str],
+        custom_global: Iterable[str],
+        custom_per_atom: Iterable[str],
+    ) -> None:
+        """Classify the object-level (root) paths from the eager stream header, once.
+
+        Mirrors the ``_ROOT`` sweep and the custom-key enumeration of ``compute_field_presence``,
+        but reads the header's already-separated pieces rather than a whole object."""
+        # Reconstruct the minimal shape the _ROOT getters expect: a lightweight stand-in exposing
+        # `.trajectory`, `.simulation`, and `.user_metadata` (tags/annotations only — the two
+        # enumerated non-custom user-metadata roots). Custom keys are handled separately below.
+        view = _RootView(trajectory, simulation, list(tags), dict(annotations))
+        stub = cast("CanonicalObject", view)
+        for path, getter in _ROOT:
+            self._root_status[path] = "present" if _present(getter(stub)) else "absent"
+        self._custom_global_keys = list(custom_global)
+        self._custom_per_atom_keys = list(custom_per_atom)
+        self._header_seen = True
+
+    def observe_frame(self, frame: Frame, per_frame_custom_keys: Iterable[str] = ()) -> None:
+        """Fold one streamed frame into the per-frame present counts and the per-frame custom-key
+        union. ``per_frame_custom_keys`` names the ``custom_per_frame`` keys this frame carries a
+        non-``None`` value for; their union across frames becomes the present custom entries."""
+        idx = frame.index
+        for path, getter in _PER_FRAME:
+            if getter(frame) is not None:
+                self._present_frames[path].append(idx)
+        for key in per_frame_custom_keys:
+            if key not in self._custom_per_frame_keys:
+                self._custom_per_frame_keys.append(key)
+        self._n_frames += 1
+
+    def result(self) -> PresenceMap:
+        """Assemble the ``PresenceMap``, entry-for-entry identical to ``compute_field_presence`` on
+        the equivalent materialized object."""
+        entries: list[PathPresence] = []
+        n = self._n_frames
+        for path, _ in _PER_FRAME:
+            present = self._present_frames[path]
+            if present and len(present) == n:
+                entries.append(PathPresence(path=path, status="present"))
+            elif not present:
+                entries.append(PathPresence(path=path, status="absent"))
+            else:
+                entries.append(PathPresence(path=path, status="mixed", present_frames=present))
+        for path, _ in _ROOT:
+            entries.append(PathPresence(path=path, status=self._root_status[path]))
+        for key in self._custom_global_keys:
+            entries.append(
+                PathPresence(path=f"user_metadata.custom_global['{key}']", status="present")
+            )
+        for key in self._custom_per_atom_keys:
+            entries.append(
+                PathPresence(path=f"user_metadata.custom_per_atom['{key}']", status="present")
+            )
+        for key in self._custom_per_frame_keys:
+            entries.append(
+                PathPresence(path=f"user_metadata.custom_per_frame['{key}']", status="present")
+            )
+        return PresenceMap(schema_version=self._schema_version, entries=entries)
+
+
+class _RootView:
+    """Adapter presenting the ``.trajectory``/``.simulation``/``.user_metadata`` attributes the
+    ``_ROOT`` getters read, backed by a stream header's separated pieces. Only the two enumerated
+    non-custom user-metadata roots (``tags``, ``annotations``) need to be exposed here; custom keys
+    are classified directly from the header's key lists."""
+
+    def __init__(
+        self,
+        trajectory: TrajectoryMetadata | None,
+        simulation: SimulationMetadata | None,
+        tags: list[str],
+        annotations: dict[str, str],
+    ) -> None:
+        self.trajectory = trajectory
+        self.simulation = simulation
+        self.user_metadata = _UserMetadataView(tags, annotations)
+
+
+class _UserMetadataView:
+    def __init__(self, tags: list[str], annotations: dict[str, str]) -> None:
+        self.tags = tags
+        self.annotations = annotations

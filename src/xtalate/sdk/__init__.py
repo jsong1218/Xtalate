@@ -14,14 +14,30 @@ from xtalate.sdk.capabilities import (
 )
 from xtalate.sdk.plugins import ExporterPlugin, ParserPlugin
 from xtalate.sdk.results import ParseError, ParseIssue, ParseResult
+from xtalate.sdk.streaming import (
+    FrameStream,
+    StreamFrame,
+    StreamHeader,
+    export_stream,
+    materialize,
+    parse_as_stream,
+    stream_of,
+)
 
 __all__ = [
     "CapabilityLevel",
     "ExporterPlugin",
     "FieldCapability",
     "FormatCapabilities",
+    "FrameStream",
     "ParseError",
     "ParseIssue",
     "ParseResult",
     "ParserPlugin",
+    "StreamFrame",
+    "StreamHeader",
+    "export_stream",
+    "materialize",
+    "parse_as_stream",
+    "stream_of",
 ]

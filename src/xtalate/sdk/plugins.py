@@ -10,11 +10,15 @@ one native format, never reads native files.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import BinaryIO
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, BinaryIO
 
 from xtalate.schema import CanonicalObject
 from xtalate.sdk.capabilities import FormatCapabilities
 from xtalate.sdk.results import ParseResult
+
+if TYPE_CHECKING:
+    from xtalate.sdk.streaming import FrameStream, StreamFrame, StreamHeader
 
 
 class ParserPlugin(ABC):
@@ -63,6 +67,27 @@ class ParserPlugin(ABC):
             "implements no parse_recover hook"
         )
 
+    def supports_streaming(self) -> bool:
+        """Whether this parser implements ``parse_stream`` (M12). The default ``False`` marks a
+        whole-file parser the registry adapts by materializing (``sdk.streaming.stream_of``); a
+        streaming parser overrides both this and ``parse_stream`` together."""
+        return False
+
+    def parse_stream(self, stream: BinaryIO, *, filename: str | None) -> FrameStream:
+        """Parse the header eagerly and yield frames lazily (M12; MASTER_SPEC Part 3 §2).
+
+        Optional and additive to the frozen ``parse`` contract (like ``parse_recover`` and
+        ``ExporterPlugin.atom_permutation`` — DECISIONS.md D23/D38/D56). A parser overrides it
+        *and* ``supports_streaming`` to gain sub-linear memory on large trajectories; the returned
+        ``FrameStream`` must obey the same absence convention (P3) and error contract (Part 3 §5) as
+        ``parse`` — its frame generator raises ``ParseError`` at the offending frame and appends
+        warning ``ParseIssue``s to ``FrameStream.issues`` as frames are yielded. The default
+        refuses, since ``supports_streaming`` gates whether this is ever called."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement streaming parse; call parse() instead, or "
+            "adapt via sdk.streaming.stream_of"
+        )
+
     @abstractmethod
     def capabilities(self) -> FormatCapabilities:
         """This format's read-side capability declaration (§4). Assembled into the matrix
@@ -93,6 +118,25 @@ class ExporterPlugin(ABC):
         that preserve source order. Additive to the frozen ``export`` contract (DECISIONS.md D23),
         so existing/third-party exporters keep working unchanged."""
         return None
+
+    def supports_streaming(self) -> bool:
+        """Whether this exporter implements ``export_stream`` (M12). Default ``False`` marks a
+        whole-file exporter the engine adapts by materializing before ``export``."""
+        return False
+
+    def export_stream(
+        self, header: StreamHeader, frames: Iterator[StreamFrame], stream: BinaryIO
+    ) -> None:
+        """Write a frame stream to ``stream`` frame by frame (M12), holding at most a chunk of
+        frames resident. Optional and additive to the frozen ``export`` contract (DECISIONS.md D56).
+
+        The exporter is handed the pre-flight-filtered frames (the ``canonical′`` write plan already
+        applied per frame), so it writes exactly what it is given and fabricates nothing for absent
+        fields (Part 4 §1 rule 2), identically to ``export``. The default refuses;
+        ``supports_streaming`` gates whether it is called."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement streaming export; call export() instead"
+        )
 
     @abstractmethod
     def capabilities(self) -> FormatCapabilities:

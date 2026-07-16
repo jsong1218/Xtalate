@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import io
 import re
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 import numpy as np
@@ -46,6 +47,7 @@ from pydantic import JsonValue
 
 from xtalate.parsers._common import build_provenance, decode_text
 from xtalate.schema import (
+    SCHEMA_VERSION,
     AtomsBlock,
     CanonicalObject,
     Cell,
@@ -59,10 +61,13 @@ from xtalate.sdk import (
     CapabilityLevel,
     FieldCapability,
     FormatCapabilities,
+    FrameStream,
     ParseError,
     ParseIssue,
     ParseResult,
     ParserPlugin,
+    StreamFrame,
+    StreamHeader,
 )
 
 if TYPE_CHECKING:
@@ -239,6 +244,117 @@ class ExtxyzParser(ParserPlugin):
             user_metadata=user_metadata,
         )
         return ParseResult(canonical=canonical, issues=issues)
+
+    # -- streaming parse (M12) ---------------------------------------------------------
+
+    def supports_streaming(self) -> bool:
+        return True
+
+    def parse_stream(self, stream: BinaryIO, *, filename: str | None) -> FrameStream:
+        """Header-eager, frame-lazy extXYZ parse (M12; MASTER_SPEC Part 3 §2).
+
+        Reads the file **one frame block at a time** off the raw byte stream — never slurping the
+        whole trajectory into a string — so peak memory tracks the resident chunk, not the frame
+        count. The first block is read eagerly to establish the object-level header (atom count,
+        the frame-invariant ``custom_per_atom`` columns, and the ``parse_notes``); every remaining
+        block is yielded lazily. Each frame reuses the *same* per-frame builders as ``parse`` (so
+        the laundering rules — zero cell → ``None``, undeclared pbc recorded, synthesised momenta
+        dropped — apply identically), and the constant-atom-count invariant (Part 2 §3.2) is
+        checked as frames arrive, raising ``ParseError`` at the offending frame (Part 3 §5).
+
+        ``parse_notes`` are derived from the first frame's declaration state (pbc-declared, momenta
+        present). For the homogeneous trajectories extXYZ overwhelmingly holds — every frame written
+        by the same tool with the same columns — this is exact; a trajectory whose *later* frames
+        first introduce a lattice or momenta is a documented streaming nuance (DECISIONS.md D56).
+        The Conversion Report carries no ``parse_notes``, so this never affects report truth
+        (standing rule 3)."""
+        issues: list[ParseIssue] = []
+        blocks = _iter_extxyz_blocks(stream)
+        try:
+            first_block, first_comment = next(blocks)
+        except StopIteration:
+            raise _error("EXTXYZ_EMPTY", "file contains no frames") from None
+        first_atoms = _read_block(first_block, 0)
+        n_atoms = len(first_atoms)
+
+        first_cell, first_undeclared_pbc = self._build_cell(first_atoms, first_comment)
+        parse_notes: list[str] = []
+        if first_undeclared_pbc:
+            parse_notes.append(
+                "pbc not declared for a lattice-bearing frame; set to (true,true,true) per the "
+                "extXYZ convention that a Lattice implies full periodicity (recorded, not assumed)."
+            )
+        if first_atoms.has("momenta"):
+            parse_notes.append(
+                "velocities converted from ASE internal units to Å/fs (source 'momenta' column)."
+            )
+        # custom_per_atom is object-level and frame-invariant (Part 2 §3.10): established from the
+        # first frame's Properties= columns and re-checked as later frames stream in.
+        custom_per_atom = _collect_custom_columns_single(first_atoms)
+        provenance = build_provenance(
+            format_id=FORMAT_ID,
+            filename=filename,
+            original_coordinate_system="cartesian",
+            source_units={"positions": "angstrom"},
+            parse_notes=parse_notes,
+        )
+        header = StreamHeader(
+            schema_version=SCHEMA_VERSION,
+            provenance=provenance,
+            trajectory=TrajectoryMetadata(timestep=None),
+            custom_per_atom=custom_per_atom,
+        )
+
+        def _frames() -> Iterator[StreamFrame]:
+            warned_columns: set[str] = set()
+            yield self._stream_frame(first_atoms, first_comment, first_cell, 0, n_atoms, issues)
+            index = 1
+            for block, comment in blocks:
+                atoms = _read_block(block, index)
+                if len(atoms) != n_atoms:
+                    raise _error(
+                        "EXTXYZ_VARIABLE_ATOM_COUNT",
+                        f"frame {index} has {len(atoms)} atoms but frame 0 has {n_atoms}; the "
+                        "canonical model requires a constant atom count across frames "
+                        "(Part 2 §3.2)",
+                        location=f"frame {index}",
+                    )
+                _check_columns_consistent(atoms, custom_per_atom, warned_columns, issues)
+                cell, _ = self._build_cell(atoms, comment)
+                yield self._stream_frame(atoms, comment, cell, index, n_atoms, issues)
+                index += 1
+
+        return FrameStream(header, _frames(), issues=issues)
+
+    def _stream_frame(
+        self,
+        atoms: Atoms,
+        comment: str,
+        cell: Cell | None,
+        index: int,
+        n_atoms: int,
+        issues: list[ParseIssue],
+    ) -> StreamFrame:
+        """Build one ``StreamFrame`` (Frame + its per-frame custom slice) from one ASE image,
+        reusing the whole-file per-frame mappers so streamed and materialized frames match."""
+        mapped, carried = _partition_calc(atoms, n_atoms, index, issues)
+        per_frame_custom: dict[str, Any] = {}
+        for key in atoms.info:
+            per_frame_custom[_namespace(key)] = _as_json(atoms.info.get(key))
+        for key, value in carried.items():
+            per_frame_custom[_namespace(key)] = value
+        frame = Frame(
+            index=index,
+            atoms=self._build_atoms(atoms),
+            cell=cell,
+            dynamics=self._build_dynamics(atoms, mapped),
+            electronic=Electronic(
+                total_energy=mapped.get("energy"),
+                charges=mapped.get("charges"),
+                magnetic_moments=mapped.get("magmoms"),
+            ),
+        )
+        return StreamFrame(frame=frame, per_frame_custom=per_frame_custom)
 
     # -- per-frame builders ------------------------------------------------------------
 
@@ -458,6 +574,134 @@ def _partition_calc(
                     )
                 )
     return mapped, carried
+
+
+def _iter_extxyz_blocks(stream: BinaryIO) -> Iterator[tuple[str, str]]:
+    """Yield ``(block_text, comment_line)`` one frame block at a time off the raw byte stream.
+
+    An extXYZ frame is a count line, a comment line, then ``count`` atom lines. Reading the file
+    block-by-block (rather than ``read()``-ing it whole) is what keeps the streaming parser's peak
+    memory bounded by one frame, not the trajectory. A byte sequence that is not UTF-8, a
+    non-integer count line, or a block truncated before its atom lines complete each raise a
+    structured ``ParseError`` (Part 3 §5) at the point of failure — mid-stream for later frames."""
+
+    def _readline() -> str | None:
+        raw = stream.readline()
+        if raw == b"":
+            return None
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise _error(
+                "EXTXYZ_ENCODING_ERROR",
+                f"file is not valid UTF-8 text (byte 0x{raw[exc.start]:02x}); extxyz is a text "
+                "format",
+            ) from exc
+
+    index = 0
+    while True:
+        line = _readline()
+        if line is None:
+            return
+        if line.strip() == "":
+            continue
+        try:
+            count = int(line.strip())
+        except ValueError:
+            raise _error(
+                "EXTXYZ_PARSE_ERROR",
+                f"expected an atom-count line, got {line.strip()!r}",
+                location=f"frame {index}",
+            ) from None
+        if count <= 0:
+            raise _error(
+                "EXTXYZ_PARSE_ERROR",
+                f"atom count must be positive, got {count}",
+                location=f"frame {index}",
+            )
+        comment = _readline()
+        if comment is None:
+            raise _error(
+                "EXTXYZ_PARSE_ERROR",
+                "file ended before the comment line of a frame",
+                location=f"frame {index}",
+            )
+        atom_lines: list[str] = []
+        for _ in range(count):
+            atom_line = _readline()
+            if atom_line is None:
+                raise _error(
+                    "EXTXYZ_PARSE_ERROR",
+                    f"frame {index} declares {count} atoms but the file ended after "
+                    f"{len(atom_lines)}",
+                    location=f"frame {index}",
+                )
+            atom_lines.append(atom_line.rstrip("\n"))
+        block = f"{count}\n{comment.rstrip(chr(10))}\n" + "\n".join(atom_lines) + "\n"
+        yield block, comment
+        index += 1
+
+
+def _read_block(block: str, index: int) -> Atoms:
+    """Parse one frame block into a single ASE ``Atoms``, normalising ASE's many exception types
+    to the ``ParseError`` contract (§5) with the offending frame located."""
+    try:
+        return ase_read(io.StringIO(block), format="extxyz", index=0)
+    except Exception as exc:  # ASE raises many exception types; normalise to the contract
+        raise _error(
+            "EXTXYZ_PARSE_ERROR",
+            f"ASE could not read frame {index} as extended XYZ: {exc}",
+            location=f"frame {index}",
+        ) from exc
+
+
+def _collect_custom_columns_single(atoms: Atoms) -> dict[str, Any]:
+    """The ``custom_per_atom`` columns of a *single* frame — the streaming analogue of
+    ``_collect_custom_columns`` restricted to one image (frame 0 establishes the object-level set,
+    Part 2 §3.10). Numeric columns become float64 ndarrays; string columns become JSON lists."""
+    columns: dict[str, Any] = {}
+    for name, array in atoms.arrays.items():
+        if name in _RESERVED_ARRAYS:
+            continue
+        values = np.asarray(array)
+        if np.issubdtype(values.dtype, np.number):
+            columns[_namespace(name)] = values.astype(float, copy=False)
+        else:
+            columns[_namespace(name)] = [_as_json(v) for v in values]
+    return columns
+
+
+def _check_columns_consistent(
+    atoms: Atoms,
+    frame0_columns: dict[str, Any],
+    warned: set[str],
+    issues: list[ParseIssue],
+) -> None:
+    """Warn once per column whose values differ from frame 0's, mirroring the whole-file
+    ``EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE`` warning (Part 2 §3.10): ``custom_per_atom`` is
+    stored once per object, so a per-atom column that varies across frames cannot be represented
+    losslessly and only frame 0's values are carried."""
+    for name, array in atoms.arrays.items():
+        if name in _RESERVED_ARRAYS:
+            continue
+        key = _namespace(name)
+        if key in warned or key not in frame0_columns:
+            continue
+        current = np.asarray(array)
+        reference = np.asarray(frame0_columns[key])
+        if not np.array_equal(current, reference):
+            warned.add(key)
+            issues.append(
+                ParseIssue(
+                    severity="warning",
+                    code="EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE",
+                    message=(
+                        f"per-atom column {name!r} varies across frames; the canonical model "
+                        "stores per-atom custom arrays once per object (Part 2 §3.10), so only "
+                        "the first frame's values are carried"
+                    ),
+                )
+            )
 
 
 def _is_per_atom_scalar(value: Any, n_atoms: int) -> bool:

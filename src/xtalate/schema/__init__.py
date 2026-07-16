@@ -19,7 +19,7 @@ from xtalate.schema.models import (
     TrajectoryMetadata,
     UserMetadata,
 )
-from xtalate.schema.presence import PathPresence, PresenceMap
+from xtalate.schema.presence import PathPresence, PresenceAccumulator, PresenceMap
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -32,6 +32,7 @@ __all__ = [
     "Electronic",
     "Frame",
     "PathPresence",
+    "PresenceAccumulator",
     "PresenceMap",
     "Provenance",
     "SimulationMetadata",
