@@ -1,0 +1,48 @@
+name: "Format request"
+description: Request support for a new file format.
+labels: ["enhancement", "format-request"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        A well-scoped format request — especially with example files and a draft capability
+        row — is a genuinely valuable contribution even if you never write a line of code.
+  - type: input
+    id: name
+    attributes:
+      label: Format name / spec link
+      placeholder: "e.g. CIF — https://www.iucr.org/resources/cif/spec"
+    validations:
+      required: true
+  - type: textarea
+    id: capability_draft
+    attributes:
+      label: Which canonical fields can it express? (a draft capability row!)
+      description: >-
+        Which of the canonical categories (Geometry, Cell, Trajectory, Dynamics, Electronic,
+        Metadata) can this format hold, and which can it not? Honest PARTIAL beats optimistic
+        FULL — this becomes the format's Capability Matrix row (`docs/MASTER_SPEC.md` Part 3 §3).
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example files + license status
+      description: >-
+        Links or attachments, each with its data license. Licensed examples can seed the
+        golden corpus; unlicensed ones cannot be admitted.
+    validations:
+      required: true
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you be willing to contribute a plugin?
+      description: >-
+        Heads up: the plugin SDK is not frozen until v1.0 (risk R12), so a plugin may need to
+        follow SDK changes between minor versions until then.
+      options:
+        - "No — requesting only"
+        - "Maybe, with guidance"
+        - "Yes"
+    validations:
+      required: true

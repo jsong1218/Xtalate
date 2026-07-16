@@ -1,0 +1,136 @@
+# Contributing to Xtalate
+
+Thank you for considering a contribution. Xtalate has one job — **loss-aware, fully
+transparent file conversion** — and the contribution process is built to protect that job.
+This guide is the practical form of `docs/MASTER_SPEC.md` Part 10 §4.3; where the two
+disagree, the spec wins.
+
+> **What we're inviting right now (v0.2).** The **golden-corpus contribution** path is the
+> invited, fully-supported way to contribute today: real-world sample files, with licenses,
+> that harden the converter against formats we can't fake by hand. See
+> [Contributing a golden case](#contributing-a-golden-case).
+>
+> **Parser/exporter contributions are welcome — with a churn warning.** The plugin SDK
+> (`xtalate.sdk`) is **not frozen until v1.0** (roadmap risk R12). Until then, a format
+> plugin you write may need to follow SDK signature changes between minor versions. We'll
+> help, and we'll keep the churn visible in the changelog, but you should know it's there
+> before you invest. If you want a format supported and don't want to track churn, filing a
+> **Format request** issue with example files is itself a valuable contribution.
+
+## Start here
+
+1. **Read the constitution for your area.** `docs/MASTER_SPEC.md` is the single source of
+   truth (Part 0 for the mission and principles P1–P6; Part 8 for testing; the part covering
+   whatever you're touching). **The docs are the constitution — code that contradicts them
+   needs a docs PR first.** A behavior change and its documentation change are one atomic PR.
+2. **Skim `docs/DECISIONS.md`.** Most "why is it done *this* way?" questions are answered
+   there, each with the alternative that was rejected.
+
+## Ground rules (the non-negotiables)
+
+These are the invariants that make Xtalate trustworthy. A PR that breaks one will not merge,
+however convenient:
+
+- **The absence convention (`02 §2`, P3): no defaulting, ever.** A parser that has no value
+  for a field writes `None` — never a zero velocity, an identity lattice, or an invented
+  `energy = 0.0`. "Absent" and "present with value zero" are different states and the schema
+  keeps them different. The **default-laundering** obligation (Part 3 §2) is part of this:
+  if an upstream library (e.g. ASE) invents a default, the parser must *unlaunder* it back to
+  `None`.
+- **The completeness invariant stays green (P1).** Every conversion accounts for every source
+  field: it appears in `preserved`, `removed`, or `supplied`, and nothing is lost silently.
+  This is enforced at runtime *and* by an independent property test (`tests/property/`). Any
+  change to conversion behavior must keep both green.
+- **Recover explicitly, never guess (P4).** Missing-but-required data is supplied only through
+  an explicit recovery choice, recorded as an Assumption. No silent fabrication — and no
+  *unrequested* transformation even when it's standard practice (`docs/DECISIONS.md` D43).
+- **Reuse the binding glossary (`00 §6`).** Field names, report names, and component names are
+  fixed. If a name seems wrong, say so in your PR and propose the rename explicitly — never
+  rename silently.
+
+## Dev environment
+
+Xtalate v0.1–v0.2 is a pure-Python library + CLI (Tier 0 in `09 §1`); there are no services to
+run.
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Run the full gate locally before you push — CI runs exactly these, in this order, on Python
+3.11 and 3.13:
+
+```bash
+ruff check .            # lint
+ruff format --check .   # format (fails independently of `ruff check` — run both)
+mypy                    # types (strict)
+lint-imports            # acyclic package layering (P2) — a required check
+pytest                  # unit + golden + governance + property, with the coverage gate
+```
+
+`ruff format --check` fails independently of `ruff check`; a green `ruff check` does **not**
+mean formatting is clean. If it reports files, run `ruff format .`.
+
+**Test layers** (all run under `pytest`): unit + laundering (`tests/parsers/`,
+`tests/exporters/`), golden fidelity (`tests/golden/`, `tests/schema/`), round-trips
+(`tests/roundtrip/`: identity + cross-format two-hop/three-hop), the report-completeness
+property (`tests/property/`), and corpus governance (`tests/golden/test_corpus_governance.py`).
+The suite enforces a **coverage ratchet** (`--cov-fail-under` in `pyproject.toml`) — it is a
+floor set below current coverage, raised as coverage rises, never lowered to green a PR. When
+iterating on a single test, `pytest tests/foo.py --no-cov` skips the coverage gate; run the
+full `pytest` before pushing.
+
+## Contributing a golden case
+
+A golden case is a source file plus its hand-verified expected Canonical Object and a
+`manifest.yaml`. This is the invited contribution path. The corpus governance suite
+(`tests/golden/test_corpus_governance.py`) will hold you to every rule below.
+
+1. **Pick a licensed file.** In preference order (`08 §3.2`): (a) **synthetic**, hand-authored
+   by you (license: Apache-2.0, the project's own); (b) **published open data** with an explicit
+   redistribution-compatible license (CC0, CC-BY — attribution required); (c) **contributed**
+   real-world files, with your explicit license grant recorded in the manifest and the PR
+   template's license checkbox ticked. **A file without an explicit data license is not
+   admissible, however convenient — "it's just a POSCAR" is not a license.**
+2. **Lay it out** under `tests/golden/<format_id>/<case_name>/`: the source file, the
+   `expected.canonical.json`, and a `manifest.yaml` (copy an existing one as a template). The
+   manifest requires `case`, `format_id`, `source_file`, `expected_canonical`,
+   `canonical_schema_version`, `sha256` (of the source file), and an `origin` block with
+   `kind`, `license`, and — for published data — `source` (and `attribution` for CC-BY).
+3. **Compute the hash:** `shasum -a 256 <source_file>` (or `python -c "import hashlib,sys;
+   print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" <source_file>`), and put
+   it in the manifest. CI re-verifies it — a silent fixture edit is impossible.
+4. **Regenerate attributions:** `python tests/golden/_governance.py` rewrites
+   `tests/golden/ATTRIBUTIONS.md` from the manifests. Commit the result; CI diffs it and fails
+   if it's stale, so an attribution can never silently lapse.
+5. **Run `pytest`** — the golden fidelity test and the governance suite must be green.
+
+## Adding a format (parser/exporter)
+
+The full checklist (`docs/MASTER_SPEC.md` Part 10 §4.3, and the churn warning above):
+
+1. Implement `ParserPlugin` / `ExporterPlugin` (`xtalate.sdk`). A parser reads one format to a
+   Canonical Object and **never** reads files of another format or calls another parser (P2);
+   an exporter writes one format from a Canonical Object and never reads native files.
+2. Declare `capabilities()` **honestly**: a `PARTIAL` cell with a note beats an optimistic
+   `FULL`. The Part 3 §3 capability table has a sync test — it will hold you to your
+   declarations.
+3. Add golden cases with licensed manifests (above), and pass the identity round-trip.
+4. Add the format's rows to the Part 3 §3 capability table in `docs/MASTER_SPEC.md`.
+5. Keep the default-laundering suite green: prove your parser returns `None` for anything the
+   file does not actually say.
+
+## PR expectations
+
+- **Small and single-purpose.** One concern per PR.
+- **Name a rejected alternative** for every nontrivial design decision, in the PR description —
+  it's the standard the whole document set holds itself to.
+- **Fill in the PR template**, including the license-grant checkbox for any contributed files.
+- **CI green**, including the golden, governance, and property suites.
+
+## Conduct & licensing
+
+Contributions are licensed under **Apache-2.0** (the repository license). Contributed test
+files additionally require the license grant recorded in their manifest (`08 §3.2`). By opening
+a PR you affirm you have the right to contribute the code and files under these terms.

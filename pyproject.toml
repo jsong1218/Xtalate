@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xtalate"
-version = "0.1.0.dev0"
+version = "0.2.0"
 description = "The trusted translation layer between computational chemistry file formats — a converter that tells you exactly what it kept, what it lost, and why."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -48,6 +48,7 @@ dependencies = [
 # minimal-dependency posture (D4/D7) applies to `[project].dependencies`, not the dev extras.
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=5.0",
     "ruff>=0.5",
     "mypy>=1.10",
     "import-linter>=2.0",
@@ -95,6 +96,17 @@ follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Coverage as a promoted PR gate (v0.2 M11; MASTER_SPEC Part 8 §5 / Part 10 §1 deferral
+# table "earliest v0.2"). The threshold is a **ratchet, not an aspiration**: set at the
+# current measured branch coverage (~92.6%) minus a small slack, so it catches a real
+# regression without flapping on the sub-percent noise the hypothesis property suite
+# introduces run-to-run. Raise it as coverage rises; never lower it to make a red PR green —
+# that inverts the gate. --cov-fail-under fails the run below the floor.
+addopts = "--cov=xtalate --cov-report=term-missing --cov-fail-under=91"
+
+[tool.coverage.run]
+branch = true
+source = ["xtalate"]
 
 # Import-graph enforcement of the acyclic dependency direction (P2) — the "CI
 # teeth behind P2" of MASTER_SPEC Part 8 §1.1, encoding the graph of Part 1 §5.1.

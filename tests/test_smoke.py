@@ -23,7 +23,7 @@ SUBPACKAGES = (
 
 
 def test_package_version() -> None:
-    assert xtalate.__version__ == "0.1.0"
+    assert xtalate.__version__ == "0.2.0"
 
 
 def test_subpackages_importable() -> None:
