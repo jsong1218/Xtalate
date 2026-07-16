@@ -1,0 +1,19 @@
+case: co-md-restart
+format_id: contcar
+source_file: CONTCAR
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "0bcb4aaffceb9d4292c8f9938ceefcad14759243bdd1b06f71a950f9953093e1"
+expected_sha256: "967c47bb0eb264692f5673b7806b28c225d7ac3ec337a318f485c7cd226b8cfa"
+origin:
+  kind: synthetic
+  source: "Hand-authored CONTCAR (VASP-5 shape, Direct coords, CO diatomic) with a Cartesian velocity block"
+  license: "Apache-2.0"
+notes: >-
+  The corpus's velocity-bearing case: exercises the CONTCAR-tail Cartesian velocity block
+  (§3.1, Å/fs, stored verbatim) and its source_units["velocities"] annotation, plus
+  fractional→Cartesian position conversion (§4) and format-defined pbc=(T,T,T). As a golden
+  *source* fixture it enrols CONTCAR (previously target-only, Part 3 §6.1) into the identity,
+  two-hop, and three-hop round-trip suites, so velocities participate in the system-level
+  matrix — the completeness invariant then sees them preserved (→ POSCAR/CONTCAR/extXYZ) or
+  honestly removed (→ XYZ, which cannot express them).

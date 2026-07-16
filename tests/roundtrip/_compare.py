@@ -14,21 +14,19 @@ from __future__ import annotations
 import numpy as np
 
 from xtalate.schema import CanonicalObject, Frame
+from xtalate.validation._shared import NUMERIC_QUANTITY as _FIDELITY_QUANTITY
 from xtalate.validation.tolerance import ToleranceProfile
 
-# Leaf path -> the tolerance quantity its numeric comparison uses (mirrors the Validation Engine's
-# catalog). Paths absent here are compared exactly (symbols, pbc — discrete, no tolerance ever).
+# Leaf path -> the tolerance quantity its numeric comparison uses. The fidelity fields are taken
+# from the Validation Engine's single catalog (`validation._shared`), so a field added there is
+# compared here too rather than silently skipped. The whole-object three-hop comparator additionally
+# diffs `atoms.positions`/`cell.lattice_vectors` as arrays (the engine handles those via its
+# dedicated `positions_rmsd`/`lattice_consistency` checks, so they are not in the shared catalog).
+# Paths absent here are compared exactly (symbols, pbc — discrete, no tolerance ever).
 _NUMERIC_QUANTITY: dict[str, str] = {
+    **_FIDELITY_QUANTITY,
     "atoms.positions": "positions",
-    "atoms.masses": "masses",
     "cell.lattice_vectors": "lattice",
-    "dynamics.velocities": "velocities",
-    "dynamics.forces": "forces",
-    "electronic.charges": "charges",
-    "electronic.magnetic_moments": "magnetic_moments",
-    "electronic.total_energy": "energy",
-    "electronic.stress": "stress",
-    "frame.time": "time",
 }
 
 

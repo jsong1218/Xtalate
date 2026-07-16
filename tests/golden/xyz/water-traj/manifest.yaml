@@ -4,6 +4,7 @@ source_file: water_traj.xyz
 expected_canonical: expected.canonical.json
 canonical_schema_version: "0.1.0"
 sha256: "0837adbe10efa7e4306defdf275c3820fdea79e21b0d35bf86008add9dbe7d1b"
+expected_sha256: "355d377b90480a82cf3de796c7cb9e82bedeaf9adca6f854d9503933c55b1119"
 origin:
   kind: synthetic
   source: "MASTER_SPEC Part 2 §8.1 worked example (2-frame, 3-atom plain XYZ)"

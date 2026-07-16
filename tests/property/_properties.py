@@ -19,8 +19,11 @@ from xtalate.conversion.report import ConversionReport
 from xtalate.schema import CanonicalObject
 
 # ``atoms.atomic_numbers`` is a *derived* mirror of ``atoms.symbols`` that no format stores on its
-# own; the runtime invariant excludes it (``conversion.engine._DERIVED_PATHS``), so the property
-# must too, or every conversion would false-fail for "losing" a field that is only ever derived.
+# own; the runtime invariant excludes it (``schema.paths.DERIVED_PATHS``), so the property must too,
+# or every conversion would false-fail for "losing" a field that is only ever derived. This copy is
+# **deliberately kept independent** of ``schema.paths.DERIVED_PATHS`` (not imported), per D50: an
+# independent re-derivation of the invariant must not import the value it checks against — if the
+# two ever disagree, that disagreement is the property doing its job.
 _DERIVED_PATHS = frozenset({"atoms.atomic_numbers"})
 
 
@@ -86,10 +89,14 @@ def absence_violations(report: ConversionReport, reparsed: CanonicalObject) -> l
     path that reappears means the exporter deviated from the plan (a silent write the report never
     promised). A path that is *also* ``preserved`` (e.g. ``atoms.positions`` dropped for the
     non-selected frames but kept for the retained one) is validated by frame count, not asserted
-    absent, mirroring ``validation.engine._check_absence``. Returns the list of violations.
+    absent. A path that is *also* ``supplied`` is likewise exempt: recovery dropped the source
+    original and fabricated a replacement, so it is *expected* to reappear (a ``mixed`` cell whose
+    cell-bearing frame ``frame_selection`` drops, then ``missing_lattice`` fills — D51). This
+    re-derives ``validation.engine._check_absence``'s exemptions independently (D50), not by import.
+    Returns the list of violations.
     """
-    preserved_paths = {e.path for e in report.preserved}
-    to_check = [e.path for e in report.removed if e.path not in preserved_paths]
+    exempt = {e.path for e in report.preserved} | {e.path for e in report.supplied}
+    to_check = [e.path for e in report.removed if e.path not in exempt]
     presence = reparsed.field_presence()
     return [
         f"removed path {path!r} reappeared in the re-parsed output — exporter deviated from "

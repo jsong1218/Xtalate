@@ -85,8 +85,8 @@ def test_registering_a_format_grows_the_matrix_with_zero_suite_edits() -> None:
     grown_pairs = set(_matrix.two_hop_pairs(grown))
     expected_new = {(src, _DUMMY) for src in _matrix.source_formats_with_golden()}
     assert grown_pairs == base_pairs | expected_new
-    # The dummy has no golden source fixture, so it never becomes a *source* pair (target-only,
-    # exactly like `contcar` until a golden lands for it).
+    # The dummy has no golden source fixture, so it never becomes a *source* pair — the mechanism
+    # that keeps a target-only format out of the source list until a golden case lands for it.
     assert not any(src == _DUMMY for src, _ in grown_pairs)
 
 

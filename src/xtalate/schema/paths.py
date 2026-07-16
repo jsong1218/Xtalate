@@ -59,6 +59,14 @@ CANONICAL_FIELD_PATHS: frozenset[str] = _build_paths()
 #: Category prefixes that may precede ``.*`` in a wildcard capability path (Part 3 §4.1).
 WILDCARD_PREFIXES: frozenset[str] = frozenset(_CATEGORY_MODELS) | {"frame"}
 
+#: Paths that are a *derived mirror* of another field, which no format stores on its own:
+#: ``atoms.atomic_numbers`` is computed from ``atoms.symbols`` (`AtomsBlock` cross-checks them).
+#: The completeness invariant, the pre-flight diff, and the round-trip comparable subspace all
+#: exclude these — a derived field is never "lost", it is recomputed — so the exclusion is a schema
+#: fact defined once here. (The property harness keeps its own copy on purpose, D50: an independent
+#: re-derivation of the invariant must not import the value it checks against.)
+DERIVED_PATHS: frozenset[str] = frozenset({"atoms.atomic_numbers"})
+
 
 def is_valid_path(path: str) -> bool:
     """True if ``path`` is a concrete canonical field path (no wildcard)."""

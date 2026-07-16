@@ -16,6 +16,16 @@ Everything here is derived from a live :class:`Registry`:
 four v0.1 formats can hit (any → POSCAR without a lattice; a trajectory → a single-structure target)
 resolve through the real Recovery Engine, so the round-trips exercise Assumption recording end to
 end (Part 8 §2.2).
+
+**Accepted risk — two-hop self-consistency (mitigated, not eliminated).** Because the two-hop suite
+derives its expected comparable subspace from the *same* Capability Matrix that drives the engine, a
+capability that is *wrongly declared* (e.g. a field marked FULL that the exporter actually mangles)
+is consistent on both sides of the assertion and passes here. The backstop is the three-hop suite
+(``test_three_hop``), whose ``A → B → A`` return is diffed against a **golden-anchored** original
+(external truth, independent of the matrix), so a mis-declared capability on a curated high-risk
+pair surfaces there. The residual gap — a mis-declaration on a pair the three-hop set does not
+cover — is knowingly accepted for v0.2; widening the golden-anchored pair set is the v0.3+ lever
+(Part 8 §2.4).
 """
 
 from __future__ import annotations
@@ -25,31 +35,32 @@ from pathlib import Path
 from typing import Any
 
 from xtalate.capabilities import CapabilityMatrix, Registry
-from xtalate.schema.paths import CANONICAL_FIELD_PATHS
+from xtalate.schema.paths import CANONICAL_FIELD_PATHS, DERIVED_PATHS
 from xtalate.sdk import CapabilityLevel
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 
 # Golden *source* fixtures, keyed by format_id: the source file plus its hand-verified expected
-# Canonical Object (the external-truth anchor of Part 8 §3). ``contcar`` has no golden source file
-# — it is byte-compatible with POSCAR (Part 3 §6.1) — so it participates as a round-trip *target*
-# only; adding a `tests/golden/contcar/…` case would enrol it as a source with no suite edit.
+# Canonical Object (the external-truth anchor of Part 8 §3). ``contcar`` is byte-compatible with
+# POSCAR (Part 3 §6.1); its own golden case carries the velocity block POSCAR does not, so it enrols
+# CONTCAR as a round-trip *source* — the one fixture that flows velocities through the whole matrix.
 _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     "xyz": ("xyz/water-traj", "water_traj.xyz"),
     "poscar": ("poscar/nacl-primitive", "POSCAR"),
     "extxyz": ("extxyz/co-in-cell", "sample.extxyz"),
+    "contcar": ("contcar/co-md-restart", "CONTCAR"),
 }
 
 # Capability paths that are never round-trip content: provenance records *how* a file was read
-# (which a faithful re-export may legitimately change — mirrors ``_format_helpers``'s dump),
-# and ``atoms.atomic_numbers`` is a *derived* mirror of ``atoms.symbols`` that no format stores and
-# the completeness invariant excludes (``conversion.engine._DERIVED_PATHS``).
+# (which a faithful re-export may legitimately change — mirrors ``_format_helpers``'s dump), and the
+# derived-mirror paths (``atoms.atomic_numbers``) that no format stores and the completeness
+# invariant excludes — sourced from ``schema.paths.DERIVED_PATHS`` so this stays in step with the
+# engine's exclusion by construction.
 _EXCLUDED_PREFIXES = ("provenance.",)
-_DERIVED_PATHS = frozenset({"atoms.atomic_numbers"})
 _LEAF_PATHS: frozenset[str] = frozenset(
     p
     for p in CANONICAL_FIELD_PATHS
-    if not p.startswith(_EXCLUDED_PREFIXES) and p not in _DERIVED_PATHS
+    if not p.startswith(_EXCLUDED_PREFIXES) and p not in DERIVED_PATHS
 )
 
 #: Deterministic recovery choices covering every fabricative/selective gap the four formats reach.

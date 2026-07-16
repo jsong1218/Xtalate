@@ -4,6 +4,7 @@ source_file: POSCAR
 expected_canonical: expected.canonical.json
 canonical_schema_version: "0.1.0"
 sha256: "839c7c91b1f5e95e8ae3f43fc5d76c86c6c26713a80914f04711fc21832ab574"
+expected_sha256: "982ba3d69f9485cdde64bcf3b72624aba25db8a7372c671088fe115e26b09aff"
 origin:
   kind: synthetic
   source: "MASTER_SPEC Part 2 §8.2 worked example (VASP-5 POSCAR, Direct coords, NaCl-like)"

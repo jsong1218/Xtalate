@@ -4,6 +4,7 @@ source_file: sample.extxyz
 expected_canonical: expected.canonical.json
 canonical_schema_version: "0.1.0"
 sha256: "638bbb0deb73df0167a8317e2c183b2a12258215b4a69368860278f104a8b053"
+expected_sha256: "d6be7930dfcdeb41e3edebf3a42a4cdcc8be1981d50e949d2972f48cc53cb3e5"
 origin:
   kind: synthetic
   source: >-

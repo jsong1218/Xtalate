@@ -249,6 +249,30 @@ class CanonicalObject(_Model):
 
         return compute_field_presence(self)
 
+    def single_frame(self, index: int) -> CanonicalObject:
+        """A single-structure copy holding only frame ``index``, re-indexed to 0.
+
+        The kept frame's ``custom_per_frame`` arrays/lists are sliced to that one frame (their first
+        dim is the frame count, §3.10) and ``trajectory`` is dropped (a lone frame is not a
+        trajectory). This is the shared basis for ``frame_selection`` reduction (recovery) and
+        ``split_all`` per-frame export (conversion), so the two can never slice a reduced object
+        differently — the reduction is defined in exactly one place.
+        """
+        if not 0 <= index < len(self.frames):
+            raise IndexError(
+                f"single_frame index {index} out of range for a {len(self.frames)}-frame object"
+            )
+        frame = self.frames[index].model_copy(update={"index": 0})
+        um = self.user_metadata
+        sliced: dict[str, Any] = {
+            key: (val[index : index + 1] if isinstance(val, np.ndarray) else [val[index]])
+            for key, val in um.custom_per_frame.items()
+        }
+        new_um = um.model_copy(update={"custom_per_frame": sliced})
+        return self.model_copy(
+            update={"frames": [frame], "trajectory": None, "user_metadata": new_um}
+        )
+
     @model_validator(mode="after")
     def _check(self) -> CanonicalObject:
         # Constant-N invariant (§3.2): every frame has the same atom count, which is what

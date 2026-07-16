@@ -297,20 +297,10 @@ def _apply_frame_selection(
             )
         index = raw
 
-    selected = canonical.frames[index]
-    reduced_frame = selected.model_copy(update={"index": 0})
-    # custom_per_frame arrays carry first-dim = frame count (Part 2 §3.10); slice to the kept frame.
-    um = canonical.user_metadata
-    sliced_per_frame: dict[str, Any] = {}
-    for key, val in um.custom_per_frame.items():
-        sliced_per_frame[key] = (
-            val[index : index + 1] if isinstance(val, np.ndarray) else [val[index]]
-        )
-    new_um = um.model_copy(update={"custom_per_frame": sliced_per_frame})
-
-    reduced = canonical.model_copy(
-        update={"frames": [reduced_frame], "trajectory": None, "user_metadata": new_um}
-    )
+    # The reduction itself (frame re-index, custom_per_frame slice, trajectory drop) is defined once
+    # on the canonical object, shared with split_all export (Part 2 §3.10). Here we add the loss
+    # bookkeeping the reduction implies.
+    reduced = canonical.single_frame(index)
     dropped = n - 1
     removed = [
         FrameDrop(

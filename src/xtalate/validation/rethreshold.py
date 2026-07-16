@@ -15,32 +15,19 @@ re-parse machinery.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 
+from xtalate._time import utc_now
+from xtalate.validation._shared import AGGREGATE as _AGGREGATE
+from xtalate.validation._shared import NUMERIC_QUANTITY as _NUMERIC_QUANTITY
+from xtalate.validation._shared import RANK as _RANK
 from xtalate.validation.report import CheckResult, ValidationReport
 from xtalate.validation.tolerance import ToleranceProfile
-
-_RANK = {"pass": 0, "skipped": 0, "warn": 1, "fail": 2}
-_AGGREGATE = {0: "passed", 1: "passed_with_warnings", 2: "failed"}
 
 # Continuous checks and the (quantity, measured-value key) their status is derived from. Any check
 # not named here is discrete/exact and keeps its stored status verbatim.
 _CONTINUOUS = {
     "positions_rmsd": ("positions", "rmsd_ang"),
     "lattice_consistency": ("lattice", "max_element_diff_ang"),
-}
-
-# `numeric_field_fidelity` maps each canonical field path to its tolerance quantity (mirrors the
-# engine's catalog); its `measured` is a per-path dict of {max_abs_diff, missing, ...}.
-_NUMERIC_QUANTITY = {
-    "dynamics.velocities": "velocities",
-    "dynamics.forces": "forces",
-    "electronic.total_energy": "energy",
-    "electronic.stress": "stress",
-    "electronic.charges": "charges",
-    "electronic.magnetic_moments": "magnetic_moments",
-    "atoms.masses": "masses",
-    "frame.time": "time",
 }
 
 
@@ -58,7 +45,7 @@ def rethreshold(report: ValidationReport, profile: ToleranceProfile) -> Validati
     return ValidationReport(
         report_id=str(uuid.uuid4()),
         conversion_report_id=report.conversion_report_id,
-        created_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        created_at=utc_now(),
         status=_AGGREGATE[worst],
         checks=checks,
         tolerance_profile=profile.as_dict(),  # type: ignore[arg-type]

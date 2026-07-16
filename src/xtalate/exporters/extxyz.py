@@ -30,10 +30,12 @@ from xtalate.sdk import (
 FORMAT_ID = "extxyz"
 _KEY_PREFIX = "extxyz:"
 _STRESS_KEY = "extxyz:stress"
-# Å/fs → ASE internal velocity units: the exact inverse of the parser's conversion. Defined
-# here (not imported from parsers) because exporters and parsers are import-sibling layers
-# that must not depend on each other (pyproject import-linter contract, P2).
-_VEL_ASE_TO_ANG_PER_FS = ase_units.fs
+# The velocity conversion factor in units of (Å/fs) per one ASE internal velocity unit — i.e.
+# `ase_units.fs`. Named for its units so the export direction reads correctly: canonical Å/fs
+# *divided by* this factor yields ASE units (the exact inverse of the parser's multiply). Defined
+# here (not imported from parsers) because exporters and parsers are import-sibling layers that must
+# not depend on each other (pyproject import-linter contract, P2).
+_ANG_PER_FS_PER_ASE_VEL = ase_units.fs
 
 
 class ExtxyzExporter(ExporterPlugin):
@@ -58,7 +60,7 @@ class ExtxyzExporter(ExporterPlugin):
             atoms.set_cell(np.asarray(frame.cell.lattice_vectors, dtype=float))
             atoms.set_pbc(frame.cell.pbc)
         if frame.dynamics.velocities is not None:
-            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _VEL_ASE_TO_ANG_PER_FS
+            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ANG_PER_FS_PER_ASE_VEL
             atoms.set_velocities(v_ase)
 
         # Object-level per-atom carry-through columns apply to every frame (Part 2 §3.10).

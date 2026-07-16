@@ -17,7 +17,7 @@ import pytest
 
 from xtalate.schema import CanonicalObject
 
-GOLDEN = Path(__file__).parent.parent / "golden" / "schema"
+GOLDEN = Path(__file__).parent / "fixtures"
 CASES = ["xyz_2frame_3atom.json", "poscar_nacl.json"]
 
 

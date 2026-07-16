@@ -364,9 +364,13 @@ def _resolve_tolerance(value: str | None) -> ToleranceProfile:
     """Resolve ``--tolerance-profile`` to a :class:`ToleranceProfile` (Part 5 §4.4).
 
     ``None`` or a named profile (``default``/``strict``/``loose``) resolves by name; anything else
-    is treated as a path to a custom tolerance-table file (YAML or JSON — ``yaml.safe_load`` parses
-    both). A bad name, a missing file, or a malformed/invalid table surfaces as a clean usage error
-    (exit 1), never a traceback."""
+    is treated as a path to a custom tolerance-table file. A ``.json`` file is parsed with
+    ``json.load``; any other extension with ``yaml.safe_load``. Dispatching on the extension —
+    rather than routing JSON through YAML — matters because PyYAML implements YAML 1.1, whose float
+    grammar rejects dotless scientific notation (``1e-8`` parses as the *string* ``"1e-8"``, not a
+    float), so a valid JSON table like ``{"forces": {"warn": 1e-8}}`` would otherwise fail with a
+    confusing "must be a number" error. A bad name, a missing file, or a malformed/invalid table
+    surfaces as a clean usage error (exit 1), never a traceback."""
     if value is None or value in _NAMED_PROFILES:
         return ToleranceProfile.named(value or "default")
 
@@ -377,8 +381,12 @@ def _resolve_tolerance(value: str | None) -> ToleranceProfile:
             f"({', '.join(_NAMED_PROFILES)}) nor a readable file"
         )
     try:
-        mapping = yaml.safe_load(path.read_text())
-    except (OSError, yaml.YAMLError) as exc:
+        text = path.read_text()
+        if path.suffix.lower() == ".json":
+            mapping = json.loads(text)
+        else:
+            mapping = yaml.safe_load(text)
+    except (OSError, yaml.YAMLError, json.JSONDecodeError) as exc:
         raise _UsageError(f"cannot read tolerance-table file {value!r}: {exc}") from exc
     try:
         return ToleranceProfile.from_mapping(path.stem, mapping)

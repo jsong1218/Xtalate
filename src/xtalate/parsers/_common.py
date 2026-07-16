@@ -9,9 +9,8 @@ that boilerplate so each format module stays focused on its grammar. It imports 
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from xtalate import __version__
+from xtalate._time import utc_now as _utc_now
 from xtalate.schema import ConversionRecord, Provenance
 from xtalate.sdk import ParseError, ParseIssue
 
@@ -45,9 +44,10 @@ def decode_text(data: bytes, *, format_id: str) -> str:
 def utc_now() -> str:
     """Current UTC instant as an ISO-8601 ``...Z`` string (Part 2 §3.9 timestamp form).
 
-    Seconds precision, ``Z`` suffix — matching the worked-example fixtures (Part 2 §8).
+    Re-exported from :mod:`xtalate._time` (the single source) under the name parser code already
+    imports; seconds precision, ``Z`` suffix — matching the worked-example fixtures (Part 2 §8).
     """
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return _utc_now()
 
 
 def parse_record(format_id: str) -> ConversionRecord:

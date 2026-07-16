@@ -96,11 +96,15 @@ A golden case is a source file plus its hand-verified expected Canonical Object 
 2. **Lay it out** under `tests/golden/<format_id>/<case_name>/`: the source file, the
    `expected.canonical.json`, and a `manifest.yaml` (copy an existing one as a template). The
    manifest requires `case`, `format_id`, `source_file`, `expected_canonical`,
-   `canonical_schema_version`, `sha256` (of the source file), and an `origin` block with
-   `kind`, `license`, and — for published data — `source` (and `attribution` for CC-BY).
-3. **Compute the hash:** `shasum -a 256 <source_file>` (or `python -c "import hashlib,sys;
-   print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" <source_file>`), and put
-   it in the manifest. CI re-verifies it — a silent fixture edit is impossible.
+   `canonical_schema_version`, `sha256` (of the source file), `expected_sha256` (of the
+   `expected.canonical.json`), and an `origin` block with `kind`, `license`, and — for published
+   data — `source` (and `attribution` for CC-BY). Every data file under `tests/golden/` must be
+   claimed by a manifest — an unmanifested file is a hard CI failure (no manifest, no merge).
+3. **Compute the hashes:** `shasum -a 256 <source_file>` and `shasum -a 256
+   expected.canonical.json` (or `python -c "import hashlib,sys;
+   print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" <file>`), and put them in
+   the manifest as `sha256` and `expected_sha256`. CI re-verifies both — a silent edit to either
+   the fixture or its hand-verified expectation is impossible.
 4. **Regenerate attributions:** `python tests/golden/_governance.py` rewrites
    `tests/golden/ATTRIBUTIONS.md` from the manifests. Commit the result; CI diffs it and fails
    if it's stale, so an attribution can never silently lapse.
