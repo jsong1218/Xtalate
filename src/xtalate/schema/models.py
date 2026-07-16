@@ -258,6 +258,10 @@ class CanonicalObject(_Model):
         ``split_all`` per-frame export (conversion), so the two can never slice a reduced object
         differently — the reduction is defined in exactly one place.
         """
+        if not 0 <= index < len(self.frames):
+            raise IndexError(
+                f"single_frame index {index} out of range for a {len(self.frames)}-frame object"
+            )
         frame = self.frames[index].model_copy(update={"index": 0})
         um = self.user_metadata
         sliced: dict[str, Any] = {

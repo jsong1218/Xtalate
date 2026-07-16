@@ -139,6 +139,36 @@ def test_custom_per_frame_numeric_becomes_ndarray() -> None:
     assert obj.user_metadata.custom_per_frame["xyz:comment"] == ["a", "b"]
 
 
+def test_single_frame_slices_per_frame_and_reindexes() -> None:
+    # The shared reduction used by frame_selection recovery and split_all export: keep one frame,
+    # re-index it to 0, slice custom_per_frame to that frame, drop trajectory.
+    obj = CanonicalObject(
+        frames=[Frame(index=0, atoms=_atoms()), Frame(index=1, atoms=_atoms())],
+        provenance=_provenance(),
+        user_metadata=UserMetadata(
+            custom_per_frame={
+                "sim:temperature": np.array([300.0, 305.0]),
+                "xyz:comment": ["a", "b"],
+            }
+        ),
+    )
+    one = obj.single_frame(1)
+    assert one.frame_count == 1
+    assert one.frames[0].index == 0  # re-indexed
+    assert one.trajectory is None
+    # ndarray sliced to the kept frame (length 1), list sliced to the kept element.
+    np.testing.assert_array_equal(
+        one.user_metadata.custom_per_frame["sim:temperature"], np.array([305.0])
+    )
+    assert one.user_metadata.custom_per_frame["xyz:comment"] == ["b"]
+
+
+def test_single_frame_out_of_range_raises() -> None:
+    obj = _obj([Frame(index=0, atoms=_atoms()), Frame(index=1, atoms=_atoms())])
+    with pytest.raises(IndexError, match="out of range"):
+        obj.single_frame(2)
+
+
 def test_custom_per_frame_wrong_length_rejected() -> None:
     with pytest.raises(ValidationError):
         CanonicalObject(
