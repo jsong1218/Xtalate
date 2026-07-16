@@ -8,8 +8,53 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-15
+
+v0.2 — **"trustworthy core complete."** The full Part 4 §3.3 recovery scenario catalog, the
+POSCAR/CONTCAR velocity block with velocity/mass recovery, the cross-format round-trip matrix
+with custom tolerance tables, the report-completeness property test, and the corpus-governance
+and contributor surface that make outside golden-corpus contributions realistic. Schema
+version is unchanged at `0.1.0`; the four v0.1 formats (XYZ, extXYZ, POSCAR, CONTCAR) are the
+supported set. Pre-1.0, a minor bump may still break — the plugin SDK is not frozen until v1.0
+(risk R12).
+
 ### Added
 
+- **Golden-corpus governance, contributor surface, and the v0.2 release (v0.2 M11).** The last
+  milestone of the break: the governance that makes the golden corpus a corpus a stranger can
+  extend without a maintainer in the loop, mechanized so it cannot silently rot.
+  - **Manifest governance suite** (`tests/golden/test_corpus_governance.py`, `_governance.py`;
+    `docs/MASTER_SPEC.md` Part 8 §3): every `manifest.yaml` is schema-validated (required
+    fields incl. `origin.kind`, `origin.license`, `sha256`); a **missing or blank license is a
+    hard CI failure** — *no manifest, no license, no merge* (§3.2). The recorded `sha256` of
+    every source file is re-verified, so a silent fixture edit is impossible. CC-BY origins
+    require an `attribution`, and published-dataset origins require a `source`.
+  - **Schema-version sync check** (§3.3): every `expected.canonical.json` loads **through the
+    migration chain** (`load_expected_through_migration_chain` — the identity today, the seam
+    for real migrations when the schema versions past `0.1.0`), its embedded `schema_version`
+    is cross-checked against the manifest's `canonical_schema_version`, and CI fails if any
+    manifest lags more than one **major** version behind current.
+  - **`tests/golden/ATTRIBUTIONS.md` regenerated from manifests and diffed in CI** (§3.2): the
+    aggregate attribution file is *generated* (`python tests/golden/_governance.py`), never
+    hand-edited, and the suite fails on any drift — an attribution obligation can never silently
+    lapse.
+  - **CI gates promoted** (Part 10 §1 deferral table, earliest v0.2): a **coverage ratchet**
+    (`--cov-fail-under=91` in `pyproject.toml`, set below the measured ~92.6% branch coverage with slack — a floor
+    that rises, never lowers, adding **`pytest-cov`** as a dev dependency), and the M0
+    import-linter contract confirmed as a required check.
+  - **`CONTRIBUTING.md`** (Part 10 §4.3): the docs-are-the-constitution rule, the non-negotiables
+    (absence convention, completeness invariant, glossary), the add-a-format checklist, and the
+    Tier 0 dev loop — plus the two honesty clauses (golden-corpus contributions are the invited
+    path now; parser contributions are welcome-with-churn-warning until the SDK freezes at v1.0,
+    risk R12).
+  - **Issue + PR templates** (Part 10 §4.4–4.5, `.github/ISSUE_TEMPLATE/`,
+    `.github/PULL_REQUEST_TEMPLATE.md`): the reports-are-the-bug-report intake for incorrect
+    conversions and parse failures, a format-request template with a draft capability row, and a
+    PR checklist including the **license-grant checkbox** for contributed files.
+  - **Release:** version bumped to **0.2.0**; README "what v0.2 does / does not do" scope
+    statement updated honestly (the round-trip matrix, custom tolerance tables, and recovery
+    catalog now shipped). Tag + PyPI/GitHub publish remain the maintainer's manual step
+    (`docs/DECISIONS.md` D52).
 - **Report-completeness property test (v0.2 M10).** The single most important test in the repository
   (`docs/MASTER_SPEC.md` Part 8 §1.2), mechanically enforcing **P1** (no silent loss) and **P4** (no
   misfiled fabrication) over conversions that *have not happened yet* — the test-time generalization

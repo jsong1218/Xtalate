@@ -1,0 +1,54 @@
+name: "Bug: parse failure"
+description: A file failed to parse, or parsed with a wrong or missing ParseIssue.
+labels: ["bug", "parser"]
+body:
+  - type: textarea
+    id: file
+    attributes:
+      label: File (or minimal reproducer)
+      description: Paste or attach the file that fails to parse.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Full error envelope / ParseIssue list
+      description: >-
+        The complete error output (`docs/MASTER_SPEC.md` Part 3 §5, Part 6 §6) — codes,
+        messages, line numbers. Run with `--json` if using the CLI.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: producer
+    attributes:
+      label: What produced the file?
+      placeholder: "e.g. VASP 6.4, ASE 3.23, hand-written"
+    validations:
+      required: true
+  - type: dropdown
+    id: donate
+    attributes:
+      label: Can this file be donated to the golden corpus?
+      description: >-
+        If yes, we may add it as a regression fixture. This requires an explicit data
+        license (see below) — a file without one cannot be admitted.
+      options:
+        - "No"
+        - "Yes — I hold the rights and grant Apache-2.0 / a compatible license"
+        - "Yes — it is published open data (I'll give the license + attribution)"
+    validations:
+      required: true
+  - type: input
+    id: license
+    attributes:
+      label: License status of the file (if donating)
+      placeholder: "e.g. CC-BY-4.0 (Materials Project), CC0, my own work"
+  - type: input
+    id: versions
+    attributes:
+      label: Xtalate + schema versions
+      placeholder: "xtalate 0.2.0, schema 0.1.0"
+    validations:
+      required: true

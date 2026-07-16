@@ -8,20 +8,21 @@
 
 Every conversion produces a structured **Conversion Report** (what was preserved, dropped, or fabricated, and the reason for each) and an automatic **Validation Report** (the output re-parsed and diffed against the source to prove the report told the truth). The guiding rule is simple: *never silently lose scientific information.* If you diffed the input and output by hand, nothing should surprise you that Xtalate didn't already tell you about.
 
-## What v0.1 does
+## What v0.2 does
 
-- **Formats** (read *and* write): plain **XYZ**, **extended XYZ** (ASE-backed), **POSCAR**, **CONTCAR**.
+- **Formats** (read *and* write): plain **XYZ**, **extended XYZ** (ASE-backed), **POSCAR**, **CONTCAR** — including the POSCAR/CONTCAR **velocity block** (Cartesian + Direct).
 - **Inspect** — the Information Discovery Engine reports a ✓/✗ inventory of which canonical fields a file contains, each annotated with the format's capability.
 - **Convert** — a single spine, `Native File → Canonical Object → Native File`, driven by a per-format **Capability Matrix** that predicts loss *before* writing. No format ever talks to another format.
-- **Recover, explicitly** — when a target needs a field the source lacks (e.g. POSCAR requires a lattice) or can hold only one frame, Xtalate does not guess. You supply a preset choice (`--recover`) and it is recorded as an **Assumption**; with no choice, the conversion **refuses** rather than inventing data.
-- **Validate, always** — every completed conversion is re-parsed through the ordinary reader and diffed against the expected object under a numeric tolerance profile. There is no switch to skip it.
+- **Recover, explicitly** — the full Part 4 §3.3 scenario catalog: when a target needs a field the source lacks (a lattice, velocities, masses) or can hold only one frame, Xtalate does not guess. You supply a preset choice (`--recover`, e.g. `missing_velocities=maxwell_boltzmann`, `missing_masses=standard_masses`) and it is recorded as an **Assumption**; with no choice, the conversion **refuses** rather than inventing data. Fabrication is exactly what you asked for and nothing more — a Maxwell–Boltzmann draw is emitted raw, with no unrequested "convenience" transforms.
+- **Validate, always** — every completed conversion is re-parsed through the ordinary reader and diffed against the expected object under a numeric tolerance profile. There is no switch to skip it. Tolerance is one of the three named profiles (`default` / `strict` / `loose`) **or a custom table** you supply with `--tolerance-profile FILE` (YAML/JSON per-quantity overrides).
+- **Round-trip matrix** — beyond identity round-trips, a cross-format **two-hop** (`A→B→Canonical′`) and **three-hop** (`A→B→A`) test suite whose comparable subspace is computed from the Capability Matrix, catching parser/exporter asymmetry.
 
-## What v0.1 does *not* do (yet)
+## What v0.2 does *not* do (yet)
 
-- **No web service, REST API, or UI.** v0.1 is a pure-Python **library + CLI**. The FastAPI Service and Next.js Web UI are later versions (v0.5 / v0.6) and attach to this core without re-implementing it.
-- **Other Phase-1 formats — CIF, XDATCAR, ASE `.traj` — are not yet implemented.** They are v0.2+.
+- **No web service, REST API, or UI.** Xtalate is a pure-Python **library + CLI**. The FastAPI Service and Next.js Web UI are later versions (v0.5 / v0.6) and attach to this core without re-implementing it.
+- **Other Phase-1 formats — CIF, XDATCAR, ASE `.traj` — are not yet implemented.** They land through v0.3–v0.4.
 - **Recovery is preset-only.** There is no interactive prompt; the CLI takes choices up front or refuses (interactive recovery is Service/UI machinery).
-- **Tolerance profiles are the three named ones** (`default` / `strict` / `loose`). Custom tolerance tables are a later seam.
+- **Pre-1.0, a minor version may break.** The plugin SDK is not frozen until v1.0 (risk R12); the canonical schema is still `0.1.0`.
 
 ## Install
 
@@ -127,7 +128,15 @@ lint-imports                             # acyclic package layering (P2)
 pytest                                   # tests
 ```
 
-CI runs this matrix on Python 3.11 and 3.13.
+CI runs this matrix on Python 3.11 and 3.13, plus the golden-corpus governance suite
+(manifest schema + license, source hashes, `ATTRIBUTIONS.md` regeneration) and a coverage
+ratchet.
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). The invited path today is
+**golden-corpus contributions**: real, licensed sample files that harden the converter. Parser
+plugins are welcome too, with the caveat that the plugin SDK is not frozen until v1.0.
 
 ## License
 

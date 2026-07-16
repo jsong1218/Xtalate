@@ -1,0 +1,16 @@
+name: "General bug / docs issue"
+description: Anything that doesn't fit the other templates.
+labels: ["triage"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What's the issue? For a docs issue, link the doc/section.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Xtalate + schema versions (if applicable)
+      placeholder: "xtalate 0.2.0, schema 0.1.0"

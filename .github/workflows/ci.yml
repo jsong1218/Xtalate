@@ -41,8 +41,14 @@ jobs:
       - name: Mypy
         run: mypy
 
+      # Promoted to a required check in v0.2 M11 (Part 10 §1 deferral table, "earliest
+      # v0.2"): the import-linter contract from M0 confirmed as a blocking gate.
       - name: Import-graph lint (P2)
         run: lint-imports
 
-      - name: Pytest
+      # Pytest enforces the coverage ratchet (--cov-fail-under in pyproject addopts) and the
+      # golden-corpus governance suite: manifest schema + license, per-source sha256, the
+      # schema-version migration-chain load, and the ATTRIBUTIONS.md regeneration diff
+      # (Part 8 §3; v0.2 M11). A silent fixture edit or a lapsed attribution fails here.
+      - name: Pytest (unit + golden + governance, with coverage gate)
         run: pytest
