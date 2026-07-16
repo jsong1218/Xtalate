@@ -12,6 +12,13 @@ fixtures are the project's own work under Apache-2.0; third-party data (CC0 / CC
 contributor grants) carries its source attribution here and is surfaced in the top-level
 `NOTICE` file.
 
+## `contcar` / `co-md-restart`
+
+- **Source file:** `CONTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored CONTCAR (VASP-5 shape, Direct coords, CO diatomic) with a Cartesian velocity block
+
 ## `extxyz` / `co-in-cell`
 
 - **Source file:** `sample.extxyz`

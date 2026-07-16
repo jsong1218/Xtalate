@@ -32,7 +32,7 @@ pip install xtalate          # once published to PyPI
 pip install -e ".[dev]"
 ```
 
-Requires Python ≥ 3.11. The only scientific dependency is ASE (for extended XYZ); NumPy and pydantic power the canonical model.
+Requires Python ≥ 3.11. The only scientific dependency is ASE (for extended XYZ); NumPy and pydantic power the canonical model, and PyYAML parses custom tolerance-table files and golden-corpus manifests.
 
 ## Quickstart (CLI)
 

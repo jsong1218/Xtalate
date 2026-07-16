@@ -37,12 +37,13 @@ from xtalate.capabilities import CapabilityMatrix
 from xtalate.conversion.report import PreservedEntry, RemovedEntry, ReportWarning
 from xtalate.recovery import RecoveryError, UnresolvedScenario, available_options
 from xtalate.schema import CanonicalObject
+from xtalate.schema.paths import DERIVED_PATHS as _DERIVED_PATHS
 from xtalate.sdk import CapabilityLevel, FormatCapabilities
 
-# `atoms.atomic_numbers` is a derived mirror of `atoms.symbols` (Part 2 §3.3), not independent
-# source information, so it is excluded from the diff and the completeness invariant — a format
-# that writes symbols reconstitutes it. Provenance is already excluded upstream (presence §3.11).
-_DERIVED_PATHS = frozenset({"atoms.atomic_numbers"})
+# `_DERIVED_PATHS` (`atoms.atomic_numbers`) is a derived mirror of `atoms.symbols` (Part 2 §3.3),
+# not independent source information, so it is excluded from the diff and the completeness invariant
+# — a format that writes symbols reconstitutes it. Defined once in `schema.paths` (a schema fact).
+# Provenance is already excluded upstream (presence §3.11).
 
 # A target required-field that is absent on the source maps to the recovery scenario that can
 # supply it (Part 4 §3.3). Only `cell.lattice_vectors` (→ `missing_lattice`) is *required* by a v0.1

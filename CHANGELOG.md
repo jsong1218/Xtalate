@@ -8,6 +8,62 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ## [Unreleased]
 
+Post-`0.2.0` architectural-review pass: report-semantics and JSON-tolerance correctness fixes,
+golden-corpus governance hardening, a velocity-bearing corpus case, and internal de-duplication.
+Schema stays `0.1.0`; no normative report/field shapes change.
+
+### Added
+
+- **A CONTCAR-with-velocities golden case** (`tests/golden/contcar/co-md-restart/`). CONTCAR was a
+  round-trip *target* only; this synthetic case gives it a golden *source* with a Cartesian velocity
+  block, so velocities now flow through the identity, two-hop, and three-hop round-trip matrices and
+  the completeness invariant — previously the M8 velocity block was unit-tested but never exercised
+  as system-level round-trip content.
+- **Report-completeness property coverage for the fabricative recovery family**
+  (`tests/property/test_fabricative_recovery_completeness.py`). `missing_velocities`
+  (`zero_init`/`maxwell_boltzmann`) and the `maxwell_boltzmann → missing_masses` chain now flow
+  through the **independently re-derived** M10 properties, not just the runtime completeness
+  assertion — closing the gap where the opt-in fabricative path (never in the shared round-trip
+  presets) reached only the runtime guard.
+
+### Changed
+
+- **Golden-corpus governance hardened (`docs/DECISIONS.md` D54).** Every data file under
+  `tests/golden/` must now be claimed by a manifest — an unmanifested source/expectation, or the
+  `manifest.yml` misspelling, fails CI rather than silently bypassing the license/hash/schema
+  guarantees. Manifests gain a required `expected_sha256`, verified against `expected.canonical.json`
+  exactly as `sha256` guards the source. The schema-lag bound is now two-sided (an expectation
+  *ahead* of the current schema major is rejected as impossible, not just one too far behind). The
+  two schema-serialization fixtures moved from `tests/golden/schema/` to `tests/schema/fixtures/`, so
+  the `ATTRIBUTIONS.md` "every file is admitted only with a license" claim is now literally true.
+- **Internal de-duplication (no behavior change).** The validation status-precedence and
+  numeric-field→quantity tables are single-sourced in `xtalate.validation._shared`; the derived-path
+  exclusion in `xtalate.schema.paths.DERIVED_PATHS`; the UTC-timestamp helper in `xtalate._time`.
+  The single-frame reduction (re-index, `custom_per_frame` slice, `trajectory` drop) shared by
+  `frame_selection` recovery and `split_all` export is now one `CanonicalObject.single_frame` method,
+  so the two paths can never slice a reduced object differently. The M10 property harness deliberately
+  keeps its own independent copies (D50).
+
+### Fixed
+
+- **A fabricated (`supplied`) field is no longer also listed `preserved` in the D51 flow
+  (`docs/DECISIONS.md` D53).** When a `mixed` cell's only cell-bearing frame was dropped by
+  `frame_selection` and `missing_lattice` fabricated a replacement, the report listed
+  `cell.lattice_vectors`/`cell.pbc` in `preserved` **and** `removed` **and** `supplied` at once — the
+  stale pre-flight optimistic-preserve prediction was never struck once recovery falsified it. The
+  Conversion Engine now removes any `supplied` path from `preserved` (the two are mutually exclusive
+  per path), leaving the honest **removed + supplied** pair D51 always documented.
+  `absence_conformance` correspondingly exempts `supplied` paths from its must-be-absent check (a
+  fabricated replacement is expected to reappear), applied identically in the runtime guard and,
+  independently, in the M10 property re-derivation. Regression coverage in
+  `tests/conversion/test_frame_reduction_completeness.py`.
+- **JSON custom tolerance-table files with scientific-notation bounds now parse
+  (`docs/DECISIONS.md` D55).** `--tolerance-profile ./table.json` routed through `yaml.safe_load`,
+  whose YAML 1.1 float grammar reads dotless `1e-8` as the *string* `"1e-8"`, so a valid JSON table
+  (exactly what `json.dumps` emits) failed with a confusing "must be a number". The CLI now parses
+  `.json` files with `json.load` and other extensions with `yaml.safe_load`. Regression test in
+  `tests/cli/test_cli.py`.
+
 ## [0.2.0] — 2026-07-15
 
 v0.2 — **"trustworthy core complete."** The full Part 4 §3.3 recovery scenario catalog, the
@@ -84,34 +140,6 @@ supported set. Pre-1.0, a minor bump may still break — the plugin SDK is not f
     loss / silent fabrication, demonstrating the property catches the class of bug the runtime
     assertion does, without the runtime assertion in the loop. A non-vacuity guard asserts the
     stage-1 lattice actually exercises both `removed` and `supplied` across its pairs.
-
-### Fixed
-
-- **`frame_selection` no longer silently drops a per-frame field that lived only in a dropped
-  frame (v0.2 M10).** Found by the stage-2 property test. When `frame_selection` reduced a trajectory
-  to one structure, a per-frame path present *only* in the dropped frames (e.g. a `mixed`
-  `dynamics.constraints`) was eliminated with no `removed` entry — silent loss (**P1**) that the
-  runtime completeness invariant caught as a crash. `frame_selection` now records a `removed` entry
-  for every per-frame path the reduction eliminates (`recovery.engine._per_frame_paths_lost`), and
-  `conversion.engine` dedupes `removed` by path so a NONE-capability field flagged by both the
-  capability diff and the reduction is listed once. Regression fixtures in
-  `tests/conversion/test_frame_reduction_completeness.py`.
-- **`constraint_representation=drop_all` now records the removal of an explicitly-unconstrained
-  `constraints=[]` (v0.2 M10).** Also found by stage 2: an empty (present, §3.6) constraint list on
-  the retained frame was nulled out of the write plan with a zero dropped-count and recorded in
-  neither `preserved` nor `removed`. It is now reported `removed`.
-- **A `mixed` cell converted to a lattice-requiring target no longer crashes the exporter (v0.2
-  M10, D51).** A cell present in only some frames (`mixed`) whose cell-bearing frame `frame_selection`
-  dropped left the POSCAR/CONTCAR exporter with no lattice and raised `ValueError`, because
-  `missing_lattice` was detected only on a fully-`absent` required field. Pre-flight now offers
-  `missing_lattice` on any *not-uniformly-present* required field, and the Recovery Engine resolves it
-  **lazily** against the retained frame: fabricate a lattice for the cell-less frame (with a preset,
-  never overwriting a real cell), refuse cleanly (without one), or no-op when the retained frame kept
-  a real cell. The completeness invariant's P4 supplied-check is correspondingly relaxed to permit a
-  path that is *both* `removed` (the dropped frame's cell) and `supplied` (the fabricated
-  replacement) — honest, since both are reported. Regression fixtures in
-  `tests/conversion/test_frame_reduction_completeness.py`; the M10 stage-2 generator now exercises
-  `mixed` cells freely.
 
 - **Cross-format round-trip matrix suites + custom tolerance-table files (v0.2 M9).** v0.1 proved
   *identity* round-trips (`A → Canonical → A`); v0.2 adds the cross-format matrix that catches
@@ -208,8 +236,48 @@ supported set. Pre-1.0, a minor bump may still break — the plugin SDK is not f
     (`frame_selection` → `constraint_representation` → `missing_lattice`), replacing the hard-coded
     two-scenario branch (`docs/DECISIONS.md` D37).
 
+### Changed
+
+- **A PARTIAL constraint capability now triggers recovery instead of auto-preserving.** A source
+  carrying a non-empty `dynamics.constraints` list converted to a target that can represent only a
+  *subset* of constraint kinds (POSCAR: `selective_dynamics`) no longer silently keeps-what-fits:
+  *which* constraints survive changes the physics of a downstream relaxation, so it is now a recorded
+  `constraint_representation` choice, and such a conversion **refuses without an explicit preset**.
+  `NONE` capability stays ordinary bulk-reductive loss; `FULL` stays preserved; an empty
+  `constraints=[]` preserves normally (`docs/DECISIONS.md` D36; `MASTER_SPEC` Revision 1.8).
+- **Honest-loss annotations tightened.** An extXYZ `momenta` column now records the
+  "velocities converted" parse-note even when it is explicitly all-zero (a source stating the atoms
+  are at rest is information, §2 rule 3), and a CONTCAR velocity tail now annotates
+  `source_units["velocities"] = "angstrom/fs"` with a parse-note, rather than storing the block
+  with its unit left implicit.
+
 ### Fixed
 
+- **`frame_selection` no longer silently drops a per-frame field that lived only in a dropped
+  frame (v0.2 M10).** Found by the stage-2 property test. When `frame_selection` reduced a trajectory
+  to one structure, a per-frame path present *only* in the dropped frames (e.g. a `mixed`
+  `dynamics.constraints`) was eliminated with no `removed` entry — silent loss (**P1**) that the
+  runtime completeness invariant caught as a crash. `frame_selection` now records a `removed` entry
+  for every per-frame path the reduction eliminates (`recovery.engine._per_frame_paths_lost`), and
+  `conversion.engine` dedupes `removed` by path so a NONE-capability field flagged by both the
+  capability diff and the reduction is listed once. Regression fixtures in
+  `tests/conversion/test_frame_reduction_completeness.py`.
+- **`constraint_representation=drop_all` now records the removal of an explicitly-unconstrained
+  `constraints=[]` (v0.2 M10).** Also found by stage 2: an empty (present, §3.6) constraint list on
+  the retained frame was nulled out of the write plan with a zero dropped-count and recorded in
+  neither `preserved` nor `removed`. It is now reported `removed`.
+- **A `mixed` cell converted to a lattice-requiring target no longer crashes the exporter (v0.2
+  M10, D51).** A cell present in only some frames (`mixed`) whose cell-bearing frame `frame_selection`
+  dropped left the POSCAR/CONTCAR exporter with no lattice and raised `ValueError`, because
+  `missing_lattice` was detected only on a fully-`absent` required field. Pre-flight now offers
+  `missing_lattice` on any *not-uniformly-present* required field, and the Recovery Engine resolves it
+  **lazily** against the retained frame: fabricate a lattice for the cell-less frame (with a preset,
+  never overwriting a real cell), refuse cleanly (without one), or no-op when the retained frame kept
+  a real cell. The completeness invariant's P4 supplied-check is correspondingly relaxed to permit a
+  path that is *both* `removed` (the dropped frame's cell) and `supplied` (the fabricated
+  replacement) — honest, since both are reported. Regression fixtures in
+  `tests/conversion/test_frame_reduction_completeness.py`; the M10 stage-2 generator now exercises
+  `mixed` cells freely.
 - **XYZ-with-comments → extXYZ no longer false-fails validation.** The extXYZ exporter writes a
   carried-through comment key (`xyz:comment`) faithfully, but the parser re-namespaced *every*
   comment key under `extxyz:`, so the value round-tripped under a changed path
@@ -225,23 +293,9 @@ supported set. Pre-1.0, a minor bump may still break — the plugin SDK is not f
   analogue of `representable_constraint_kinds`): an unwritable per-frame key is now honestly reported
   `removed`, while `xyz:comment` is still preserved (and the identity round-trip still passes) via a
   per-key write plan (`docs/DECISIONS.md` D42).
-
-### Changed
-
-- **A PARTIAL constraint capability now triggers recovery instead of auto-preserving.** A source
-  carrying a non-empty `dynamics.constraints` list converted to a target that can represent only a
-  *subset* of constraint kinds (POSCAR: `selective_dynamics`) no longer silently keeps-what-fits:
-  *which* constraints survive changes the physics of a downstream relaxation, so it is now a recorded
-  `constraint_representation` choice, and such a conversion **refuses without an explicit preset**.
-  `NONE` capability stays ordinary bulk-reductive loss; `FULL` stays preserved; an empty
-  `constraints=[]` preserves normally (`docs/DECISIONS.md` D36; `MASTER_SPEC` Revision 1.8).
-
----
-
-Post-v0.1 correctness pass: eight defects found by a review that exercised the shipped code
-against real inputs. Each was reproduced, fixed, and pinned with a regression test.
-
-### Fixed
+The remaining eight entries are a **post-v0.1 correctness pass** — defects found by a review that
+exercised the shipped v0.1 code against real inputs, each reproduced, fixed, and pinned with a
+regression test, folded into this release:
 
 - **POSCAR/CONTCAR conversions no longer false-fail validation.** The scaling factor is now
   recorded as a `provenance` parse-note instead of `simulation.extra` (it is already folded into
@@ -266,14 +320,6 @@ against real inputs. Each was reproduced, fixed, and pinned with a regression te
 - **Invalid `--recover` presets** exit cleanly (usage error) instead of printing a traceback.
 - **POSCAR exporter rejects unrepresentable constraints** with a clear error instead of an
   `IndexError` when handed a non-`selective_dynamics` constraint.
-
-### Changed
-
-- **Honest-loss annotations tightened.** An extXYZ `momenta` column now records the
-  "velocities converted" parse-note even when it is explicitly all-zero (a source stating the atoms
-  are at rest is information, §2 rule 3), and a CONTCAR velocity tail now annotates
-  `source_units["velocities"] = "angstrom/fs"` with a parse-note, rather than storing the block
-  with its unit left implicit.
 
 ## [0.1.0] — 2026-07-10
 
@@ -313,5 +359,6 @@ byte of scientific information kept, dropped, or fabricated.
 - Recovery is preset-only; tolerance profiles are the three named ones (custom tables are later
   seams).
 
-[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jsong1218/Xtalate/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jsong1218/Xtalate/releases/tag/v0.1.0

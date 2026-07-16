@@ -1,0 +1,118 @@
+{
+  "schema_version": "0.1.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "C",
+          "O"
+        ],
+        "atomic_numbers": [
+          6,
+          8
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            3.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "masses": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            6.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            6.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            6.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.01,
+            0.0,
+            0.0
+          ],
+          [
+            -0.01,
+            0.0,
+            0.0
+          ]
+        ],
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": null,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": null,
+  "provenance": {
+    "source_filename": "CONTCAR",
+    "source_format": "contcar",
+    "source_units": {
+      "positions": "fractional",
+      "lattice_vectors": "angstrom",
+      "velocities": "angstrom/fs"
+    },
+    "original_coordinate_system": "fractional",
+    "parse_notes": [
+      "Direct coordinates converted to Cartesian using lattice matrix (§4).",
+      "pbc set to (true,true,true) per POSCAR format definition (format-defined, not assumed).",
+      "scaling factor folded into lattice vectors (§4); source value: 1.0",
+      "velocity block read from the CONTCAR tail in Å/fs (canonical unit; stored verbatim)."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-07-16T00:00:00Z",
+        "operation": "parse",
+        "source_format": "contcar",
+        "target_format": null,
+        "tool_version": "0.2.0",
+        "parser_version": "contcar-parser 0.2.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {
+      "poscar:comment": "CO molecule MD restart"
+    },
+    "custom_per_atom": {},
+    "custom_per_frame": {}
+  }
+}

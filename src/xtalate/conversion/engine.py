@@ -29,13 +29,11 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
 
-import numpy as np
-
 from xtalate import __version__
+from xtalate._time import utc_now as _utc_now
 from xtalate.capabilities import Registry
 from xtalate.conversion.parse_recovery import ParseRecovery
 from xtalate.conversion.preflight import (
@@ -63,6 +61,7 @@ from xtalate.schema import (
     TrajectoryMetadata,
     UserMetadata,
 )
+from xtalate.schema.paths import DERIVED_PATHS as _DERIVED_PATHS
 from xtalate.sdk import ParseIssue
 from xtalate.validation import ToleranceProfile, ValidationEngine, ValidationReport
 
@@ -76,7 +75,6 @@ _SIMULATION_FIELDS = (
     "temperature",
     "extra",
 )
-_DERIVED_PATHS = frozenset({"atoms.atomic_numbers"})
 
 
 class CompletenessInvariantError(AssertionError):
@@ -253,6 +251,16 @@ class ConversionEngine:
 
         preflight_preserved = [e for e in diff.preserved if e.path not in fabricated_at_parse]
         preserved = [*preflight_preserved, *recovery_preserved]
+        # A path the pre-flight optimistically predicted `preserved` but that recovery then
+        # *fabricated* (`supplied`) was not, in fact, carried from the source. The case is a `mixed`
+        # cell whose only cell-bearing frame `frame_selection` drops: pre-flight, seeing the cell
+        # present in *some* frame, optimistically predicts `cell.lattice_vectors` preserved, but the
+        # retained frame is cell-less and `missing_lattice` fills it (D51). `preserved` and
+        # `supplied` are mutually exclusive per path — genuine-retained vs fabricated — so a
+        # supplied path is struck from `preserved`; it stays in `removed` (the dropped original) and
+        # `supplied` (the fabricated replacement), the honest removed+supplied pair D51 promises.
+        _supplied_paths = {s.path for s in supplied}
+        preserved = [e for e in preserved if e.path not in _supplied_paths]
         # A per-frame path a capability-NONE target already routes to `diff.removed` can *also* be
         # reported lost by `frame_selection` when it lived only in dropped frames — one removal, two
         # detectors. Dedupe by path (the capability diff's entry wins, as the more fundamental
@@ -350,7 +358,7 @@ class ConversionEngine:
             outputs: list[bytes] = []
             validations: list[ValidationReport] = []
             for i in range(canonical_out.frame_count):
-                single = _single_frame_slice(canonical_out, i)
+                single = canonical_out.single_frame(i)
                 buffer = BytesIO()
                 exporter.export(single, buffer)
                 outputs.append(buffer.getvalue())
@@ -532,10 +540,6 @@ def _dedupe_removed(entries: list[RemovedEntry]) -> list[RemovedEntry]:
     return deduped
 
 
-def _utc_now() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _parse_warnings(issues: list[ParseIssue]) -> list[Any]:
     from xtalate.conversion.report import ReportWarning
 
@@ -582,19 +586,6 @@ def _is_split_all(assumptions: list[Assumption]) -> bool:
     one-file-per-frame export (Part 4 §3.3). The applied Assumption's ``scenario``/``choice`` is the
     sole signal; the recovered object still carries every frame."""
     return any(a.scenario == "frame_selection" and a.choice == "split_all" for a in assumptions)
-
-
-def _single_frame_slice(obj: CanonicalObject, i: int) -> CanonicalObject:
-    """A single-structure copy of ``obj`` holding only frame ``i`` (re-indexed 0), for one
-    ``split_all`` output file and its validation reference. Per-frame custom arrays are sliced to
-    the kept frame (Part 2 §3.10); ``trajectory`` is dropped (a lone frame is not a trajectory)."""
-    frame = obj.frames[i].model_copy(update={"index": 0})
-    um = obj.user_metadata
-    sliced: dict[str, Any] = {}
-    for key, val in um.custom_per_frame.items():
-        sliced[key] = val[i : i + 1] if isinstance(val, np.ndarray) else [val[i]]
-    new_um = um.model_copy(update={"custom_per_frame": sliced})
-    return obj.model_copy(update={"frames": [frame], "trajectory": None, "user_metadata": new_um})
 
 
 def _merge_split_validations(validations: list[ValidationReport]) -> ValidationReport:

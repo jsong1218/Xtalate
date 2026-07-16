@@ -159,7 +159,12 @@ def _object_with_cells(cell_frames: set[int], n_frames: int = 2) -> CanonicalObj
 def test_mixed_cell_dropped_frame_fabricates_lattice_with_preset(target: str) -> None:
     """The cell lives only in a frame ``frame_selection=first`` drops; the retained frame is
     cell-less. With a ``missing_lattice`` preset the conversion fabricates a lattice for the
-    retained frame (D51) and reports it ``supplied`` — before the fix the exporter crashed."""
+    retained frame (D51) and reports it ``supplied`` — before the fix the exporter crashed.
+
+    The fabricated path is reported as the honest **removed + supplied** pair — the dropped source
+    cell and its fabricated replacement — and is *not* also ``preserved``: pre-flight optimistically
+    predicts a ``mixed`` cell preserved, but the retained frame never carried it, so that prediction
+    is struck once recovery fabricates the replacement (D51 report-semantics fix)."""
     source = _object_with_cells({1})  # cell in dropped frame 1 only
     assert source.field_presence().status_of("cell.lattice_vectors") == "mixed"
 
@@ -170,8 +175,17 @@ def test_mixed_cell_dropped_frame_fabricates_lattice_with_preset(target: str) ->
         mode="permissive",
         recovery_choices=_PRESETS,
     )
-    assert result.report.status == "completed"
-    assert "cell.lattice_vectors" in {e.path for e in result.report.supplied}
+    report = result.report
+    assert report.status == "completed"
+    preserved = {e.path for e in report.preserved}
+    removed = {e.path for e in report.removed}
+    supplied = {e.path for e in report.supplied}
+    for path in ("cell.lattice_vectors", "cell.pbc"):
+        assert path in supplied, f"{path} must be reported supplied (fabricated replacement)"
+        assert path in removed, f"{path} must be reported removed (dropped source original)"
+        assert path not in preserved, f"{path} must NOT be preserved — it was fabricated, not kept"
+    # The retained frame's own genuine data is still preserved (and dropped for the other frame).
+    assert "atoms.positions" in preserved and "atoms.positions" in removed
     assert result.validation is not None and result.validation.status == "passed"
 
 

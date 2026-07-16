@@ -276,6 +276,33 @@ def test_convert_with_custom_tolerance_file(tmp_path: Path) -> None:
     assert json.loads(val.read_text())["tolerance_profile"]["name"] == "tight-forces"
 
 
+def test_convert_with_custom_tolerance_json_file(tmp_path: Path) -> None:
+    # M9 claims YAML *or* JSON tolerance tables (D48, one `yaml.safe_load` for both). The YAML half
+    # is covered above; this pins the JSON half so the claim does not ride solely on YAML being a
+    # JSON superset. A `.json` table with the same content must produce the same embedded profile.
+    table = tmp_path / "custom.json"
+    table.write_text(
+        json.dumps({"name": "tight-forces", "quantities": {"forces": {"warn": 1e-8, "fail": 1e-6}}})
+    )
+    val = tmp_path / "val.json"
+    code = main(
+        [
+            "convert",
+            CO_IN_CELL,
+            "--to",
+            "extxyz",
+            "-o",
+            str(tmp_path / "out.extxyz"),
+            "--tolerance-profile",
+            str(table),
+            "--validation-report",
+            str(val),
+        ]
+    )
+    assert code == EXIT_OK
+    assert json.loads(val.read_text())["tolerance_profile"]["name"] == "tight-forces"
+
+
 def test_validate_rethreshold_with_custom_tolerance_file(tmp_path: Path) -> None:
     # The M9 done-means: `--tolerance-profile ./custom.yaml` re-thresholds a stored report offline.
     val = tmp_path / "val.json"

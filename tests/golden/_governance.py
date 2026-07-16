@@ -7,18 +7,22 @@ running it as a script (``python tests/golden/_governance.py``) regenerates
 ``tests/golden/ATTRIBUTIONS.md`` in place so a contributor can refresh attributions
 locally exactly as CI checks them.
 
-Four guarantees are enforced here, each with a *why* rooted in the mission — a golden
+Five guarantees are enforced here, each with a *why* rooted in the mission — a golden
 corpus a stranger can extend without a maintainer in the loop, and that can never
 silently rot or lose an attribution:
 
 * **Schema.** Every ``manifest.yaml`` carries the required fields — including
-  ``origin.kind``, ``origin.license``, and ``sha256`` — with values in the declared
-  vocabularies. *No manifest, no license, no merge* (§3.2): a missing license is a hard
-  failure, not a warning, because redistributing an unlicensed third-party file is the
+  ``origin.kind``, ``origin.license``, ``sha256``, and ``expected_sha256`` — with values in
+  the declared vocabularies. *No manifest, no license, no merge* (§3.2): a missing license is a
+  hard failure, not a warning, because redistributing an unlicensed third-party file is the
   one corpus mistake that cannot be undone after the fact.
-* **Integrity.** The recorded ``sha256`` matches the source file's real digest, so a
-  silent fixture edit (which would silently invalidate its hand-verified expectation) is
-  impossible — the hash is the tripwire.
+* **Coverage.** *Every* data file under ``tests/golden/`` is claimed by a manifest, and a
+  ``manifest.yml`` misspelling is rejected — so a source + expectation dropped in without a
+  manifest cannot bypass the license / hash / schema guarantees. *No manifest, no merge*
+  generalized from manifests to files (§3.2).
+* **Integrity.** The recorded ``sha256`` matches the source file's real digest, *and*
+  ``expected_sha256`` matches the ``expected.canonical.json`` digest, so a silent edit to either
+  the fixture or its hand-verified expectation is impossible — the hashes are the tripwires.
 * **Schema-version sync (§3.3).** Every ``expected.canonical.json`` loads through the
   migration chain (currently the identity, since the schema is a single pre-1.0 version —
   see ``load_expected_through_migration_chain``), and no manifest's
@@ -98,6 +102,60 @@ def discover_cases(root: Path = GOLDEN_ROOT) -> list[GoldenCase]:
     return cases
 
 
+def find_misspelled_manifests(root: Path = GOLDEN_ROOT) -> list[str]:
+    """Manifests named ``manifest.yml`` (the ``.yml`` spelling ``discover_cases`` does *not* find).
+
+    A ``manifest.yml`` would silently bypass every governance guarantee — no license, no hash, no
+    schema check — because discovery globs only ``manifest.yaml`` (§3.2). Rather than accept both
+    spellings (two names for one thing invites drift), the suite fails and asks for the rename."""
+    return [
+        p.relative_to(root).as_posix() for p in sorted(root.rglob("manifest.yml")) if p.is_file()
+    ]
+
+
+# Files under the corpus that are governance *scaffolding*, not corpus data: the aggregate
+# attribution file and the manifests are the machinery that does the claiming, never the claimed.
+# ``.py`` modules (this one, the test, ``__init__``) and dotfiles / ``__pycache__`` (OS or VCS
+# local cruft) are likewise never committed corpus data.
+_NON_DATA_NAMES = frozenset({"ATTRIBUTIONS.md", "manifest.yaml", "manifest.yml"})
+
+
+def corpus_data_files(root: Path = GOLDEN_ROOT) -> list[Path]:
+    """Every *data* file under the corpus — the source and expectation fixtures a manifest must
+    claim. Excludes the governance scaffolding (``*.py``, ``ATTRIBUTIONS.md``, the manifests) and
+    dotfiles / ``__pycache__`` (OS or VCS local cruft, never committed corpus data)."""
+    out: list[Path] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        rel_parts = path.relative_to(root).parts
+        if any(part.startswith(".") or part == "__pycache__" for part in rel_parts):
+            continue
+        if path.suffix == ".py" or path.name in _NON_DATA_NAMES:
+            continue
+        out.append(path)
+    return out
+
+
+def find_unclaimed_files(root: Path = GOLDEN_ROOT) -> list[str]:
+    """Corpus data files no manifest claims as its ``source_file`` or ``expected_canonical`` — the
+    *no manifest, no merge* rule (§3.2) generalized from manifests to files.
+
+    ``discover_cases`` validates every manifest, but nothing stopped a contributor from dropping a
+    third-party source + ``expected.canonical.json`` into ``tests/golden/`` *without* a manifest,
+    bypassing the license / hash / schema-version guarantees entirely. This makes any such orphan a
+    hard failure that names it. Returns manifest-root-relative paths, sorted."""
+    claimed: set[Path] = set()
+    for case in discover_cases(root):
+        claimed.add(case.source_path.resolve())
+        claimed.add(case.expected_path.resolve())
+    return sorted(
+        p.relative_to(root).as_posix()
+        for p in corpus_data_files(root)
+        if p.resolve() not in claimed
+    )
+
+
 def validate_manifest_schema(case: GoldenCase) -> None:
     """Enforce the manifest schema (Part 8 §3.1–§3.2). Raises ``ManifestError``.
 
@@ -117,6 +175,7 @@ def validate_manifest_schema(case: GoldenCase) -> None:
         "expected_canonical",
         "canonical_schema_version",
         "sha256",
+        "expected_sha256",
         "origin",
     )
     for key in required:
@@ -125,6 +184,9 @@ def validate_manifest_schema(case: GoldenCase) -> None:
 
     if not _SHA256_RE.match(str(data["sha256"])):
         raise ManifestError(f"{where}: 'sha256' must be 64 lowercase hex chars")
+
+    if not _SHA256_RE.match(str(data["expected_sha256"])):
+        raise ManifestError(f"{where}: 'expected_sha256' must be 64 lowercase hex chars")
 
     if not _SEMVER_RE.match(str(data["canonical_schema_version"])):
         raise ManifestError(
@@ -183,6 +245,25 @@ def verify_source_hash(case: GoldenCase) -> None:
         )
 
 
+def verify_expected_hash(case: GoldenCase) -> None:
+    """Fail if the ``expected.canonical.json`` digest disagrees with the manifest.
+
+    The expectation is the *hand-verified truth anchor* (§3), yet a silent edit that keeps it
+    schema-valid would pass the migration-chain load unnoticed and quietly redefine what the
+    conversion is supposed to produce. The ``expected_sha256`` tripwire closes that gap — the same
+    discipline as the source ``sha256``: an intentional expectation change must update the hash."""
+
+    recorded = str(case.data["expected_sha256"])
+    actual = sha256_of(case.expected_path)
+    if actual != recorded:
+        raise ManifestError(
+            f"{case.rel_manifest}: expected_sha256 mismatch for "
+            f"'{case.data['expected_canonical']}'\n"
+            f"  manifest: {recorded}\n  actual:   {actual}\n"
+            "  If the expectation change is intentional, update the manifest expected_sha256."
+        )
+
+
 def _major(version: str) -> int:
     return int(version.split(".", 1)[0])
 
@@ -213,7 +294,10 @@ def load_expected_through_migration_chain(case: GoldenCase) -> CanonicalObject:
 
 
 def check_schema_version_lag(case: GoldenCase) -> None:
-    """Fail if the manifest's schema version is more than one *major* behind current (§3.3)."""
+    """Fail if the manifest's schema version is more than one *major* behind current, or ahead of
+    current at all (§3.3). Expectations may lag one major (they get migrated forward); one authored
+    against a *future* major cannot have been validated against a schema that does not yet exist, so
+    it is a mistake, not a lag."""
 
     declared = str(case.data["canonical_schema_version"])
     lag = _major(SCHEMA_VERSION) - _major(declared)
@@ -221,6 +305,11 @@ def check_schema_version_lag(case: GoldenCase) -> None:
         raise ManifestError(
             f"{case.rel_manifest}: canonical_schema_version {declared!r} is {lag} major "
             f"versions behind current {SCHEMA_VERSION!r} (max 1) — regenerate the expectation."
+        )
+    if lag < 0:
+        raise ManifestError(
+            f"{case.rel_manifest}: canonical_schema_version {declared!r} is ahead of current "
+            f"{SCHEMA_VERSION!r} — an expectation cannot be authored against a future schema major."
         )
 
 

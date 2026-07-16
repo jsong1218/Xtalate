@@ -22,36 +22,20 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any, Protocol
 
 import numpy as np
 
+from xtalate._time import utc_now
 from xtalate.capabilities import Registry
 from xtalate.schema import CanonicalObject
 from xtalate.sdk import ParseError, ParseIssue
+from xtalate.validation._shared import AGGREGATE as _AGGREGATE
+from xtalate.validation._shared import NUMERIC_FIELDS as _NUMERIC_FIELDS
+from xtalate.validation._shared import RANK as _RANK
 from xtalate.validation.report import CheckResult, ValidationReport
 from xtalate.validation.tolerance import ToleranceProfile
-
-# Aggregate-status precedence: the worst individual check wins (Part 5 §3). `skipped` does not
-# worsen the aggregate (a legitimately-inapplicable check is not a defect).
-_RANK = {"pass": 0, "skipped": 0, "warn": 1, "fail": 2}
-_AGGREGATE = {0: "passed", 1: "passed_with_warnings", 2: "failed"}
-
-# The `numeric_field_fidelity` catalog (Part 5 §2): canonical path -> (quantity, kind). `per_atom`
-# fields are reordered by the exporter's permutation map before comparison; `scalar`/`array` fields
-# are not. `atoms.masses` and `frame.time` round out the eight fields the check names.
-_NUMERIC_FIELDS: list[tuple[str, str, str]] = [
-    ("dynamics.velocities", "velocities", "per_atom"),
-    ("dynamics.forces", "forces", "per_atom"),
-    ("electronic.total_energy", "energy", "scalar"),
-    ("electronic.stress", "stress", "array"),
-    ("electronic.charges", "charges", "per_atom"),
-    ("electronic.magnetic_moments", "magnetic_moments", "per_atom"),
-    ("atoms.masses", "masses", "per_atom"),
-    ("frame.time", "time", "scalar"),
-]
 
 
 class _Entry(Protocol):
@@ -163,7 +147,7 @@ class ValidationEngine:
         return ValidationReport(
             report_id=str(uuid.uuid4()),
             conversion_report_id=report.report_id,
-            created_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            created_at=utc_now(),
             status=_AGGREGATE[worst],
             checks=checks,
             tolerance_profile=tolerance.as_dict(),  # type: ignore[arg-type]
@@ -477,9 +461,17 @@ def _check_metadata(expected: CanonicalObject, canonical: CanonicalObject) -> Ch
 def _check_absence(canonical: CanonicalObject, report: ConversionReportView) -> CheckResult:
     # A path that is *also* preserved (e.g. atoms.positions dropped for the non-selected frames but
     # kept for the retained one) is validated by frame_count, not by asserting it absent — asserting
-    # positions absent would false-fail. Only genuinely-removed paths are checked here.
+    # positions absent would false-fail. A path that is *also* supplied is likewise exempt: recovery
+    # dropped the source original (removed) and fabricated a replacement (supplied), so it *should*
+    # reappear in the output — a `mixed` cell whose cell-bearing frame frame_selection drops, then
+    # missing_lattice fills (D51). Only genuinely-removed-and-not-replaced paths are checked here.
     preserved_paths = {e.path for e in report.preserved}
-    to_check = [e.path for e in report.removed if e.path not in preserved_paths]
+    supplied_paths = {e.path for e in report.supplied}
+    to_check = [
+        e.path
+        for e in report.removed
+        if e.path not in preserved_paths and e.path not in supplied_paths
+    ]
     presence = canonical.field_presence()
     violations = [p for p in to_check if presence.status_of(p) != "absent"]
     status = "fail" if violations else "pass"

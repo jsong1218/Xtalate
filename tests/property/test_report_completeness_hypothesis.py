@@ -41,6 +41,12 @@ _PRESETS = {**FIXED_PRESETS, "constraint_representation": {"choice": "drop_all",
 @settings(max_examples=200, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(source=_strategies.canonical_objects())
 def test_report_is_complete_over_random_objects(source: CanonicalObject) -> None:
+    # The source format is fixed to `extxyz` deliberately, not swept. The completeness invariant is
+    # a function of the *object's* presence map against the target's write capability; the source id
+    # only labels the object's origin in the report. extXYZ is the near-superset read format (the
+    # widest FULL read surface of the four), so pinning it lets a randomized object carry *any*
+    # field-combination without a narrow source capability masking paths — maximizing what each
+    # property must account for. Sweeping the source id would add cost without widening coverage.
     for target in _TARGETS:
         result = _ENGINE.convert(
             source,
