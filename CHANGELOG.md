@@ -23,10 +23,13 @@ Schema stays `0.1.0`; no normative report/field shapes change.
   stream; the extXYZ parser/exporter gain byte-identical streaming paths (the parser reads the file
   one frame block at a time); and `ConversionEngine.convert_stream` runs a recovery-free conversion
   with peak memory `∝ chunk size × atoms`, not frame count, producing the **identical Conversion
-  Report** to the materialized `convert` (standing rule 3). The milestone gate,
+  Report** to the materialized `convert` (standing rule 3). Validation is chunk-aware too
+  (`validation.streaming.validate_stream`): expected and re-parsed-output frames are diffed
+  frame-pairwise over streams, so `convert_stream` is sub-linear end to end and its `ValidationReport`
+  is byte-identical to the batch engine's. The milestone gate,
   `tests/streaming/test_streaming_memory.py`, proves the sub-linear-in-frames property against a
-  committed deterministic generator. (Remaining M12 work — full streaming validation, the streaming
-  recovery interplay, and mid-stream error wiring — builds on this spine; see D56.)
+  committed deterministic generator. (Remaining M12 work — the streaming recovery interplay and
+  mid-stream error wiring — builds on this spine; see D56.)
 - **A CONTCAR-with-velocities golden case** (`tests/golden/contcar/co-md-restart/`). CONTCAR was a
   round-trip *target* only; this synthetic case gives it a golden *source* with a Cartesian velocity
   block, so velocities now flow through the identity, two-hop, and three-hop round-trip matrices and

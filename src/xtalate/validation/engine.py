@@ -548,11 +548,22 @@ def _content_matches(expected: CanonicalObject, canonical: CanonicalObject, path
     everything else by equality. Only ``user_metadata.custom_global['key']`` scalars are compared in
     v0.1 (the only metadata any v0.1 exporter writes); other planned paths pass on presence alone,
     the honest floor until a format writes richer metadata (**P6**)."""
+    return _content_matches_values(
+        expected.user_metadata.custom_global, canonical.user_metadata.custom_global, path
+    )
+
+
+def _content_matches_values(
+    expected_global: dict[str, Any], actual_global: dict[str, Any], path: str
+) -> bool:
+    """The custom_global content comparison of ``_content_matches`` over the two ``custom_global``
+    dicts directly — so the streaming validator (which holds the two stream *headers*, not two whole
+    objects) applies the identical rule (M12)."""
     key = _custom_global_key(path)
     if key is None:
         return True
-    ev = expected.user_metadata.custom_global.get(key)
-    gv = canonical.user_metadata.custom_global.get(key)
+    ev = expected_global.get(key)
+    gv = actual_global.get(key)
     if isinstance(ev, str) and isinstance(gv, str):
         return " ".join(ev.split()) == " ".join(gv.split())
     return bool(ev == gv)

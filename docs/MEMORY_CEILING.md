@@ -31,9 +31,11 @@ change behind the same interface (P6), never a change to the guarantee's shape.
   e.g. `→ POSCAR`) fall back to the materialized `convert`, whose peak *is* `∝ frame_count`. Making
   the recovery interplay chunk-aware (`frame_selection` single-pass, `bounding_box` on the selected
   frame) is the remaining M12 conversion work (DECISIONS.md D56).
-- **Validation** on the streaming path currently re-parses the written output (bounded by output
-  size, not folded into the single input pass); full frame-pairwise streaming validation is M12
-  deliverable 4.
+- **Validation** on the streaming path is itself chunk-aware (`validation.streaming.validate_stream`,
+  M12 deliverable 4): the expected object is re-read and filtered on the fly, the output is re-parsed
+  as a stream, and the two are diffed frame-pairwise — so validation holds one frame pair resident
+  and `convert_stream` stays sub-linear end to end. It produces the byte-identical `ValidationReport`
+  the batch engine would (standing rule 3).
 
 ## Measured validation (M12 proof fixture)
 

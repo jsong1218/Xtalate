@@ -207,6 +207,13 @@ class PresenceAccumulator:
         self._custom_per_atom_keys = list(custom_per_atom)
         self._header_seen = True
 
+    @property
+    def frame_count(self) -> int:
+        """Number of frames folded in so far — the streaming analogue of
+        ``CanonicalObject.frame_count`` for a consumer (e.g. the ``frame_count`` validation check)
+        that needs the total without a materialized object."""
+        return self._n_frames
+
     def observe_frame(self, frame: Frame, per_frame_custom_keys: Iterable[str] = ()) -> None:
         """Fold one streamed frame into the per-frame present counts and the per-frame custom-key
         union. ``per_frame_custom_keys`` names the ``custom_per_frame`` keys this frame carries a

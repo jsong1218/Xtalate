@@ -65,7 +65,7 @@ from xtalate.schema import (
     UserMetadata,
 )
 from xtalate.schema.paths import DERIVED_PATHS as _DERIVED_PATHS
-from xtalate.sdk import CapabilityLevel, ParseIssue, StreamFrame, StreamHeader
+from xtalate.sdk import CapabilityLevel, ExporterPlugin, ParseIssue, StreamFrame, StreamHeader
 from xtalate.validation import ToleranceProfile, ValidationEngine, ValidationReport
 
 _SIMULATION_FIELDS = (
@@ -404,14 +404,19 @@ class ConversionEngine:
         Eligible iff both plugins stream **and** the target can never *require recovery*: no
         ``max_frames`` cap (would trigger ``frame_selection``), no recovery-able required field that
         could be absent (only the universally-present ``atoms.*`` are allowed), and no PARTIAL
-        constraint capability (would trigger ``constraint_representation``). These are all static
-        capability facts, decided before a byte is read — a conversion that *might* need a recovery
-        choice mid-stream (which the streaming path does not yet resolve — M12 cut line) falls back
-        to the materialized ``convert``. extXYZ→extXYZ, the trajectory pass-through, qualifies."""
+        constraint capability (would trigger ``constraint_representation``). The exporter must also
+        **preserve atom order** (it does not override ``atom_permutation``): streaming validation
+        assumes an identity permutation map, so a reordering streaming target is excluded until one
+        exists to thread a map. These are all static capability facts, decided before a byte is read
+        — a conversion that *might* need a recovery choice mid-stream (which the streaming path does
+        not yet resolve — M12 cut line) falls back to the materialized ``convert``. extXYZ→extXYZ,
+        the trajectory pass-through, qualifies."""
         parser = self._registry.get_parser(source_format_id)
         exporter = self._registry.get_exporter(target_format_id)
         if not (parser.supports_streaming() and exporter.supports_streaming()):
             return False
+        if type(exporter).atom_permutation is not ExporterPlugin.atom_permutation:
+            return False  # a reordering exporter needs a permutation map streaming does not thread
         matrix = self._registry.capability_matrix()
         caps = matrix.get(target_format_id, "write")
         if caps.max_frames is not None:
@@ -448,10 +453,11 @@ class ConversionEngine:
         to what ``convert`` would produce (standing rule 3), proven by the report-equality tests.
 
         Only ``streaming_eligible`` pairs are accepted; anything that could need a recovery choice
-        raises ``ValueError`` (use ``convert``). ``validate`` re-parses the written ``output``
-        through the ordinary Validation Engine when the stream is seekable; full *streaming*
-        validation (frame-pairwise, deliverable 4) is the documented M12 follow-up, so this re-parse
-        is bounded by the output size, not folded into the single input pass.
+        raises ``ValueError`` (use ``convert``). When ``validate`` is set and both the source and
+        output streams are seekable, the conversion is validated **frame-pairwise over streams**
+        (``validation.streaming``) — the expected side re-reads and filters the source on the fly,
+        the actual side re-parses the output as a stream — so validation is memory-bounded too and
+        the whole path stays sub-linear in frames (M12 deliverable 4).
         """
         if not self.streaming_eligible(source_format_id, target_format_id):
             raise ValueError(
@@ -541,50 +547,68 @@ class ConversionEngine:
         _assert_completeness_presence(report, presence)
 
         validation: ValidationReport | None = None
-        if validate and hasattr(output, "seek") and hasattr(output, "read"):
+        if validate and _seekable(output) and _seekable(source_stream):
             tolerance = (
                 tolerance_profile
                 if isinstance(tolerance_profile, ToleranceProfile)
                 else ToleranceProfile.named(tolerance_profile)
             )
-            output.seek(0)
-            output_bytes = output.read()
-            # The expected object is the materialized stream filtered through the write plan — the
-            # canonical′ the Validation Engine diffs against (Part 5 §1). Materializing re-reads
-            # the just-written output only; streaming validation (frame-pairwise) is the M12 D4
-            # follow-up.
-            expected, _ = self._materialized_expected(
-                parser, source_stream, write_plan, source_filename, target_format_id
-            )
-            validation = self._validation.validate(
-                expected=expected,
-                output=output_bytes,
+            validation = self._validate_streamed(
+                parser=parser,
+                source_stream=source_stream,
+                source_filename=source_filename,
+                output=output,
+                write_plan=write_plan,
                 target_format_id=target_format_id,
-                conversion_report=report,
+                report=report,
                 tolerance=tolerance,
+                schema_version=presence.schema_version,
             )
         return ConversionResult(
             report=report, output=None, canonical_out=None, validation=validation
         )
 
-    def _materialized_expected(
+    def _validate_streamed(
         self,
+        *,
         parser: Any,
         source_stream: Any,
-        write_plan: set[str],
         source_filename: str | None,
+        output: Any,
+        write_plan: set[str],
         target_format_id: str,
-    ) -> tuple[CanonicalObject, list[ParseIssue]]:
-        """Rebuild the expected object (``canonical′``) for streaming validation by re-reading the
-        source stream and applying the write plan — the same filtering ``convert`` performs, so the
-        two paths validate against the identical reference."""
-        from xtalate.sdk.streaming import materialize
+        report: ConversionReport,
+        tolerance: ToleranceProfile,
+        schema_version: str,
+    ) -> ValidationReport:
+        """Validate a streamed conversion frame-pairwise (M12 deliverable 4), holding one frame pair
+        resident. The *expected* side re-reads the source and filters each frame through the write
+        plan on the fly (the ``canonical′`` reference of Part 5 §1, unmaterialized); the *actual*
+        side re-parses the just-written output as a stream. Both are diffed by
+        ``validation.streaming.validate_stream``, which produces the identical ``ValidationReport``
+        the batch engine would (standing rule 3)."""
+        from xtalate.sdk.streaming import FrameStream
+        from xtalate.validation.streaming import validate_stream
 
         source_stream.seek(0)
-        restream = parser.parse_stream(source_stream, filename=source_filename)
-        source_obj, issues = materialize(restream)
-        expected = _apply_write_plan(source_obj, write_plan, target_format_id)
-        return expected, issues
+        src_restream = parser.parse_stream(source_stream, filename=source_filename)
+        expected_header = _filter_stream_header(src_restream.header, write_plan)
+
+        def _expected_frames() -> Any:
+            for sf in src_restream.frames():
+                yield _filter_stream_frame(sf, write_plan)
+
+        expected = FrameStream(expected_header, _expected_frames())
+        output.seek(0)
+        return validate_stream(
+            self._registry,
+            expected=expected,
+            output_stream=output,
+            target_format_id=target_format_id,
+            conversion_report=report,
+            tolerance=tolerance,
+            expected_schema_version=schema_version,
+        )
 
     def _refuse(
         self,
@@ -882,6 +906,15 @@ def _apply_write_plan(
 _UNIVERSAL_FIELDS = frozenset({"atoms.symbols", "atoms.positions", "atoms.atomic_numbers"})
 
 
+def _seekable(stream: Any) -> bool:
+    """Whether a binary stream can be re-read from the start — required to re-parse the source
+    (expected side) and the just-written output (actual side) for streaming validation (M12)."""
+    try:
+        return bool(stream.seekable())
+    except AttributeError:
+        return hasattr(stream, "seek") and hasattr(stream, "read")
+
+
 def _capability_write_plan(caps: Any) -> set[str]:
     """The write plan implied by a target's capabilities alone (M12): every declared leaf path the
     target can express (FULL or PARTIAL). Presence-independent — an absent field filters to ``None``
@@ -901,15 +934,27 @@ def _filter_stream_frame(sf: StreamFrame, plan: set[str]) -> StreamFrame:
 
 def _filter_stream_header(header: StreamHeader, plan: set[str]) -> StreamHeader:
     """Apply the write plan to the eager stream header (M12): keep only the object-level metadata
-    the target can write, mirroring ``_apply_write_plan``'s ``UserMetadata``/container handling so
-    the streamed output carries exactly what the materialized path would."""
+    the target can write, mirroring ``_apply_write_plan``'s ``simulation``/``UserMetadata`` handling
+    exactly — so the filtered header used as the streaming-validation *expected* side carries the
+    identical presence to the materialized ``canonical′``, not just the identical exported bytes."""
+    simulation = None
+    if header.simulation is not None:
+        kept = {
+            name: getattr(header.simulation, name)
+            for name in _SIMULATION_FIELDS
+            if f"simulation.{name}" in plan
+        }
+        simulation = SimulationMetadata(**kept) if kept else None
+    # Mirror _apply_write_plan: keep the trajectory container (multi-frame semantics) but drop the
+    # timestep value when the plan excludes it.
+    trajectory = header.trajectory
+    if trajectory is not None and "trajectory.timestep" not in plan:
+        trajectory = TrajectoryMetadata(timestep=None)
     return StreamHeader(
         schema_version=header.schema_version,
         provenance=header.provenance,
-        # The trajectory container carries only multi-frame semantics (its timestep is dropped by
-        # the report, never written by a streaming exporter), so it passes through untouched.
-        trajectory=header.trajectory,
-        simulation=header.simulation,
+        trajectory=trajectory,
+        simulation=simulation,
         tags=header.tags if "user_metadata.tags" in plan else [],
         annotations=header.annotations if "user_metadata.annotations" in plan else {},
         custom_global=_kept_custom(header.custom_global, "user_metadata.custom_global", plan),
