@@ -39,6 +39,7 @@ from xtalate.conversion.parse_recovery import ParseRecovery
 from xtalate.conversion.preflight import (
     PreflightDiff,
     build_preflight,
+    build_preflight_from_presence,
     on_demand_fabricative_scenarios,
 )
 from xtalate.conversion.report import (
@@ -57,12 +58,21 @@ from xtalate.schema import (
     Dynamics,
     Electronic,
     Frame,
+    PresenceAccumulator,
+    PresenceMap,
     SimulationMetadata,
     TrajectoryMetadata,
     UserMetadata,
 )
 from xtalate.schema.paths import DERIVED_PATHS as _DERIVED_PATHS
-from xtalate.sdk import ParseIssue
+from xtalate.sdk import (
+    CapabilityLevel,
+    ExporterPlugin,
+    ParseError,
+    ParseIssue,
+    StreamFrame,
+    StreamHeader,
+)
 from xtalate.validation import ToleranceProfile, ValidationEngine, ValidationReport
 
 _SIMULATION_FIELDS = (
@@ -395,6 +405,229 @@ class ConversionEngine:
             report=report, output=output, canonical_out=canonical_out, validation=validation
         )
 
+    def streaming_eligible(self, source_format_id: str, target_format_id: str) -> bool:
+        """Whether a ``(source, target)`` pair can take the streaming path (M12).
+
+        Eligible iff both plugins stream **and** the target can never *require recovery*: no
+        ``max_frames`` cap (would trigger ``frame_selection``), no recovery-able required field that
+        could be absent (only the universally-present ``atoms.*`` are allowed), and no PARTIAL
+        constraint capability (would trigger ``constraint_representation``). The exporter must also
+        **preserve atom order** (it does not override ``atom_permutation``): streaming validation
+        assumes an identity permutation map, so a reordering streaming target is excluded until one
+        exists to thread a map. These are all static capability facts, decided before a byte is read
+        — a conversion that *might* need a recovery choice mid-stream (which the streaming path does
+        not yet resolve — M12 cut line) falls back to the materialized ``convert``. extXYZ→extXYZ,
+        the trajectory pass-through, qualifies."""
+        parser = self._registry.get_parser(source_format_id)
+        exporter = self._registry.get_exporter(target_format_id)
+        if not (parser.supports_streaming() and exporter.supports_streaming()):
+            return False
+        if type(exporter).atom_permutation is not ExporterPlugin.atom_permutation:
+            return False  # a reordering exporter needs a permutation map streaming does not thread
+        matrix = self._registry.capability_matrix()
+        caps = matrix.get(target_format_id, "write")
+        if caps.max_frames is not None:
+            return False
+        if any(r not in _UNIVERSAL_FIELDS for r in caps.required_fields):
+            return False
+        constraints = matrix.field_capability(target_format_id, "write", "dynamics.constraints")
+        return constraints.level != CapabilityLevel.PARTIAL
+
+    def convert_stream(
+        self,
+        source_stream: Any,
+        *,
+        source_format_id: str,
+        target_format_id: str,
+        output: Any,
+        source_filename: str | None = None,
+        source_sha256: str | None = None,
+        target_filename: str | None = None,
+        mode: str = "permissive",
+        tolerance_profile: str | ToleranceProfile = "default",
+        acknowledge_loss: bool = False,
+        validate: bool = True,
+    ) -> ConversionResult:
+        """Stream a recovery-free conversion end to end with memory bounded by one frame (M12).
+
+        A single pass over ``source_stream`` (an open binary stream) that (a) accumulates field
+        presence, (b) applies the capability write plan to each frame and writes it straight to
+        ``output`` through the streaming exporter, and (c) counts frames/constraints — so peak
+        memory tracks the resident frame, never the trajectory length (Part 4 §6, P6). The
+        Conversion Report is then built from the *accumulated* presence via the same
+        ``build_preflight_from_presence`` the materialized path uses, and the completeness invariant
+        (Part 4 §2) is asserted over that accumulated presence — so the streamed report is identical
+        to what ``convert`` would produce (standing rule 3), proven by the report-equality tests.
+
+        Only ``streaming_eligible`` pairs are accepted; anything that could need a recovery choice
+        raises ``ValueError`` (use ``convert``). When ``validate`` is set and both the source and
+        output streams are seekable, the conversion is validated **frame-pairwise over streams**
+        (``validation.streaming``) — the expected side re-reads and filters the source on the fly,
+        the actual side re-parses the output as a stream — so validation is memory-bounded too and
+        the whole path stays sub-linear in frames (M12 deliverable 4).
+        """
+        if not self.streaming_eligible(source_format_id, target_format_id):
+            raise ValueError(
+                f"{source_format_id!r} → {target_format_id!r} is not streaming-eligible "
+                "(a streaming plugin pair with a recovery-free target is required); use convert()"
+            )
+        parser = self._registry.get_parser(source_format_id)
+        exporter = self._registry.get_exporter(target_format_id)
+        matrix = self._registry.capability_matrix()
+        caps = matrix.get(target_format_id, "write")
+        write_plan = _capability_write_plan(caps)
+
+        stream = parser.parse_stream(source_stream, filename=source_filename)
+        header = stream.header
+        acc = PresenceAccumulator(header.schema_version)
+        acc.observe_header(
+            trajectory=header.trajectory,
+            simulation=header.simulation,
+            tags=header.tags,
+            annotations=header.annotations,
+            custom_global=header.custom_global,
+            custom_per_atom=header.custom_per_atom,
+        )
+        counters = {"frames": 0}
+
+        def _planned_frames() -> Any:
+            for sf in stream.frames():
+                present_keys = [k for k, v in sf.per_frame_custom.items() if v is not None]
+                acc.observe_frame(sf.frame, present_keys)
+                counters["frames"] += 1
+                yield _filter_stream_frame(sf, write_plan)
+
+        # The exporter writes each planned frame as it is yielded — the single streamed pass. A
+        # ``ParseError`` raised by the source mid-stream (frame k corrupt) propagates through here
+        # (Part 3 §5): frames 0..k-1 may already be in ``output``, so that partial write is dropped
+        # and the error re-raised — ``convert_stream`` returns *no* ConversionResult on failure, and
+        # a half-written output can never masquerade as a completed conversion (M12 deliverable 5).
+        # (The opt-in ``truncate_at_last_valid_frame`` *recovery* — keep the good prefix and proceed
+        # — lands with M13's XDATCAR, the streaming format that raises that recoverable hint; extXYZ
+        # streaming raises a non-recoverable error here.)
+        filtered_header = _filter_stream_header(header, write_plan)
+        try:
+            exporter.export_stream(filtered_header, _planned_frames(), output)
+        except ParseError:
+            _discard_partial_output(output)
+            raise
+
+        presence = acc.result()
+        diff = build_preflight_from_presence(
+            presence,
+            frame_count=counters["frames"],
+            has_constraints=False,  # constraint targets are ineligible; no frame carries a subset
+            matrix=matrix,
+            target_format_id=target_format_id,
+        )
+        preserved = [*diff.preserved, *diff.pending]
+        removed = diff.removed
+        warnings = [*diff.warnings, *_parse_warnings(stream.issues)]
+
+        if mode == "strict" and removed and not acknowledge_loss:
+            report = self._assemble(
+                stage="final",
+                status="refused",
+                mode=mode,
+                source_schema_version=presence.schema_version,
+                source_format_id=source_format_id,
+                source_filename=source_filename,
+                source_sha256=source_sha256,
+                target_format_id=target_format_id,
+                target_filename=target_filename,
+                preserved=preserved,
+                removed=removed,
+                warnings=diff.warnings,
+                refusal={
+                    "code": "UNACKNOWLEDGED_LOSS",
+                    "message": "strict mode: reductive loss must be acknowledged "
+                    "(acknowledge_loss=True) before this conversion will proceed",
+                    "unresolved_scenarios": [],
+                },
+            )
+            _assert_completeness_presence(report, presence)
+            return ConversionResult(report=report, output=None, canonical_out=None, validation=None)
+
+        report = self._assemble(
+            stage="final",
+            status="completed",
+            mode=mode,
+            source_schema_version=presence.schema_version,
+            source_format_id=source_format_id,
+            source_filename=source_filename,
+            source_sha256=source_sha256,
+            target_format_id=target_format_id,
+            target_filename=target_filename,
+            preserved=preserved,
+            removed=removed,
+            warnings=warnings,
+        )
+        _assert_completeness_presence(report, presence)
+
+        validation: ValidationReport | None = None
+        if validate and _seekable(output) and _seekable(source_stream):
+            tolerance = (
+                tolerance_profile
+                if isinstance(tolerance_profile, ToleranceProfile)
+                else ToleranceProfile.named(tolerance_profile)
+            )
+            validation = self._validate_streamed(
+                parser=parser,
+                source_stream=source_stream,
+                source_filename=source_filename,
+                output=output,
+                write_plan=write_plan,
+                target_format_id=target_format_id,
+                report=report,
+                tolerance=tolerance,
+                schema_version=presence.schema_version,
+            )
+        return ConversionResult(
+            report=report, output=None, canonical_out=None, validation=validation
+        )
+
+    def _validate_streamed(
+        self,
+        *,
+        parser: Any,
+        source_stream: Any,
+        source_filename: str | None,
+        output: Any,
+        write_plan: set[str],
+        target_format_id: str,
+        report: ConversionReport,
+        tolerance: ToleranceProfile,
+        schema_version: str,
+    ) -> ValidationReport:
+        """Validate a streamed conversion frame-pairwise (M12 deliverable 4), holding one frame pair
+        resident. The *expected* side re-reads the source and filters each frame through the write
+        plan on the fly (the ``canonical′`` reference of Part 5 §1, unmaterialized); the *actual*
+        side re-parses the just-written output as a stream. Both are diffed by
+        ``validation.streaming.validate_stream``, which produces the identical ``ValidationReport``
+        the batch engine would (standing rule 3)."""
+        from xtalate.sdk.streaming import FrameStream
+        from xtalate.validation.streaming import validate_stream
+
+        source_stream.seek(0)
+        src_restream = parser.parse_stream(source_stream, filename=source_filename)
+        expected_header = _filter_stream_header(src_restream.header, write_plan)
+
+        def _expected_frames() -> Any:
+            for sf in src_restream.frames():
+                yield _filter_stream_frame(sf, write_plan)
+
+        expected = FrameStream(expected_header, _expected_frames())
+        output.seek(0)
+        return validate_stream(
+            self._registry,
+            expected=expected,
+            output_stream=output,
+            target_format_id=target_format_id,
+            conversion_report=report,
+            tolerance=tolerance,
+            expected_schema_version=schema_version,
+        )
+
     def _refuse(
         self,
         *,
@@ -445,7 +678,6 @@ class ConversionEngine:
         stage: str,
         status: str,
         mode: str,
-        source: CanonicalObject,
         source_format_id: str,
         source_filename: str | None,
         source_sha256: str | None,
@@ -454,10 +686,16 @@ class ConversionEngine:
         preserved: list[Any],
         removed: list[Any],
         warnings: list[Any],
+        source: CanonicalObject | None = None,
+        source_schema_version: str | None = None,
         supplied: list[SuppliedEntry] | None = None,
         assumptions: list[Assumption] | None = None,
         refusal: dict[str, Any] | None = None,
     ) -> ConversionReport:
+        # The report's source schema_version comes from a materialized source when one exists
+        # (the ordinary path), or is passed directly by the streaming path (which has no whole
+        # object). Exactly one is supplied.
+        schema_version = source.schema_version if source is not None else source_schema_version
         return ConversionReport(
             report_id=str(uuid.uuid4()),
             stage=stage,  # type: ignore[arg-type]
@@ -468,7 +706,7 @@ class ConversionEngine:
                 "format_id": source_format_id,
                 "filename": source_filename,
                 "sha256": source_sha256,
-                "schema_version": source.schema_version,
+                "schema_version": schema_version,
             },
             target={"format_id": target_format_id, "filename": target_filename},
             preserved=list(preserved),
@@ -680,6 +918,80 @@ def _apply_write_plan(
     )
 
 
+# The canonical fields a format may declare required that are *always* present in any object
+# (schema-required, or the derived mirror), so a required-field recovery can never fire for them —
+# the streaming eligibility gate (Part 4 §3.3, M12).
+_UNIVERSAL_FIELDS = frozenset({"atoms.symbols", "atoms.positions", "atoms.atomic_numbers"})
+
+
+def _seekable(stream: Any) -> bool:
+    """Whether a binary stream can be re-read from the start — required to re-parse the source
+    (expected side) and the just-written output (actual side) for streaming validation (M12)."""
+    try:
+        return bool(stream.seekable())
+    except AttributeError:
+        return hasattr(stream, "seek") and hasattr(stream, "read")
+
+
+def _discard_partial_output(output: Any) -> None:
+    """Best-effort clear of a partially-written output stream after a mid-stream failure (Part 3 §5,
+    M12): truncate to empty so no half-written frames linger. A stream that cannot be truncated
+    (a non-seekable sink) is left as-is — the caller still gets no ConversionResult, so nothing
+    presents the partial bytes as a completed conversion; this just clears debris when it can."""
+    try:
+        output.seek(0)
+        output.truncate()
+    except (AttributeError, OSError, ValueError):
+        pass
+
+
+def _capability_write_plan(caps: Any) -> set[str]:
+    """The write plan implied by a target's capabilities alone (M12): every declared leaf path the
+    target can express (FULL or PARTIAL). Presence-independent — an absent field filters to ``None``
+    regardless — so it yields the *same* ``canonical′`` per frame as the materialized path's
+    presence-derived ``diff.write_plan`` (a plan entry for an absent field is simply never
+    exercised). This is what lets a streamed frame be filtered before global presence is seen."""
+    return {path for path, cap in caps.fields.items() if cap.level != CapabilityLevel.NONE}
+
+
+def _filter_stream_frame(sf: StreamFrame, plan: set[str]) -> StreamFrame:
+    """Apply the write plan to one streamed frame (M12): filter the scientific ``Frame`` exactly as
+    ``_filter_frame`` does, and drop per-frame custom entries the target cannot write — mirroring
+    ``_kept_custom`` so a streamed ``canonical′`` frame equals the materialized one."""
+    per_frame = _kept_custom(sf.per_frame_custom, "user_metadata.custom_per_frame", plan)
+    return StreamFrame(frame=_filter_frame(sf.frame, plan), per_frame_custom=per_frame)
+
+
+def _filter_stream_header(header: StreamHeader, plan: set[str]) -> StreamHeader:
+    """Apply the write plan to the eager stream header (M12): keep only the object-level metadata
+    the target can write, mirroring ``_apply_write_plan``'s ``simulation``/``UserMetadata`` handling
+    exactly — so the filtered header used as the streaming-validation *expected* side carries the
+    identical presence to the materialized ``canonical′``, not just the identical exported bytes."""
+    simulation = None
+    if header.simulation is not None:
+        kept = {
+            name: getattr(header.simulation, name)
+            for name in _SIMULATION_FIELDS
+            if f"simulation.{name}" in plan
+        }
+        simulation = SimulationMetadata(**kept) if kept else None
+    # Mirror _apply_write_plan: keep the trajectory container (multi-frame semantics) but drop the
+    # timestep value when the plan excludes it.
+    trajectory = header.trajectory
+    if trajectory is not None and "trajectory.timestep" not in plan:
+        trajectory = TrajectoryMetadata(timestep=None)
+    return StreamHeader(
+        schema_version=header.schema_version,
+        provenance=header.provenance,
+        trajectory=trajectory,
+        simulation=simulation,
+        tags=header.tags if "user_metadata.tags" in plan else [],
+        annotations=header.annotations if "user_metadata.annotations" in plan else {},
+        custom_global=_kept_custom(header.custom_global, "user_metadata.custom_global", plan),
+        custom_per_atom=_kept_custom(header.custom_per_atom, "user_metadata.custom_per_atom", plan),
+    )
+
+
 def _kept_custom(container: dict[str, Any], container_path: str, plan: set[str]) -> dict[str, Any]:
     """Filter a ``custom_*`` container against the write_plan (Part 4 §1). A container-level plan
     entry keeps the whole container (a FULL/PARTIAL target that writes any key — e.g. extXYZ);
@@ -735,6 +1047,15 @@ def _assert_completeness(
     source: CanonicalObject,
     fabricated_at_parse: frozenset[str] | set[str] = frozenset(),
 ) -> None:
+    """The completeness invariant (Part 4 §2) over a materialized source (review §4.5)."""
+    _assert_completeness_presence(report, source.field_presence(), fabricated_at_parse)
+
+
+def _assert_completeness_presence(
+    report: ConversionReport,
+    presence: PresenceMap,
+    fabricated_at_parse: frozenset[str] | set[str] = frozenset(),
+) -> None:
     """The completeness invariant (Part 4 §2), asserted at finalization (review §4.5).
 
     Every source-present/`mixed` path (bar the derived mirror) must appear in `preserved` ∪
@@ -742,12 +1063,14 @@ def _assert_completeness(
     A violation is silent loss (P1) or silent fabrication (P4) — the two defects this whole
     project exists to make impossible — so it raises unconditionally, never merely logs.
 
+    Driven by a ``PresenceMap`` (not a whole object) so the streaming Conversion path asserts it
+    over its *accumulated* presence, identically to the materialized path (M12; standing rule 3).
+
     ``fabricated_at_parse`` names paths a *parse-time* recovery fabricated (e.g. ``atoms.symbols``
     via ``missing_species``). They are present in ``source`` (the object is already recovered) but
     were absent from the original file, so they are treated as absent-at-source: excluded from the
     silent-loss sweep (they belong in `supplied`, not `preserved`) and permitted in `supplied`
     (their fabrication is honest, not fabrication-of-existing-data)."""
-    presence = source.field_presence()
     accounted = {e.path for e in report.preserved} | {e.path for e in report.removed}
     for entry in presence.entries:
         if (

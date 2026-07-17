@@ -36,7 +36,7 @@ from typing import Any
 from xtalate.capabilities import CapabilityMatrix
 from xtalate.conversion.report import PreservedEntry, RemovedEntry, ReportWarning
 from xtalate.recovery import RecoveryError, UnresolvedScenario, available_options
-from xtalate.schema import CanonicalObject
+from xtalate.schema import CanonicalObject, PresenceMap
 from xtalate.schema.paths import DERIVED_PATHS as _DERIVED_PATHS
 from xtalate.sdk import CapabilityLevel, FormatCapabilities
 
@@ -105,14 +105,39 @@ def build_preflight(
     source: CanonicalObject, matrix: CapabilityMatrix, target_format_id: str
 ) -> PreflightDiff:
     """Compute the pre-flight diff of ``source`` against the target's write capabilities."""
+    return build_preflight_from_presence(
+        source.field_presence(),
+        frame_count=source.frame_count,
+        has_constraints=_has_constraints(source),
+        matrix=matrix,
+        target_format_id=target_format_id,
+    )
+
+
+def build_preflight_from_presence(
+    presence: PresenceMap,
+    *,
+    frame_count: int,
+    has_constraints: bool,
+    matrix: CapabilityMatrix,
+    target_format_id: str,
+) -> PreflightDiff:
+    """The presence-driven core of the pre-flight diff (M12).
+
+    ``build_preflight`` reads exactly three things from the source object — its ``field_presence``,
+    its ``frame_count``, and whether any frame carries constraints — and this function is that
+    logic expressed over those three inputs directly. The streaming Conversion path accumulates all
+    three single-pass (``schema.PresenceAccumulator`` + frame/constraint counters) and calls here,
+    so a streamed conversion and a materialized one produce the *identical* diff — and therefore the
+    identical Conversion Report (standing rule 3: streamed and materialized reports never diverge).
+    """
     caps = matrix.get(target_format_id, "write")
-    presence = source.field_presence()
     diff = PreflightDiff()
 
     # A non-empty source constraint list against a PARTIAL target routes to the
     # `constraint_representation` scenario instead of auto-Preserve (M7). An empty `constraints=[]`
     # ("explicitly unconstrained", Part 2 §3.6) carries no subset to choose and preserves normally.
-    constraints_need_recovery = _has_constraints(source) and (
+    constraints_need_recovery = has_constraints and (
         matrix.field_capability(target_format_id, "write", _CONSTRAINTS).level
         == CapabilityLevel.PARTIAL
     )
@@ -176,11 +201,11 @@ def build_preflight(
     # Recovery triggers (Part 3 §4.3 rules 3–4, Part 4 §3.3). Detection order does not fix
     # resolution order — the Recovery Engine resolves in its own dependency order (frame_selection
     # before the bounding box computed on the selected frame).
-    if caps.max_frames is not None and source.frame_count > caps.max_frames:
+    if caps.max_frames is not None and frame_count > caps.max_frames:
         diff.unresolved.append(
             UnresolvedScenario(
                 scenario="frame_selection",
-                detail=f"{source.frame_count} frames → target holds at most {caps.max_frames}",
+                detail=f"{frame_count} frames → target holds at most {caps.max_frames}",
                 options=_scenario_options("frame_selection", caps),
             )
         )

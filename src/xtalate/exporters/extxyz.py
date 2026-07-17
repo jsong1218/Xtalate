@@ -11,6 +11,7 @@ report as ``removed`` (Part 4); this exporter simply writes what the object hold
 from __future__ import annotations
 
 import io
+from collections.abc import Iterator
 from typing import Any, BinaryIO
 
 import numpy as np
@@ -25,6 +26,8 @@ from xtalate.sdk import (
     ExporterPlugin,
     FieldCapability,
     FormatCapabilities,
+    StreamFrame,
+    StreamHeader,
 )
 
 FORMAT_ID = "extxyz"
@@ -44,12 +47,51 @@ class ExtxyzExporter(ExporterPlugin):
     version = "0.1.0"
 
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
-        images = [self._frame_to_atoms(canonical, frame) for frame in canonical.frames]
+        custom_per_atom = canonical.user_metadata.custom_per_atom
+        per_frame = canonical.user_metadata.custom_per_frame
+        images = [
+            self._atoms_from(
+                frame,
+                custom_per_atom,
+                {
+                    key: (values[frame.index] if frame.index < len(values) else None)
+                    for key, values in per_frame.items()
+                },
+            )
+            for frame in canonical.frames
+        ]
         buf = io.StringIO()
         ase_write(buf, images, format="extxyz")
         stream.write(buf.getvalue().encode("utf-8"))
 
-    def _frame_to_atoms(self, canonical: CanonicalObject, frame: Frame) -> Atoms:
+    def supports_streaming(self) -> bool:
+        return True
+
+    def export_stream(
+        self, header: StreamHeader, frames: Iterator[StreamFrame], stream: BinaryIO
+    ) -> None:
+        """Write each frame's extXYZ block as it arrives (M12), holding at most one frame resident.
+
+        ASE serialises each ``Atoms`` as an independent extXYZ block (count, comment, atom rows), so
+        writing images one at a time and concatenating is byte-identical to a single whole-list
+        write — the streamed output matches ``export`` exactly. The object-level ``custom_per_atom``
+        columns ride on the header and apply to every frame; the per-frame comment metadata rides on
+        each ``StreamFrame``."""
+        for sf in frames:
+            atoms = self._atoms_from(sf.frame, header.custom_per_atom, sf.per_frame_custom)
+            buf = io.StringIO()
+            ase_write(buf, atoms, format="extxyz")
+            stream.write(buf.getvalue().encode("utf-8"))
+
+    def _atoms_from(
+        self,
+        frame: Frame,
+        custom_per_atom: dict[str, Any],
+        per_frame_custom: dict[str, Any],
+    ) -> Atoms:
+        """Rebuild one ASE ``Atoms`` from a canonical frame plus its object-level per-atom columns
+        and this frame's per-frame comment metadata. Shared by whole-file ``export`` and streaming
+        ``export_stream`` so the two paths can never write a frame differently."""
         atoms = Atoms(
             symbols=list(frame.atoms.symbols),
             positions=np.asarray(frame.atoms.positions, dtype=float),
@@ -64,13 +106,12 @@ class ExtxyzExporter(ExporterPlugin):
             atoms.set_velocities(v_ase)
 
         # Object-level per-atom carry-through columns apply to every frame (Part 2 §3.10).
-        for key, values in canonical.user_metadata.custom_per_atom.items():
+        for key, values in custom_per_atom.items():
             atoms.new_array(_strip(key), np.asarray(values))
 
-        # Per-frame comment key-values (+ stress) for this frame index.
+        # Per-frame comment key-values (+ stress) for this frame.
         stress = None
-        for key, per_frame in canonical.user_metadata.custom_per_frame.items():
-            value = per_frame[frame.index] if frame.index < len(per_frame) else None
+        for key, value in per_frame_custom.items():
             if value is None:
                 continue
             if key == _STRESS_KEY:
