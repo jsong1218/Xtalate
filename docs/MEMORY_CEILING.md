@@ -56,7 +56,13 @@ Representative local run (2,500 frames × 50 atoms, ~9 MB source; macOS):
 The streaming path's trajectory-attributable memory is a small **single-digit-percent** fraction of
 the materialized path's on the same input — the sub-linear-in-frames property made numeric. Both
 paths produce **byte-identical output** (the test asserts this): chunking changes memory, never
-bytes (standing rule 3). The gate's assertions are deliberately loose relative to this observed
-gap (it requires only that materialization's peak exceed streaming's by a clear margin and that
-streaming's trajectory memory be well under a third of the materialized path's), so it is robust to
-CI noise while still failing loudly if streaming ever regresses to materialize-then-write.
+bytes (standing rule 3).
+
+The gate compares **deltas over the interpreter+imports baseline**, not absolute peaks: on shared CI
+runners that baseline (~150 MB) dominates the peak, so the streaming path can add ~0 measurable RSS
+while materialization adds tens of MB, yet the two *absolute* peaks then sit within ~25% of each
+other — an absolute-peak ratio would falsely fail. The two assertions are therefore (1)
+materialization's delta clears a generous tens-of-MB floor (it holds the whole trajectory) and (2)
+streaming's delta is at most half of it. Both are deliberately loose relative to the observed gap, so
+the gate is robust to CI noise while still failing loudly if streaming ever regresses to
+materialize-then-write (which would push its delta up toward materialization's).
