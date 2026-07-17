@@ -33,6 +33,27 @@ contributor grants) carries its source attribution here and is surfaced in the t
 - **License:** Apache-2.0
 - **Source:** MASTER_SPEC Part 2 §8.2 worked example (VASP-5 POSCAR, Direct coords, NaCl-like)
 
+## `xdatcar` / `nacl-md-fixed-cell`
+
+- **Source file:** `XDATCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M13 (VASP-5 XDATCAR, fixed-cell form, NaCl-like, 3 configurations)
+
+## `xdatcar` / `si-npt-variable-cell`
+
+- **Source file:** `XDATCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M13 (VASP-5 XDATCAR, NpT per-frame-cell form, Si, 3 configurations)
+
+## `xdatcar` / `si-single-configuration`
+
+- **Source file:** `XDATCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M13 (VASP-5 XDATCAR, degenerate single-configuration trajectory, Si)
+
 ## `xyz` / `water-traj`
 
 - **Source file:** `water_traj.xyz`

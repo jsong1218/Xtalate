@@ -1,0 +1,17 @@
+case: si-single-configuration
+format_id: xdatcar
+source_file: XDATCAR
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "32f3f1856b23a392f2768f98894a717559799ab7572aa62b8008bc62ca744afb"
+expected_sha256: "ccfe89dfadab6948c37380e2f3420bdddd03dbb55f064d4095fe7123b9f5dd50"
+origin:
+  kind: synthetic
+  source: "Hand-written for M13 (VASP-5 XDATCAR, degenerate single-configuration trajectory, Si)"
+  license: "Apache-2.0"
+notes: >-
+  The degenerate case: a trajectory format holding exactly one configuration. Pins the Part 2
+  §3.2 rule that a lone frame is a *structure*, not a trajectory — trajectory is None here, not
+  a container with timestep = None — so a one-frame XDATCAR and a POSCAR of the same structure
+  agree on the canonical shape. This is the boundary where an off-by-one in the streaming
+  frame loop or in the materializer's trajectory-dropping rule would show up.

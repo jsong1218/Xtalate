@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import BinaryIO
 
+from xtalate.exporters._common import group_by_element
 from xtalate.schema import CanonicalObject
 from xtalate.sdk import (
     CapabilityLevel,
@@ -56,22 +57,9 @@ def _selective_dynamics_mask(constraints: list, n_atoms: int) -> list[list[bool]
     return mask
 
 
-def _grouping(symbols: list[str]) -> tuple[list[str], list[int], list[int]]:
-    """Group atoms by element in first-occurrence order (POSCAR requires one element's atoms to be
-    contiguous). Returns ``(order, permutation, counts)`` where ``order`` is the element sequence,
-    ``permutation[i]`` is the source index written at output position *i* (the Part 5 permutation
-    map), and ``counts`` is the per-element atom count. Used by both ``export`` (to write the file)
-    and ``atom_permutation`` (to report the map), so the two can never disagree."""
-    order: list[str] = []
-    groups: dict[str, list[int]] = {}
-    for i, sym in enumerate(symbols):
-        if sym not in groups:
-            groups[sym] = []
-            order.append(sym)
-        groups[sym].append(i)
-    permutation = [i for sym in order for i in groups[sym]]
-    counts = [len(groups[sym]) for sym in order]
-    return order, permutation, counts
+#: POSCAR requires one element's atoms to be contiguous; the VASP family shares that rule, so the
+#: grouping lives in ``exporters._common`` and XDATCAR writes its species line the same way.
+_grouping = group_by_element
 
 
 class PoscarExporter(ExporterPlugin):
@@ -195,6 +183,13 @@ class PoscarExporter(ExporterPlugin):
                 "user_metadata.custom_per_atom": none,
                 "user_metadata.custom_per_frame": none,
             },
+            # The two keys the exporter actually writes back. Without this, a PARTIAL
+            # `custom_global` made pre-flight predict *any* custom_global key would survive, while
+            # `export` wrote only these two — so a foreign key (an `xdatcar:comment` from an
+            # XDATCAR source, say) was reported preserved and then dropped: a silent loss the
+            # report actively denied (P1, P5). Naming the writable set routes anything else to
+            # `removed` in pre-flight, where the user can see it (Part 3 §4.2).
+            writable_custom_keys={"user_metadata.custom_global": [_COMMENT_KEY, _PREDICTOR_KEY]},
             max_frames=1,
             required_fields=["atoms.symbols", "atoms.positions", "cell.lattice_vectors"],
             allows_open_boundaries=False,  # POSCAR cells are fully periodic (Part 3 §4.2).

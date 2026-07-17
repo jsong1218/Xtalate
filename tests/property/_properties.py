@@ -65,8 +65,16 @@ def completeness_violations(
     # recorded `removed` (original dropped, replacement fabricated — a `mixed` cell whose cell-frame
     # frame_selection dropped, then re-supplied by missing_lattice). Excluding `removed` paths
     # leaves the P4 check catching only fabrication over *kept* source data.
+    #
+    # A `mixed` path is excluded for the same reason (M13): `mixed` means the field is present in
+    # some frames and absent in others, so filling only the absent frames is not fabrication over
+    # kept data — it is the partial outcome a multi-frame lattice-requiring target (XDATCAR) makes
+    # reachable, honestly reported as `preserved` *and* `supplied` for the one path. The property
+    # keeps its force on *uniform* presence, where supplying a field that every frame already has
+    # can only mean overwriting genuine data.
     removed_paths = {e.path for e in report.removed}
-    source_present = set(presence.present_paths()) - set(fabricated_at_parse) - removed_paths
+    uniformly_present = {e.path for e in presence.entries if e.status == "present"}
+    source_present = uniformly_present - set(fabricated_at_parse) - removed_paths
     assumption_ids = {a.id for a in report.assumptions}
     for supplied in report.supplied:
         if supplied.path in source_present:

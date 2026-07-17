@@ -260,17 +260,25 @@ class ConversionEngine:
         write_plan = set(diff.write_plan) | plan_additions
 
         preflight_preserved = [e for e in diff.preserved if e.path not in fabricated_at_parse]
-        preserved = [*preflight_preserved, *recovery_preserved]
         # A path the pre-flight optimistically predicted `preserved` but that recovery then
         # *fabricated* (`supplied`) was not, in fact, carried from the source. The case is a `mixed`
         # cell whose only cell-bearing frame `frame_selection` drops: pre-flight, seeing the cell
         # present in *some* frame, optimistically predicts `cell.lattice_vectors` preserved, but the
-        # retained frame is cell-less and `missing_lattice` fills it (D51). `preserved` and
-        # `supplied` are mutually exclusive per path — genuine-retained vs fabricated — so a
-        # supplied path is struck from `preserved`; it stays in `removed` (the dropped original) and
+        # retained frame is cell-less and `missing_lattice` fills it (D51). So a supplied path is
+        # struck from the pre-flight *prediction*; it stays in `removed` (the dropped original) and
         # `supplied` (the fabricated replacement), the honest removed+supplied pair D51 promises.
+        #
+        # The strike applies to the prediction only, never to `recovery_preserved` (M13): those
+        # entries are the Recovery Engine's *record of what it actually did*, not a forecast. When a
+        # `mixed` cell reaches a multi-frame lattice-requiring target (XDATCAR), `missing_lattice`
+        # both carries the genuine lattices and fabricates the missing ones, and says so with a
+        # PreservedField *and* a SuppliedField for the one path. Striking that would re-hide the
+        # half of the truth the record exists to state.
         _supplied_paths = {s.path for s in supplied}
-        preserved = [e for e in preserved if e.path not in _supplied_paths]
+        preserved = [
+            *[e for e in preflight_preserved if e.path not in _supplied_paths],
+            *recovery_preserved,
+        ]
         # A per-frame path a capability-NONE target already routes to `diff.removed` can *also* be
         # reported lost by `frame_selection` when it lived only in dropped frames — one removal, two
         # detectors. Dedupe by path (the capability diff's entry wins, as the more fundamental
@@ -1089,8 +1097,16 @@ def _assert_completeness_presence(
     # case (a `mixed` cell whose cell-bearing frame frame_selection drops, then missing_lattice
     # rebuilds a lattice for the retained frame). Both facts are in the report, so it is not silent;
     # excluding `removed` paths keeps the P4 check catching only fabrication over *kept* data.
+    #
+    # `mixed` paths are likewise excluded (M13). `mixed` *means* some frames have the field and some
+    # do not, so a fabrication that fills only the absent frames is by definition not fabrication
+    # over kept data — it is the partial case XDATCAR introduced, reported as `preserved` (the
+    # genuine frames) *and* `supplied` (the filled ones). The check keeps its teeth where the risk
+    # actually lives: a *uniformly* present path can never need supplying, so supplying one is
+    # always overwrite of genuine data and still raises.
     removed_paths = {e.path for e in report.removed}
-    source_present = set(presence.present_paths()) - set(fabricated_at_parse) - removed_paths
+    uniformly_present = {e.path for e in presence.entries if e.status == "present"}
+    source_present = uniformly_present - set(fabricated_at_parse) - removed_paths
     assumption_ids = {a.id for a in report.assumptions}
     for supplied in report.supplied:
         if supplied.path in source_present:

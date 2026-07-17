@@ -463,8 +463,17 @@ def _apply_missing_lattice(
     records an ``Assumption`` **and** two ``SuppliedField`` entries — the cell did not exist in
     those frames, so it is filed as created, never carried (**P4**). A frame that already carries a
     real cell (a ``mixed`` source whose cell-bearing frame survived) is left untouched — fabricating
-    over it would be silent overwrite of genuine data. ``pbc`` is set to (T,T,T): POSCAR, the only
-    v0.1 lattice-requiring target, is fully periodic by definition (Part 3 §3 n.3)."""
+    over it would be silent overwrite of genuine data. ``pbc`` is set to (T,T,T): every
+    lattice-requiring target is fully periodic by definition (Part 3 §3 n.3).
+
+    **Partial fabrication (M13).** When the target keeps *many* frames (XDATCAR is the first such
+    lattice-requiring target — POSCAR and CONTCAR cap at one frame, so ``frame_selection`` always
+    reduced a ``mixed`` cell to a single frame before this ran), a ``mixed`` source ends with both
+    outcomes at once: the cell-bearing frames carry their genuine lattice, the cell-less ones get a
+    fabricated one. That is reported as it happened — ``PreservedField`` for the genuine half,
+    ``SuppliedField`` for the fabricated half — rather than collapsed to whichever single label the
+    single-frame case used to make sufficient. Reporting only ``supplied`` would deny that real
+    lattices were carried; reporting only ``preserved`` would hide a fabrication (P1, P4)."""
     code = _choice_code(choice, scenario)
     params = choice.get("parameters", {}) or {}
     pbc = (True, True, True)
@@ -506,39 +515,76 @@ def _apply_missing_lattice(
                 f"missing_lattice 'bounding_box' needs a non-negative padding_ang, got {padding!r}"
             )
         padding = float(padding)
-        # Box is computed on the first cell-less frame's positions; a `mixed` source is always
-        # reduced to a single frame by frame_selection before this runs, so that frame is the one
-        # cell-less frame the box is built for (no v0.1 pair reaches here multi-frame).
+        # Box is computed on the *first cell-less frame's* positions and, when the target keeps many
+        # frames (XDATCAR — M13), applied to every cell-less frame along with the same rigid shift.
+        # One shift for the whole trajectory is the honest choice: it preserves every interatomic
+        # distance *and* all relative motion between frames, where a per-frame box would silently
+        # re-centre each frame and destroy the trajectory's displacement information. Atoms in
+        # later frames may therefore fall outside the box; under the pbc=(T,T,T) this recovery
+        # sets, that is well-defined (fractional coordinates outside [0,1)), and no position is
+        # altered.
         boxed_frame = next(f for f in canonical.frames if f.cell is None)
         lattice, shift = _bounding_box(boxed_frame.atoms.positions, padding)
         new_frames = _fabricate(lattice, shift=shift)
         report_params = {"padding_ang": padding, "computed_on_frame": computed_on_frame}
+        multi = sum(1 for f in canonical.frames if f.cell is None) > 1
+        spans = (
+            " The same box and shift are applied to every cell-less frame, so relative motion "
+            "between frames is preserved; atoms in other frames may lie outside the box."
+            if multi
+            else ""
+        )
         description = (
             f"Lattice constructed as the axis-aligned bounding box of frame {computed_on_frame}'s "
             f"positions plus {padding} Å padding on each side; atoms rigidly translated into that "
-            "box (a shift preserves all interatomic distances). pbc set to (T,T,T) as required by "
-            "the target. The source expressed no lattice — this cell is a conversion artifact, "
-            "not simulation data."
+            "box (a shift preserves all interatomic distances)." + spans + " pbc set to (T,T,T) as "
+            "required by the target. The source expressed no lattice — this cell is a conversion "
+            "artifact, not simulation data."
         )
 
     updated = canonical.model_copy(update={"frames": new_frames})
+    # Frames whose genuine cell was left alone. Non-empty only in the partial case above: a `mixed`
+    # source reaching a multi-frame lattice-requiring target.
+    kept = [f.index for f in canonical.frames if f.cell is not None]
+    fabricated = [f.index for f in canonical.frames if f.cell is None]
+    scope = (
+        f" Applied to the {len(fabricated)} cell-less frame(s); the {len(kept)} frame(s) that "
+        "already carried a lattice keep their own, untouched."
+        if kept
+        else ""
+    )
+    preserved: list[PreservedField] = []
+    if kept:
+        preserved = [
+            PreservedField(
+                path="cell.lattice_vectors",
+                detail=f"Genuine source lattice carried for frame(s) {kept}; the remaining "
+                f"frame(s) {fabricated} had none and were supplied one by this choice.",
+            ),
+            PreservedField(
+                path="cell.pbc",
+                detail=f"Genuine source pbc carried for frame(s) {kept}.",
+            ),
+        ]
     assumption = AppliedAssumption(
         id=aid,
         scenario="missing_lattice",
         choice=code,
         parameters=report_params,
         origin=origin,
-        description=description,
+        description=description + scope,
         supplied=[
             SuppliedField(
                 path="cell.lattice_vectors",
-                detail="3×3 lattice fabricated by recovery — not present in the source.",
+                detail="3×3 lattice fabricated by recovery — not present in the source"
+                + (f" for frame(s) {fabricated}." if kept else "."),
             ),
             SuppliedField(
                 path="cell.pbc",
                 detail="(T, T, T) — required by the target; set by the same recovery choice.",
             ),
         ],
+        preserved=preserved,
     )
     return updated, assumption
 

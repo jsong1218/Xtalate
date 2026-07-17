@@ -28,8 +28,20 @@ def _registry() -> Registry:
 
 def test_builtins_register_without_error() -> None:
     reg = _registry()
-    assert {p.format_id for p in reg.parsers()} == {"xyz", "extxyz", "poscar", "contcar"}
-    assert {e.format_id for e in reg.exporters()} == {"xyz", "extxyz", "poscar", "contcar"}
+    assert {p.format_id for p in reg.parsers()} == {
+        "xyz",
+        "extxyz",
+        "poscar",
+        "contcar",
+        "xdatcar",
+    }
+    assert {e.format_id for e in reg.exporters()} == {
+        "xyz",
+        "extxyz",
+        "poscar",
+        "contcar",
+        "xdatcar",
+    }
 
 
 def test_capability_matrix_reports_poscar_write_side() -> None:
@@ -70,6 +82,22 @@ def test_sniffer_picks_poscar_by_name() -> None:
     result = sniffer.sniff(data, "POSCAR")
     assert result.format_id == "poscar"
     assert result.confidence == 1.0
+
+
+def test_sniffer_picks_xdatcar_by_name() -> None:
+    sniffer = Sniffer(_registry())
+    data = (GOLDEN / "xdatcar" / "nacl-md-fixed-cell" / "XDATCAR").read_bytes()
+    result = sniffer.sniff(data, "XDATCAR")
+    assert result.format_id == "xdatcar"
+    assert result.confidence == 1.0
+
+
+def test_sniffer_picks_xdatcar_over_poscar_on_nameless_trajectory() -> None:
+    # A POSCAR-shaped header followed by a configuration marker is XDATCAR, not POSCAR: the
+    # marker sits where POSCAR puts its coordinates, so only one reading can be right (§6.1).
+    sniffer = Sniffer(_registry())
+    data = (GOLDEN / "xdatcar" / "nacl-md-fixed-cell" / "XDATCAR").read_bytes()
+    assert sniffer.sniff(data, None).format_id == "xdatcar"
 
 
 def test_sniffer_flags_poscar_contcar_ambiguity_on_nameless_file() -> None:

@@ -1,0 +1,277 @@
+{
+  "schema_version": "0.1.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Na",
+          "Na",
+          "Cl",
+          "Cl"
+        ],
+        "atomic_numbers": [
+          11,
+          11,
+          17,
+          17
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.8,
+            2.8,
+            0.0
+          ],
+          [
+            2.8,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            2.8,
+            0.0
+          ]
+        ],
+        "masses": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            5.6,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            5.6,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            5.6
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": null,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 1,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Na",
+          "Na",
+          "Cl",
+          "Cl"
+        ],
+        "atomic_numbers": [
+          11,
+          11,
+          17,
+          17
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            1.4
+          ],
+          [
+            2.8,
+            2.8,
+            0.0
+          ],
+          [
+            2.8,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            2.8,
+            0.0
+          ]
+        ],
+        "masses": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            5.6,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            5.6,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            5.6
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": null,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 2,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Na",
+          "Na",
+          "Cl",
+          "Cl"
+        ],
+        "atomic_numbers": [
+          11,
+          11,
+          17,
+          17
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            2.8
+          ],
+          [
+            2.8,
+            2.8,
+            0.0
+          ],
+          [
+            2.8,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            2.8,
+            0.0
+          ]
+        ],
+        "masses": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            5.6,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            5.6,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            5.6
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": null,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": {
+    "timestep": null
+  },
+  "simulation": null,
+  "provenance": {
+    "source_filename": "XDATCAR",
+    "source_format": "xdatcar",
+    "source_units": {
+      "positions": "fractional",
+      "lattice_vectors": "angstrom"
+    },
+    "original_coordinate_system": "fractional",
+    "parse_notes": [
+      "Direct coordinates converted to Cartesian using each frame's lattice matrix (\u00a74).",
+      "pbc set to (true,true,true) per XDATCAR format definition (format-defined, not assumed).",
+      "scaling factor folded into each frame's lattice vectors (\u00a74); source value at frame 0: 1.0"
+    ],
+    "history": [
+      {
+        "timestamp": "2026-07-17T05:56:48Z",
+        "operation": "parse",
+        "source_format": "xdatcar",
+        "target_format": null,
+        "tool_version": "0.2.0",
+        "parser_version": "xdatcar-parser 0.2.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {
+      "xdatcar:comment": "NaCl MD (synthetic, fixed cell)"
+    },
+    "custom_per_atom": {},
+    "custom_per_frame": {}
+  }
+}

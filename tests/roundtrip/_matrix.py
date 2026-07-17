@@ -49,6 +49,9 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     "poscar": ("poscar/nacl-primitive", "POSCAR"),
     "extxyz": ("extxyz/co-in-cell", "sample.extxyz"),
     "contcar": ("contcar/co-md-restart", "CONTCAR"),
+    # M13: the NpT case enrols XDATCAR as a source, so the one fixture whose *cell* varies frame
+    # to frame flows through the whole matrix — the counterpart to CONTCAR carrying velocities.
+    "xdatcar": ("xdatcar/si-npt-variable-cell", "XDATCAR"),
 }
 
 # Capability paths that are never round-trip content: provenance records *how* a file was read

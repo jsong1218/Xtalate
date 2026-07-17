@@ -1,0 +1,22 @@
+case: nacl-md-fixed-cell
+format_id: xdatcar
+source_file: XDATCAR
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "222aa93cfb70cf392d37c44a03eb3d706fb2d849f352027b60ef4859927159c6"
+expected_sha256: "3b53a32cc418bfeb5938fca373e62ac2a8bd49c2e9e354d7b23e80d5e9ca2371"
+origin:
+  kind: synthetic
+  source: "Hand-written for M13 (VASP-5 XDATCAR, fixed-cell form, NaCl-like, 3 configurations)"
+  license: "Apache-2.0"
+notes: >-
+  The fixed-cell form: one 7-line header, then back-to-back `Direct configuration=` blocks
+  sharing the header lattice. Tests multi-frame reading with frame ordering preserved via
+  frame.index, the fractional→Cartesian conversion at the parser boundary (§4), format-defined
+  pbc=(T,T,T) (§3 n.3), the title carried into user_metadata.custom_global['xdatcar:comment'],
+  the scaling factor recorded as a provenance parse-note (folded into the lattice, §4;
+  DECISIONS.md D34), and trajectory.timestep = None — XDATCAR numbers configurations but
+  declares no time axis (§3 n.5), so absence is recorded rather than a POTIM default invented.
+  Every fractional coordinate is an exact binary fraction (0, 1/4, 1/2) against a 5.6 Å cubic
+  cell, so each expected Cartesian value (1.4, 2.8) is exactly representable in float64 and was
+  hand-derived rather than read back off the parser.

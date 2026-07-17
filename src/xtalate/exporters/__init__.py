@@ -16,19 +16,29 @@ from xtalate.exporters.poscar import (
     make_contcar_exporter,
     make_poscar_exporter,
 )
+from xtalate.exporters.xdatcar import XdatcarExporter, make_xdatcar_exporter
 from xtalate.exporters.xyz import XyzExporter
 from xtalate.sdk import ExporterPlugin
 
 __all__ = [
     "ExtxyzExporter",
     "PoscarExporter",
+    "XdatcarExporter",
     "XyzExporter",
     "builtin_exporters",
     "make_contcar_exporter",
     "make_poscar_exporter",
+    "make_xdatcar_exporter",
 ]
 
 
 def builtin_exporters() -> list[ExporterPlugin]:
-    """The exporters shipped in v0.1 (M3a XYZ, M3b POSCAR/CONTCAR, M3c extXYZ)."""
-    return [XyzExporter(), ExtxyzExporter(), make_poscar_exporter(), make_contcar_exporter()]
+    """The exporters shipped so far (v0.1: M3a XYZ, M3b POSCAR/CONTCAR, M3c extXYZ; v0.3: M13
+    XDATCAR)."""
+    return [
+        XyzExporter(),
+        ExtxyzExporter(),
+        make_poscar_exporter(),
+        make_contcar_exporter(),
+        make_xdatcar_exporter(),
+    ]
