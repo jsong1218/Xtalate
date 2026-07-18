@@ -12,7 +12,13 @@
 >   capabilities + registration; decisions **D58** (`fixed_atoms` kind + empty-list laundering to
 >   `None`) and **D59** (ASE-version in `parser_version`, via optional override on
 >   `parse_record`/`build_provenance`) logged. Full lint gate + 921 tests green.
-> - **M14B–E — TODO** (each depends only on 14A; run in any order).
+> - **M14B — DONE** (branch `m14-ase-traj`): default-laundering suite + ASE-version canary in
+>   `tests/parsers/test_ase_traj.py` (16 tests) — launders absent cell/momenta/masses/charges/
+>   magmoms/empty-constraints to `None`, verifies velocity unit conversion, FixAtoms→fixed_atoms,
+>   non-FixAtoms carried-with-warning, stress carried (D18), and the canary (installed ASE
+>   satisfies the pyproject pin + `ase <ver>` appears in `provenance.history[0].parser_version`).
+>   Full lint gate + 937 tests green (91.64% cov).
+> - **M14C–E — TODO** (each depends only on 14A; run in any order).
 > - **M15A/B — TODO** (independent); **M15C — TODO** (depends on 15A+15B).
 > - **M16A — TODO**; **M16B — TODO** (dep 16A); **M16C — TODO** (dep 16A/16B).
 >
