@@ -1,0 +1,37 @@
+# xtalate-toyfmt — a minimal, installable third-party Xtalate plugin.
+#
+# This is NOT a shipped package. It lives under tests/fixtures/ and is installed only in CI
+# (and on demand locally) so the entry-point discovery path in `xtalate.registry` is exercised
+# against a *real* installed distribution — resolved from actual dist-info metadata by
+# `importlib.metadata.entry_points()` — not just the in-memory fakes of M16A's unit tests.
+# It doubles as the worked packaging example the M16C contributor docs will point to: a genuine
+# out-of-tree parser + exporter that registers purely through the public SDK.
+#
+# Synthetic Apache-2.0 (matching the parent repo) — deliberately self-contained so it has no
+# coupling to the golden-corpus governance suite (which scans only tests/golden/, never here).
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xtalate-toyfmt"
+version = "0.0.1"
+description = "Example third-party Xtalate plugin (test fixture): a toy single-frame text format."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+# `xtalate` is always already present in the environment this fixture is installed into
+# (it is installed alongside the library under test). It is declared here for realism — a true
+# third-party plugin depends on the SDK — but CI installs this fixture with `--no-deps` so pip
+# never tries to resolve `xtalate` from an index (it is not published to PyPI yet; D52).
+dependencies = ["xtalate"]
+
+# The whole point of the fixture: advertise a parser and an exporter under the Xtalate
+# entry-point groups, exactly as a real plugin distribution would (MASTER_SPEC Part 3 §7.1).
+[project.entry-points."xtalate.parsers"]
+toyfmt = "xtalate_toyfmt.parser:ToyfmtParser"
+
+[project.entry-points."xtalate.exporters"]
+toyfmt = "xtalate_toyfmt.exporter:ToyfmtExporter"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xtalate_toyfmt"]
