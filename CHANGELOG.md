@@ -6,15 +6,81 @@ All notable changes to Xtalate are recorded here. The format follows
 tracked separately from the package version and reaches `1.0.0` only in the v1.0 release
 (`docs/MASTER_SPEC.md` Part 2 §5); v0.1 objects carry `schema_version = "0.1.0"`.
 
-## [Unreleased]
+## [0.3.0] — 2026-07-18
 
-Post-`0.2.0` architectural-review pass: report-semantics and JSON-tolerance correctness fixes,
-golden-corpus governance hardening, a velocity-bearing corpus case, and internal de-duplication.
-Then the start of **v0.3** ("Trajectories at Scale"): the M12 frame-chunked processing core.
-Schema stays `0.1.0`; no normative report/field shapes change.
+v0.3 — **"Trajectories at Scale."** Pipeline memory becomes **sub-linear in frames** through a
+frame-chunked streaming core, and the two trajectory formats that need it land — **XDATCAR** and
+the **ASE `.traj`** format — bringing the registered set to **six** of the seven Phase-1 formats
+(CIF, the last, is v0.4). This release also opens the plugin surface — third-party
+parsers/exporters are now discovered from Python entry points and proven against a real installed
+distribution — and adds the performance-and-CI scaffolding a scaling release needs (a benchmark
+corpus, a PR/nightly test-matrix split). It opens with a post-`0.2.0` architectural-review
+correctness pass. Schema stays `0.1.0`; no normative report/field shapes change.
 
 ### Added
 
+- **Entry-point plugin discovery, proven against a real installed distribution (v0.3 M16;
+  `docs/DECISIONS.md` D60–D61; `docs/MASTER_SPEC.md` Part 3 §7, Revision 1.16).** The §7.1
+  mechanism, normative since Revision 1.2 but exercised only by first-party in-code registration
+  through v0.2, is now implemented and end-to-end proven.
+  - **Discovery in `default_registry()` (M16A, D60).** An additive third pass loads the
+    `xtalate.parsers` / `xtalate.exporters` entry points (public
+    `PARSER_ENTRY_POINT_GROUP` / `EXPORTER_ENTRY_POINT_GROUP` constants), each via `ep.load()()`
+    (accepting a class *or* a zero-argument factory), and registers it through the **same**
+    `register_parser` / `register_exporter` path — so third-party plugins get the declaration
+    validation and duplicate-id guards for free. It **fails loudly**: a bad `capabilities()`
+    declaration propagates `InvalidCapabilityDeclaration`; an import/construct failure or a
+    wrong-kind object raises `PluginLoadError` naming the entry point; a `format_id` collision
+    with a builtin is the registry's duplicate `ValueError` (builtins register first).
+  - **An installable proof plugin (M16B, D61).** `tests/fixtures/xtalate_toyfmt/` is a real
+    installable distribution (its own `pyproject.toml`, entry-point declarations, `py.typed`)
+    implementing a trivial `toyfmt` parser + exporter through the **public SDK alone** (it imports
+    nothing from `xtalate.parsers` or any internal layer). CI installs it before pytest; four
+    detection-gated tests then prove `toyfmt` is discovered in `default_registry()`, queryable in
+    the Capability Matrix, listed by `xtalate capabilities` (resolved from real dist-info in a
+    fresh subprocess), and converts through the full pipeline (`toyfmt → xyz`, geometry preserved
+    exactly). Installing it also enlarges the two-hop/round-trip matrices with `toyfmt` pairs — a
+    discovered plugin proven across the whole spine, not just at registration.
+  - **Contributor + spec surface (M16C).** `CONTRIBUTING.md` gains an entry-point packaging guide
+    pointing at the worked example and carrying the R12 honesty clause (the SDK is not frozen
+    until v1.0); the MASTER_SPEC §7.2 worked example's `import` lines are corrected to the real
+    shipped modules (`xtalate.sdk` for the plugin bases *and* the `FormatCapabilities` /
+    `FieldCapability` declaration model, `xtalate.schema` for the canonical types).
+- **Benchmark corpus + PR/nightly test-matrix split (v0.3 M15).** The performance-and-CI
+  scaffolding a scaling release needs.
+  - **Benchmark harness** (`benchmarks/`): `python -m benchmarks` runs the Part 8 §4 performance
+    benchmarks, each in its own subprocess for honest per-process peak RSS, **measured not gated**
+    (it reports wall + RSS against a budget and exits non-zero only on a *crash*). Kept out of the
+    coverage-gated pytest run.
+  - **PR/nightly split** (Part 8 §2.4): a root `tests/conftest.py` registers `hypothesis`
+    profiles (`pr`, default 200 examples / `nightly`, 2000) and **deselects `nightly`-marked
+    items unless `XTALATE_FULL_MATRIX=1`** — no check is dropped, only deferred. The two-hop
+    matrix parametrizes the full registry pair list but tags non-curated pairs `nightly`, so a new
+    exporter auto-enrols in the nightly matrix (**P6**).
+  - **Nightly workflow** (`.github/workflows/nightly.yml`): the full matrix, the benchmark run
+    (artifacts uploaded), the extended property budget, and a non-blocking `pip-audit`
+    dependency-vulnerability scan; a failure opens a tracking issue. `docs/MEMORY_CEILING.md` is
+    finalized with the measured full-scale numbers.
+- **ASE `.traj` format — the sixth registered format (v0.3 M14; `docs/DECISIONS.md` D58–D59).**
+  Read and write for ASE's native binary trajectory. ASE `FixAtoms` constraints map to the
+  canonical `Constraint(kind="fixed_atoms")`, and — honoring the absence convention — an empty
+  ASE constraints list launders back to `None` rather than a present-but-empty list (D58). The
+  wrapped ASE version is recorded in `provenance.parser_version` via an optional override on the
+  shared `parse_record` / `build_provenance` helpers, so an ASE upgrade that changes behavior is
+  attributable (D59). Two governed golden cases (a rich multi-frame relaxation anchor and a
+  single-molecule laundering anchor), the identity round-trip, Capability-Matrix membership, and a
+  sub-linear-in-frames streaming proof (`ase_traj → extxyz`) all land with it.
+- **XDATCAR — a streaming-first trajectory format (v0.3 M13; `docs/DECISIONS.md` D57;
+  `docs/MASTER_SPEC.md` Revision 1.15).** The fifth registered format and the one whose ordinary
+  size (10⁴ configurations) forced chunking: a header-eager, configuration-lazy parser/exporter
+  for both fixed-cell and per-frame-cell (NpT) forms (`trajectory.timestep = None`, since XDATCAR
+  numbers configurations but declares no time axis). It also lands the two streaming-recovery
+  halves M12 deferred: `truncate_corrupt_tail` ends a torn-write stream at the last good frame
+  under an explicit `truncate` choice (recording the kept prefix as an Assumption and the dropped
+  tail as an `XDATCAR_TRUNCATED` warning — never silent, never the default), and single-pass
+  streaming `frame_selection` into a single-structure target (`convert_stream_select`, the
+  XDATCAR→POSCAR case) produces a Conversion Report and output **byte-identical** to the
+  materialized `convert`.
 - **Frame-chunked (streaming) processing core (v0.3 M12; `docs/DECISIONS.md` D56,
   `docs/MEMORY_CEILING.md`).** An additive streaming surface on the plugin SDK —
   `ParserPlugin.parse_stream` / `ExporterPlugin.export_stream`, gated by `supports_streaming()`,
@@ -378,6 +444,6 @@ byte of scientific information kept, dropped, or fabricated.
 - Recovery is preset-only; tolerance profiles are the three named ones (custom tables are later
   seams).
 
-[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v0.2.0...HEAD
+[0.3.0]: https://github.com/jsong1218/Xtalate/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jsong1218/Xtalate/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jsong1218/Xtalate/releases/tag/v0.1.0

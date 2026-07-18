@@ -46,6 +46,13 @@ jobs:
       - name: Import-graph lint (P2)
         run: lint-imports
 
+      # Install the example third-party plugin (M16B) so entry-point discovery is exercised
+      # against a real installed distribution — without it, tests/test_toyfmt_plugin.py skips.
+      # `--no-deps`: its declared `xtalate` dependency is already satisfied by the editable install
+      # above, and xtalate is not on any index yet (D52), so pip must not try to resolve it.
+      - name: Install entry-point discovery fixture (M16B)
+        run: pip install --no-deps ./tests/fixtures/xtalate_toyfmt
+
       # Pytest enforces the coverage ratchet (--cov-fail-under in pyproject addopts) and the
       # golden-corpus governance suite: manifest schema + license, per-source sha256, the
       # schema-version migration-chain load, and the ATTRIBUTIONS.md regeneration diff

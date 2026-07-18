@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xtalate"
-version = "0.2.0"
+version = "0.3.0"
 description = "The trusted translation layer between computational chemistry file formats — a converter that tells you exactly what it kept, what it lost, and why."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -87,6 +87,12 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+# The M16B entry-point discovery fixture (tests/fixtures/xtalate_toyfmt) is an independently
+# packaged distribution with its own src/ root. It is installed — and thus importable — only
+# right before pytest, never when mypy runs, and its package root sits off the module search
+# path; type-checking it from the parent gate is neither reliable nor meaningful. Exclude it here
+# (ruff still lints it, and it ships its own py.typed so it type-checks cleanly on its own terms).
+exclude = ['^tests/fixtures/']
 
 # ASE ships a py.typed marker but is largely unannotated (DECISIONS.md D7 wraps it as the
 # sole scientific-I/O dependency, M3c). Under --strict its unannotated functions would trip

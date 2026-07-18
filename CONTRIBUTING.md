@@ -5,7 +5,7 @@ transparent file conversion** — and the contribution process is built to prote
 This guide is the practical form of `docs/MASTER_SPEC.md` Part 10 §4.3; where the two
 disagree, the spec wins.
 
-> **What we're inviting right now (v0.2).** The **golden-corpus contribution** path is the
+> **What we're inviting right now (v0.3).** The **golden-corpus contribution** path is the
 > invited, fully-supported way to contribute today: real-world sample files, with licenses,
 > that harden the converter against formats we can't fake by hand. See
 > [Contributing a golden case](#contributing-a-golden-case).
@@ -50,7 +50,7 @@ however convenient:
 
 ## Dev environment
 
-Xtalate v0.1–v0.2 is a pure-Python library + CLI (Tier 0 in `09 §1`); there are no services to
+Xtalate v0.1–v0.3 is a pure-Python library + CLI (Tier 0 in `09 §1`); there are no services to
 run.
 
 ```bash
@@ -124,6 +124,44 @@ The full checklist (`docs/MASTER_SPEC.md` Part 10 §4.3, and the churn warning a
 4. Add the format's rows to the Part 3 §3 capability table in `docs/MASTER_SPEC.md`.
 5. Keep the default-laundering suite green: prove your parser returns `None` for anything the
    file does not actually say.
+
+## Packaging a format as an installable plugin
+
+The section above covers *implementing* a parser/exporter. You can also ship one as a
+**separate installable package** that Xtalate discovers automatically — no fork, no edit to
+Xtalate's own code (`docs/MASTER_SPEC.md` Part 3 §7; **P6**). Your package declares its parser
+and/or exporter under Xtalate's entry-point groups, and `default_registry()` loads them at
+startup through the *same* declaration validation and duplicate-id guards a first-party format
+gets. In your package's `pyproject.toml`:
+
+```toml
+[project.entry-points."xtalate.parsers"]
+myfmt = "my_package.parser:MyFormatParser"
+
+[project.entry-points."xtalate.exporters"]
+myfmt = "my_package.exporter:MyFormatExporter"
+```
+
+Each value is an entry-point target resolving to your `ParserPlugin` / `ExporterPlugin`
+subclass — a class, or a zero-argument factory returning one. **Import only the public SDK:**
+`xtalate.sdk` (the `ParserPlugin` / `ExporterPlugin` base classes *and* the `FormatCapabilities`
+/ `FieldCapability` capability-declaration model) and `xtalate.schema` (the Canonical Model).
+Never import `xtalate.parsers`, `xtalate.capabilities`, or any other internal layer — a plugin
+that reaches past the SDK is coupled to internals that move without notice. Once your package is
+installed in the same environment, the format appears in `xtalate capabilities`, sniffing,
+Discovery, conversion, and validation with zero changes to Xtalate.
+
+A complete, installable worked example lives in this repository at
+[`tests/fixtures/xtalate_toyfmt/`](tests/fixtures/xtalate_toyfmt) — a minimal `toyfmt`
+parser + exporter with its own `pyproject.toml` and entry-point declarations, importing only the
+public SDK, which the test suite installs and drives end-to-end (registry discovery, Capability
+Matrix membership, the `xtalate capabilities` surface, and a full-pipeline conversion). Copy its
+shape.
+
+**The churn warning applies here too, doubly.** The plugin SDK (`xtalate.sdk`) is **not frozen
+until v1.0** (risk R12): an installable plugin may need to follow SDK signature changes between
+minor versions, exactly as an in-tree format does. Pin the Xtalate version you build against, and
+watch the changelog for SDK changes.
 
 ## PR expectations
 
