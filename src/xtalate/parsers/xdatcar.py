@@ -114,6 +114,10 @@ class _Block:
     fractional: bool
     symbols: list[str]
     scale_token: str
+    # The scale multiplier is folded into ``lattice`` above, which covers fractional coordinates
+    # (they multiply through the lattice), but Cartesian rows are in scaled units directly and
+    # need it applied on their own (§4) — same rule as POSCAR.
+    multiplier: float
 
 
 class XdatcarParser(ParserPlugin):
@@ -550,6 +554,7 @@ def _read_header(lines: _Lines, *, first: bool, index: int = 0) -> _Block:
         fractional=mode_char not in ("c", "k"),
         symbols=symbols,
         scale_token=scale_token,
+        multiplier=multiplier,
     )
 
 
@@ -663,7 +668,7 @@ def _read_configuration(
     raw = np.asarray(coords, dtype=float)
     # Convert at the parser boundary (§4) using *this frame's* lattice — which is what makes the
     # NpT form read correctly: a frame's fractional coordinates mean nothing without its own cell.
-    positions = raw @ block.lattice if block.fractional else raw
+    positions = raw @ block.lattice if block.fractional else raw * block.multiplier
     return StreamFrame(
         frame=Frame(
             index=index,

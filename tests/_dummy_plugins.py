@@ -48,6 +48,7 @@ class DummyParser(ParserPlugin):
         conventional_name: str | None = None,
         fields: dict[str, FieldCapability] | None = None,
         required: list[str] | None = None,
+        declared_format_id: str | None = None,
     ) -> None:
         self.format_id = format_id
         self.format_name = f"Dummy {format_id}"
@@ -58,6 +59,9 @@ class DummyParser(ParserPlugin):
         self._conventional_name = conventional_name
         self._fields = fields or {}
         self._required = required or []
+        # When set, capabilities() declares this id instead of the plugin's own — a malformed
+        # declaration the registry must reject (mismatched id).
+        self._declared_format_id = declared_format_id
 
     def sniff(self, head: bytes, filename: str | None) -> float:
         if self._conventional_name is not None and filename == self._conventional_name:
@@ -71,7 +75,7 @@ class DummyParser(ParserPlugin):
 
     def capabilities(self) -> FormatCapabilities:
         return FormatCapabilities(
-            format_id=self.format_id,
+            format_id=self._declared_format_id or self.format_id,
             format_name=self.format_name,
             direction="read",
             fields=self._fields,
@@ -88,6 +92,7 @@ class DummyExporter(ExporterPlugin):
         fields: dict[str, FieldCapability] | None = None,
         required: list[str] | None = None,
         max_frames: int | None = None,
+        declared_format_id: str | None = None,
     ) -> None:
         self.format_id = format_id
         self.format_name = f"Dummy {format_id}"
@@ -95,13 +100,14 @@ class DummyExporter(ExporterPlugin):
         self._fields = fields or {}
         self._required = required or []
         self._max_frames = max_frames
+        self._declared_format_id = declared_format_id
 
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
         stream.write(canonical.model_dump_json().encode())
 
     def capabilities(self) -> FormatCapabilities:
         return FormatCapabilities(
-            format_id=self.format_id,
+            format_id=self._declared_format_id or self.format_id,
             format_name=self.format_name,
             direction="write",
             fields=self._fields,

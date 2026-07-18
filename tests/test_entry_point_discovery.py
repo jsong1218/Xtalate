@@ -2,61 +2,25 @@
 
 ``default_registry()`` registers the built-ins, then discovers third-party parsers/exporters
 advertised under the ``xtalate.parsers`` / ``xtalate.exporters`` entry-point groups. These tests
-drive that third pass with *fake* entry points — an in-memory stand-in for an installed
-distribution, monkeypatched over ``xtalate.registry.entry_points`` — so no package has to be
-pip-installed to exercise the mechanism (the real installable proof plugin is M16B). The contract:
-a well-formed plugin is discovered and registered; a plugin that fails to load, declares a bad
-capability, or collides with a first-party ``format_id`` fails **loudly** — discovery never
-swallows a broken plugin (§7.1).
+drive that third pass with *fake* entry points (``tests/_fake_entry_points.py``) — an in-memory
+stand-in for an installed distribution, monkeypatched over ``xtalate.registry.entry_points`` — so
+no package has to be pip-installed to exercise the mechanism (the real installable proof plugin is
+M16B). The contract: a well-formed plugin is discovered and registered; a plugin that fails to
+load, declares a bad capability, or collides with a first-party ``format_id`` fails **loudly** —
+discovery never swallows a broken plugin (§7.1).
 """
 
 from __future__ import annotations
-
-from collections.abc import Callable
-from dataclasses import dataclass
 
 import pytest
 
 import xtalate.registry as registry_mod
 from tests._dummy_plugins import DummyExporter, DummyParser
+from tests._fake_entry_points import FakeEntryPoint
+from tests._fake_entry_points import patch_entry_points as _patch_entry_points
 from xtalate.capabilities.registry import InvalidCapabilityDeclaration
 from xtalate.registry import PluginLoadError, default_registry
 from xtalate.sdk import CapabilityLevel, FieldCapability
-
-
-@dataclass
-class FakeEntryPoint:
-    """Stand-in for :class:`importlib.metadata.EntryPoint` with the surface ``registry.py`` uses:
-    ``name``/``group``/``value`` for error messages, and ``load()`` returning the target callable.
-    Unlike the real one, ``load()`` hands back an in-memory object instead of importing a module,
-    so a test declares a plugin inline without installing a distribution."""
-
-    name: str
-    value: str
-    group: str
-    target: Callable[[], object]
-
-    def load(self) -> Callable[[], object]:
-        return self.target
-
-
-def _patch_entry_points(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    parsers: list[FakeEntryPoint] | None = None,
-    exporters: list[FakeEntryPoint] | None = None,
-) -> None:
-    """Route ``xtalate.registry.entry_points(group=...)`` to the supplied fakes, per group."""
-    by_group = {
-        registry_mod.PARSER_ENTRY_POINT_GROUP: parsers or [],
-        registry_mod.EXPORTER_ENTRY_POINT_GROUP: exporters or [],
-    }
-
-    def fake_entry_points(*, group: str) -> list[FakeEntryPoint]:
-        return by_group.get(group, [])
-
-    monkeypatch.setattr(registry_mod, "entry_points", fake_entry_points)
-
 
 # A capability declaration that names a canonical path which does not exist — the registry must
 # reject it at registration (the same validation a built-in gets).
@@ -152,7 +116,9 @@ def test_bad_capability_declaration_fails_loudly(monkeypatch: pytest.MonkeyPatch
 
 def test_format_id_collision_with_builtin_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """A third-party plugin claiming a first-party ``format_id`` hits the registry's duplicate
-    guard. Built-ins register first, so their ids win the namespace and the plugin is rejected."""
+    guard. Built-ins register first, so their ids win the namespace and the plugin is rejected —
+    as a ``PluginLoadError`` naming the offending entry point, so the failure points at the
+    installed distribution rather than at Xtalate."""
     _patch_entry_points(
         monkeypatch,
         parsers=[
@@ -164,7 +130,26 @@ def test_format_id_collision_with_builtin_is_rejected(monkeypatch: pytest.Monkey
             )
         ],
     )
-    with pytest.raises(ValueError, match="already registered.*'xyz'"):
+    with pytest.raises(PluginLoadError, match=r"toy_dist:ImposterXyz.*already registered.*'xyz'"):
+        default_registry()
+
+
+def test_mismatched_declaration_format_id_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A plugin whose ``capabilities()`` declares a different ``format_id`` than the plugin's own
+    is a malformed declaration: rejected at ``default_registry()`` with
+    ``InvalidCapabilityDeclaration`` (which names both ids), the same validation a built-in gets."""
+    _patch_entry_points(
+        monkeypatch,
+        parsers=[
+            FakeEntryPoint(
+                "toyfmt",
+                "toy_dist:MismatchedParser",
+                registry_mod.PARSER_ENTRY_POINT_GROUP,
+                lambda: DummyParser("toyfmt", declared_format_id="otherfmt"),
+            )
+        ],
+    )
+    with pytest.raises(InvalidCapabilityDeclaration, match="'toyfmt'.*'otherfmt'"):
         default_registry()
 
 

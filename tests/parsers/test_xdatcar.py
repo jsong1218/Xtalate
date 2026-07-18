@@ -80,6 +80,29 @@ Cartesian configuration=     1
   2.0 2.0 2.0
 """
 
+CARTESIAN_SCALED = b"""cartesian with a scaling factor
+   2.0
+     4.0 0.0 0.0
+     0.0 4.0 0.0
+     0.0 0.0 4.0
+   Si
+   2
+Cartesian configuration=     1
+  0.0 0.0 0.0
+  2.0 2.0 2.0
+"""
+
+CARTESIAN_NEGATIVE_SCALE = b"""cartesian under a target volume
+-8.0
+  1.0 0.0 0.0
+  0.0 1.0 0.0
+  0.0 0.0 1.0
+Si
+1
+Cartesian configuration=     1
+  1.0 1.0 1.0
+"""
+
 TRUNCATED = b"""killed mid-write
    1.0
      5.6 0.0 0.0
@@ -238,6 +261,28 @@ def test_cartesian_configuration_marker_is_not_converted() -> None:
     obj = parse(CARTESIAN).canonical
     np.testing.assert_allclose(obj.frames[0].atoms.positions[1], [2.0, 2.0, 2.0])
     assert obj.provenance.original_coordinate_system == "cartesian"
+
+
+def test_cartesian_positions_are_scaled_by_the_scaling_factor() -> None:
+    """Cartesian rows are in scaled units (§4), exactly as in POSCAR: with scale 2.0 a raw
+    (2, 2, 2) row is at 4 Å along each axis. Regression for the v0.3 defect where the
+    multiplier was folded into the lattice but never applied to Cartesian rows, so the
+    positions came back unscaled while the parse note claimed otherwise (P1)."""
+    obj = parse(CARTESIAN_SCALED).canonical
+    np.testing.assert_allclose(obj.frames[0].atoms.positions[1], [4.0, 4.0, 4.0])
+    assert obj.frames[0].cell is not None
+    np.testing.assert_allclose(obj.frames[0].cell.lattice_vectors, np.eye(3) * 8.0)
+    # The note must describe what the parser actually did (P1).
+    assert any("Cartesian coordinates scaled" in n for n in obj.provenance.parse_notes)
+
+
+def test_cartesian_positions_are_scaled_under_a_negative_target_volume() -> None:
+    """A negative scale sets the cell *volume* (§4); the derived multiplier applies to Cartesian
+    rows too. Unit lattice, target volume 8 -> multiplier 2, so raw (1, 1, 1) sits at 2 Å."""
+    obj = parse(CARTESIAN_NEGATIVE_SCALE).canonical
+    np.testing.assert_allclose(obj.frames[0].atoms.positions[0], [2.0, 2.0, 2.0])
+    assert obj.frames[0].cell is not None
+    assert abs(float(np.linalg.det(obj.frames[0].cell.lattice_vectors))) == pytest.approx(8.0)
 
 
 # --- the error contract (Part 3 §5; M13 deliverable 3) ------------------------------------

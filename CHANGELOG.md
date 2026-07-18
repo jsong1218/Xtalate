@@ -6,6 +6,58 @@ All notable changes to Xtalate are recorded here. The format follows
 tracked separately from the package version and reaches `1.0.0` only in the v1.0 release
 (`docs/MASTER_SPEC.md` Part 2 §5); v0.1 objects carry `schema_version = "0.1.0"`.
 
+## [Unreleased]
+
+Fixes from the post-`0.3.0` architectural review. The `v0.3.0` tag has not been cut yet (D52's
+manual publish step), so the maintainer may fold these into `0.3.0` before tagging.
+
+### Fixed
+
+- **XDATCAR Cartesian-mode positions are now scaled by the scaling factor (§4).** The scale
+  multiplier (including the negative-scale target-volume form) was folded into each frame's
+  lattice but never applied to Cartesian coordinate rows, so a Cartesian XDATCAR with scale
+  ≠ 1.0 parsed with positions off by the multiplier — while the emitted parse note claimed the
+  scaling had happened (a P1 honesty violation). Direct-mode files were unaffected (fractional
+  coordinates pick the scale up through the lattice product). Now matches the POSCAR parser's
+  handling; covered by new Cartesian scale-2.0 and target-volume tests in
+  `tests/parsers/test_xdatcar.py`.
+- **The registry now enforces the id half of `InvalidCapabilityDeclaration`'s documented
+  contract (`docs/DECISIONS.md` D62).** A plugin whose `capabilities()` declaration carries a
+  different `format_id` than the plugin's own is rejected at registration
+  (`InvalidCapabilityDeclaration` naming both ids) instead of silently producing a matrix keyed
+  by one id whose stored declaration names another. All first-party plugins and
+  `xtalate-toyfmt` already satisfied the check.
+
+### Added
+
+- **`xtalate convert` now inherits the M12 sub-linear memory: eligible invocations route
+  through the streaming engines (`docs/DECISIONS.md` D63).** With an `-o` file target in
+  permissive mode and recovery presets empty (→ `convert_stream`) or exactly a
+  `first`/`last`/`index` `frame_selection` (→ `convert_stream_select`), the CLI streams the
+  conversion frame by frame — closing the v0.3 gap where the release's headline memory property
+  was reachable only from the library API. Which path ran is not observable: output bytes and
+  the Conversion Report are engine-guaranteed identical (M12 standing rule 3), pinned by CLI
+  equality tests; the artifact is written via a temp file renamed on success, so a mid-stream
+  parse error leaves a pre-existing `-o` file untouched. Everything else (strict mode, other
+  recovery presets, non-streaming pairs, no `-o`) keeps the materialized path unchanged.
+  Measured: 5 000-frame XDATCAR → extXYZ peaks at ~89 MB streamed vs ~354 MB materialized,
+  byte-identical outputs.
+
+### Changed
+
+- **A broken installed plugin now surfaces on the CLI as a clean, attributed error (exit 1)
+  instead of a raw traceback.** `default_registry()` runs for every command, so one plugin that
+  fails to import, yields the wrong kind of object, collides on `format_id`, or carries a
+  malformed declaration used to crash `inspect`/`convert`/`validate`/`capabilities` with an
+  uncaught traceback. The CLI still refuses to run **any** command until the offending
+  distribution is fixed or uninstalled — discovery never silently skips a broken plugin
+  (Part 3 §7.1); only the failure's surface changed, not the fail-loud policy.
+- **A discovered plugin's duplicate-`format_id` collision now raises `PluginLoadError` naming
+  the offending entry point (D62, partially revising D60).** Previously the registry's bare
+  duplicate-guard `ValueError` propagated unwrapped, naming only the format — actionable for
+  first-party code but not for an installed distribution. The original message is preserved
+  verbatim inside the new one; `InvalidCapabilityDeclaration` still propagates unwrapped.
+
 ## [0.3.0] — 2026-07-18
 
 v0.3 — **"Trajectories at Scale."** Pipeline memory becomes **sub-linear in frames** through a

@@ -131,6 +131,10 @@ source = ["xtalate"]
 # the reverse. Pipe-separated names on one line are independent siblings that may
 # not import each other. This contract is trivially satisfied while packages are
 # stubs and gains teeth as code lands.
+# The two root-level modules extend the Part 1 §5.1 graph (post-v0.3 review):
+# `registry` is the composition root that wires parsers/exporters into a Registry
+# (only `cli` sits above it), and `_time` is the dependency-free leaf any layer
+# may use — listing them means a future P2 inversion through either is caught.
 [tool.importlinter]
 root_package = "xtalate"
 
@@ -139,10 +143,12 @@ name = "Acyclic dependency direction (P2, Part 1 §5.1)"
 type = "layers"
 layers = [
     "xtalate.cli",
+    "xtalate.registry",
     "xtalate.conversion",
     "xtalate.recovery | xtalate.validation",
     "xtalate.discovery",
     "xtalate.capabilities | xtalate.parsers | xtalate.exporters",
     "xtalate.sdk",
     "xtalate.schema",
+    "xtalate._time",
 ]

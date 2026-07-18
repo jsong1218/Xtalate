@@ -195,9 +195,9 @@ def stream_of(obj: CanonicalObject, issues: list[ParseIssue] | None = None) -> F
     def _iter() -> Iterator[StreamFrame]:
         for i, frame in enumerate(obj.frames):
             row = {
-                key: (values[i] if i < len(values) else None)
+                key: value
                 for key, values in per_frame.items()
-                if (values[i] if i < len(values) else None) is not None
+                if (value := values[i] if i < len(values) else None) is not None
             }
             yield StreamFrame(frame=frame, per_frame_custom=row)
 
