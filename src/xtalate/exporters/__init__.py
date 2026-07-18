@@ -10,6 +10,7 @@ higher layer assembles into a Registry.
 
 from __future__ import annotations
 
+from xtalate.exporters.ase_traj import AseTrajExporter, make_ase_traj_exporter
 from xtalate.exporters.extxyz import ExtxyzExporter
 from xtalate.exporters.poscar import (
     PoscarExporter,
@@ -21,11 +22,13 @@ from xtalate.exporters.xyz import XyzExporter
 from xtalate.sdk import ExporterPlugin
 
 __all__ = [
+    "AseTrajExporter",
     "ExtxyzExporter",
     "PoscarExporter",
     "XdatcarExporter",
     "XyzExporter",
     "builtin_exporters",
+    "make_ase_traj_exporter",
     "make_contcar_exporter",
     "make_poscar_exporter",
     "make_xdatcar_exporter",
@@ -34,11 +37,12 @@ __all__ = [
 
 def builtin_exporters() -> list[ExporterPlugin]:
     """The exporters shipped so far (v0.1: M3a XYZ, M3b POSCAR/CONTCAR, M3c extXYZ; v0.3: M13
-    XDATCAR)."""
+    XDATCAR, M14 ASE trajectory)."""
     return [
         XyzExporter(),
         ExtxyzExporter(),
         make_poscar_exporter(),
         make_contcar_exporter(),
         make_xdatcar_exporter(),
+        make_ase_traj_exporter(),
     ]

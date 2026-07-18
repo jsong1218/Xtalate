@@ -50,15 +50,20 @@ def utc_now() -> str:
     return _utc_now()
 
 
-def parse_record(format_id: str) -> ConversionRecord:
-    """The single ``operation="parse"`` history entry a successful parse appends (§3.9)."""
+def parse_record(format_id: str, *, parser_version: str | None = None) -> ConversionRecord:
+    """The single ``operation="parse"`` history entry a successful parse appends (§3.9).
+
+    ``parser_version`` overrides the default ``"<fmt>-parser <ver>"`` string. A parser that wraps a
+    versioned scientific dependency (the ase_traj parser wraps ASE, M14) folds that dependency's
+    version in here — ``"ase_traj-parser 0.2.0 (ase 3.29.0)"`` — so a pin bump that changes parse
+    behaviour is visible in every report's Provenance (Part 2 §3.9), not silently absorbed."""
     return ConversionRecord(
         timestamp=utc_now(),
         operation="parse",
         source_format=format_id,
         target_format=None,
         tool_version=__version__,
-        parser_version=f"{format_id}-parser {__version__}",
+        parser_version=parser_version or f"{format_id}-parser {__version__}",
         assumptions=[],
     )
 
@@ -70,15 +75,18 @@ def build_provenance(
     original_coordinate_system: str,
     source_units: dict[str, str],
     parse_notes: list[str],
+    parser_version: str | None = None,
 ) -> Provenance:
     """Assemble the Provenance for a freshly parsed object, history seeded with the parse
     record (§3.9). ``original_coordinate_system`` is what the *source* used, not what the
-    canonical object stores (canonical positions are always Cartesian, §4)."""
+    canonical object stores (canonical positions are always Cartesian, §4). ``parser_version``
+    overrides the default parser-version string for a parser that folds a wrapped dependency's
+    version in (see ``parse_record``; ase_traj records the ASE version, M14 deliverable 3)."""
     return Provenance(
         source_filename=filename,
         source_format=format_id,
         source_units=source_units,
         original_coordinate_system=original_coordinate_system,
         parse_notes=list(parse_notes),
-        history=[parse_record(format_id)],
+        history=[parse_record(format_id, parser_version=parser_version)],
     )
