@@ -54,6 +54,10 @@ dev = [
     "import-linter>=2.0",
     "types-PyYAML>=6",
     "hypothesis>=6.100",
+    # pip-audit runs the nightly dependency vulnerability audit (M15C; Part 8 §5). Nightly-only
+    # and non-blocking — a new advisory against a pinned dep surfaces in the scheduled run, it
+    # never gates a PR. Dev-extra, so it ships no runtime code (the D4/D7 posture is unchanged).
+    "pip-audit>=2.7",
 ]
 
 [project.scripts]

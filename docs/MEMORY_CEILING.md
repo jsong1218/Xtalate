@@ -3,9 +3,11 @@
 > **Status.** Introduced with M12 (v0.3, "Trajectories at Scale"), the frame-chunked processing
 > core, and extended with M13 (XDATCAR — the streaming-first parser and the `frame_selection`
 > streaming path D56 deferred here). This note states the memory model the streaming path guarantees
-> and records its measured validation. The numbers here are seeded from the M12/M13 proof fixtures;
-> M15 finalizes them against the full synthetic performance corpus (`docs/IMPLEMENTATION_PLAN_v0.3.md`
-> M15 deliverable 4).
+> and records its measured validation. The tracemalloc heap numbers below are from the M12/M13 proof
+> fixtures; **M15 finalizes the whole-process peak-RSS numbers against the full synthetic performance
+> corpus** (`benchmarks/`, MASTER_SPEC Part 8 §4) — the "Measured validation (M15 performance corpus)"
+> section carries them, tied to `frame_limit_ceiling` and `convert_xdatcar_to_extxyz_10k` and the
+> 2 GB / 3 GB spec bounds.
 
 ## The model
 
@@ -93,3 +95,41 @@ demonstrated contrast a conservative lower bound, never an overstatement. The tw
 (1) materialization clears a generous tens-of-MB floor (it holds the whole trajectory) and (2)
 streaming is at most a quarter of it — both loose relative to the observed gap, so the gate is robust
 to noise while still failing loudly if streaming ever regresses to materialize-then-write.
+
+## Measured validation (M15 performance corpus)
+
+The `tracemalloc` numbers above are the **conversion-only Python heap**, the tight gate the CI test
+enforces. This section adds the complementary **whole-process peak RSS** measured by the M15
+performance corpus (`benchmarks/`, MASTER_SPEC Part 8 §4) — the number the spec's "Peak RSS ≤ 2 GB /
+≤ 3 GB" bounds are actually written against. Each benchmark runs in its own subprocess and reports
+`resource.getrusage(RUSAGE_SELF).ru_maxrss`, so the figure folds in the numpy + ASE + pydantic import
+floor and the C-level buffers `tracemalloc` cannot see — deliberately, because that whole-process
+high-water mark is what an operator's `2 GB` bound means. The nightly workflow (`nightly.yml`, M15C)
+re-runs this corpus and uploads the series; the numbers below are a representative full-scale run on
+the development host (macOS, `ru_maxrss` in bytes):
+
+| Benchmark | Scale | Path | Wall | Peak RSS | Spec bound |
+|---|---|---|---|---|---|
+| `frame_limit_ceiling` | 100,000 × 10 | **streaming** (`parse_stream`→`export_stream`) | 12.2 s | **0.08 GiB** | completes, sub-linear |
+| `convert_xdatcar_to_extxyz_10k` | 10,000 × 100 | materialized full pipeline (parse→convert→validate) | 8.3 s | **0.76 GiB** | ≤ 2 GB |
+| `parse_xdatcar_10k` | 10,000 × 100 | materialized parse | 2.1 s | 0.15 GiB | ≤ 2 GB |
+| `convert_extxyz_roundtrip_1k` | 1,000 × 1,000 | materialized round-trip + validate (widest frame) | 10.1 s | **1.49 GiB** | ≤ 3 GB |
+
+The two rows that anchor the model:
+
+- **`frame_limit_ceiling` is the sub-linear proof at the `06 §5` cap.** Streaming 100,000 frames —
+  ten times the `∝ frames` benchmarks' frame count — peaks at **0.08 GiB**, *below* every
+  materialized row including the 10,000-frame parse. Whole-process RSS at the ceiling frame count
+  sitting under the import-plus-one-frame floor is the `peak ∝ chunk_size × atoms_per_frame`
+  guarantee made numeric at the largest supported input: adding frames does not move the number.
+- **`convert_xdatcar_to_extxyz_10k` sits at ~0.76 GiB against the 2 GB bound** — the full spine
+  (parse → convert → validate) on an XDATCAR's ordinary size, materialized (the CLI slurps the whole
+  file), with better than 2.5× headroom. `convert_extxyz_roundtrip_1k`, the widest single frame in
+  the corpus (1,000 atoms), lands at ~1.49 GiB against its 3 GB bound — again the per-frame-width
+  headroom the larger bound reserves. Both are `∝ frame_count` by construction; the streaming path
+  is the escape hatch when that product would exceed the bound.
+
+These are **measured, not gated** (Part 8 §4): the corpus reports wall-time and RSS against each
+budget and flags a breach, but only a *crash* fails. The strict stream-vs-materialize ratio stays
+the CI test's job (the `tracemalloc` gate above); the `> 20 %` regression tripwire against a rolling
+median waits for v0.5's pinned runner, where shared-runner timing noise no longer swamps the signal.
