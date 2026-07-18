@@ -1,0 +1,20 @@
+case: water-single-molecule
+format_id: ase_traj
+source_file: relax.traj
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "6fd58da245a4542cfcd2299bb864c435b1dc14b2812ce163f60957e14bf0b463"
+expected_sha256: "47975b750027a239fc3db10238feb68a3fa69e0416cdb46a3df909f776f6210e"
+origin:
+  kind: synthetic
+  source: >-
+    Hand-authored for M14C via tests/golden/ase_traj/_generate.py (ASE .traj ULM container, a
+    single isolated water molecule).
+  license: "Apache-2.0"
+notes: >-
+  The minimal-molecule + laundering anchor: one isolated water frame with only symbols and
+  positions. ASE always hands back a fully-populated Atoms, so this fixture proves the parser
+  launders every manufactured default back to absence (P3) on a *real committed* file, not only in
+  the unit fixtures — cell (an all-zero 3×3) → None, masses (Z-derivable) → None, momenta (zeroed)
+  → dynamics.velocities None, and the empty constraints list → dynamics.constraints None (D58
+  addendum). A single frame carries no time axis, so trajectory launders to None as well.

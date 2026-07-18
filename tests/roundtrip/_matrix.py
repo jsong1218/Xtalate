@@ -52,6 +52,9 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     # M13: the NpT case enrols XDATCAR as a source, so the one fixture whose *cell* varies frame
     # to frame flows through the whole matrix — the counterpart to CONTCAR carrying velocities.
     "xdatcar": ("xdatcar/si-npt-variable-cell", "XDATCAR"),
+    # M14: the rich CO trajectory enrols ase_traj as a source — the one fixture that flows
+    # velocities + forces + a fixed_atoms constraint together through the whole matrix (P6).
+    "ase_traj": ("ase_traj/co-relax-3frame", "relax.traj"),
 }
 
 # Capability paths that are never round-trip content: provenance records *how* a file was read
@@ -73,6 +76,11 @@ _LEAF_PATHS: frozenset[str] = frozenset(
 FIXED_PRESETS: dict[str, dict[str, Any]] = {
     "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}},
     "frame_selection": {"choice": "first", "parameters": {}},
+    # M14: ase_traj's ``fixed_atoms`` kind (D58) is not in POSCAR/CONTCAR's representable set
+    # (``selective_dynamics``), so an ase_traj → POSCAR hop reaches the constraint-representation
+    # gap. ``project`` keeps the representable subset and records the rest — deterministic, and
+    # ignored by any pair that never hits the scenario (Part 8 §2.2).
+    "constraint_representation": {"choice": "project", "parameters": {}},
 }
 
 

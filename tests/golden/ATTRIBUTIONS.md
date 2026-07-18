@@ -12,6 +12,20 @@ fixtures are the project's own work under Apache-2.0; third-party data (CC0 / CC
 contributor grants) carries its source attribution here and is surfaced in the top-level
 `NOTICE` file.
 
+## `ase_traj` / `co-relax-3frame`
+
+- **Source file:** `relax.traj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M14C via tests/golden/ase_traj/_generate.py (ASE .traj ULM container, CO molecule, 3 frames).
+
+## `ase_traj` / `water-single-molecule`
+
+- **Source file:** `relax.traj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M14C via tests/golden/ase_traj/_generate.py (ASE .traj ULM container, a single isolated water molecule).
+
 ## `contcar` / `co-md-restart`
 
 - **Source file:** `CONTCAR`

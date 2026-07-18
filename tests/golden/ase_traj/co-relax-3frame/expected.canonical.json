@@ -1,0 +1,335 @@
+{
+  "schema_version": "0.1.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "C",
+          "O"
+        ],
+        "atomic_numbers": [
+          6,
+          8
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.1
+          ]
+        ],
+        "masses": [
+          12.011,
+          15.999
+        ]
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            6.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            6.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            6.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.00009822694788464063,
+            0.00009822694788464063,
+            0.00009822694788464063
+          ],
+          [
+            0.00009822694788464063,
+            0.00009822694788464063,
+            0.00009822694788464063
+          ]
+        ],
+        "forces": [
+          [
+            0.01,
+            0.01,
+            0.01
+          ],
+          [
+            0.01,
+            0.01,
+            0.01
+          ]
+        ],
+        "constraints": [
+          {
+            "kind": "fixed_atoms",
+            "atom_indices": [
+              0
+            ],
+            "parameters": {}
+          }
+        ]
+      },
+      "electronic": {
+        "total_energy": -5.0,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 1,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "C",
+          "O"
+        ],
+        "atomic_numbers": [
+          6,
+          8
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.12
+          ]
+        ],
+        "masses": [
+          12.011,
+          15.999
+        ]
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            6.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            6.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            6.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.00019645389576928126,
+            0.00019645389576928126,
+            0.00019645389576928126
+          ],
+          [
+            0.00019645389576928126,
+            0.00019645389576928126,
+            0.00019645389576928126
+          ]
+        ],
+        "forces": [
+          [
+            0.02,
+            0.02,
+            0.02
+          ],
+          [
+            0.02,
+            0.02,
+            0.02
+          ]
+        ],
+        "constraints": [
+          {
+            "kind": "fixed_atoms",
+            "atom_indices": [
+              0
+            ],
+            "parameters": {}
+          }
+        ]
+      },
+      "electronic": {
+        "total_energy": -6.0,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 2,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "C",
+          "O"
+        ],
+        "atomic_numbers": [
+          6,
+          8
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.1400000000000001
+          ]
+        ],
+        "masses": [
+          12.011,
+          15.999
+        ]
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            6.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            6.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            6.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.00029468084365392186,
+            0.00029468084365392186,
+            0.00029468084365392186
+          ],
+          [
+            0.0002946808436539219,
+            0.0002946808436539219,
+            0.0002946808436539219
+          ]
+        ],
+        "forces": [
+          [
+            0.03,
+            0.03,
+            0.03
+          ],
+          [
+            0.03,
+            0.03,
+            0.03
+          ]
+        ],
+        "constraints": [
+          {
+            "kind": "fixed_atoms",
+            "atom_indices": [
+              0
+            ],
+            "parameters": {}
+          }
+        ]
+      },
+      "electronic": {
+        "total_energy": -7.0,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": {
+    "timestep": null
+  },
+  "simulation": null,
+  "provenance": {
+    "source_filename": "relax.traj",
+    "source_format": "ase_traj",
+    "source_units": {
+      "positions": "angstrom"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "read via ASE 3.29.0 TrajectoryReader; ASE-manufactured defaults (zero cell, derived masses, zeroed momenta) laundered to absence (P3)."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-07-18T04:30:19Z",
+        "operation": "parse",
+        "source_format": "ase_traj",
+        "target_format": null,
+        "tool_version": "0.2.0",
+        "parser_version": "ase_traj-parser 0.2.0 (ase 3.29.0)",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {},
+    "custom_per_atom": {},
+    "custom_per_frame": {
+      "ase_traj:step": [
+        0.0,
+        1.0,
+        2.0
+      ]
+    }
+  }
+}

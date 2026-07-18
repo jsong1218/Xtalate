@@ -12,9 +12,11 @@ import numpy as np
 import pytest
 
 from tests._format_helpers import assert_scientifically_equal, parse_bytes
+from xtalate.exporters.ase_traj import make_ase_traj_exporter
 from xtalate.exporters.extxyz import ExtxyzExporter
 from xtalate.exporters.poscar import make_contcar_exporter, make_poscar_exporter
 from xtalate.exporters.xyz import XyzExporter
+from xtalate.parsers.ase_traj import make_ase_traj_parser
 from xtalate.parsers.extxyz import ExtxyzParser
 from xtalate.parsers.poscar import make_contcar_parser, make_poscar_parser
 from xtalate.parsers.xyz import XyzParser
@@ -45,6 +47,11 @@ def test_poscar_identity() -> None:
 def test_extxyz_identity() -> None:
     source = (GOLDEN / "extxyz" / "co-in-cell" / "sample.extxyz").read_bytes()
     _roundtrip(ExtxyzParser(), ExtxyzExporter(), source)
+
+
+def test_ase_traj_identity() -> None:
+    source = (GOLDEN / "ase_traj" / "co-relax-3frame" / "relax.traj").read_bytes()
+    _roundtrip(make_ase_traj_parser(), make_ase_traj_exporter(), source)
 
 
 SELECTIVE = b"""sd test
