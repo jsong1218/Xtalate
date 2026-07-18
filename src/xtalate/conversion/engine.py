@@ -49,7 +49,12 @@ from xtalate.conversion.report import (
     RemovedEntry,
     SuppliedEntry,
 )
-from xtalate.recovery import AppliedAssumption, RecoveryEngine
+from xtalate.recovery import (
+    AppliedAssumption,
+    RecoveryEngine,
+    frame_selection_stream_index,
+    frame_selection_stream_records,
+)
 from xtalate.schema import (
     AtomsBlock,
     CanonicalObject,
@@ -441,6 +446,33 @@ class ConversionEngine:
         constraints = matrix.field_capability(target_format_id, "write", "dynamics.constraints")
         return constraints.level != CapabilityLevel.PARTIAL
 
+    def frame_selection_streaming_eligible(
+        self, source_format_id: str, target_format_id: str
+    ) -> bool:
+        """Whether a ``(source, target)`` pair can take the streaming *frame-selection* path (M13,
+        D56): a multi-frame streaming source into a single-structure target, where the only recovery
+        the conversion can need is ``frame_selection`` — resolved single-pass by capturing the one
+        retained frame (``first``/``last``/``index``) while accumulating full presence.
+
+        This is the pair ``streaming_eligible`` deliberately *excludes* (it bails on any
+        ``max_frames`` cap). The distinction: ``convert_stream`` is recovery-free; ``convert_stream_
+        select`` handles exactly one recovery — the frame reduction — because that recovery needs no
+        data the single pass cannot capture. Only the **source** need stream: the memory win is in
+        not holding the dropped frames, and the one retained frame is written through the exporter's
+        ordinary whole-file ``export`` (a single structure), so a non-streaming single-structure
+        exporter like POSCAR qualifies. The static gate is only: the source streams and the target
+        caps frames at one. The two data-dependent exclusions — a source that carries *constraints*
+        (which a PARTIAL target would route through ``constraint_representation``) and a retained
+        frame that still needs a *fabricative* recovery (a ``mixed`` cell reduced to a cell-less
+        frame → ``missing_lattice``) — are caught at runtime, where ``convert_stream_select`` hands
+        them back to the materialized ``convert`` rather than mis-account or fabricate mid-stream.
+        XDATCAR→POSCAR qualifies (XDATCAR carries neither constraints nor a missing lattice)."""
+        parser = self._registry.get_parser(source_format_id)
+        if not parser.supports_streaming():
+            return False
+        caps = self._registry.capability_matrix().get(target_format_id, "write")
+        return caps.max_frames == 1
+
     def convert_stream(
         self,
         source_stream: Any,
@@ -593,6 +625,243 @@ class ConversionEngine:
         return ConversionResult(
             report=report, output=None, canonical_out=None, validation=validation
         )
+
+    def convert_stream_select(
+        self,
+        source_stream: Any,
+        *,
+        source_format_id: str,
+        target_format_id: str,
+        output: Any,
+        frame_selection: dict[str, Any],
+        source_filename: str | None = None,
+        source_sha256: str | None = None,
+        target_filename: str | None = None,
+        mode: str = "permissive",
+        tolerance_profile: str | ToleranceProfile = "default",
+        acknowledge_loss: bool = False,
+        validate: bool = True,
+    ) -> ConversionResult:
+        """Stream a multi-frame source into a single-structure target under a ``frame_selection``
+        reduction, holding one frame resident (M13; DECISIONS.md D56 — the recovery interplay M12
+        deferred, whose worked case is XDATCAR→POSCAR).
+
+        A single pass over ``source_stream`` accumulates full field presence (all frames) and counts
+        frames while capturing *only* the one retained frame — ``first`` (frame 0), ``last`` (the
+        running last), or ``index=k`` (frame k). After the pass the retained frame is materialized
+        into a single-structure object (identical to ``source.single_frame(index)``) and exported
+        and validated exactly as the materialized ``convert`` would — so peak memory tracks one
+        frame, never the trajectory length, yet the Conversion Report and the output bytes are
+        **byte-identical** to ``convert(source, recovery_choices={"frame_selection": ...})`` on the
+        same file (standing rule 3). The frame_selection accounting itself is produced by the shared
+        ``recovery.frame_selection_stream_records``, driven by the accumulated presence, so the
+        dropped-frame ``removed`` entries match the materialized recovery to the byte.
+
+        Only ``frame_selection_streaming_eligible`` pairs and the ``first``/``last``/``index``
+        choices are accepted. ``split_all`` (one output file per frame) and any file whose retained
+        frame would still need a *fabricative* recovery (a ``mixed`` cell reduced to a cell-less
+        frame → ``missing_lattice``) are refused back to the materialized ``convert`` with a
+        ``ValueError`` — the streaming path never fabricates mid-pass."""
+        if not self.frame_selection_streaming_eligible(source_format_id, target_format_id):
+            raise ValueError(
+                f"{source_format_id!r} → {target_format_id!r} is not frame-selection-streaming-"
+                "eligible (a streaming pair into a single-structure target is required); use "
+                "convert()"
+            )
+        code = str(frame_selection.get("choice"))
+        if code == "split_all":
+            raise ValueError(
+                "frame_selection=split_all fans one output into many files and is not a single-"
+                "frame streaming case; use convert()"
+            )
+        parser = self._registry.get_parser(source_format_id)
+        exporter = self._registry.get_exporter(target_format_id)
+        matrix = self._registry.capability_matrix()
+
+        # Capture strategy is fixed by the choice code (known now); `n` and the index a
+        # `last`/`index` choice resolves to are known only after the single pass. Hold at most the
+        # frame-0, running-last, and `index=k` candidates — three references, O(1) in frame count.
+        want_index: int | None = None
+        if code == "index":
+            raw = (frame_selection.get("parameters", {}) or {}).get("frame_index")
+            want_index = raw if isinstance(raw, int) and not isinstance(raw, bool) else None
+
+        stream = parser.parse_stream(source_stream, filename=source_filename)
+        header = stream.header
+        acc = PresenceAccumulator(header.schema_version)
+        acc.observe_header(
+            trajectory=header.trajectory,
+            simulation=header.simulation,
+            tags=header.tags,
+            annotations=header.annotations,
+            custom_global=header.custom_global,
+            custom_per_atom=header.custom_per_atom,
+        )
+        first_frame: StreamFrame | None = None
+        last_frame: StreamFrame | None = None
+        indexed_frame: StreamFrame | None = None
+        n = 0
+        for sf in stream.frames():
+            present_keys = [k for k, v in sf.per_frame_custom.items() if v is not None]
+            acc.observe_frame(sf.frame, present_keys)
+            if n == 0:
+                first_frame = sf
+            last_frame = sf
+            if want_index is not None and n == want_index:
+                indexed_frame = sf
+            n += 1
+        presence = acc.result()
+
+        # A source carrying constraints against a PARTIAL target would need
+        # `constraint_representation` (a subset choice this path does not resolve), and
+        # `has_constraints=False` below could not then be trusted — so refuse it back to the
+        # materialized `convert`. XDATCAR never carries constraints, so this never fires for it.
+        if presence.status_of("dynamics.constraints") != "absent":
+            raise ValueError(
+                f"{source_format_id!r} carries constraints, whose representation is a recovery "
+                "this streaming path does not resolve; use convert()"
+            )
+
+        diff = build_preflight_from_presence(
+            presence,
+            frame_count=n,
+            has_constraints=False,  # guaranteed by the constraint-absence guard just above
+            matrix=matrix,
+            target_format_id=target_format_id,
+        )
+        fs_scenario = next((s for s in diff.unresolved if s.scenario == "frame_selection"), None)
+        other = [s for s in diff.unresolved if s.scenario != "frame_selection"]
+        if other:
+            # The retained frame still lacks a target-required field (e.g. a mixed cell reduced to
+            # a cell-less frame → missing_lattice): fabricating mid-stream is out of this path's
+            # scope, so hand it back to the materialized convert, which resolves it lazily (D56).
+            raise ValueError(
+                f"{source_format_id!r} → {target_format_id!r} on this input needs recovery beyond "
+                f"frame_selection ({sorted(s.scenario for s in other)}); use convert()"
+            )
+
+        # Resolve the retained frame + its assumption. A source already single-structure (n ≤ 1)
+        # trips no frame_selection scenario — no reduction, no assumption — matching materialized.
+        if fs_scenario is None:
+            index = 0
+            selected = first_frame
+        else:
+            index = frame_selection_stream_index(frame_selection, n)  # validates; may RecoveryError
+            selected = {"first": first_frame, "last": last_frame, "index": indexed_frame}[code]
+        if selected is None:  # pragma: no cover - guarded by eligibility + a non-empty stream
+            raise ValueError("no frame was captured for the requested selection")
+        reduced = self._single_frame_object(header, selected)
+        applied: list[AppliedAssumption] = []
+        if fs_scenario is not None:
+            applied.append(
+                frame_selection_stream_records(
+                    reduced,
+                    presence,
+                    frame_count=n,
+                    index=index,
+                    code=code,
+                    origin="preset",
+                )
+            )
+
+        assumptions, supplied, recovery_preserved, recovery_removed, plan_additions = (
+            _map_assumptions(applied)
+        )
+        write_plan = set(diff.write_plan) | plan_additions
+        _supplied_paths = {s.path for s in supplied}
+        preserved = [
+            *[e for e in diff.preserved if e.path not in _supplied_paths],
+            *recovery_preserved,
+        ]
+        removed = _dedupe_removed([*diff.removed, *recovery_removed])
+        warnings = [*diff.warnings, *_parse_warnings(stream.issues)]
+
+        if mode == "strict" and removed and not acknowledge_loss:
+            report = self._assemble(
+                stage="final",
+                status="refused",
+                mode=mode,
+                source_schema_version=presence.schema_version,
+                source_format_id=source_format_id,
+                source_filename=source_filename,
+                source_sha256=source_sha256,
+                target_format_id=target_format_id,
+                target_filename=target_filename,
+                preserved=preserved,
+                removed=removed,
+                supplied=supplied,
+                assumptions=assumptions,
+                warnings=diff.warnings,
+                refusal={
+                    "code": "UNACKNOWLEDGED_LOSS",
+                    "message": "strict mode: reductive loss must be acknowledged "
+                    "(acknowledge_loss=True) before this conversion will proceed",
+                    "unresolved_scenarios": [],
+                },
+            )
+            _assert_completeness_presence(report, presence)
+            return ConversionResult(report=report, output=None, canonical_out=None, validation=None)
+
+        report = self._assemble(
+            stage="final",
+            status="completed",
+            mode=mode,
+            source_schema_version=presence.schema_version,
+            source_format_id=source_format_id,
+            source_filename=source_filename,
+            source_sha256=source_sha256,
+            target_format_id=target_format_id,
+            target_filename=target_filename,
+            preserved=preserved,
+            removed=removed,
+            supplied=supplied,
+            assumptions=assumptions,
+            warnings=warnings,
+        )
+        _assert_completeness_presence(report, presence)
+
+        recovered = _append_recovery_records(
+            reduced, assumptions, source_format_id, target_format_id
+        )
+        canonical_out = _apply_write_plan(recovered, write_plan, target_format_id)
+        buffer = BytesIO()
+        exporter.export(canonical_out, buffer)
+        output_bytes = buffer.getvalue()
+        output.write(output_bytes)
+
+        tolerance = (
+            tolerance_profile
+            if isinstance(tolerance_profile, ToleranceProfile)
+            else ToleranceProfile.named(tolerance_profile)
+        )
+        validation: ValidationReport | None = None
+        if validate:
+            validation = self._validation.validate(
+                expected=canonical_out,
+                output=output_bytes,
+                target_format_id=target_format_id,
+                conversion_report=report,
+                tolerance=tolerance,
+            )
+        return ConversionResult(
+            report=report, output=output_bytes, canonical_out=canonical_out, validation=validation
+        )
+
+    @staticmethod
+    def _single_frame_object(header: StreamHeader, sf: StreamFrame) -> CanonicalObject:
+        """Materialize the one retained ``StreamFrame`` into a single-structure ``CanonicalObject``
+        equal to ``full_source.single_frame(index)`` — the retained frame re-indexed to 0, the
+        trajectory container dropped (a lone frame is a structure, not a trajectory), and its
+        ``custom_per_frame`` sliced to the single row. Reuses the streaming ``materialize`` so the
+        reconstruction rule lives in exactly one place (Part 2 §3.10)."""
+        from xtalate.sdk.streaming import FrameStream, materialize
+
+        reindexed = StreamFrame(
+            frame=sf.frame.model_copy(update={"index": 0}),
+            per_frame_custom=sf.per_frame_custom,
+        )
+        obj, _ = materialize(FrameStream(header, iter([reindexed])))
+        return obj
 
     def _validate_streamed(
         self,

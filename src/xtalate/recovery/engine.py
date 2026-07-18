@@ -41,6 +41,7 @@ from xtalate.recovery.scenarios import (
 )
 from xtalate.schema import AtomsBlock, CanonicalObject, Cell, Frame
 from xtalate.schema.elements import atomic_number
+from xtalate.schema.presence import PresenceMap
 
 # Resolution order (Part 4 §3.3): frame_selection first (a bounding box is computed on the chosen
 # frame), then constraint projection (frame-independent), then the fabricated lattice, then the
@@ -222,15 +223,21 @@ def _choice_code(choice: dict[str, Any], scenario: UnresolvedScenario) -> str:
 _PER_FRAME_PREFIXES = ("frame.", "atoms.", "cell.", "dynamics.", "electronic.")
 
 
-def _per_frame_paths_lost(before: CanonicalObject, after: CanonicalObject) -> list[str]:
-    """Per-frame canonical paths present in ``before`` but absent in the reduced ``after`` object —
-    the fields a frame reduction eliminates entirely (present only in dropped frames). Derived from
-    the object's own presence map so it stays correct as the schema grows (**P6**); ``atoms``
-    symbols/positions survive into the retained frame and never appear here."""
+def _per_frame_paths_lost(before_presence: PresenceMap, after: CanonicalObject) -> list[str]:
+    """Per-frame canonical paths present in ``before_presence`` but absent in the reduced ``after``
+    object — the fields a frame reduction eliminates entirely (present only in dropped frames).
+    Derived from a presence map so it stays correct as the schema grows (**P6**); ``atoms``
+    symbols/positions survive into the retained frame and never appear here.
+
+    Takes the *before* side as a ``PresenceMap`` rather than a whole object so the streaming
+    frame_selection path (M13, D56) can drive it from its single-pass ``PresenceAccumulator``
+    result — which reproduces ``field_presence()`` exactly — without ever holding the dropped
+    frames. The materialized caller passes ``canonical.field_presence()``; the two are equal, so
+    the accounting is byte-identical (standing rule 3)."""
     after_presence = after.field_presence()
     return [
         path
-        for path in before.field_presence().present_paths()
+        for path in before_presence.present_paths()
         if path.startswith(_PER_FRAME_PREFIXES) and after_presence.status_of(path) == "absent"
     ]
 
@@ -262,7 +269,6 @@ def _apply_frame_selection(
     Records an ``Assumption`` and a ``FrameDrop`` (the dropped frames as a `removed` entry) but
     **no** ``SuppliedField`` — the retained frame is genuine source data, not fabricated."""
     code = _choice_code(choice, scenario)
-    params = choice.get("parameters", {}) or {}
     n = canonical.frame_count
 
     if code == "split_all":
@@ -284,23 +290,52 @@ def _apply_frame_selection(
         )
         return canonical, assumption, 0
 
-    if code == "first":
-        index = 0
-    elif code == "last":
-        index = n - 1
-    else:  # "index"
-        raw = params.get("frame_index")
-        if not isinstance(raw, int) or isinstance(raw, bool) or not (0 <= raw < n):
-            raise RecoveryError(
-                f"frame_selection 'index' needs an in-range integer frame_index (0..{n - 1}), "
-                f"got {raw!r}"
-            )
-        index = raw
-
+    index = _frame_selection_index(code, choice, n)
     # The reduction itself (frame re-index, custom_per_frame slice, trajectory drop) is defined once
     # on the canonical object, shared with split_all export (Part 2 §3.10). Here we add the loss
     # bookkeeping the reduction implies.
     reduced = canonical.single_frame(index)
+    assumption = _frame_selection_assumption(
+        reduced, canonical.field_presence(), n, index, code, aid, origin
+    )
+    return reduced, assumption, index
+
+
+def _frame_selection_index(code: str, choice: dict[str, Any], n: int) -> int:
+    """Resolve a validated non-``split_all`` choice code to the retained 0-based frame index.
+
+    Shared by the materialized ``_apply_frame_selection`` and the streaming path
+    (``frame_selection_stream_records``), so ``first``/``last``/``index`` mean the same frame in
+    both — the only difference is *when* ``n`` is known (up front vs. after the single pass)."""
+    if code == "first":
+        return 0
+    if code == "last":
+        return n - 1
+    raw = (choice.get("parameters", {}) or {}).get("frame_index")  # code == "index"
+    if not isinstance(raw, int) or isinstance(raw, bool) or not (0 <= raw < n):
+        raise RecoveryError(
+            f"frame_selection 'index' needs an in-range integer frame_index (0..{n - 1}), "
+            f"got {raw!r}"
+        )
+    return raw
+
+
+def _frame_selection_assumption(
+    reduced: CanonicalObject,
+    before_presence: PresenceMap,
+    n: int,
+    index: int,
+    code: str,
+    aid: str,
+    origin: str,
+) -> AppliedAssumption:
+    """Build the ``frame_selection`` ``AppliedAssumption`` (the ``removed`` accounting for the
+    dropped frames) from the reduced object plus the *before* presence map.
+
+    Deliberately free of the full multi-frame object: its only view of the dropped frames is
+    ``before_presence`` (the per-frame paths present across the source), so the streaming path can
+    supply its single-pass ``PresenceAccumulator`` result and get the byte-identical assumption the
+    materialized path builds from ``canonical.field_presence()`` (M13, D56; standing rule 3)."""
     dropped = n - 1
     removed = [
         FrameDrop(
@@ -316,7 +351,7 @@ def _apply_frame_selection(
     # invariant fires (P1). Without this, a `constraint_representation` running *after* frame_
     # selection (dependency order) sees a constraint-free object and records nothing — silent loss.
     # Root losses (e.g. `trajectory.timestep`) are the capability diff's job, so this is per-frame.
-    lost = _per_frame_paths_lost(canonical, reduced)
+    lost = _per_frame_paths_lost(before_presence, reduced)
     for path in lost:
         removed.append(
             FrameDrop(
@@ -325,7 +360,7 @@ def _apply_frame_selection(
                 detail=f"{path} appeared in the source but not in retained frame {index}.",
             )
         )
-    assumption = AppliedAssumption(
+    return AppliedAssumption(
         id=aid,
         scenario="frame_selection",
         choice=code,
@@ -338,7 +373,35 @@ def _apply_frame_selection(
         ),
         removed=removed,
     )
-    return reduced, assumption, index
+
+
+def frame_selection_stream_records(
+    reduced: CanonicalObject,
+    before_presence: PresenceMap,
+    *,
+    frame_count: int,
+    index: int,
+    code: str,
+    origin: str,
+) -> AppliedAssumption:
+    """Public streaming entry point for the ``frame_selection`` accounting (M13, D56).
+
+    The streaming Conversion path (``ConversionEngine.convert_stream``) computes the retained
+    ``index`` and the reduced single-frame object itself during its single pass, then calls here to
+    get the *same* ``AppliedAssumption`` the materialized recovery would produce — so a streamed
+    XDATCAR→POSCAR frame selection and a materialized one yield the byte-identical Conversion
+    Report. ``split_all`` is not a streaming case (it fans one output into many); the engine keeps
+    it on the materialized path, so this handles only ``first``/``last``/``index``."""
+    return _frame_selection_assumption(
+        reduced, before_presence, frame_count, index, code, "A1", origin
+    )
+
+
+def frame_selection_stream_index(choice: dict[str, Any], frame_count: int) -> int:
+    """The retained 0-based index for a streaming ``first``/``last``/``index`` choice, validated
+    against the (post-pass) ``frame_count``. Mirrors ``_frame_selection_index`` but takes the raw
+    choice so the engine need not know the internal code-resolution rule."""
+    return _frame_selection_index(str(choice.get("choice")), choice, frame_count)
 
 
 def _apply_constraint_representation(

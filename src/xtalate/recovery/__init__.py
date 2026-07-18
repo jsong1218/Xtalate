@@ -26,6 +26,8 @@ from xtalate.recovery.engine import (
     RecoveryError,
     RecoveryResult,
     SuppliedField,
+    frame_selection_stream_index,
+    frame_selection_stream_records,
 )
 from xtalate.recovery.scenarios import (
     SCENARIO_HAZARD,
@@ -46,4 +48,6 @@ __all__ = [
     "SuppliedField",
     "UnresolvedScenario",
     "available_options",
+    "frame_selection_stream_index",
+    "frame_selection_stream_records",
 ]

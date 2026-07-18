@@ -17,7 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from tests.streaming._generators import write_extxyz_trajectory
+from tests.streaming._generators import write_extxyz_trajectory, write_xdatcar_trajectory
 
 _N_FRAMES = 2500
 _N_ATOMS = 50
@@ -34,15 +34,9 @@ def _probe(mode: str, *args: str) -> int:
     return int(proc.stdout.strip().splitlines()[-1])
 
 
-def test_streaming_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
-    src = write_extxyz_trajectory(tmp_path / "traj.xyz", n_frames=_N_FRAMES, n_atoms=_N_ATOMS)
-    out_stream = tmp_path / "out_stream.xyz"
-    out_material = tmp_path / "out_material.xyz"
-
-    baseline = _probe("baseline")
-    stream_peak = _probe("stream", str(src), str(out_stream))
-    material_peak = _probe("materialize", str(src), str(out_material))
-
+def _assert_sublinear(
+    stream_peak: int, material_peak: int, baseline: int, out_stream: Path, out_material: Path
+) -> None:
     # Compare *trajectory-attributable* memory — peak minus the interpreter+imports floor — not
     # absolute peaks. On CI the import baseline (~150 MB) dominates the peak and swamps the signal:
     # the streaming path can add ~0 measurable RSS (a great result) while materialization adds tens
@@ -70,3 +64,28 @@ def test_streaming_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
         f"stream_delta={stream_delta} material_delta={material_delta} "
         f"(stream={stream_peak} material={material_peak} baseline={baseline})"
     )
+
+
+def test_streaming_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
+    src = write_extxyz_trajectory(tmp_path / "traj.xyz", n_frames=_N_FRAMES, n_atoms=_N_ATOMS)
+    out_stream = tmp_path / "out_stream.xyz"
+    out_material = tmp_path / "out_material.xyz"
+
+    baseline = _probe("baseline")
+    stream_peak = _probe("stream", str(src), str(out_stream))
+    material_peak = _probe("materialize", str(src), str(out_material))
+    _assert_sublinear(stream_peak, material_peak, baseline, out_stream, out_material)
+
+
+def test_xdatcar_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
+    """The honest M13 gate: XDATCAR is the format whose ordinary size is a full MD trajectory, so
+    converting one to extXYZ must stay bounded by a single frame. Same contrast as the extXYZ proof,
+    driven through the XDATCAR streaming parser (Part 4 §6, R8; DECISIONS.md D56)."""
+    src = write_xdatcar_trajectory(tmp_path / "XDATCAR", n_frames=_N_FRAMES, n_atoms=_N_ATOMS)
+    out_stream = tmp_path / "xdatcar_stream.xyz"
+    out_material = tmp_path / "xdatcar_material.xyz"
+
+    baseline = _probe("baseline")
+    stream_peak = _probe("stream", str(src), str(out_stream), "xdatcar", "extxyz")
+    material_peak = _probe("materialize", str(src), str(out_material), "xdatcar", "extxyz")
+    _assert_sublinear(stream_peak, material_peak, baseline, out_stream, out_material)
