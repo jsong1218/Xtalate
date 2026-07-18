@@ -29,11 +29,17 @@ class InvalidCapabilityDeclaration(ValueError):
 
 
 def _validate_and_expand(
-    caps: FormatCapabilities, *, expected_direction: str
+    caps: FormatCapabilities, *, expected_direction: str, expected_format_id: str
 ) -> FormatCapabilities:
     """Return a copy of ``caps`` with every wildcard ``fields`` key expanded to concrete
-    leaf paths. Raises ``InvalidCapabilityDeclaration`` on any unknown path or a
-    direction mismatch."""
+    leaf paths. Raises ``InvalidCapabilityDeclaration`` on any unknown path, a direction
+    mismatch, or a declaration whose ``format_id`` is not the registering plugin's."""
+    if caps.format_id != expected_format_id:
+        raise InvalidCapabilityDeclaration(
+            f"plugin {expected_format_id!r}: capabilities() declares format_id "
+            f"{caps.format_id!r}; a declaration must carry the format_id of the plugin "
+            "registering it"
+        )
     if caps.direction != expected_direction:
         raise InvalidCapabilityDeclaration(
             f"{caps.format_id!r}: declared direction {caps.direction!r} but registered as "
@@ -98,14 +104,20 @@ class Registry:
     def register_parser(self, parser: ParserPlugin) -> None:
         if parser.format_id in self._parsers:
             raise ValueError(f"a parser is already registered for format {parser.format_id!r}")
-        caps = _validate_and_expand(parser.capabilities(), expected_direction="read")
+        caps = _validate_and_expand(
+            parser.capabilities(), expected_direction="read", expected_format_id=parser.format_id
+        )
         self._parsers[parser.format_id] = parser
         self._declarations[(parser.format_id, "read")] = caps
 
     def register_exporter(self, exporter: ExporterPlugin) -> None:
         if exporter.format_id in self._exporters:
             raise ValueError(f"an exporter is already registered for format {exporter.format_id!r}")
-        caps = _validate_and_expand(exporter.capabilities(), expected_direction="write")
+        caps = _validate_and_expand(
+            exporter.capabilities(),
+            expected_direction="write",
+            expected_format_id=exporter.format_id,
+        )
         self._exporters[exporter.format_id] = exporter
         self._declarations[(exporter.format_id, "write")] = caps
 

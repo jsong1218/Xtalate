@@ -28,6 +28,19 @@ def test_duplicate_parser_rejected() -> None:
         reg.register_parser(DummyParser("xyz"))
 
 
+def test_mismatched_declaration_format_id_rejected() -> None:
+    """A ``capabilities()`` declaration must carry the ``format_id`` of the plugin registering
+    it — otherwise the matrix would be keyed by one id while its stored declaration names
+    another, and ``xtalate capabilities`` would emit a self-contradictory listing."""
+    reg = Registry()
+    parser = DummyParser("foo", declared_format_id="bar")
+    with pytest.raises(InvalidCapabilityDeclaration, match="'foo'.*declares format_id 'bar'"):
+        reg.register_parser(parser)
+    exporter = DummyExporter("foo", declared_format_id="bar")
+    with pytest.raises(InvalidCapabilityDeclaration, match="'foo'.*declares format_id 'bar'"):
+        reg.register_exporter(exporter)
+
+
 def test_unknown_canonical_path_rejected() -> None:
     reg = Registry()
     bad = DummyParser("weird", fields={"atoms.charge": FULL})  # charges live under electronic

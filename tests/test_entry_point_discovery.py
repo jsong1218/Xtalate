@@ -152,7 +152,9 @@ def test_bad_capability_declaration_fails_loudly(monkeypatch: pytest.MonkeyPatch
 
 def test_format_id_collision_with_builtin_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """A third-party plugin claiming a first-party ``format_id`` hits the registry's duplicate
-    guard. Built-ins register first, so their ids win the namespace and the plugin is rejected."""
+    guard. Built-ins register first, so their ids win the namespace and the plugin is rejected —
+    as a ``PluginLoadError`` naming the offending entry point, so the failure points at the
+    installed distribution rather than at Xtalate."""
     _patch_entry_points(
         monkeypatch,
         parsers=[
@@ -164,7 +166,26 @@ def test_format_id_collision_with_builtin_is_rejected(monkeypatch: pytest.Monkey
             )
         ],
     )
-    with pytest.raises(ValueError, match="already registered.*'xyz'"):
+    with pytest.raises(PluginLoadError, match=r"toy_dist:ImposterXyz.*already registered.*'xyz'"):
+        default_registry()
+
+
+def test_mismatched_declaration_format_id_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A plugin whose ``capabilities()`` declares a different ``format_id`` than the plugin's own
+    is a malformed declaration: rejected at ``default_registry()`` with
+    ``InvalidCapabilityDeclaration`` (which names both ids), the same validation a built-in gets."""
+    _patch_entry_points(
+        monkeypatch,
+        parsers=[
+            FakeEntryPoint(
+                "toyfmt",
+                "toy_dist:MismatchedParser",
+                registry_mod.PARSER_ENTRY_POINT_GROUP,
+                lambda: DummyParser("toyfmt", declared_format_id="otherfmt"),
+            )
+        ],
+    )
+    with pytest.raises(InvalidCapabilityDeclaration, match="'toyfmt'.*'otherfmt'"):
         default_registry()
 
 

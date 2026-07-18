@@ -14,9 +14,11 @@ them together sits above both — the same reason the CLI, not the engine, compo
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from importlib.metadata import EntryPoint, entry_points
+from typing import TypeVar
 
-from xtalate.capabilities import Registry
+from xtalate.capabilities import InvalidCapabilityDeclaration, Registry
 from xtalate.exporters import builtin_exporters
 from xtalate.parsers import builtin_parsers
 from xtalate.sdk import ExporterPlugin, ParserPlugin
@@ -32,12 +34,13 @@ class PluginLoadError(RuntimeError):
     """A third-party entry point could not be loaded or instantiated.
 
     Raised when ``EntryPoint.load()`` or the loaded factory raises — an installed plugin whose
-    module fails to import, or whose class/factory raises on construction. The message names the
-    offending entry point (group, name, and ``module:attr`` target) so the failure points at the
-    plugin, not at Xtalate. A plugin whose *capability declaration* is malformed fails differently
-    and just as loudly — ``InvalidCapabilityDeclaration`` from ``register_parser``/
-    ``register_exporter`` — and a plugin whose ``format_id`` collides with a first-party format
-    hits the registry's duplicate guard (``ValueError``); both propagate unwrapped. Discovery never
+    module fails to import, or whose class/factory raises on construction — and when a plugin's
+    ``format_id`` collides with an already-registered format (the registry's duplicate guard,
+    re-raised here so the message names the offending entry point). The message names the entry
+    point (group, name, and ``module:attr`` target) so the failure points at the plugin, not at
+    Xtalate. A plugin whose *capability declaration* is malformed fails differently and just as
+    loudly — ``InvalidCapabilityDeclaration`` from ``register_parser``/``register_exporter``
+    propagates unwrapped, since it already names the format and the defect. Discovery never
     swallows a broken plugin (Part 3 §7.1: "rejected with a readable error ... fails loudly").
     """
 
@@ -75,14 +78,33 @@ def _register_from_entry_points(registry: Registry) -> None:
             raise PluginLoadError(
                 f"{_describe(ep)} produced {type(plugin).__name__}, not a ParserPlugin"
             )
-        registry.register_parser(plugin)
+        _register(registry.register_parser, plugin, ep)
     for ep in entry_points(group=EXPORTER_ENTRY_POINT_GROUP):
         plugin = _load_plugin(ep)
         if not isinstance(plugin, ExporterPlugin):
             raise PluginLoadError(
                 f"{_describe(ep)} produced {type(plugin).__name__}, not an ExporterPlugin"
             )
-        registry.register_exporter(plugin)
+        _register(registry.register_exporter, plugin, ep)
+
+
+_P = TypeVar("_P", ParserPlugin, ExporterPlugin)
+
+
+def _register(register: Callable[[_P], None], plugin: _P, ep: EntryPoint) -> None:
+    """Register one discovered plugin, attributing a duplicate-``format_id`` rejection to its
+    entry point. The registry's duplicate guard raises a bare ``ValueError`` that names only the
+    format — enough for first-party registration (the colliding line of code is in this repo),
+    but a discovered collision needs the *distribution* named to be actionable, so it is
+    re-raised as ``PluginLoadError`` with the entry-point identity. A malformed declaration
+    (``InvalidCapabilityDeclaration``, a ``ValueError`` subclass) already names the format and
+    the defect, so it propagates unwrapped."""
+    try:
+        register(plugin)
+    except InvalidCapabilityDeclaration:
+        raise
+    except ValueError as exc:
+        raise PluginLoadError(f"{_describe(ep)}: {exc}") from exc
 
 
 def _load_plugin(ep: EntryPoint) -> object:

@@ -21,6 +21,20 @@ manual publish step), so the maintainer may fold these into `0.3.0` before taggi
   coordinates pick the scale up through the lattice product). Now matches the POSCAR parser's
   handling; covered by new Cartesian scale-2.0 and target-volume tests in
   `tests/parsers/test_xdatcar.py`.
+- **The registry now enforces the id half of `InvalidCapabilityDeclaration`'s documented
+  contract (`docs/DECISIONS.md` D62).** A plugin whose `capabilities()` declaration carries a
+  different `format_id` than the plugin's own is rejected at registration
+  (`InvalidCapabilityDeclaration` naming both ids) instead of silently producing a matrix keyed
+  by one id whose stored declaration names another. All first-party plugins and
+  `xtalate-toyfmt` already satisfied the check.
+
+### Changed
+
+- **A discovered plugin's duplicate-`format_id` collision now raises `PluginLoadError` naming
+  the offending entry point (D62, partially revising D60).** Previously the registry's bare
+  duplicate-guard `ValueError` propagated unwrapped, naming only the format — actionable for
+  first-party code but not for an installed distribution. The original message is preserved
+  verbatim inside the new one; `InvalidCapabilityDeclaration` still propagates unwrapped.
 
 ## [0.3.0] — 2026-07-18
 
