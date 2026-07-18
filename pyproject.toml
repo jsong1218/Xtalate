@@ -103,6 +103,13 @@ testpaths = ["tests"]
 # introduces run-to-run. Raise it as coverage rises; never lower it to make a red PR green —
 # that inverts the gate. --cov-fail-under fails the run below the floor.
 addopts = "--cov=xtalate --cov-report=term-missing --cov-fail-under=91"
+# The PR-vs-nightly split (M15B; Part 8 §2.4). `nightly`-marked items (the full n×n two-hop matrix
+# beyond the curated high-risk subset) are deselected by tests/conftest.py unless
+# XTALATE_FULL_MATRIX=1 un-gates them — the fast PR gate vs the exhaustive nightly run. Registered
+# here so an unknown-marker warning never masks a typo.
+markers = [
+    "nightly: only runs in the nightly workflow (un-gated by XTALATE_FULL_MATRIX=1); PR runs deselect it",
+]
 
 [tool.coverage.run]
 branch = true

@@ -8,16 +8,19 @@ failure to a minimal reproducer (DECISIONS.md D50).
 
 Both properties are re-derived in ``_properties`` (not imported from the runtime guard), exactly as
 in stage 1, so this suite is an *independent* generalization of the M4 runtime assertion. **Zero
-waivers/skips** — a red property is stop-the-line, never an ``xfail`` (v0.2 standing rule 3). The
-example budget is bounded to keep the PR suite under the Part 8 §5 ten-minute cap; v0.3's nightly
-workflow is where the extended budget lives.
+waivers/skips** — a red property is stop-the-line, never an ``xfail`` (v0.2 standing rule 3).
+
+The example budget is not hard-coded here: it comes from the loaded hypothesis profile
+(``tests/conftest.py``), ``pr`` by default (bounded to keep the PR suite under the Part 8 §5
+ten-minute cap) and ``nightly`` (the widened search) when ``HYPOTHESIS_PROFILE=nightly`` — the M15B
+realization of the extended-budget note (M15C wires it into the nightly workflow).
 """
 
 from __future__ import annotations
 
 import io
 
-from hypothesis import HealthCheck, given, settings
+from hypothesis import given
 
 from tests.property import _properties, _strategies
 from tests.roundtrip._matrix import FIXED_PRESETS
@@ -38,7 +41,6 @@ _TARGETS = sorted(e.format_id for e in _REGISTRY.exporters())
 _PRESETS = {**FIXED_PRESETS, "constraint_representation": {"choice": "drop_all", "parameters": {}}}
 
 
-@settings(max_examples=200, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(source=_strategies.canonical_objects())
 def test_report_is_complete_over_random_objects(source: CanonicalObject) -> None:
     # The source format is fixed to `extxyz` deliberately, not swept. The completeness invariant is
