@@ -20,6 +20,8 @@ import math
 from pathlib import Path
 from typing import TextIO
 
+import numpy as np
+
 _SYMBOLS = ("Si", "O")
 
 
@@ -96,4 +98,50 @@ def write_xdatcar_trajectory(
                     y = (base * 1.3 + 0.002 * a) % 1.0
                     z = (base * 0.7 + 0.0005 * f) % 1.0
                     fh.write(f"  {x:.8f}  {y:.8f}  {z:.8f}\n")
+    return path
+
+
+def write_ase_traj_trajectory(path: Path, *, n_frames: int, n_atoms: int, seed: int = 1234) -> Path:
+    """Write a deterministic ``n_frames × n_atoms`` ASE ``.traj`` to ``path``, one image at a time.
+
+    ASE's ``TrajectoryWriter`` appends each image to the ULM container as it is handed over, so the
+    file is built frame by frame without ever holding the whole trajectory in memory — the same
+    "generated, never committed" discipline as the extXYZ/XDATCAR seeds, and the write side of the
+    M14E streaming-memory proof (the read side is what the test actually measures).
+
+    Each frame carries positions + ``forces`` + a per-frame ``energy`` inside a real 20 Å cubic
+    cell (``pbc=True``), so it converts cleanly to extXYZ with no recovery and the streamed and
+    materialized paths are byte-identical. Positions/forces drift smoothly per frame, so the data is
+    non-trivial but fully reproducible from ``(seed, n_frames, n_atoms)``.
+    """
+    # Import ASE lazily: the streaming seeds are import-light by default, and only this generator
+    # needs the scientific stack (mirrors how the test module drives the ASE-backed parser).
+    from ase import Atoms
+    from ase.calculators.singlepoint import SinglePointCalculator
+    from ase.io.trajectory import TrajectoryWriter
+
+    symbols = [_SYMBOLS[a % len(_SYMBOLS)] for a in range(n_atoms)]
+    writer = TrajectoryWriter(str(path), "w")
+    try:
+        for f in range(n_frames):
+            positions = np.empty((n_atoms, 3), dtype=np.float64)
+            forces = np.empty((n_atoms, 3), dtype=np.float64)
+            for a in range(n_atoms):
+                base = (seed * 131 + a * 17 + f * 7) % 1000 / 100.0
+                positions[a] = (
+                    (base + 0.01 * f) % 20.0,
+                    (base * 1.3 + 0.02 * a) % 20.0,
+                    (base * 0.7 + 0.005 * f) % 20.0,
+                )
+                forces[a] = (
+                    math.sin(base + f * 0.01),
+                    math.cos(base + a * 0.01),
+                    math.sin(base * 0.5),
+                )
+            atoms = Atoms(symbols=symbols, positions=positions, cell=[20.0, 20.0, 20.0], pbc=True)
+            energy = -1.0 * n_atoms + 0.001 * f
+            atoms.calc = SinglePointCalculator(atoms, energy=energy, forces=forces)
+            writer.write(atoms)
+    finally:
+        writer.close()
     return path

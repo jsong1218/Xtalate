@@ -27,7 +27,11 @@ import tracemalloc
 from collections.abc import Callable
 from pathlib import Path
 
-from tests.streaming._generators import write_extxyz_trajectory, write_xdatcar_trajectory
+from tests.streaming._generators import (
+    write_ase_traj_trajectory,
+    write_extxyz_trajectory,
+    write_xdatcar_trajectory,
+)
 from xtalate.registry import default_registry
 from xtalate.sdk.streaming import export_stream
 
@@ -122,4 +126,21 @@ def test_xdatcar_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
 
     stream_peak = _peak_traced_bytes(lambda: _stream(src, out_stream, "xdatcar", "extxyz"))
     material_peak = _peak_traced_bytes(lambda: _materialize(src, out_material, "xdatcar", "extxyz"))
+    _assert_sublinear(stream_peak, material_peak, out_stream, out_material)
+
+
+def test_ase_traj_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
+    """The M14E gate: ASE ``.traj`` is the richest Phase-1 format and its own binary container, so
+    proving its streaming path holds one frame — not the frame count — is what lets M14 claim the
+    ASE parser is genuinely frame-lazy (its ``TrajectoryReader`` gives random access from the open
+    file). Same contrast as the extXYZ/XDATCAR proofs, driven through the ASE-traj streaming parser
+    (Part 4 §5; M14 deliverable)."""
+    src = write_ase_traj_trajectory(tmp_path / "relax.traj", n_frames=_N_FRAMES, n_atoms=_N_ATOMS)
+    out_stream = tmp_path / "ase_traj_stream.xyz"
+    out_material = tmp_path / "ase_traj_material.xyz"
+
+    stream_peak = _peak_traced_bytes(lambda: _stream(src, out_stream, "ase_traj", "extxyz"))
+    material_peak = _peak_traced_bytes(
+        lambda: _materialize(src, out_material, "ase_traj", "extxyz")
+    )
     _assert_sublinear(stream_peak, material_peak, out_stream, out_material)

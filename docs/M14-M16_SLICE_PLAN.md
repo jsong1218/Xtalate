@@ -36,7 +36,14 @@
 >   diffs both emitted reports byte-for-byte (modulo `report_id`/`created_at`/`conversion_report_id`/
 >   `source.sha256`) against spec-derived fixtures `tests/cli/worked_example/{conversion,validation}
 >   .expected.json`, plus a premise-guard test. Full lint gate + 963 tests green (91.64% cov).
-> - **M14E — TODO** (depends only on 14A).
+> - **M14E — DONE** (branch `m14-ase-traj`): streaming-memory proof extended to `ase_traj`.
+>   `write_ase_traj_trajectory(path, *, n_frames, n_atoms, seed=1234)` added to
+>   `tests/streaming/_generators.py` (frame-by-frame `TrajectoryWriter`, real 20 Å cell, forces +
+>   energy, never committed); `test_ase_traj_conversion_is_sublinear_in_frames` in
+>   `tests/streaming/test_streaming_memory.py` (2500 frames × 50 atoms, `ase_traj → extxyz`,
+>   streamed vs materialized peak via `tracemalloc`, output byte-identical) confirms the ASE
+>   `TrajectoryReader` streaming path holds one frame, not the frame count. Full lint gate + 964
+>   tests green (91.64% cov). **M14 milestone complete.**
 > - **M15A/B — TODO** (independent); **M15C — TODO** (depends on 15A+15B).
 > - **M16A — TODO**; **M16B — TODO** (dep 16A); **M16C — TODO** (dep 16A/16B).
 >
