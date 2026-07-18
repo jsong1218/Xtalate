@@ -6,6 +6,22 @@ All notable changes to Xtalate are recorded here. The format follows
 tracked separately from the package version and reaches `1.0.0` only in the v1.0 release
 (`docs/MASTER_SPEC.md` Part 2 §5); v0.1 objects carry `schema_version = "0.1.0"`.
 
+## [Unreleased]
+
+Fixes from the post-`0.3.0` architectural review. The `v0.3.0` tag has not been cut yet (D52's
+manual publish step), so the maintainer may fold these into `0.3.0` before tagging.
+
+### Fixed
+
+- **XDATCAR Cartesian-mode positions are now scaled by the scaling factor (§4).** The scale
+  multiplier (including the negative-scale target-volume form) was folded into each frame's
+  lattice but never applied to Cartesian coordinate rows, so a Cartesian XDATCAR with scale
+  ≠ 1.0 parsed with positions off by the multiplier — while the emitted parse note claimed the
+  scaling had happened (a P1 honesty violation). Direct-mode files were unaffected (fractional
+  coordinates pick the scale up through the lattice product). Now matches the POSCAR parser's
+  handling; covered by new Cartesian scale-2.0 and target-volume tests in
+  `tests/parsers/test_xdatcar.py`.
+
 ## [0.3.0] — 2026-07-18
 
 v0.3 — **"Trajectories at Scale."** Pipeline memory becomes **sub-linear in frames** through a
