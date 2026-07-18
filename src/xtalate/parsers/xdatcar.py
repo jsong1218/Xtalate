@@ -169,10 +169,44 @@ class XdatcarParser(ParserPlugin):
         canonical, issues = materialize(frame_stream)
         return ParseResult(canonical=canonical, issues=issues)
 
+    def parse_recover(
+        self,
+        stream: BinaryIO,
+        *,
+        filename: str | None,
+        hint: str,
+        choice: str,
+        parameters: dict[str, object],
+    ) -> ParseResult:
+        """Recover an XDATCAR whose tail is a torn write by keeping the valid prefix
+        (``truncate_at_last_valid_frame`` → ``truncate``, Part 4 §3.3; the M13 half of D56).
+
+        The characteristic XDATCAR failure: an MD run killed while writing configuration *k*, so
+        frames 0..k-1 are perfectly good science sitting behind a corrupt tail. Only ``truncate``
+        reaches here — ``abort`` is the caller declining to recover, handled in the orchestration
+        (``conversion.parse_recovery``), because a parse that produced no object is a parse error,
+        not a completed conversion.
+
+        Re-reads through the *same* streaming path in truncate mode, so the kept prefix is read by
+        exactly the code that reads an intact file, and the truncation is recorded as a warning
+        ``ParseIssue`` — the dropped tail is never silent (P1).
+        """
+        if hint != "truncate_at_last_valid_frame":
+            raise NotImplementedError(f"xdatcar parse_recover does not handle hint {hint!r}")
+        if choice != "truncate":
+            raise NotImplementedError(
+                f"xdatcar parse_recover applies only the 'truncate' choice (got {choice!r})"
+            )
+        frame_stream = self.parse_stream(stream, filename=filename, truncate=True)
+        canonical, issues = materialize(frame_stream)
+        return ParseResult(canonical=canonical, issues=issues)
+
     def supports_streaming(self) -> bool:
         return True
 
-    def parse_stream(self, stream: BinaryIO, *, filename: str | None) -> FrameStream:
+    def parse_stream(
+        self, stream: BinaryIO, *, filename: str | None, truncate: bool = False
+    ) -> FrameStream:
         """Header-eager, configuration-lazy XDATCAR parse (M12; Part 3 §2).
 
         Reads the file **one configuration block at a time** off the raw byte stream, so peak
@@ -185,6 +219,12 @@ class XdatcarParser(ParserPlugin):
         alike, since both restate the *same* facts (scale folded in, Direct→Cartesian, format-
         defined pbc) per frame. The Conversion Report carries no ``parse_notes``, so this can
         never affect report truth (standing rule 3).
+
+        ``truncate`` is the internal switch ``parse_recover`` sets to apply the caller's
+        ``truncate_at_last_valid_frame`` choice: a recoverable error mid-stream then *ends* the
+        stream at the last good frame (recording a warning) instead of propagating. It is not part
+        of the ``ParserPlugin.parse_stream`` contract — callers reach it through ``parse_recover``,
+        so the default read stays the honest one that refuses a corrupt file.
         """
         issues: list[ParseIssue] = []
         lines = _Lines(stream)
@@ -217,53 +257,38 @@ class XdatcarParser(ParserPlugin):
         )
 
         def _frames() -> Iterator[StreamFrame]:
-            current = block
-            index = 0
-            while True:
-                yield _read_configuration(lines, current, index, n_atoms)
-                index += 1
-                boundary = _classify_boundary(lines)
-                if boundary == "eof":
-                    return
-                if boundary == "config":
-                    continue  # fixed-cell form: the next configuration under the same lattice
-                # NpT form: VASP restated the whole header, so this frame has its own cell.
-                current = _read_header(lines, first=False, index=index)
-                if len(current.symbols) != n_atoms:
-                    raise _error(
-                        "XDATCAR_VARIABLE_ATOM_COUNT",
-                        f"configuration {index} restates a header with {len(current.symbols)} "
-                        f"atoms but configuration 0 has {n_atoms}; the canonical model requires a "
-                        "constant atom count across frames (Part 2 §3.2)",
-                        location=f"frame {index}",
+            yielded = 0
+            try:
+                for frame in _configurations(lines, block, n_atoms, issues):
+                    yielded += 1
+                    yield frame
+            except ParseError as exc:
+                # Truncate mode: a *recoverable* mid-stream error ends the stream at the last good
+                # frame instead of propagating (the caller asked for the valid prefix via
+                # parse_recover). Two guards keep this honest: only errors the parser itself marked
+                # recoverable are swallowed — a structurally wrong file (variable atom count, bad
+                # symbol) still raises, because that is not a torn tail — and the truncation is
+                # recorded as a warning so the dropped frames are never silent (P1).
+                issue = exc.issues[0]
+                if not (truncate and issue.recovery_hint == "truncate_at_last_valid_frame"):
+                    raise
+                if yielded == 0:
+                    # Truncating to nothing is not a recovery: there is no valid prefix to keep, so
+                    # the honest answer is the original error. Letting it through would hand the
+                    # caller an empty frame list, which the schema rejects with a raw pydantic
+                    # ValidationError — escaping the Part 3 §5 error contract entirely.
+                    raise
+                issues.append(
+                    ParseIssue(
+                        severity="warning",
+                        code="XDATCAR_TRUNCATED",
+                        message=(
+                            f"kept the valid configurations and discarded the corrupt tail "
+                            f"({issue.code}: {issue.message})"
+                        ),
+                        location=issue.location,
                     )
-                if current.symbols != block.symbols:
-                    raise _error(
-                        "XDATCAR_VARIABLE_SPECIES",
-                        f"configuration {index} restates a header whose species order differs from "
-                        "configuration 0's; the canonical model requires a constant atom identity "
-                        "across frames (Part 2 §3.2)",
-                        location=f"frame {index}",
-                    )
-                if current.fractional != block.fractional:
-                    # Each block is still *read* under its own mode, so nothing is misconverted;
-                    # what would be wrong is provenance.original_coordinate_system (established
-                    # from frame 0) silently standing for the whole file. Say so instead (P1).
-                    issues.append(
-                        ParseIssue(
-                            severity="warning",
-                            code="XDATCAR_MIXED_COORDINATE_MODE",
-                            message=(
-                                f"configuration {index} is "
-                                f"{'Direct' if current.fractional else 'Cartesian'} but "
-                                f"configuration 0 is "
-                                f"{'Direct' if block.fractional else 'Cartesian'}; each frame is "
-                                "converted under its own mode, but "
-                                "provenance.original_coordinate_system records frame 0's"
-                            ),
-                            location=f"frame {index}",
-                        )
-                    )
+                )
 
         return FrameStream(header, _frames(), issues=issues)
 
@@ -354,10 +379,10 @@ class _Lines:
         return None
 
 
-def _require(lines: _Lines, message: str, *, location: str) -> str:
+def _require(lines: _Lines, message: str, *, location: str, hint: str | None = None) -> str:
     line = lines.next()
     if line is None:
-        raise _error("XDATCAR_MALFORMED", message, location=location)
+        raise _error("XDATCAR_MALFORMED", message, location=location, hint=hint)
     return line
 
 
@@ -408,9 +433,14 @@ def _read_header(lines: _Lines, *, first: bool, index: int = 0) -> _Block:
     error locations.
     """
     where = "header" if first else f"restated header at frame {index}"
+    # A *restated* header that runs off the end of the file is a torn write — an NpT run killed
+    # partway through emitting frame `index`'s header — so it is recoverable in the same sense a
+    # half-written configuration is: the frames before it are good science. The opening header
+    # running out has no valid prefix to keep, so it stays a plain refusal.
+    torn = None if first else "truncate_at_last_valid_frame"
 
     scale_token = _require(
-        lines, f"file ended before the scaling factor ({where})", location="line 2"
+        lines, f"file ended before the scaling factor ({where})", location="line 2", hint=torn
     ).strip()
     try:
         scale = float(scale_token)
@@ -428,7 +458,12 @@ def _read_header(lines: _Lines, *, first: bool, index: int = 0) -> _Block:
     rows: list[list[float]] = []
     for k in range(3):
         row = _floats(
-            _require(lines, f"file ended inside the lattice ({where})", location=f"line {3 + k}"),
+            _require(
+                lines,
+                f"file ended inside the lattice ({where})",
+                location=f"line {3 + k}",
+                hint=torn,
+            ),
             location=f"line {3 + k}",
         )
         if len(row) != 3:
@@ -454,7 +489,7 @@ def _read_header(lines: _Lines, *, first: bool, index: int = 0) -> _Block:
     lattice = multiplier * raw_lattice
 
     species_line = _require(
-        lines, f"file ended before the species line ({where})", location="line 6"
+        lines, f"file ended before the species line ({where})", location="line 6", hint=torn
     ).split()
     if not species_line or _all_ints(species_line):
         # XDATCAR states its species in the header (§3 n.1), so a well-formed file never needs
@@ -474,7 +509,7 @@ def _read_header(lines: _Lines, *, first: bool, index: int = 0) -> _Block:
                 location="line 6",
             )
     count_tokens = _require(
-        lines, f"file ended before the counts line ({where})", location="line 7"
+        lines, f"file ended before the counts line ({where})", location="line 7", hint=torn
     ).split()
     if not _all_ints(count_tokens) or len(count_tokens) != len(species_line):
         raise _error(
@@ -518,6 +553,64 @@ def _read_header(lines: _Lines, *, first: bool, index: int = 0) -> _Block:
     )
 
 
+def _configurations(
+    lines: _Lines, first_block: _Block, n_atoms: int, issues: list[ParseIssue]
+) -> Iterator[StreamFrame]:
+    """Yield every configuration in the file, one at a time, following the cell form as it goes.
+
+    Split out of ``parse_stream`` so the truncate-recovery wrapper can catch a recoverable error
+    around the *whole* loop without the loop itself knowing anything about recovery: reading and
+    recovering stay separate concerns, and the frames a recovered read keeps are produced by
+    exactly this code.
+    """
+    current = first_block
+    index = 0
+    while True:
+        yield _read_configuration(lines, current, index, n_atoms)
+        index += 1
+        boundary = _classify_boundary(lines)
+        if boundary == "eof":
+            return
+        if boundary == "config":
+            continue  # fixed-cell form: the next configuration under the same lattice
+        # NpT form: VASP restated the whole header, so this frame has its own cell.
+        current = _read_header(lines, first=False, index=index)
+        if len(current.symbols) != n_atoms:
+            raise _error(
+                "XDATCAR_VARIABLE_ATOM_COUNT",
+                f"configuration {index} restates a header with {len(current.symbols)} atoms but "
+                f"configuration 0 has {n_atoms}; the canonical model requires a constant atom "
+                "count across frames (Part 2 §3.2)",
+                location=f"frame {index}",
+            )
+        if current.symbols != first_block.symbols:
+            raise _error(
+                "XDATCAR_VARIABLE_SPECIES",
+                f"configuration {index} restates a header whose species order differs from "
+                "configuration 0's; the canonical model requires a constant atom identity across "
+                "frames (Part 2 §3.2)",
+                location=f"frame {index}",
+            )
+        if current.fractional != first_block.fractional:
+            # Each block is still *read* under its own mode, so nothing is misconverted; what would
+            # be wrong is provenance.original_coordinate_system (established from frame 0) silently
+            # standing for the whole file. Say so instead (P1).
+            issues.append(
+                ParseIssue(
+                    severity="warning",
+                    code="XDATCAR_MIXED_COORDINATE_MODE",
+                    message=(
+                        f"configuration {index} is "
+                        f"{'Direct' if current.fractional else 'Cartesian'} but configuration 0 is "
+                        f"{'Direct' if first_block.fractional else 'Cartesian'}; each frame is "
+                        "converted under its own mode, but "
+                        "provenance.original_coordinate_system records frame 0's"
+                    ),
+                    location=f"frame {index}",
+                )
+            )
+
+
 def _read_configuration(
     lines: _Lines,
     block: _Block,
@@ -544,19 +637,27 @@ def _read_configuration(
                 hint="truncate_at_last_valid_frame",
             )
         parts = line.split()
+        # A short or non-numeric coordinate row inside a configuration block is the *same* torn
+        # write as a missing one — a process killed partway through a line leaves "0.1 0.0" or
+        # "0.1 0.0 0.0000\x00" just as readily as it leaves the line out. Both therefore carry the
+        # recoverable hint: the frames already read are unaffected, so keeping them is a choice the
+        # user is entitled to make rather than a judgement the parser makes for them.
         if len(parts) < 3:
             raise _error(
-                "XDATCAR_MALFORMED",
-                f"coordinate line must have >= 3 components: {line.strip()!r}",
+                "XDATCAR_TRUNCATED_CONFIGURATION",
+                f"coordinate line in configuration {index} has fewer than 3 components: "
+                f"{line.strip()!r}; the line appears to have been truncated mid-write",
                 location=f"frame {index}",
+                hint="truncate_at_last_valid_frame",
             )
         try:
             coords.append([float(parts[0]), float(parts[1]), float(parts[2])])
         except ValueError as exc:
             raise _error(
-                "XDATCAR_MALFORMED",
-                f"non-numeric coordinate: {line.strip()!r}",
+                "XDATCAR_TRUNCATED_CONFIGURATION",
+                f"non-numeric coordinate in configuration {index}: {line.strip()!r}",
                 location=f"frame {index}",
+                hint="truncate_at_last_valid_frame",
             ) from exc
 
     raw = np.asarray(coords, dtype=float)
