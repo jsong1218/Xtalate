@@ -54,6 +54,10 @@ dev = [
     "import-linter>=2.0",
     "types-PyYAML>=6",
     "hypothesis>=6.100",
+    # pip-audit runs the nightly dependency vulnerability audit (M15C; Part 8 §5). Nightly-only
+    # and non-blocking — a new advisory against a pinned dep surfaces in the scheduled run, it
+    # never gates a PR. Dev-extra, so it ships no runtime code (the D4/D7 posture is unchanged).
+    "pip-audit>=2.7",
 ]
 
 [project.scripts]
@@ -103,6 +107,13 @@ testpaths = ["tests"]
 # introduces run-to-run. Raise it as coverage rises; never lower it to make a red PR green —
 # that inverts the gate. --cov-fail-under fails the run below the floor.
 addopts = "--cov=xtalate --cov-report=term-missing --cov-fail-under=91"
+# The PR-vs-nightly split (M15B; Part 8 §2.4). `nightly`-marked items (the full n×n two-hop matrix
+# beyond the curated high-risk subset) are deselected by tests/conftest.py unless
+# XTALATE_FULL_MATRIX=1 un-gates them — the fast PR gate vs the exhaustive nightly run. Registered
+# here so an unknown-marker warning never masks a typo.
+markers = [
+    "nightly: only runs in the nightly workflow (un-gated by XTALATE_FULL_MATRIX=1); PR runs deselect it",
+]
 
 [tool.coverage.run]
 branch = true

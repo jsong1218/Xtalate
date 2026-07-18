@@ -124,7 +124,8 @@ def readable_sources(registry: Registry) -> list[str]:
 def two_hop_pairs(registry: Registry) -> list[tuple[str, str]]:
     """All ``(source, target)`` pairs for the two-hop suite: every golden-backed source against
     every write-capable target, excluding identity (that is the job of ``test_identity``). Purely a
-    function of the registry — a new exporter grows this list automatically (**P6**)."""
+    function of the registry — a new exporter grows this list automatically (**P6**). This is the
+    *full* nightly matrix; :func:`curated_pr_pairs` carves the fast PR subset from it."""
     targets = writeable_targets(registry)
     return [
         (source, target)
@@ -132,6 +133,35 @@ def two_hop_pairs(registry: Registry) -> list[tuple[str, str]]:
         for target in targets
         if source != target
     ]
+
+
+# High-risk unordered pairs curated for the PR gate (Part 8 §2.4): near-supersets (``xyz↔extxyz``),
+# a fractional↔Cartesian coordinate transform (``poscar↔extxyz``), and a recovery-exercising
+# trajectory→single-structure pair (``ase_traj→poscar``). Membership-guarded — a pair whose formats
+# are not both available on the current branch (``ase_traj`` lands with the M14 ASE-trajectory
+# format) drops out silently, so the list is correct everywhere and auto-completes as formats
+# register (**P6**). The full matrix (nightly) is the superset; nothing here is a new pair.
+_HIGH_RISK_PAIRS: tuple[tuple[str, str], ...] = (
+    ("xyz", "extxyz"),
+    ("poscar", "extxyz"),
+    ("ase_traj", "poscar"),
+)
+
+
+def curated_pr_pairs(registry: Registry) -> list[tuple[str, str]]:
+    """The curated two-hop subset the PR gate runs (Part 8 §2.4): each high-risk unordered pair
+    expanded into every direction whose *source* has a committed golden fixture and whose *target*
+    has a registered exporter. Membership-guarded against both the golden corpus and the registry,
+    so an unregistered format (or one without a golden source) drops cleanly. A subset of
+    :func:`two_hop_pairs` by construction — the remainder runs nightly."""
+    sources = set(source_formats_with_golden())
+    targets = set(writeable_targets(registry))
+    out: set[tuple[str, str]] = set()
+    for a, b in _HIGH_RISK_PAIRS:
+        for source, target in ((a, b), (b, a)):
+            if source != target and source in sources and target in targets:
+                out.add((source, target))
+    return sorted(out)
 
 
 def roundtrippable(matrix: CapabilityMatrix, source: str, target: str) -> set[str]:

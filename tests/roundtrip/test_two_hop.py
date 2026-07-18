@@ -27,15 +27,21 @@ from xtalate.registry import default_registry
 from xtalate.validation import ToleranceProfile
 
 _REGISTRY = default_registry()
-_PAIRS = _matrix.two_hop_pairs(_REGISTRY)
 _STRICT = ToleranceProfile.named("strict")
 
+# Every (source, target) pair is collected, but only the curated high-risk subset runs on a PR; the
+# remainder carries the `nightly` marker and is deselected unless XTALATE_FULL_MATRIX=1 un-gates it
+# (tests/conftest.py). A newly registered exporter still auto-enrols in the full nightly matrix
+# (P6, test_matrix_enumeration) while the PR gate stays fast and curated (Part 8 §2.4).
+_ALL_PAIRS = _matrix.two_hop_pairs(_REGISTRY)
+_CURATED = set(_matrix.curated_pr_pairs(_REGISTRY))
+_PARAMS = [
+    pytest.param(a, b, id=f"{a}_to_{b}", marks=() if (a, b) in _CURATED else pytest.mark.nightly)
+    for a, b in _ALL_PAIRS
+]
 
-@pytest.mark.parametrize(
-    ("source_fmt", "target_fmt"),
-    _PAIRS,
-    ids=[f"{a}_to_{b}" for a, b in _PAIRS],
-)
+
+@pytest.mark.parametrize(("source_fmt", "target_fmt"), _PARAMS)
 def test_two_hop_roundtrip(source_fmt: str, target_fmt: str) -> None:
     golden = _matrix.golden_source(source_fmt)
     parsed = _REGISTRY.get_parser(source_fmt).parse(io.BytesIO(golden.source), filename=None)

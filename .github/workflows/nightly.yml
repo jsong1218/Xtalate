@@ -1,0 +1,106 @@
+name: nightly
+
+# The scheduled companion to ci.yml (MASTER_SPEC Part 8 §5, Part 9 §3). The PR suite is capped near
+# ten minutes; anything super-linear in formats or frames is deferred here, never dropped (M15B). A
+# nightly failure opens an issue automatically rather than blocking anyone's PR — visible, tracked,
+# not a surprise tax on unrelated work.
+on:
+  schedule:
+    # 07:00 UTC daily — off the working day, well clear of PR-triggered runs.
+    - cron: "0 7 * * *"
+  workflow_dispatch: {}
+
+# issues:write lets the failure step open the tracking issue; nothing else here needs write access.
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Single interpreter (3.13, the dev floor's upper leg, DECISIONS.md D11): the deferred work
+      # here — the matrix, benchmarks, extended properties, audit — is not interpreter-sensitive the
+      # way the syntax-floor guard is, so the 3.11×3.13 fan-out stays on the PR (ci.yml).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # Stage 1 — the full n×n round-trip matrix beyond the curated PR subset (Part 8 §2.4).
+      # XTALATE_FULL_MATRIX=1 un-gates the `nightly`-marked pairs (tests/conftest.py); `-m nightly`
+      # then runs *only* them — the curated high-risk pairs already ran on the PR, so re-running them
+      # here would be waste. --no-cov because the coverage ratchet is a PR gate: this deliberately
+      # narrow subset would never clear the --cov-fail-under floor, and coverage is not what nightly
+      # is measuring.
+      - name: Full round-trip matrix
+        env:
+          XTALATE_FULL_MATRIX: "1"
+        run: pytest -m nightly --no-cov
+
+      # Stage 2 — the performance corpus (Part 8 §4), measured not gated: a budget breach is
+      # reported, only a *crash* fails the step (non-zero exit). The >20% regression tripwire against
+      # a rolling median is deliberately NOT wired here — shared GitHub runners are too noisy for
+      # comparable timings; it activates on v0.5's pinned runner (harness docstring; slice plan 15C).
+      - name: Performance benchmarks
+        run: python -m benchmarks --out benchmark-results
+
+      # The wall-time + peak-RSS series (JSON + CSV) — the artifact a maintainer downloads to chart
+      # the trend by hand until the automated tripwire lands. always() so a benchmark crash still
+      # uploads whatever series was written before it.
+      - name: Upload benchmark series
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results/
+          if-no-files-found: warn
+
+      # Stage 3 — the extended property run at the widened hypothesis budget (max_examples=2000).
+      # HYPOTHESIS_PROFILE=nightly selects the `nightly` profile registered in tests/conftest.py; the
+      # PR run caps the same suite at the cheap `pr` profile. --no-cov for the same reason as stage 1.
+      - name: Extended property tests
+        env:
+          HYPOTHESIS_PROFILE: nightly
+        run: pytest tests/property --no-cov
+
+      # Stage 4 — dependency vulnerability audit (Part 8 §5). Advisory, not blocking:
+      # continue-on-error keeps a fresh advisory against a pinned dependency visible (the step goes
+      # yellow) without failing the job or opening a spurious issue. pip-audit is a dev-extra.
+      - name: Dependency audit
+        continue-on-error: true
+        run: pip-audit
+
+  # A failure in the nightly job (a crashed benchmark, a red matrix, a broken property) opens a
+  # tracking issue — the "failures auto-open issues" of Part 9 §3, so the scheduled run is visible
+  # without anyone watching the Actions tab. The dependency audit is excluded by design (it is
+  # continue-on-error, so an advisory never reaches here). Its own failure is swallowed (`|| true`):
+  # the issue is a courtesy, never a second thing that can break the pipeline.
+  open-issue-on-failure:
+    needs: nightly
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open a tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create --repo "${{ github.repository }}" \
+            --title "Nightly failure — $(date -u +%Y-%m-%d)" \
+            --body "The scheduled nightly workflow failed. Run: ${RUN_URL}" \
+            || true
