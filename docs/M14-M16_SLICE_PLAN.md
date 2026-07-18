@@ -28,7 +28,15 @@
 >   enrolled in `_matrix.py:_GOLDEN_DIRS` (+ `constraint_representation: project` added to
 >   `FIXED_PRESETS` — its `fixed_atoms` kind is outside POSCAR's `selective_dynamics` set);
 >   `test_ase_traj_identity` in `test_identity.py`. Full lint gate + 961 tests green (91.64% cov).
-> - **M14D–E — TODO** (each depends only on 14A; run in any order).
+> - **M14D — DONE** (branch `m14-ase-traj`): the spec's flagship `relax.traj → POSCAR` worked
+>   example (Part 4 §5 / Part 5 §6) made executable — the milestone exit door. Committed
+>   deterministic generator `tests/cli/_worked_example.py` (isolated 3-atom water, 10 frames,
+>   forces + total_energy, ASE zero cell → `cell = None`); `tests/cli/test_worked_example.py` drives
+>   the real CLI with `frame_selection=last` + `missing_lattice=bounding_box,padding_ang=5.0` and
+>   diffs both emitted reports byte-for-byte (modulo `report_id`/`created_at`/`conversion_report_id`/
+>   `source.sha256`) against spec-derived fixtures `tests/cli/worked_example/{conversion,validation}
+>   .expected.json`, plus a premise-guard test. Full lint gate + 963 tests green (91.64% cov).
+> - **M14E — TODO** (depends only on 14A).
 > - **M15A/B — TODO** (independent); **M15C — TODO** (depends on 15A+15B).
 > - **M16A — TODO**; **M16B — TODO** (dep 16A); **M16C — TODO** (dep 16A/16B).
 >
