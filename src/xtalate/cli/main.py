@@ -24,6 +24,7 @@ import yaml
 
 from xtalate import __version__
 from xtalate.capabilities import Registry
+from xtalate.capabilities.registry import InvalidCapabilityDeclaration
 from xtalate.cli import render
 from xtalate.conversion import (
     ConversionEngine,
@@ -33,7 +34,7 @@ from xtalate.conversion import (
 )
 from xtalate.discovery import DiscoveryEngine
 from xtalate.recovery import RecoveryError
-from xtalate.registry import default_registry
+from xtalate.registry import PluginLoadError, default_registry
 from xtalate.sdk import ParseError
 from xtalate.validation import (
     ToleranceProfile,
@@ -66,7 +67,21 @@ def main(argv: list[str] | None = None) -> int:
     if not getattr(args, "command", None):
         parser.print_help()
         return EXIT_USAGE
-    registry = default_registry()
+    # Registry construction gets its own guard: a broken *installed plugin* (an import failure,
+    # a malformed declaration, a format_id collision) must surface as a clean, attributed error
+    # and exit code — not a raw traceback. Every command still refuses to run until the offending
+    # distribution is fixed or uninstalled: discovery never silently skips a broken plugin
+    # (Part 3 §7.1), so this changes the failure's *surface*, not the fail-loud policy.
+    try:
+        registry = default_registry()
+    except (PluginLoadError, InvalidCapabilityDeclaration) as exc:
+        print(f"error: broken installed plugin: {exc}", file=sys.stderr)
+        print(
+            "  fix or uninstall the offending distribution; plugins are discovered for every "
+            "command and a broken one is never silently skipped",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
     try:
         handler = {
             "inspect": _cmd_inspect,

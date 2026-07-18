@@ -30,6 +30,13 @@ manual publish step), so the maintainer may fold these into `0.3.0` before taggi
 
 ### Changed
 
+- **A broken installed plugin now surfaces on the CLI as a clean, attributed error (exit 1)
+  instead of a raw traceback.** `default_registry()` runs for every command, so one plugin that
+  fails to import, yields the wrong kind of object, collides on `format_id`, or carries a
+  malformed declaration used to crash `inspect`/`convert`/`validate`/`capabilities` with an
+  uncaught traceback. The CLI still refuses to run **any** command until the offending
+  distribution is fixed or uninstalled — discovery never silently skips a broken plugin
+  (Part 3 §7.1); only the failure's surface changed, not the fail-loud policy.
 - **A discovered plugin's duplicate-`format_id` collision now raises `PluginLoadError` naming
   the offending entry point (D62, partially revising D60).** Previously the registry's bare
   duplicate-guard `ValueError` propagated unwrapped, naming only the format — actionable for
