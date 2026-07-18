@@ -84,3 +84,28 @@ def test_selective_dynamics_mask_wrong_length_raises() -> None:
     obj = _object(["Si"], constraints=bad)  # 1 atom but a 2-row mask
     with pytest.raises(ValueError, match="mask has 2 rows"):
         make_poscar_exporter().export(obj, io.BytesIO())
+
+
+def test_writable_custom_global_keys_are_declared_not_implied() -> None:
+    """Regression (M13): POSCAR declares ``custom_global`` PARTIAL but writes only its own two
+    keys. Without an explicit writable set, pre-flight predicted *any* custom_global key would
+    survive and ``export`` then dropped the rest — the report asserting a preservation that did
+    not happen (P1, P5). Surfaced the moment XDATCAR became the first source to carry a foreign
+    custom_global key; the declaration is what routes such a key to ``removed`` instead."""
+    caps = make_poscar_exporter().capabilities()
+    assert caps.fields["user_metadata.custom_global"].level == "partial"
+    assert caps.writable_custom_keys["user_metadata.custom_global"] == [
+        "poscar:comment",
+        "contcar:predictor_corrector",
+    ]
+
+
+def test_foreign_custom_global_key_is_not_written() -> None:
+    """The behaviour the declaration above must stay true to: a key POSCAR does not own is
+    absent from the output, so a declaration claiming otherwise would be a lie the
+    ``metadata_preservation`` check catches."""
+    obj = _object(["Si"])
+    obj.user_metadata.custom_global["xdatcar:comment"] = "from somewhere else"
+    buf = io.BytesIO()
+    make_poscar_exporter().export(obj, buf)
+    assert b"from somewhere else" not in buf.getvalue()

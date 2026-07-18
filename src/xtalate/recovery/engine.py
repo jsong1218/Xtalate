@@ -41,6 +41,7 @@ from xtalate.recovery.scenarios import (
 )
 from xtalate.schema import AtomsBlock, CanonicalObject, Cell, Frame
 from xtalate.schema.elements import atomic_number
+from xtalate.schema.presence import PresenceMap
 
 # Resolution order (Part 4 §3.3): frame_selection first (a bounding box is computed on the chosen
 # frame), then constraint projection (frame-independent), then the fabricated lattice, then the
@@ -222,15 +223,21 @@ def _choice_code(choice: dict[str, Any], scenario: UnresolvedScenario) -> str:
 _PER_FRAME_PREFIXES = ("frame.", "atoms.", "cell.", "dynamics.", "electronic.")
 
 
-def _per_frame_paths_lost(before: CanonicalObject, after: CanonicalObject) -> list[str]:
-    """Per-frame canonical paths present in ``before`` but absent in the reduced ``after`` object —
-    the fields a frame reduction eliminates entirely (present only in dropped frames). Derived from
-    the object's own presence map so it stays correct as the schema grows (**P6**); ``atoms``
-    symbols/positions survive into the retained frame and never appear here."""
+def _per_frame_paths_lost(before_presence: PresenceMap, after: CanonicalObject) -> list[str]:
+    """Per-frame canonical paths present in ``before_presence`` but absent in the reduced ``after``
+    object — the fields a frame reduction eliminates entirely (present only in dropped frames).
+    Derived from a presence map so it stays correct as the schema grows (**P6**); ``atoms``
+    symbols/positions survive into the retained frame and never appear here.
+
+    Takes the *before* side as a ``PresenceMap`` rather than a whole object so the streaming
+    frame_selection path (M13, D56) can drive it from its single-pass ``PresenceAccumulator``
+    result — which reproduces ``field_presence()`` exactly — without ever holding the dropped
+    frames. The materialized caller passes ``canonical.field_presence()``; the two are equal, so
+    the accounting is byte-identical (standing rule 3)."""
     after_presence = after.field_presence()
     return [
         path
-        for path in before.field_presence().present_paths()
+        for path in before_presence.present_paths()
         if path.startswith(_PER_FRAME_PREFIXES) and after_presence.status_of(path) == "absent"
     ]
 
@@ -262,7 +269,6 @@ def _apply_frame_selection(
     Records an ``Assumption`` and a ``FrameDrop`` (the dropped frames as a `removed` entry) but
     **no** ``SuppliedField`` — the retained frame is genuine source data, not fabricated."""
     code = _choice_code(choice, scenario)
-    params = choice.get("parameters", {}) or {}
     n = canonical.frame_count
 
     if code == "split_all":
@@ -284,23 +290,52 @@ def _apply_frame_selection(
         )
         return canonical, assumption, 0
 
-    if code == "first":
-        index = 0
-    elif code == "last":
-        index = n - 1
-    else:  # "index"
-        raw = params.get("frame_index")
-        if not isinstance(raw, int) or isinstance(raw, bool) or not (0 <= raw < n):
-            raise RecoveryError(
-                f"frame_selection 'index' needs an in-range integer frame_index (0..{n - 1}), "
-                f"got {raw!r}"
-            )
-        index = raw
-
+    index = _frame_selection_index(code, choice, n)
     # The reduction itself (frame re-index, custom_per_frame slice, trajectory drop) is defined once
     # on the canonical object, shared with split_all export (Part 2 §3.10). Here we add the loss
     # bookkeeping the reduction implies.
     reduced = canonical.single_frame(index)
+    assumption = _frame_selection_assumption(
+        reduced, canonical.field_presence(), n, index, code, aid, origin
+    )
+    return reduced, assumption, index
+
+
+def _frame_selection_index(code: str, choice: dict[str, Any], n: int) -> int:
+    """Resolve a validated non-``split_all`` choice code to the retained 0-based frame index.
+
+    Shared by the materialized ``_apply_frame_selection`` and the streaming path
+    (``frame_selection_stream_records``), so ``first``/``last``/``index`` mean the same frame in
+    both — the only difference is *when* ``n`` is known (up front vs. after the single pass)."""
+    if code == "first":
+        return 0
+    if code == "last":
+        return n - 1
+    raw = (choice.get("parameters", {}) or {}).get("frame_index")  # code == "index"
+    if not isinstance(raw, int) or isinstance(raw, bool) or not (0 <= raw < n):
+        raise RecoveryError(
+            f"frame_selection 'index' needs an in-range integer frame_index (0..{n - 1}), "
+            f"got {raw!r}"
+        )
+    return raw
+
+
+def _frame_selection_assumption(
+    reduced: CanonicalObject,
+    before_presence: PresenceMap,
+    n: int,
+    index: int,
+    code: str,
+    aid: str,
+    origin: str,
+) -> AppliedAssumption:
+    """Build the ``frame_selection`` ``AppliedAssumption`` (the ``removed`` accounting for the
+    dropped frames) from the reduced object plus the *before* presence map.
+
+    Deliberately free of the full multi-frame object: its only view of the dropped frames is
+    ``before_presence`` (the per-frame paths present across the source), so the streaming path can
+    supply its single-pass ``PresenceAccumulator`` result and get the byte-identical assumption the
+    materialized path builds from ``canonical.field_presence()`` (M13, D56; standing rule 3)."""
     dropped = n - 1
     removed = [
         FrameDrop(
@@ -316,7 +351,7 @@ def _apply_frame_selection(
     # invariant fires (P1). Without this, a `constraint_representation` running *after* frame_
     # selection (dependency order) sees a constraint-free object and records nothing — silent loss.
     # Root losses (e.g. `trajectory.timestep`) are the capability diff's job, so this is per-frame.
-    lost = _per_frame_paths_lost(canonical, reduced)
+    lost = _per_frame_paths_lost(before_presence, reduced)
     for path in lost:
         removed.append(
             FrameDrop(
@@ -325,7 +360,7 @@ def _apply_frame_selection(
                 detail=f"{path} appeared in the source but not in retained frame {index}.",
             )
         )
-    assumption = AppliedAssumption(
+    return AppliedAssumption(
         id=aid,
         scenario="frame_selection",
         choice=code,
@@ -338,7 +373,35 @@ def _apply_frame_selection(
         ),
         removed=removed,
     )
-    return reduced, assumption, index
+
+
+def frame_selection_stream_records(
+    reduced: CanonicalObject,
+    before_presence: PresenceMap,
+    *,
+    frame_count: int,
+    index: int,
+    code: str,
+    origin: str,
+) -> AppliedAssumption:
+    """Public streaming entry point for the ``frame_selection`` accounting (M13, D56).
+
+    The streaming Conversion path (``ConversionEngine.convert_stream``) computes the retained
+    ``index`` and the reduced single-frame object itself during its single pass, then calls here to
+    get the *same* ``AppliedAssumption`` the materialized recovery would produce — so a streamed
+    XDATCAR→POSCAR frame selection and a materialized one yield the byte-identical Conversion
+    Report. ``split_all`` is not a streaming case (it fans one output into many); the engine keeps
+    it on the materialized path, so this handles only ``first``/``last``/``index``."""
+    return _frame_selection_assumption(
+        reduced, before_presence, frame_count, index, code, "A1", origin
+    )
+
+
+def frame_selection_stream_index(choice: dict[str, Any], frame_count: int) -> int:
+    """The retained 0-based index for a streaming ``first``/``last``/``index`` choice, validated
+    against the (post-pass) ``frame_count``. Mirrors ``_frame_selection_index`` but takes the raw
+    choice so the engine need not know the internal code-resolution rule."""
+    return _frame_selection_index(str(choice.get("choice")), choice, frame_count)
 
 
 def _apply_constraint_representation(
@@ -463,8 +526,17 @@ def _apply_missing_lattice(
     records an ``Assumption`` **and** two ``SuppliedField`` entries — the cell did not exist in
     those frames, so it is filed as created, never carried (**P4**). A frame that already carries a
     real cell (a ``mixed`` source whose cell-bearing frame survived) is left untouched — fabricating
-    over it would be silent overwrite of genuine data. ``pbc`` is set to (T,T,T): POSCAR, the only
-    v0.1 lattice-requiring target, is fully periodic by definition (Part 3 §3 n.3)."""
+    over it would be silent overwrite of genuine data. ``pbc`` is set to (T,T,T): every
+    lattice-requiring target is fully periodic by definition (Part 3 §3 n.3).
+
+    **Partial fabrication (M13).** When the target keeps *many* frames (XDATCAR is the first such
+    lattice-requiring target — POSCAR and CONTCAR cap at one frame, so ``frame_selection`` always
+    reduced a ``mixed`` cell to a single frame before this ran), a ``mixed`` source ends with both
+    outcomes at once: the cell-bearing frames carry their genuine lattice, the cell-less ones get a
+    fabricated one. That is reported as it happened — ``PreservedField`` for the genuine half,
+    ``SuppliedField`` for the fabricated half — rather than collapsed to whichever single label the
+    single-frame case used to make sufficient. Reporting only ``supplied`` would deny that real
+    lattices were carried; reporting only ``preserved`` would hide a fabrication (P1, P4)."""
     code = _choice_code(choice, scenario)
     params = choice.get("parameters", {}) or {}
     pbc = (True, True, True)
@@ -506,39 +578,76 @@ def _apply_missing_lattice(
                 f"missing_lattice 'bounding_box' needs a non-negative padding_ang, got {padding!r}"
             )
         padding = float(padding)
-        # Box is computed on the first cell-less frame's positions; a `mixed` source is always
-        # reduced to a single frame by frame_selection before this runs, so that frame is the one
-        # cell-less frame the box is built for (no v0.1 pair reaches here multi-frame).
+        # Box is computed on the *first cell-less frame's* positions and, when the target keeps many
+        # frames (XDATCAR — M13), applied to every cell-less frame along with the same rigid shift.
+        # One shift for the whole trajectory is the honest choice: it preserves every interatomic
+        # distance *and* all relative motion between frames, where a per-frame box would silently
+        # re-centre each frame and destroy the trajectory's displacement information. Atoms in
+        # later frames may therefore fall outside the box; under the pbc=(T,T,T) this recovery
+        # sets, that is well-defined (fractional coordinates outside [0,1)), and no position is
+        # altered.
         boxed_frame = next(f for f in canonical.frames if f.cell is None)
         lattice, shift = _bounding_box(boxed_frame.atoms.positions, padding)
         new_frames = _fabricate(lattice, shift=shift)
         report_params = {"padding_ang": padding, "computed_on_frame": computed_on_frame}
+        multi = sum(1 for f in canonical.frames if f.cell is None) > 1
+        spans = (
+            " The same box and shift are applied to every cell-less frame, so relative motion "
+            "between frames is preserved; atoms in other frames may lie outside the box."
+            if multi
+            else ""
+        )
         description = (
             f"Lattice constructed as the axis-aligned bounding box of frame {computed_on_frame}'s "
             f"positions plus {padding} Å padding on each side; atoms rigidly translated into that "
-            "box (a shift preserves all interatomic distances). pbc set to (T,T,T) as required by "
-            "the target. The source expressed no lattice — this cell is a conversion artifact, "
-            "not simulation data."
+            "box (a shift preserves all interatomic distances)." + spans + " pbc set to (T,T,T) as "
+            "required by the target. The source expressed no lattice — this cell is a conversion "
+            "artifact, not simulation data."
         )
 
     updated = canonical.model_copy(update={"frames": new_frames})
+    # Frames whose genuine cell was left alone. Non-empty only in the partial case above: a `mixed`
+    # source reaching a multi-frame lattice-requiring target.
+    kept = [f.index for f in canonical.frames if f.cell is not None]
+    fabricated = [f.index for f in canonical.frames if f.cell is None]
+    scope = (
+        f" Applied to the {len(fabricated)} cell-less frame(s); the {len(kept)} frame(s) that "
+        "already carried a lattice keep their own, untouched."
+        if kept
+        else ""
+    )
+    preserved: list[PreservedField] = []
+    if kept:
+        preserved = [
+            PreservedField(
+                path="cell.lattice_vectors",
+                detail=f"Genuine source lattice carried for frame(s) {kept}; the remaining "
+                f"frame(s) {fabricated} had none and were supplied one by this choice.",
+            ),
+            PreservedField(
+                path="cell.pbc",
+                detail=f"Genuine source pbc carried for frame(s) {kept}.",
+            ),
+        ]
     assumption = AppliedAssumption(
         id=aid,
         scenario="missing_lattice",
         choice=code,
         parameters=report_params,
         origin=origin,
-        description=description,
+        description=description + scope,
         supplied=[
             SuppliedField(
                 path="cell.lattice_vectors",
-                detail="3×3 lattice fabricated by recovery — not present in the source.",
+                detail="3×3 lattice fabricated by recovery — not present in the source"
+                + (f" for frame(s) {fabricated}." if kept else "."),
             ),
             SuppliedField(
                 path="cell.pbc",
                 detail="(T, T, T) — required by the target; set by the same recovery choice.",
             ),
         ],
+        preserved=preserved,
     )
     return updated, assumption
 

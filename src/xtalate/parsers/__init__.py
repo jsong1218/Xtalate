@@ -13,19 +13,29 @@ from __future__ import annotations
 
 from xtalate.parsers.extxyz import ExtxyzParser
 from xtalate.parsers.poscar import PoscarParser, make_contcar_parser, make_poscar_parser
+from xtalate.parsers.xdatcar import XdatcarParser, make_xdatcar_parser
 from xtalate.parsers.xyz import XyzParser
 from xtalate.sdk import ParserPlugin
 
 __all__ = [
     "ExtxyzParser",
     "PoscarParser",
+    "XdatcarParser",
     "XyzParser",
     "builtin_parsers",
     "make_contcar_parser",
     "make_poscar_parser",
+    "make_xdatcar_parser",
 ]
 
 
 def builtin_parsers() -> list[ParserPlugin]:
-    """The parsers shipped in v0.1 (M3a XYZ, M3b POSCAR/CONTCAR, M3c extXYZ)."""
-    return [XyzParser(), ExtxyzParser(), make_poscar_parser(), make_contcar_parser()]
+    """The parsers shipped so far (v0.1: M3a XYZ, M3b POSCAR/CONTCAR, M3c extXYZ; v0.3: M13
+    XDATCAR)."""
+    return [
+        XyzParser(),
+        ExtxyzParser(),
+        make_poscar_parser(),
+        make_contcar_parser(),
+        make_xdatcar_parser(),
+    ]

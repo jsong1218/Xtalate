@@ -1,0 +1,20 @@
+case: si-npt-variable-cell
+format_id: xdatcar
+source_file: XDATCAR
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "e058d66f5601fd0168abd4b433775acd4c4329a23079236c5bd75623a578c61b"
+expected_sha256: "1ec5d6b7306f616f52039589873f6f3e6818bb43639d0c3abbd03b4f8b1e826c"
+origin:
+  kind: synthetic
+  source: "Hand-written for M13 (VASP-5 XDATCAR, NpT per-frame-cell form, Si, 3 configurations)"
+  license: "Apache-2.0"
+notes: >-
+  The NpT form, and the format's distinctive canonical feature: VASP restates the whole 7-line
+  header before each configuration when the cell varies, so Frame.cell legitimately differs
+  frame to frame. The cell expands 5.6 → 5.8 → 6.0 Å while the fractional coordinates hold
+  constant, which is precisely the case that catches a parser reusing frame 0's lattice: the
+  identical Direct coordinates must yield *different* Cartesian positions (2.8 → 2.9 → 3.0 Å).
+  Reading only the first header would silently misplace every atom after frame 0 — the class of
+  loss the mission exists to prevent (P1). Every expected value is exact in float64 (0.5 × a
+  halves an exponent) and was hand-derived.
