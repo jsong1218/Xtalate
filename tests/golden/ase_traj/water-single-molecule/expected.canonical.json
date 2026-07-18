@@ -1,0 +1,83 @@
+{
+  "schema_version": "0.1.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "H",
+          "O",
+          "H"
+        ],
+        "atomic_numbers": [
+          1,
+          8,
+          1
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.98
+          ],
+          [
+            0.0,
+            0.93,
+            -0.26
+          ]
+        ],
+        "masses": null
+      },
+      "cell": null,
+      "dynamics": {
+        "velocities": null,
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": null,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": null,
+  "provenance": {
+    "source_filename": "relax.traj",
+    "source_format": "ase_traj",
+    "source_units": {
+      "positions": "angstrom"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "read via ASE 3.29.0 TrajectoryReader; ASE-manufactured defaults (zero cell, derived masses, zeroed momenta) laundered to absence (P3)."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-07-18T04:30:19Z",
+        "operation": "parse",
+        "source_format": "ase_traj",
+        "target_format": null,
+        "tool_version": "0.2.0",
+        "parser_version": "ase_traj-parser 0.2.0 (ase 3.29.0)",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {},
+    "custom_per_atom": {},
+    "custom_per_frame": {}
+  }
+}

@@ -34,6 +34,7 @@ def test_builtins_register_without_error() -> None:
         "poscar",
         "contcar",
         "xdatcar",
+        "ase_traj",
     }
     assert {e.format_id for e in reg.exporters()} == {
         "xyz",
@@ -41,6 +42,7 @@ def test_builtins_register_without_error() -> None:
         "poscar",
         "contcar",
         "xdatcar",
+        "ase_traj",
     }
 
 

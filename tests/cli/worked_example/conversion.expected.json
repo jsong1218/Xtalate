@@ -1,0 +1,87 @@
+{
+  "report_id": "<normalized>",
+  "stage": "final",
+  "status": "completed",
+  "mode": "permissive",
+  "created_at": "<normalized>",
+  "source": {
+    "format_id": "ase_traj",
+    "filename": "relax.traj",
+    "sha256": "<normalized>",
+    "schema_version": "0.1.0"
+  },
+  "target": {
+    "format_id": "poscar",
+    "filename": "POSCAR"
+  },
+  "preserved": [
+    {
+      "path": "atoms.symbols",
+      "detail": null
+    },
+    {
+      "path": "atoms.positions",
+      "detail": null
+    }
+  ],
+  "removed": [
+    {
+      "path": "dynamics.forces",
+      "reason": "Target format 'poscar' cannot store dynamics.forces.",
+      "detail": null
+    },
+    {
+      "path": "electronic.total_energy",
+      "reason": "Target format 'poscar' cannot store electronic.total_energy.",
+      "detail": null
+    },
+    {
+      "path": "atoms.positions",
+      "reason": "Target format stores a single structure (max_frames = 1).",
+      "detail": "9 of 10 frames dropped; frame 9 retained per A1."
+    }
+  ],
+  "supplied": [
+    {
+      "path": "cell.lattice_vectors",
+      "from_assumption": "A2",
+      "detail": "3×3 lattice fabricated by recovery — not present in the source."
+    },
+    {
+      "path": "cell.pbc",
+      "from_assumption": "A2",
+      "detail": "(T, T, T) — required by the target; set by the same recovery choice."
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "A1",
+      "scenario": "frame_selection",
+      "choice": "last",
+      "parameters": {
+        "frame_index": 9
+      },
+      "origin": "preset",
+      "description": "Frame 9 of 10 selected for the single-structure target; the other 9 frame(s) are dropped. Which frame survives changes the scientific meaning of the output, so this is a recorded choice, not a silent default."
+    },
+    {
+      "id": "A2",
+      "scenario": "missing_lattice",
+      "choice": "bounding_box",
+      "parameters": {
+        "padding_ang": 5.0,
+        "computed_on_frame": 9
+      },
+      "origin": "preset",
+      "description": "Lattice constructed as the axis-aligned bounding box of frame 9's positions plus 5.0 Å padding on each side; atoms rigidly translated into that box (a shift preserves all interatomic distances). pbc set to (T,T,T) as required by the target. The source expressed no lattice — this cell is a conversion artifact, not simulation data."
+    }
+  ],
+  "warnings": [
+    {
+      "code": "FORMAT_LOSSY_NOTE",
+      "message": "Positions written with full float64 precision; sub-ulp differences possible on round-trip through fixed-width VASP readers.",
+      "source": "capability"
+    }
+  ],
+  "refusal": null
+}

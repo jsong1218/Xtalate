@@ -1,0 +1,24 @@
+case: co-relax-3frame
+format_id: ase_traj
+source_file: relax.traj
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "39c5b8b0e4a270f1211015e62c7ce095e7821308ce31d5ff12ebc6bfc22f7cd4"
+expected_sha256: "15f444f591ecab3d75d7b9483bd89a2f7766991fdc05f030b5fcd1c6170aff17"
+origin:
+  kind: synthetic
+  source: >-
+    Hand-authored for M14C via tests/golden/ase_traj/_generate.py (ASE .traj ULM container,
+    CO molecule, 3 frames).
+  license: "Apache-2.0"
+notes: >-
+  The rich all-fields anchor: a CO diatomic relaxing over three frames, each carrying a 6 Å cubic
+  cell with pbc=(T,T,T), source-written isotope masses (12.011, 15.999 — never ASE-derived), a
+  velocity field (stored as ASE momenta, unit-converted to Å/fs by the ase.units.fs factor at the
+  parser boundary), a FixAtoms([0]) constraint mapped to Constraint(kind="fixed_atoms") (D58), an
+  info["step"] carried into user_metadata.custom_per_frame['ase_traj:step'], and a calculator
+  energy + forces mapped to electronic.total_energy / dynamics.forces. Every value is exact and
+  hand-chosen, so each number in expected.canonical.json is verifiable against the Atoms built in
+  _generate.py — the ULM binary is only the transport. Also the round-trip *source* that enrols
+  ase_traj into the two/three-hop matrix (tests/roundtrip/_matrix.py:_GOLDEN_DIRS): the one Phase-1
+  fixture that flows velocities + forces + a constraint through the whole matrix.
