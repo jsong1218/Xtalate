@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -135,32 +137,35 @@ def _cmd_inspect(args: argparse.Namespace, registry: Registry) -> int:
 
 
 def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
-    data = _read_bytes(args.file)
-    tolerance = _resolve_tolerance(args.tolerance_profile)
-    recovery_choices = _parse_recover(args.recover)
-    _inject_references(registry, recovery_choices)
-    # parse-time recovery (missing_species / truncate_corrupt_tail) is applied here, before the
-    # engine, if a matching preset was supplied; otherwise the recoverable parse error stands.
-    parsed = parse_with_recovery(
-        registry,
-        data,
-        filename=Path(args.file).name,
-        format_override=args.format,
-        recovery_choices=recovery_choices,
-    )
-    result = ConversionEngine(registry).convert(
-        parsed.canonical,
-        source_format_id=parsed.format_id,
-        target_format_id=args.to,
-        source_filename=Path(args.file).name,
-        target_filename=Path(args.output).name if args.output else None,
-        mode=args.mode,
-        recovery_choices=recovery_choices,
-        parse_recovery=parsed,
-        acknowledge_loss=args.acknowledge_loss,
-        acknowledge_parse_warnings=args.acknowledge_parse_warnings,
-        tolerance_profile=tolerance,
-    )
+    result = _convert_streamed(args, registry)
+    streamed = result is not None
+    if result is None:
+        data = _read_bytes(args.file)
+        tolerance = _resolve_tolerance(args.tolerance_profile)
+        recovery_choices = _parse_recover(args.recover)
+        _inject_references(registry, recovery_choices)
+        # parse-time recovery (missing_species / truncate_corrupt_tail) is applied here, before the
+        # engine, if a matching preset was supplied; otherwise the recoverable parse error stands.
+        parsed = parse_with_recovery(
+            registry,
+            data,
+            filename=Path(args.file).name,
+            format_override=args.format,
+            recovery_choices=recovery_choices,
+        )
+        result = ConversionEngine(registry).convert(
+            parsed.canonical,
+            source_format_id=parsed.format_id,
+            target_format_id=args.to,
+            source_filename=Path(args.file).name,
+            target_filename=Path(args.output).name if args.output else None,
+            mode=args.mode,
+            recovery_choices=recovery_choices,
+            parse_recovery=parsed,
+            acknowledge_loss=args.acknowledge_loss,
+            acknowledge_parse_warnings=args.acknowledge_parse_warnings,
+            tolerance_profile=tolerance,
+        )
     report = result.report
 
     if args.report:
@@ -188,9 +193,117 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
     # The output file is written regardless of --json — the reports and the artifact are
     # independent outputs. In --json mode only the stdout dump is suppressed (it would corrupt the
     # JSON stream); the file-write notice always goes to stderr so stdout stays pure.
-    _emit_output(args, result, human=not args.json)
+    if streamed:
+        # The streaming engine already wrote the artifact frame by frame; only the notice remains.
+        print(f"Wrote {args.to} output to {args.output}", file=sys.stderr)
+    else:
+        _emit_output(args, result, human=not args.json)
 
     return _convert_exit_code(report, result.validation, args.mode)
+
+
+def _convert_streamed(args: argparse.Namespace, registry: Registry) -> Any | None:
+    """Route an eligible ``convert`` through the streaming engines, holding one frame resident
+    (M12/M13; the post-v0.3-review wiring, DECISIONS.md D63) — before it, the CLI always
+    materialized and the library-only streaming spine never reached `xtalate convert`. Returns
+    ``None`` whenever the invocation is not a streaming case; the caller then runs the
+    materialized path unchanged. Which path ran is not observable in the artifact or the reports:
+    the engines guarantee byte-identical output and an identical Conversion Report (M12 standing
+    rule 3), pinned here by the CLI equality tests.
+
+    The gates, all static: an ``-o`` file target (the no-``-o`` stdout dump needs the bytes in
+    memory anyway); permissive mode (the strict acknowledgment protocol —
+    ``UNACKNOWLEDGED_PARSE_WARNINGS`` — is implemented by the materialized engine only); recovery
+    presets empty (``convert_stream``) or exactly a ``first``/``last``/``index``
+    ``frame_selection`` (``convert_stream_select``); and the engines' own capability gates.
+    ``convert_stream_select``'s runtime exclusions (constraints present, a fabricative recovery
+    still needed) raise ``ValueError`` and the source is re-read from disk on the materialized
+    path — a second pass, never a wrong report. The artifact is streamed into a temp file in the
+    output directory and renamed over ``-o`` only on success, so a mid-stream parse error leaves
+    a pre-existing file at ``-o`` untouched — exactly like the materialized path, which writes
+    the output only after the whole conversion succeeded.
+    """
+    if not args.output or args.mode == "strict":
+        return None
+    recovery_choices = _parse_recover(args.recover)
+    frame_selection: dict[str, Any] | None = None
+    if recovery_choices:
+        if set(recovery_choices) != {"frame_selection"}:
+            return None
+        frame_selection = recovery_choices["frame_selection"]
+        if frame_selection.get("choice") not in ("first", "last", "index"):
+            return None
+
+    from xtalate.discovery import Sniffer
+    from xtalate.discovery.sniffer import HEAD_SIZE
+
+    source_path = Path(args.file)
+    fmt = args.format
+    if fmt is None:
+        try:
+            with source_path.open("rb") as stream:
+                head = stream.read(HEAD_SIZE)
+        except OSError:
+            return None  # the materialized path raises the canonical file error
+        fmt = Sniffer(registry).sniff(head, source_path.name).format_id
+    if fmt is None or fmt not in {p.format_id for p in registry.parsers()}:
+        return None  # the materialized path raises the canonical UNKNOWN_FORMAT error
+    engine = ConversionEngine(registry)
+    try:
+        if frame_selection is None:
+            if not engine.streaming_eligible(fmt, args.to):
+                return None
+        elif not engine.frame_selection_streaming_eligible(fmt, args.to):
+            return None
+    except KeyError:
+        return None  # unknown --to: the materialized path surfaces it as it always has
+
+    out_path = Path(args.output)
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(out_path.parent), prefix=f".{out_path.name}.", suffix=".partial"
+        )
+    except OSError:
+        return None  # unwritable target directory: fail exactly as the materialized write would
+    tmp_path: str | None = tmp_name
+    try:
+        with source_path.open("rb") as source, os.fdopen(fd, "w+b") as output:
+            try:
+                if frame_selection is None:
+                    result = engine.convert_stream(
+                        source,
+                        source_format_id=fmt,
+                        target_format_id=args.to,
+                        output=output,
+                        source_filename=source_path.name,
+                        target_filename=out_path.name,
+                        mode=args.mode,
+                        tolerance_profile=_resolve_tolerance(args.tolerance_profile),
+                        acknowledge_loss=args.acknowledge_loss,
+                    )
+                else:
+                    result = engine.convert_stream_select(
+                        source,
+                        source_format_id=fmt,
+                        target_format_id=args.to,
+                        output=output,
+                        frame_selection=frame_selection,
+                        source_filename=source_path.name,
+                        target_filename=out_path.name,
+                        mode=args.mode,
+                        tolerance_profile=_resolve_tolerance(args.tolerance_profile),
+                        acknowledge_loss=args.acknowledge_loss,
+                    )
+            except RecoveryError:
+                raise  # a caller error (bad frame_selection preset), identical either path
+            except ValueError:
+                return None  # engine runtime exclusion ("use convert()"): materialize instead
+        os.replace(tmp_name, out_path)
+        tmp_path = None
+        return result
+    finally:
+        if tmp_path is not None:
+            Path(tmp_path).unlink(missing_ok=True)
 
 
 def _cmd_validate(args: argparse.Namespace, registry: Registry) -> int:

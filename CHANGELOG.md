@@ -28,6 +28,21 @@ manual publish step), so the maintainer may fold these into `0.3.0` before taggi
   by one id whose stored declaration names another. All first-party plugins and
   `xtalate-toyfmt` already satisfied the check.
 
+### Added
+
+- **`xtalate convert` now inherits the M12 sub-linear memory: eligible invocations route
+  through the streaming engines (`docs/DECISIONS.md` D63).** With an `-o` file target in
+  permissive mode and recovery presets empty (→ `convert_stream`) or exactly a
+  `first`/`last`/`index` `frame_selection` (→ `convert_stream_select`), the CLI streams the
+  conversion frame by frame — closing the v0.3 gap where the release's headline memory property
+  was reachable only from the library API. Which path ran is not observable: output bytes and
+  the Conversion Report are engine-guaranteed identical (M12 standing rule 3), pinned by CLI
+  equality tests; the artifact is written via a temp file renamed on success, so a mid-stream
+  parse error leaves a pre-existing `-o` file untouched. Everything else (strict mode, other
+  recovery presets, non-streaming pairs, no `-o`) keeps the materialized path unchanged.
+  Measured: 5 000-frame XDATCAR → extXYZ peaks at ~89 MB streamed vs ~354 MB materialized,
+  byte-identical outputs.
+
 ### Changed
 
 - **A broken installed plugin now surfaces on the CLI as a clean, attributed error (exit 1)
