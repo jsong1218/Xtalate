@@ -4,7 +4,8 @@ Provenance history entries (parse/recovery/convert) and the report ``created_at`
 the same ISO-8601 ``...Z`` form (Part 2 §3.9). This lived as a copied ``strftime`` string in four
 modules; centralising it here removes the drift hazard and gives one place to change the precision
 if the schema ever does. It is a root-level cross-cutting utility (like ``xtalate.registry``),
-outside the import-linter layer graph, so any layer may import it without touching the P2 contract.
+listed as the *bottom* layer of the import-linter contract: any layer may import it, and the
+linter guarantees it never grows an import of its own back into the package (P2).
 """
 
 from __future__ import annotations
