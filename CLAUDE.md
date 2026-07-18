@@ -2,7 +2,7 @@
 
 > Load this file at the start of every Claude Code / Claude chat session working on Xtalate. It is a compressed index of `docs/MASTER_SPEC.md` (the full constitution — a single edited document, *not* an assembly of standalone files; see the document-family section below). If anything here conflicts with a doc in `docs/`, **the doc wins** — this file is a map, not the territory. If a later-uploaded doc contradicts an earlier one, flag the discrepancy; do not silently pick one.
 
-> **Status (refreshed Revision 1.13, July 2026).** **v0.1 and v0.2 are both feature-complete (v0.2 is version `0.2.0`; the git tag and PyPI/GitHub publish remain the maintainer's pending manual step, D52).** The full spine — parse → pre-flight → recovery → export → report → validation — plus the Information Discovery Engine and the `xtalate` CLI shipped for the four v0.1 formats (XYZ, extXYZ, POSCAR, CONTCAR). v0.2, complete: **M7** completed the full Part 4 §3.3 recovery scenario catalog (Slices 1–2, Revisions 1.8–1.9); **M8** added the POSCAR/CONTCAR velocity block (Cartesian + Direct) and the velocity/mass recovery family — `missing_velocities` (`zero_init`/`maxwell_boltzmann`/`upload_reference`/`omit`) and `missing_masses` (`standard_masses`/`manual_input`), opt-in and chain-aware (Revision 1.10); **M9** added the cross-format round-trip matrix — two-hop (`A→B→Canonical′`) and three-hop (`A→B→A`) suites whose comparable subspace is computed from the Capability Matrix, never hand-listed, plus custom tolerance-table files (`--tolerance-profile FILE`, YAML/JSON), which adds **PyYAML** as the first new runtime dependency since ASE (Revision 1.11); **M10** added the report-completeness property test (`tests/property/`) — the test-time generalization of the M4 runtime completeness assertion, with both properties (completeness invariant + absence conformance) re-derived independently in test code and driven by a **stage-1** golden-mutation generator (the whole optional-field lattice) **and a stage-2 `hypothesis` generator** over randomized objects with shrinking (`hypothesis` added as a test-only dev dependency), which caught three real `frame_selection`-interaction silent-loss/crash bugs, all fixed (Revision 1.12 / D50–D51); and **M11** mechanized the golden-corpus governance (manifest schema + **non-empty license** — no manifest, no license, no merge; per-source `sha256` re-verified; `expected.canonical.json` loaded through the migration chain with a one-major-version lag bound; `tests/golden/ATTRIBUTIONS.md` generated-and-diffed in CI), promoted the CI gates (coverage **ratchet** via `pytest-cov`; import-linter confirmed required), landed the contributor surface (`CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/`, PR template with the license-grant checkbox), and cut the **`0.2.0`** release (Revision 1.13 / D52). The map below is current against Revisions 1.3–1.13 and `docs/DECISIONS.md` **D1–D55**. Mission, principles (P1–P6), the Mission Scope & Non-Goals above, glossary, architecture, the absence convention, tech stack (a *destination*, not the v0.1 dependency set), and API conventions remain binding. For build-time rationale read the MASTER_SPEC Preface revision log and the **D-log through D55**; per-version execution lives in `docs/IMPLEMENTATION_PLAN_v0.1.md`–`_v1.0.md`. (Revision 1.13 / D52: M11 golden-corpus governance + contributor surface + `0.2.0` release — governance runs as pytest, `ATTRIBUTIONS.md` is generated not hand-authored, coverage is a ratchet in addopts; see `CHANGELOG.md` `[0.2.0]`.)
+> **Status (refreshed Revision 1.16 + post-v0.3 architectural review, July 2026).** **v0.1–v0.3 are feature-complete (version `0.3.0`; the git tag and PyPI/GitHub publish remain the maintainer's pending manual step, D52).** v0.1 shipped the full spine — parse → pre-flight → recovery → export → report → validation — plus the Information Discovery Engine and the `xtalate` CLI for four formats (XYZ, extXYZ, POSCAR, CONTCAR); v0.2 (M7–M11, Revisions 1.8–1.13, D-log through D55) completed the Part 4 §3.3 recovery catalog, the velocity/mass recovery family, the Capability-Matrix-driven round-trip matrix (+ PyYAML), the `hypothesis`-driven report-completeness property test, golden-corpus governance, and the contributor surface — see `CHANGELOG.md` `[0.2.0]`. v0.3 — **"Trajectories at Scale"**, complete: **M12** made pipeline memory **sub-linear in frames** via the frame-chunked streaming core (`sdk/streaming.py`, `PresenceAccumulator`, `ConversionEngine.convert_stream`/`convert_stream_select`, streaming validation; "chunking changes memory, never truth" — the streamed report is proven identical to the materialized one; D56, `docs/MEMORY_CEILING.md`); **M13** added the **XDATCAR** streaming-first parser/exporter (fixed-cell + NpT per-frame-cell forms, `timestep = None` honesty, explicit `truncate_at_last_valid_frame` recovery; D57); **M14** added the **ASE `.traj`** parser/exporter with the default-laundering suite (ASE's manufactured zero cell/momenta/empty constraints → `None`; stress carried verbatim in `custom_per_frame`, D18; ASE version in provenance, D58–D59) and made the spec's worked example executable; **M15** landed the benchmark corpus (`python -m benchmarks`, measured-not-gated) and the PR/nightly matrix split (`.github/workflows/nightly.yml`: full n×n round-trip matrix, benchmarks, extended `hypothesis`, `pip-audit`); **M16** implemented **entry-point plugin discovery** (`xtalate.registry`, groups `xtalate.parsers`/`xtalate.exporters`, additive third pass in `default_registry()`, fails loudly) proven against the real installable `xtalate-toyfmt` fixture in CI (D60–D61), and cut the **`0.3.0`** release (Revision 1.16). **Six of the seven Phase-1 formats are registered; CIF is v0.4.** A post-`0.3.0` architectural review then fixed the XDATCAR Cartesian scale-factor defect, enforced the declaration-`format_id` check, attributed discovered-plugin collisions to their entry point (D62), gave the CLI a clean broken-plugin surface, and brought `registry`/`_time` under the import-linter contract — see `CHANGELOG.md` `[Unreleased]`. The map below is current against Revisions 1.3–1.16 and `docs/DECISIONS.md` **D1–D62**. Mission, principles (P1–P6), the Mission Scope & Non-Goals above, glossary, architecture, the absence convention, tech stack (a *destination*, not the current dependency set), and API conventions remain binding. For build-time rationale read the MASTER_SPEC Preface revision log and the **D-log through D62**; per-version execution lives in `docs/IMPLEMENTATION_PLAN_v0.1.md`–`_v1.0.md`.
 
 ## Mission
 
@@ -81,7 +81,7 @@ Parsers are forbidden from defaulting — no zero velocities, no identity lattic
 
 ## Tech Stack (rationale lives in `01_Architecture.md §4`)
 
-> These are destination choices for the versions that need them (Service in v0.5, Web UI in v0.6), not the v0.1 dependency set. v0.1 is a pure-Python library + CLI: pydantic + numpy, plus ASE once the extXYZ parser lands (the sole scientific dependency — pymatgen was rejected as a v0.1 dependency; see `docs/DECISIONS.md` D4, D7).
+> These are destination choices for the versions that need them (Service in v0.5, Web UI in v0.6), not the current dependency set. Through v0.3 the library + CLI is pure Python: pydantic + numpy, ASE (the sole scientific dependency, backing extXYZ and the ASE `.traj` format — pymatgen was rejected; see `docs/DECISIONS.md` D4, D7), and PyYAML (custom tolerance tables + golden-corpus manifests, v0.2/M9).
 
 | Layer | Choice |
 |---|---|
@@ -93,28 +93,31 @@ Parsers are forbidden from defaulting — no zero velocities, no identity lattic
 | Blob storage | S3-compatible object storage, lifecycle-expiring |
 | Job queue | RQ on Redis |
 
-## Repository Shape (current v0.1 layout)
+## Repository Shape (current v0.3 layout)
 
-> The pre-implementation architecture review rejected a solo-maintainer monorepo of separately-packaged components as unnecessary overhead (`docs/ARCHITECTURE_REVIEW.md` §4.1; `docs/DECISIONS.md` D1). The shipped v0.1 layout is **one package** in a `src/` layout — no per-component `pyproject.toml`s. `frontend/`, `backend/`, and `plugins/` do not exist yet; they arrive with the versions that need them (Service at roadmap v0.5, Web UI at v0.6, entry-point plugin discovery at v0.3). `docs/MASTER_SPEC.md` Part 1 §5 is the authoritative tree.
+> The pre-implementation architecture review rejected a solo-maintainer monorepo of separately-packaged components as unnecessary overhead (`docs/ARCHITECTURE_REVIEW.md` §4.1; `docs/DECISIONS.md` D1). The shipped layout is **one package** in a `src/` layout — no per-component `pyproject.toml`s. `frontend/` and `backend/` do not exist yet; they arrive with the versions that need them (Service at roadmap v0.5, Web UI at v0.6). Entry-point plugin discovery **shipped in v0.3** (M16): third-party distributions advertise plugins under the `xtalate.parsers`/`xtalate.exporters` entry-point groups, and there is no `plugins/` directory — the proof plugin lives at `tests/fixtures/xtalate_toyfmt/` as its own installable distribution. `docs/MASTER_SPEC.md` Part 1 §5 is the authoritative tree.
 
 ```
 src/xtalate/
   schema/         Canonical Model; depends on nothing else in xtalate/  (a.k.a. "canonical-schema")
-  sdk/            stable parser/exporter base classes + capability models   (a.k.a. "plugin-sdk")
-  parsers/        one per format; depends only on schema + sdk
+  sdk/            stable parser/exporter base classes + capability models + streaming interface (a.k.a. "plugin-sdk")
+  parsers/        one per format (6: xyz, extxyz, poscar, contcar, xdatcar, ase_traj); depends only on schema + sdk
   exporters/      one per format; depends only on schema + sdk
   capabilities/   Capability Matrix: assembles + queries declarations       (a.k.a. "capability-matrix")
   discovery/      Information Discovery Engine + Format Sniffer + Discovery Report
-  conversion/     Conversion Engine — orchestrates the above + Conversion Report
-  recovery/       Recovery Engine + workflows (preset-only in v0.1)
-  validation/     Validation Engine + Validation Report
+  conversion/     Conversion Engine — orchestrates the above + Conversion Report (incl. convert_stream)
+  recovery/       Recovery Engine + workflows (preset-only until the v0.5 Service)
+  validation/     Validation Engine + Validation Report (batch + streaming)
   cli/            thin argparse presenter: inspect / convert / validate / capabilities
+  registry.py     composition root: default_registry() = built-ins + entry-point discovery (v0.3 M16)
+  _time.py        the one UTC-timestamp helper (bottom layer of the import contract)
+benchmarks/       Part 8 §4 benchmark harness (python -m benchmarks); measured, not coverage-gated
 examples/         runnable end-to-end library + CLI samples
-tests/            golden/, roundtrip/, and per-subpackage suites
+tests/            golden/, roundtrip/, streaming/, property/, fixtures/xtalate_toyfmt/, and per-subpackage suites
 docs/             the doc family this file indexes
 ```
 
-Dependency direction is strict and acyclic — enforced physically by an `import-linter` `layers` contract (`pyproject.toml`), run with ruff + mypy --strict + pytest on every PR (`docs/DECISIONS.md` D5). This is what enforces **P2**. The descriptive names in parentheses (`canonical-schema`, `plugin-sdk`, `capability-matrix`) are the prose labels used across the spec; the tree gives the import-name mapping.
+Dependency direction is strict and acyclic — enforced physically by an `import-linter` `layers` contract (`pyproject.toml`; since the post-v0.3 review it also covers `registry` and `_time`), run with ruff + mypy --strict + pytest on every PR (`docs/DECISIONS.md` D5). This is what enforces **P2**. The descriptive names in parentheses (`canonical-schema`, `plugin-sdk`, `capability-matrix`) are the prose labels used across the spec; the tree gives the import-name mapping.
 
 ## API Conventions (full spec in `06_API.md`)
 
@@ -131,18 +134,20 @@ Dependency direction is strict and acyclic — enforced physically by an `import
 
 > `docs/MASTER_SPEC.md` is edited directly as the single source of truth (Revision 1.2, Preface); the standalone `00`–`10` `.md` files named in older prose **never existed as separate committed files** — do not create or assume them. The Part numbering (`04 §3.3` = "Part 4 §3.3") survives only as a stable citation scheme inside the one document. The document family that actually exists:
 
-- **`docs/MASTER_SPEC.md`** — the constitution (Parts 0–10 + Appendices; Preface revision log runs Revisions 1.1–1.13). Start here; use its Table of Contents.
-- **`docs/DECISIONS.md`** — build-time decisions log, **D1–D55**, each with a rejected alternative and a standing-rules note at the top.
+- **`docs/MASTER_SPEC.md`** — the constitution (Parts 0–10 + Appendices; Preface revision log runs Revisions 1.1–1.16). Start here; use its Table of Contents.
+- **`docs/DECISIONS.md`** — build-time decisions log, **D1–D62**, each with a rejected alternative and a standing-rules note at the top.
 - **`docs/ARCHITECTURE_REVIEW.md`** — the accepted pre-implementation review (its acceptance is MASTER_SPEC Revision 1.2).
 - **`docs/Incremental_Roadmap_v1.0.md`** — the solo-developer version ladder (v0.1–v0.7); carries a Revision 1.6 staleness banner over its execution detail, ladder still binding.
 - **`docs/IMPLEMENTATION_PLAN_v0.1.md` … `_v1.0.md`** — per-version execution plans, milestones **M0–M38**, each superseding the roadmap's execution prose for its version.
-- **`docs/DOCS_CONSISTENCY_REVIEW_2026-07.md`** — the post-v0.1 corpus consistency review (findings C1–C11) this refresh implements.
+- **`docs/DOCS_CONSISTENCY_REVIEW_2026-07.md`** — the post-v0.1 corpus consistency review (findings C1–C11) the Revision 1.6/1.7 refresh implemented.
+- **`docs/MEMORY_CEILING.md`** — the M12 streaming memory model and the M15 benchmark methodology (D56).
+- **`docs/M14-M16_SLICE_PLAN.md`** — the v0.3 tail-slice execution log (M14/M15/M16, one importable slice at a time); historical now that v0.3 is complete.
 
 > Not committed to this repo (external, historical): `Xtalate_Doc_Prompts.md` — the prompt set that generated the original drafts; superseded by the single-source-of-truth model, do not run it or create the standalone files.
 
 ## Working Rules for This Project
 
-- **Run the lint gate before every commit/PR.** CI (`.github/workflows`) runs, in order, `ruff check .`, `ruff format --check .`, `mypy`, `lint-imports` (the import-linter P2 contract), and `pytest` on Python 3.11 and 3.13. Run all five locally (from the `.venv`: `source .venv/bin/activate`) before pushing — `ruff format --check` (the format case) fails independently of `ruff check` (the lint case), so a green `ruff check` does **not** mean formatting is clean. If `ruff format --check` reports files, run `ruff format .` to fix them.
+- **Run the lint gate before every commit/PR.** CI (`.github/workflows/ci.yml`) runs, in order, `ruff check .`, `ruff format --check .`, `mypy`, `lint-imports` (the import-linter P2 contract), then installs the toyfmt proof plugin (`pip install --no-deps ./tests/fixtures/xtalate_toyfmt` — its four end-to-end tests skip when it is absent) and runs `pytest`, on Python 3.11 and 3.13. Run all five locally (from the `.venv`: `source .venv/bin/activate`) before pushing — `ruff format --check` (the format case) fails independently of `ruff check` (the lint case), so a green `ruff check` does **not** mean formatting is clean. If `ruff format --check` reports files, run `ruff format .` to fix them. A separate `nightly.yml` runs the full n×n round-trip matrix (`XTALATE_FULL_MATRIX=1 pytest -m nightly`), the benchmarks, the extended `hypothesis` profile, and `pip-audit`.
 - **Terminology is binding.** Reuse exact field names, endpoint paths, report field names, and component names already established. If a name seems wrong, say so explicitly and explain why — never rename silently.
 - **Write for an isolated reader.** Every doc must stand alone for a contributor or a planning agent who has not read the master prompt directly, while staying consistent with the rest of `docs/`.
 - **Justify nontrivial decisions.** Name at least one reasonable rejected alternative for each nontrivial architectural or design choice.
