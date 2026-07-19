@@ -8,55 +8,19 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ## [Unreleased]
 
-Fixes from the post-`0.3.0` architectural review. The `v0.3.0` tag has not been cut yet (D52's
-manual publish step), so the maintainer may fold these into `0.3.0` before tagging.
-
-### Fixed
-
-- **XDATCAR Cartesian-mode positions are now scaled by the scaling factor (§4).** The scale
-  multiplier (including the negative-scale target-volume form) was folded into each frame's
-  lattice but never applied to Cartesian coordinate rows, so a Cartesian XDATCAR with scale
-  ≠ 1.0 parsed with positions off by the multiplier — while the emitted parse note claimed the
-  scaling had happened (a P1 honesty violation). Direct-mode files were unaffected (fractional
-  coordinates pick the scale up through the lattice product). Now matches the POSCAR parser's
-  handling; covered by new Cartesian scale-2.0 and target-volume tests in
-  `tests/parsers/test_xdatcar.py`.
-- **The registry now enforces the id half of `InvalidCapabilityDeclaration`'s documented
-  contract (`docs/DECISIONS.md` D62).** A plugin whose `capabilities()` declaration carries a
-  different `format_id` than the plugin's own is rejected at registration
-  (`InvalidCapabilityDeclaration` naming both ids) instead of silently producing a matrix keyed
-  by one id whose stored declaration names another. All first-party plugins and
-  `xtalate-toyfmt` already satisfied the check.
-
-### Added
-
-- **`xtalate convert` now inherits the M12 sub-linear memory: eligible invocations route
-  through the streaming engines (`docs/DECISIONS.md` D63).** With an `-o` file target in
-  permissive mode and recovery presets empty (→ `convert_stream`) or exactly a
-  `first`/`last`/`index` `frame_selection` (→ `convert_stream_select`), the CLI streams the
-  conversion frame by frame — closing the v0.3 gap where the release's headline memory property
-  was reachable only from the library API. Which path ran is not observable: output bytes and
-  the Conversion Report are engine-guaranteed identical (M12 standing rule 3), pinned by CLI
-  equality tests; the artifact is written via a temp file renamed on success, so a mid-stream
-  parse error leaves a pre-existing `-o` file untouched. Everything else (strict mode, other
-  recovery presets, non-streaming pairs, no `-o`) keeps the materialized path unchanged.
-  Measured: 5 000-frame XDATCAR → extXYZ peaks at ~89 MB streamed vs ~354 MB materialized,
-  byte-identical outputs.
+The start of **v0.4**.
 
 ### Changed
 
-- **A broken installed plugin now surfaces on the CLI as a clean, attributed error (exit 1)
-  instead of a raw traceback.** `default_registry()` runs for every command, so one plugin that
-  fails to import, yields the wrong kind of object, collides on `format_id`, or carries a
-  malformed declaration used to crash `inspect`/`convert`/`validate`/`capabilities` with an
-  uncaught traceback. The CLI still refuses to run **any** command until the offending
-  distribution is fixed or uninstalled — discovery never silently skips a broken plugin
-  (Part 3 §7.1); only the failure's surface changed, not the fail-loud policy.
-- **A discovered plugin's duplicate-`format_id` collision now raises `PluginLoadError` naming
-  the offending entry point (D62, partially revising D60).** Previously the registry's bare
-  duplicate-guard `ValueError` propagated unwrapped, naming only the format — actionable for
-  first-party code but not for an installed distribution. The original message is preserved
-  verbatim inside the new one; `InvalidCapabilityDeclaration` still propagates unwrapped.
+- **Documentation: architectural-review changelog attributions corrected to match each release's
+  tag and published artifact, and the versioning policy recorded (`docs/DECISIONS.md` D64).** Each
+  version's post-release architectural review is folded into that version before tagging, not
+  deferred to the next. The post-`0.2.0` review (D53–D55, golden-corpus governance hardening, the
+  velocity-bearing corpus case, and internal de-duplication) now sits under **[0.2.0]** — the tag
+  and PyPI artifact that actually contain it — and the post-`0.3.0` review (D62–D63, the XDATCAR
+  Cartesian-scale fix, and the CLI plugin-error surfaces) under **[0.3.0]**. No code changes; the
+  released `0.2.0` / `0.3.0` artifacts are unaffected. (v0.1 predates the policy — its review first
+  shipped in the `0.2.0` artifact.)
 
 ## [0.3.0] — 2026-07-18
 
@@ -66,8 +30,9 @@ the **ASE `.traj`** format — bringing the registered set to **six** of the sev
 (CIF, the last, is v0.4). This release also opens the plugin surface — third-party
 parsers/exporters are now discovered from Python entry points and proven against a real installed
 distribution — and adds the performance-and-CI scaffolding a scaling release needs (a benchmark
-corpus, a PR/nightly test-matrix split). It opens with a post-`0.2.0` architectural-review
-correctness pass. Schema stays `0.1.0`; no normative report/field shapes change.
+corpus, a PR/nightly test-matrix split). It also folds in its own post-`0.3.0` architectural
+review, per the versioning policy (`docs/DECISIONS.md` D64). Schema stays `0.1.0`; no normative
+report/field shapes change.
 
 ### Added
 
@@ -151,65 +116,63 @@ correctness pass. Schema stays `0.1.0`; no normative report/field shapes change.
   committed deterministic generator. (The streaming `frame_selection`/`bounding_box` recovery
   interplay and the truncate-recovery half land with M13's XDATCAR, which exercises them; the seam is
   in place — see D56.)
-- **A CONTCAR-with-velocities golden case** (`tests/golden/contcar/co-md-restart/`). CONTCAR was a
-  round-trip *target* only; this synthetic case gives it a golden *source* with a Cartesian velocity
-  block, so velocities now flow through the identity, two-hop, and three-hop round-trip matrices and
-  the completeness invariant — previously the M8 velocity block was unit-tested but never exercised
-  as system-level round-trip content.
-- **Report-completeness property coverage for the fabricative recovery family**
-  (`tests/property/test_fabricative_recovery_completeness.py`). `missing_velocities`
-  (`zero_init`/`maxwell_boltzmann`) and the `maxwell_boltzmann → missing_masses` chain now flow
-  through the **independently re-derived** M10 properties, not just the runtime completeness
-  assertion — closing the gap where the opt-in fabricative path (never in the shared round-trip
-  presets) reached only the runtime guard.
+- **`xtalate convert` now inherits the M12 sub-linear memory: eligible invocations route
+  through the streaming engines (`docs/DECISIONS.md` D63; post-`0.3.0` architectural review).**
+  With an `-o` file target in permissive mode and recovery presets empty (→ `convert_stream`) or
+  exactly a `first`/`last`/`index` `frame_selection` (→ `convert_stream_select`), the CLI streams
+  the conversion frame by frame — closing the v0.3 gap where the release's headline memory property
+  was reachable only from the library API. Which path ran is not observable: output bytes and
+  the Conversion Report are engine-guaranteed identical (M12 standing rule 3), pinned by CLI
+  equality tests; the artifact is written via a temp file renamed on success, so a mid-stream
+  parse error leaves a pre-existing `-o` file untouched. Everything else (strict mode, other
+  recovery presets, non-streaming pairs, no `-o`) keeps the materialized path unchanged.
+  Measured: 5 000-frame XDATCAR → extXYZ peaks at ~89 MB streamed vs ~354 MB materialized,
+  byte-identical outputs.
 
 ### Changed
 
-- **Golden-corpus governance hardened (`docs/DECISIONS.md` D54).** Every data file under
-  `tests/golden/` must now be claimed by a manifest — an unmanifested source/expectation, or the
-  `manifest.yml` misspelling, fails CI rather than silently bypassing the license/hash/schema
-  guarantees. Manifests gain a required `expected_sha256`, verified against `expected.canonical.json`
-  exactly as `sha256` guards the source. The schema-lag bound is now two-sided (an expectation
-  *ahead* of the current schema major is rejected as impossible, not just one too far behind). The
-  two schema-serialization fixtures moved from `tests/golden/schema/` to `tests/schema/fixtures/`, so
-  the `ATTRIBUTIONS.md` "every file is admitted only with a license" claim is now literally true.
-- **Internal de-duplication (no behavior change).** The validation status-precedence and
-  numeric-field→quantity tables are single-sourced in `xtalate.validation._shared`; the derived-path
-  exclusion in `xtalate.schema.paths.DERIVED_PATHS`; the UTC-timestamp helper in `xtalate._time`.
-  The single-frame reduction (re-index, `custom_per_frame` slice, `trajectory` drop) shared by
-  `frame_selection` recovery and `split_all` export is now one `CanonicalObject.single_frame` method,
-  so the two paths can never slice a reduced object differently. The M10 property harness deliberately
-  keeps its own independent copies (D50).
+- **A broken installed plugin now surfaces on the CLI as a clean, attributed error (exit 1)
+  instead of a raw traceback (post-`0.3.0` architectural review).** `default_registry()` runs for
+  every command, so one plugin that fails to import, yields the wrong kind of object, collides on
+  `format_id`, or carries a malformed declaration used to crash
+  `inspect`/`convert`/`validate`/`capabilities` with an uncaught traceback. The CLI still refuses
+  to run **any** command until the offending distribution is fixed or uninstalled — discovery
+  never silently skips a broken plugin (Part 3 §7.1); only the failure's surface changed, not the
+  fail-loud policy.
+- **A discovered plugin's duplicate-`format_id` collision now raises `PluginLoadError` naming
+  the offending entry point (`docs/DECISIONS.md` D62, partially revising D60).** Previously the
+  registry's bare duplicate-guard `ValueError` propagated unwrapped, naming only the format —
+  actionable for first-party code but not for an installed distribution. The original message is
+  preserved verbatim inside the new one; `InvalidCapabilityDeclaration` still propagates unwrapped.
 
 ### Fixed
 
-- **A fabricated (`supplied`) field is no longer also listed `preserved` in the D51 flow
-  (`docs/DECISIONS.md` D53).** When a `mixed` cell's only cell-bearing frame was dropped by
-  `frame_selection` and `missing_lattice` fabricated a replacement, the report listed
-  `cell.lattice_vectors`/`cell.pbc` in `preserved` **and** `removed` **and** `supplied` at once — the
-  stale pre-flight optimistic-preserve prediction was never struck once recovery falsified it. The
-  Conversion Engine now removes any `supplied` path from `preserved` (the two are mutually exclusive
-  per path), leaving the honest **removed + supplied** pair D51 always documented.
-  `absence_conformance` correspondingly exempts `supplied` paths from its must-be-absent check (a
-  fabricated replacement is expected to reappear), applied identically in the runtime guard and,
-  independently, in the M10 property re-derivation. Regression coverage in
-  `tests/conversion/test_frame_reduction_completeness.py`.
-- **JSON custom tolerance-table files with scientific-notation bounds now parse
-  (`docs/DECISIONS.md` D55).** `--tolerance-profile ./table.json` routed through `yaml.safe_load`,
-  whose YAML 1.1 float grammar reads dotless `1e-8` as the *string* `"1e-8"`, so a valid JSON table
-  (exactly what `json.dumps` emits) failed with a confusing "must be a number". The CLI now parses
-  `.json` files with `json.load` and other extensions with `yaml.safe_load`. Regression test in
-  `tests/cli/test_cli.py`.
+- **XDATCAR Cartesian-mode positions are now scaled by the scaling factor (§4; post-`0.3.0`
+  architectural review).** The scale multiplier (including the negative-scale target-volume form)
+  was folded into each frame's lattice but never applied to Cartesian coordinate rows, so a
+  Cartesian XDATCAR with scale ≠ 1.0 parsed with positions off by the multiplier — while the
+  emitted parse note claimed the scaling had happened (a P1 honesty violation). Direct-mode files
+  were unaffected (fractional coordinates pick the scale up through the lattice product). Now
+  matches the POSCAR parser's handling; covered by new Cartesian scale-2.0 and target-volume tests
+  in `tests/parsers/test_xdatcar.py`.
+- **The registry now enforces the id half of `InvalidCapabilityDeclaration`'s documented
+  contract (`docs/DECISIONS.md` D62; post-`0.3.0` architectural review).** A plugin whose
+  `capabilities()` declaration carries a different `format_id` than the plugin's own is rejected at
+  registration (`InvalidCapabilityDeclaration` naming both ids) instead of silently producing a
+  matrix keyed by one id whose stored declaration names another. All first-party plugins and
+  `xtalate-toyfmt` already satisfied the check.
 
 ## [0.2.0] — 2026-07-15
 
 v0.2 — **"trustworthy core complete."** The full Part 4 §3.3 recovery scenario catalog, the
 POSCAR/CONTCAR velocity block with velocity/mass recovery, the cross-format round-trip matrix
 with custom tolerance tables, the report-completeness property test, and the corpus-governance
-and contributor surface that make outside golden-corpus contributions realistic. Schema
-version is unchanged at `0.1.0`; the four v0.1 formats (XYZ, extXYZ, POSCAR, CONTCAR) are the
-supported set. Pre-1.0, a minor bump may still break — the plugin SDK is not frozen until v1.0
-(risk R12).
+and contributor surface that make outside golden-corpus contributions realistic. It also folds in
+its own post-`0.2.0` architectural review (per the versioning policy, `docs/DECISIONS.md` D64):
+report-semantics and JSON-tolerance correctness fixes, golden-corpus governance hardening, a
+velocity-bearing corpus case, and internal de-duplication. Schema version is unchanged at `0.1.0`;
+the four v0.1 formats (XYZ, extXYZ, POSCAR, CONTCAR) are the supported set. Pre-1.0, a minor bump
+may still break — the plugin SDK is not frozen until v1.0 (risk R12).
 
 ### Added
 
@@ -372,6 +335,17 @@ supported set. Pre-1.0, a minor bump may still break — the plugin SDK is not f
   - The Recovery Engine's dispatch is now a generalized dependency-ordered resolver table
     (`frame_selection` → `constraint_representation` → `missing_lattice`), replacing the hard-coded
     two-scenario branch (`docs/DECISIONS.md` D37).
+- **A CONTCAR-with-velocities golden case** (`tests/golden/contcar/co-md-restart/`). CONTCAR was a
+  round-trip *target* only; this synthetic case gives it a golden *source* with a Cartesian velocity
+  block, so velocities now flow through the identity, two-hop, and three-hop round-trip matrices and
+  the completeness invariant — previously the M8 velocity block was unit-tested but never exercised
+  as system-level round-trip content.
+- **Report-completeness property coverage for the fabricative recovery family**
+  (`tests/property/test_fabricative_recovery_completeness.py`). `missing_velocities`
+  (`zero_init`/`maxwell_boltzmann`) and the `maxwell_boltzmann → missing_masses` chain now flow
+  through the **independently re-derived** M10 properties, not just the runtime completeness
+  assertion — closing the gap where the opt-in fabricative path (never in the shared round-trip
+  presets) reached only the runtime guard.
 
 ### Changed
 
@@ -387,9 +361,41 @@ supported set. Pre-1.0, a minor bump may still break — the plugin SDK is not f
   are at rest is information, §2 rule 3), and a CONTCAR velocity tail now annotates
   `source_units["velocities"] = "angstrom/fs"` with a parse-note, rather than storing the block
   with its unit left implicit.
+- **Golden-corpus governance hardened (`docs/DECISIONS.md` D54).** Every data file under
+  `tests/golden/` must now be claimed by a manifest — an unmanifested source/expectation, or the
+  `manifest.yml` misspelling, fails CI rather than silently bypassing the license/hash/schema
+  guarantees. Manifests gain a required `expected_sha256`, verified against `expected.canonical.json`
+  exactly as `sha256` guards the source. The schema-lag bound is now two-sided (an expectation
+  *ahead* of the current schema major is rejected as impossible, not just one too far behind). The
+  two schema-serialization fixtures moved from `tests/golden/schema/` to `tests/schema/fixtures/`, so
+  the `ATTRIBUTIONS.md` "every file is admitted only with a license" claim is now literally true.
+- **Internal de-duplication (no behavior change).** The validation status-precedence and
+  numeric-field→quantity tables are single-sourced in `xtalate.validation._shared`; the derived-path
+  exclusion in `xtalate.schema.paths.DERIVED_PATHS`; the UTC-timestamp helper in `xtalate._time`.
+  The single-frame reduction (re-index, `custom_per_frame` slice, `trajectory` drop) shared by
+  `frame_selection` recovery and `split_all` export is now one `CanonicalObject.single_frame` method,
+  so the two paths can never slice a reduced object differently. The M10 property harness deliberately
+  keeps its own independent copies (D50).
 
 ### Fixed
 
+- **A fabricated (`supplied`) field is no longer also listed `preserved` in the D51 flow
+  (`docs/DECISIONS.md` D53).** When a `mixed` cell's only cell-bearing frame was dropped by
+  `frame_selection` and `missing_lattice` fabricated a replacement, the report listed
+  `cell.lattice_vectors`/`cell.pbc` in `preserved` **and** `removed` **and** `supplied` at once — the
+  stale pre-flight optimistic-preserve prediction was never struck once recovery falsified it. The
+  Conversion Engine now removes any `supplied` path from `preserved` (the two are mutually exclusive
+  per path), leaving the honest **removed + supplied** pair D51 always documented.
+  `absence_conformance` correspondingly exempts `supplied` paths from its must-be-absent check (a
+  fabricated replacement is expected to reappear), applied identically in the runtime guard and,
+  independently, in the M10 property re-derivation. Regression coverage in
+  `tests/conversion/test_frame_reduction_completeness.py`.
+- **JSON custom tolerance-table files with scientific-notation bounds now parse
+  (`docs/DECISIONS.md` D55).** `--tolerance-profile ./table.json` routed through `yaml.safe_load`,
+  whose YAML 1.1 float grammar reads dotless `1e-8` as the *string* `"1e-8"`, so a valid JSON table
+  (exactly what `json.dumps` emits) failed with a confusing "must be a number". The CLI now parses
+  `.json` files with `json.load` and other extensions with `yaml.safe_load`. Regression test in
+  `tests/cli/test_cli.py`.
 - **`frame_selection` no longer silently drops a per-frame field that lived only in a dropped
   frame (v0.2 M10).** Found by the stage-2 property test. When `frame_selection` reduced a trajectory
   to one structure, a per-frame path present *only* in the dropped frames (e.g. a `mixed`
@@ -496,6 +502,7 @@ byte of scientific information kept, dropped, or fabricated.
 - Recovery is preset-only; tolerance profiles are the three named ones (custom tables are later
   seams).
 
+[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/jsong1218/Xtalate/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jsong1218/Xtalate/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jsong1218/Xtalate/releases/tag/v0.1.0
