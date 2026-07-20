@@ -5,9 +5,8 @@ body:
   - type: markdown
     attributes:
       value: >-
-        The Conversion Report and Validation Report are **designed to be the bug report**
-        (`docs/MASTER_SPEC.md` Part 4 §2, Part 5 §3). Paste them below — they tell us far more
-        than a prose description can.
+        The Conversion Report and Validation Report are **designed to be the bug report**.
+        Paste them below — they tell us far more than a prose description can.
   - type: textarea
     id: source
     attributes:

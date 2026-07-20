@@ -2,8 +2,8 @@
 
 Thank you for considering a contribution. Xtalate has one job — **loss-aware, fully
 transparent file conversion** — and the contribution process is built to protect that job.
-This guide is the practical form of `docs/MASTER_SPEC.md` Part 10 §4.3; where the two
-disagree, the spec wins.
+This guide is the practical companion to the [Architecture Overview](docs/ARCHITECTURE.md) and
+[Developer Guide](docs/DEVELOPER_GUIDE.md); where they disagree, the design docs win.
 
 > **What we're inviting right now (v0.3).** The **golden-corpus contribution** path is the
 > invited, fully-supported way to contribute today: real-world sample files, with licenses,
@@ -19,22 +19,24 @@ disagree, the spec wins.
 
 ## Start here
 
-1. **Read the constitution for your area.** `docs/MASTER_SPEC.md` is the single source of
-   truth (Part 0 for the mission and principles P1–P6; Part 8 for testing; the part covering
-   whatever you're touching). **The docs are the constitution — code that contradicts them
-   needs a docs PR first.** A behavior change and its documentation change are one atomic PR.
-2. **Skim `docs/DECISIONS.md`.** Most "why is it done *this* way?" questions are answered
-   there, each with the alternative that was rejected.
+1. **Read the design docs for your area.** The [Architecture Overview](docs/ARCHITECTURE.md)
+   covers the mission and principles P1–P6; the [Developer Guide](docs/DEVELOPER_GUIDE.md) covers
+   the pipeline, the testing strategy, and adding a format. **The docs are authoritative — code
+   that contradicts them needs a docs PR first.** A behavior change and its documentation change
+   are one atomic PR.
+2. **Understand the *why* before changing behavior.** Most invariants below exist to prevent a
+   specific class of silent loss; each names the principle it protects, so a change that seems to
+   simplify one may be removing a guarantee on purpose.
 
 ## Ground rules (the non-negotiables)
 
 These are the invariants that make Xtalate trustworthy. A PR that breaks one will not merge,
 however convenient:
 
-- **The absence convention (`02 §2`, P3): no defaulting, ever.** A parser that has no value
+- **The absence convention (P3): no defaulting, ever.** A parser that has no value
   for a field writes `None` — never a zero velocity, an identity lattice, or an invented
   `energy = 0.0`. "Absent" and "present with value zero" are different states and the schema
-  keeps them different. The **default-laundering** obligation (Part 3 §2) is part of this:
+  keeps them different. The **default-laundering** obligation is part of this:
   if an upstream library (e.g. ASE) invents a default, the parser must *unlaunder* it back to
   `None`.
 - **The completeness invariant stays green (P1).** Every conversion accounts for every source
@@ -43,15 +45,15 @@ however convenient:
   change to conversion behavior must keep both green.
 - **Recover explicitly, never guess (P4).** Missing-but-required data is supplied only through
   an explicit recovery choice, recorded as an Assumption. No silent fabrication — and no
-  *unrequested* transformation even when it's standard practice (`docs/DECISIONS.md` D43).
-- **Reuse the binding glossary (`00 §6`).** Field names, report names, and component names are
-  fixed. If a name seems wrong, say so in your PR and propose the rename explicitly — never
-  rename silently.
+  *unrequested* transformation even when it's standard practice (a Maxwell–Boltzmann velocity
+  draw is emitted raw, with no centre-of-mass-drift removal).
+- **Reuse the binding glossary** ([Architecture §4](docs/ARCHITECTURE.md#4-glossary-binding-terms))**.**
+  Field names, report names, and component names are fixed. If a name seems wrong, say so in your PR
+  and propose the rename explicitly — never rename silently.
 
 ## Dev environment
 
-Xtalate v0.1–v0.3 is a pure-Python library + CLI (Tier 0 in `09 §1`); there are no services to
-run.
+Xtalate is a pure-Python library + CLI; there are no services to run.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -87,7 +89,7 @@ A golden case is a source file plus its hand-verified expected Canonical Object 
 `manifest.yaml`. This is the invited contribution path. The corpus governance suite
 (`tests/golden/test_corpus_governance.py`) will hold you to every rule below.
 
-1. **Pick a licensed file.** In preference order (`08 §3.2`): (a) **synthetic**, hand-authored
+1. **Pick a licensed file.** In preference order: (a) **synthetic**, hand-authored
    by you (license: Apache-2.0, the project's own); (b) **published open data** with an explicit
    redistribution-compatible license (CC0, CC-BY — attribution required); (c) **contributed**
    real-world files, with your explicit license grant recorded in the manifest and the PR
@@ -112,24 +114,24 @@ A golden case is a source file plus its hand-verified expected Canonical Object 
 
 ## Adding a format (parser/exporter)
 
-The full checklist (`docs/MASTER_SPEC.md` Part 10 §4.3, and the churn warning above):
+The full checklist (see also [Developer Guide §5](docs/DEVELOPER_GUIDE.md#5-adding-a-format), and
+the churn warning above):
 
 1. Implement `ParserPlugin` / `ExporterPlugin` (`xtalate.sdk`). A parser reads one format to a
    Canonical Object and **never** reads files of another format or calls another parser (P2);
    an exporter writes one format from a Canonical Object and never reads native files.
-2. Declare `capabilities()` **honestly**: a `PARTIAL` cell with a note beats an optimistic
-   `FULL`. The Part 3 §3 capability table has a sync test — it will hold you to your
-   declarations.
+2. Declare `capabilities()` **honestly**: a `PARTIAL` field with a note beats an optimistic
+   `FULL`. The capability-table sync test will hold you to your declarations.
 3. Add golden cases with licensed manifests (above), and pass the identity round-trip.
-4. Add the format's rows to the Part 3 §3 capability table in `docs/MASTER_SPEC.md`.
-5. Keep the default-laundering suite green: prove your parser returns `None` for anything the
+4. Keep the default-laundering suite green: prove your parser returns `None` for anything the
    file does not actually say.
 
 ## Packaging a format as an installable plugin
 
 The section above covers *implementing* a parser/exporter. You can also ship one as a
 **separate installable package** that Xtalate discovers automatically — no fork, no edit to
-Xtalate's own code (`docs/MASTER_SPEC.md` Part 3 §7; **P6**). Your package declares its parser
+Xtalate's own code (see [Developer Guide §5.2](docs/DEVELOPER_GUIDE.md#52-ship-it-as-an-installable-plugin-no-fork);
+**P6**). Your package declares its parser
 and/or exporter under Xtalate's entry-point groups, and `default_registry()` loads them at
 startup through the *same* declaration validation and duplicate-id guards a first-party format
 gets. In your package's `pyproject.toml`:
@@ -174,5 +176,5 @@ watch the changelog for SDK changes.
 ## Conduct & licensing
 
 Contributions are licensed under **Apache-2.0** (the repository license). Contributed test
-files additionally require the license grant recorded in their manifest (`08 §3.2`). By opening
+files additionally require the license grant recorded in their manifest. By opening
 a PR you affirm you have the right to contribute the code and files under these terms.

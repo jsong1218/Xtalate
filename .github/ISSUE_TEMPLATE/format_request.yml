@@ -21,7 +21,7 @@ body:
       description: >-
         Which of the canonical categories (Geometry, Cell, Trajectory, Dynamics, Electronic,
         Metadata) can this format hold, and which can it not? Honest PARTIAL beats optimistic
-        FULL — this becomes the format's Capability Matrix row (`docs/MASTER_SPEC.md` Part 3 §3).
+        FULL — this becomes the format's Capability Matrix row.
     validations:
       required: true
   - type: textarea
