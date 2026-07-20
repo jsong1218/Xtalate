@@ -15,8 +15,8 @@ body:
     attributes:
       label: Full error envelope / ParseIssue list
       description: >-
-        The complete error output (`docs/MASTER_SPEC.md` Part 3 §5, Part 6 §6) — codes,
-        messages, line numbers. Run with `--json` if using the CLI.
+        The complete error output — codes, messages, line numbers. Run with `--json`
+        if using the CLI.
       render: text
     validations:
       required: true

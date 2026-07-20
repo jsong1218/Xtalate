@@ -220,6 +220,13 @@ __marimo__/
 #MacOS
 .DS_Store
 
+# Internal planning docs — kept local, unpublished going forward.
+# These files remain in pre-reorg git history; this only stops re-publishing them at HEAD.
+# Covers: MASTER_SPEC, DECISIONS, MEMORY_CEILING, per-version IMPLEMENTATION_PLANs, roadmaps.
+docs/private/
+# AI-specific project-context file; stays at repo root on disk so Claude Code still loads it.
+/CLAUDE.md
+
 # Secrets (CLAUDE.md "Never commit secrets" / DECISIONS.md) — defensive, ahead of need:
 # no credentials exist in the v0.1 codebase yet, but these patterns are excluded before
 # the v0.5 Service layer (DB, object storage, hosted-instance API keys) makes them real.

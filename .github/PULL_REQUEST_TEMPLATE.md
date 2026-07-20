@@ -12,16 +12,16 @@
 
 ## Checklist
 
-- [ ] **Docs updated or confirmed unaffected.** The docs are the constitution; a behavior
-      change and its doc change are one PR (`docs/MASTER_SPEC.md` Part 10 §4.6).
-- [ ] **Golden cases added** for new behavior, each with a licensed `manifest.yaml`
-      (`08 §3.2`), and `tests/golden/ATTRIBUTIONS.md` regenerated (`python
+- [ ] **Docs updated or confirmed unaffected.** The docs are authoritative; a behavior
+      change and its doc change are one PR.
+- [ ] **Golden cases added** for new behavior, each with a licensed `manifest.yaml`,
+      and `tests/golden/ATTRIBUTIONS.md` regenerated (`python
       tests/golden/_governance.py`) if any manifest changed.
 - [ ] **No parser defaulting introduced** — the absence convention holds and the
-      default-laundering suite passes (P3, Part 3 §2).
+      default-laundering suite passes (P3).
 - [ ] **Completeness invariant green** — the runtime assertion and the property suite
       (`tests/property/`) both pass; no field is lost, dropped, or fabricated silently (P1/P4).
-- [ ] **Capability declarations updated** and the Part 3 §3 table sync test is green.
+- [ ] **Capability declarations updated** and the capability-table sync test is green.
 - [ ] **Rejected alternative named** in the description for design changes.
 - [ ] **Attribution file regenerates cleanly** — the governance suite
       (`tests/golden/test_corpus_governance.py`) is green.
