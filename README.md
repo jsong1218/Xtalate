@@ -120,6 +120,10 @@ Native File → Format Sniffer → Parser → Canonical Object → Exporter → 
 
 The **Canonical Object** is the only thing that crosses the parser/exporter boundary — parsers never call other parsers, and the absence convention distinguishes "the source never had this" (`None`) from "the source had it, and the value is zero." The design and its principles are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); the library and CLI surface in [`docs/API.md`](docs/API.md); building and extending Xtalate in [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md).
 
+Architectural decisions (D1–D66) and MASTER_SPEC are maintained privately. Public commits may
+reference decision IDs. If you need the rationale for a particular decision, feel free to open an
+issue or contact me.
+
 ## Development
 
 ```bash
