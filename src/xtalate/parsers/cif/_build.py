@@ -51,6 +51,7 @@ from xtalate.schema import (
     UserMetadata,
 )
 from xtalate.schema.elements import is_valid_symbol
+from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
 from xtalate.sdk import ParseError, ParseIssue
 
 _PBC_NOTE = (
@@ -73,9 +74,9 @@ _EXPANSION_NOTE = (
 #: (Part 3 §3 n.11 — the known schema gap and a Part 2 §6 rule-4 promotion candidate), so the
 #: column is carried verbatim under the key the spec names. It is the one ``_atom_site`` column
 #: whose custom key is not its tag spelling: occupancy is a *named* limitation with a documented
-#: promotion path, and the key it will be promoted from is fixed here rather than left to the
-#: generic carry-through, so the eventual migration has one stable name to move.
-OCCUPANCY_KEY = "cif:occupancy"
+#: promotion path, so the key it will be promoted from is pinned — in ``schema.paths``, since the
+#: layers that must recognise occupancy without knowing anything about CIF read it from there.
+OCCUPANCY_KEY = OCCUPANCY_CUSTOM_KEY
 #: The label for what ``electronic.charges`` holds when it came from a CIF. The canonical field
 #: is a net per-atom charge in e; a formal oxidation state is an integer bookkeeping convention,
 #: not a computed population analysis, and conflating the two would let a downstream consumer

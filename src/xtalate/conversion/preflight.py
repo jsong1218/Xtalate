@@ -30,6 +30,7 @@ object, calls an exporter, or resolves a recovery.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -38,6 +39,7 @@ from xtalate.conversion.report import PreservedEntry, RemovedEntry, ReportWarnin
 from xtalate.recovery import RecoveryError, UnresolvedScenario, available_options
 from xtalate.schema import CanonicalObject, PresenceMap
 from xtalate.schema.paths import DERIVED_PATHS as _DERIVED_PATHS
+from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
 from xtalate.sdk import CapabilityLevel, FormatCapabilities
 
 # `_DERIVED_PATHS` (`atoms.atomic_numbers`) is a derived mirror of `atoms.symbols` (Part 2 §3.3),
@@ -59,6 +61,15 @@ _REQUIRED_FIELD_SCENARIOS = {
 
 # The container-level capability key governing per-atom constraint representation (Part 4 §3.3).
 _CONSTRAINTS = "dynamics.constraints"
+
+# The container holding fractional site occupancy, the Canonical Model's one *named* gap
+# (Part 3 §3 n.11). Occupancy needs its own warning on top of the ordinary `removed` entry for
+# this container: dropping an occupancy column does not merely lose an annotation, it changes what
+# the output *asserts* — a site written with no occupancy reads as fully occupied, a claim the
+# source never made. `removed` says "we did not carry this"; the warning says "and the file you get
+# describes a different structure". A target that *represents* occupancy — naming the key in its
+# `writable_custom_keys` — suppresses it with no change here (**P6**).
+_OCCUPANCY_CONTAINER = "user_metadata.custom_per_atom"
 
 # Opt-in fabricative scenarios: a canonical field the target *can* write but does not *require*, so
 # the pre-flight diff never demands it. Emission is requested by the user supplying a recovery
@@ -101,6 +112,33 @@ def capability_path(presence_path: str) -> str:
     return presence_path[:bracket] if bracket != -1 else presence_path
 
 
+def partial_occupancy_count(custom_per_atom: Mapping[str, Any]) -> int:
+    """How many atoms carry an occupancy that is not full, from a ``custom_per_atom`` mapping.
+
+    A scalar, deliberately: it is derived identically from a materialized object's
+    ``user_metadata.custom_per_atom`` and from a ``StreamHeader``'s, which is what keeps the
+    streamed and materialized diffs identical (standing rule 3). Zero when the source declares no
+    occupancy at all — absence of the column is not a claim of partial occupancy (**P3**).
+
+    An *unknown* occupancy (``?``/``.``, carried through as ``None``) counts as partial. It is not
+    a statement of full occupancy, and writing it out as a plain site would turn the source's
+    silence into an assertion (**P4**).
+    """
+    values = custom_per_atom.get(OCCUPANCY_CUSTOM_KEY)
+    if values is None:
+        return 0
+    return sum(1 for value in values if not _is_full_occupancy(value))
+
+
+def _is_full_occupancy(value: Any) -> bool:
+    """True only for a value that *states* an occupancy of exactly 1. ``None`` (unknown) and any
+    non-numeric spelling are not such a statement, so they are not full."""
+    try:
+        return float(value) == 1.0
+    except (TypeError, ValueError):
+        return False
+
+
 def build_preflight(
     source: CanonicalObject, matrix: CapabilityMatrix, target_format_id: str
 ) -> PreflightDiff:
@@ -109,6 +147,7 @@ def build_preflight(
         source.field_presence(),
         frame_count=source.frame_count,
         has_constraints=_has_constraints(source),
+        partial_occupancy=partial_occupancy_count(source.user_metadata.custom_per_atom),
         matrix=matrix,
         target_format_id=target_format_id,
     )
@@ -119,17 +158,22 @@ def build_preflight_from_presence(
     *,
     frame_count: int,
     has_constraints: bool,
+    partial_occupancy: int,
     matrix: CapabilityMatrix,
     target_format_id: str,
 ) -> PreflightDiff:
     """The presence-driven core of the pre-flight diff (M12).
 
-    ``build_preflight`` reads exactly three things from the source object — its ``field_presence``,
-    its ``frame_count``, and whether any frame carries constraints — and this function is that
-    logic expressed over those three inputs directly. The streaming Conversion path accumulates all
-    three single-pass (``schema.PresenceAccumulator`` + frame/constraint counters) and calls here,
-    so a streamed conversion and a materialized one produce the *identical* diff — and therefore the
-    identical Conversion Report (standing rule 3: streamed and materialized reports never diverge).
+    ``build_preflight`` reads exactly four things from the source object — its ``field_presence``,
+    its ``frame_count``, whether any frame carries constraints, and how many atoms carry partial
+    occupancy — and this function is that logic expressed over those four inputs directly. The
+    streaming Conversion path derives all four single-pass (``schema.PresenceAccumulator`` +
+    frame/constraint counters + the header's ``custom_per_atom``) and calls here, so a streamed
+    conversion and a materialized one produce the *identical* diff — and therefore the identical
+    Conversion Report (standing rule 3: streamed and materialized reports never diverge).
+
+    They stay *scalars* on purpose. Handing this function the object would let the two paths drift
+    the moment one of them had something the other did not.
     """
     caps = matrix.get(target_format_id, "write")
     diff = PreflightDiff()
@@ -191,6 +235,34 @@ def build_preflight_from_presence(
         else:  # NONE
             reason = cap.notes or f"Target format {target_format_id!r} cannot store {container}."
             diff.removed.append(RemovedEntry(path=path, reason=reason, detail=detail))
+
+    # Partial occupancy the target cannot hold (Part 3 §3 n.11). Gated on the target's declared
+    # write keys, not on a hard-coded format list, so a future format that can express occupancy
+    # silences this by declaring the key (**P6**).
+    if partial_occupancy:
+        # The gate is a target *naming* the occupancy key in `writable_custom_keys`, not merely
+        # declaring the container writable. A format with a generic per-atom passthrough (extXYZ,
+        # ASE .traj) carries the numbers, but as an unlabelled extra column no reader interprets as
+        # occupancy — the structure it describes is still fully occupied at every site. Verbatim
+        # carriage is not representation, and only the explicit declaration says otherwise.
+        writable = caps.writable_custom_keys.get(_OCCUPANCY_CONTAINER)
+        represents_occupancy = writable is not None and OCCUPANCY_CUSTOM_KEY in writable
+        if not represents_occupancy:
+            diff.warnings.append(
+                ReportWarning(
+                    code="PARTIAL_OCCUPANCY_NOT_REPRESENTED",
+                    message=(
+                        f"{partial_occupancy} atom(s) carry a site occupancy that is not 1.0, and "
+                        f"target format {target_format_id!r} has no way to express it. The output "
+                        "describes a structure that is fully occupied at every site, which is not "
+                        "what the source said. Where the target can hold a custom per-atom column "
+                        "the values are carried verbatim, but nothing downstream reads them as "
+                        "occupancy. Occupancy is a known gap in the Canonical Model "
+                        "(Part 3 §3 n.11), not an oversight of this target."
+                    ),
+                    source="capability",
+                )
+            )
 
     # lossy_notes → Warnings (Part 3 §4.3 rule 5).
     for note in caps.lossy_notes:
