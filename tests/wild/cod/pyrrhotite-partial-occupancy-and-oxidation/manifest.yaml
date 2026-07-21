@@ -1,0 +1,44 @@
+case: pyrrhotite-partial-occupancy-and-oxidation
+format_id: cif
+source_file: cod-1011179.cif
+sha256: "0188faeb7227647158df1f153d9b528b2d6e3dc76426f8272806e450ece01ca3"
+origin:
+  kind: published-dataset
+  source: "Crystallography Open Database entry 1011179 (pyrrhotite, Fe(1-x)S)"
+  url: "https://www.crystallography.net/cod/1011179.cif"
+  license: "CC0-1.0"
+expectation:
+  issue_codes:
+    - CIF_OCCUPANCY_NOT_MODELLED
+    - CIF_OXIDATION_NUMBER_DISAGREES_WITH_SYMBOL
+    - CIF_TAGS_CARRIED
+  stoichiometry: partial_occupancy
+  stoichiometry_note: >-
+    The file declares `Fe2.1 S1.9` per cell, which no integral atom list can equal: the iron
+    site is refined at 0.05/0.95 occupancy, so the declared composition is an average over
+    sites that are sometimes empty. The expansion produces 4 Fe and 2 S — whole atoms at every
+    site, which is what a converter that does not model occupancy must do. The oracle is not
+    being silenced here; it is being told that the file's own arithmetic and the atom list
+    answer different questions.
+findings:
+  - >-
+    CIF_OXIDATION_NUMBER_DISAGREES_WITH_SYMBOL is *correct* here, and this case exists partly
+    to record that. The type symbol is `Fe2+` while `_atom_type_oxidation_number` is 1.800 —
+    not a typo but real chemistry: pyrrhotite is iron-deficient and mixed-valence, so the
+    refined average valence is genuinely non-integral while the symbol carries the nominal
+    integer. M19's reconciliation check was written against synthetic disagreements; this is
+    the first real file to trip it, and it tripped it for the right reason. A declared issue
+    code is not automatically a defect, and this manifest says which kind it is.
+  - >-
+    This is the corpus's first file with *genuine* partial occupancy, which makes it the
+    control for the CIF_OCCUPANCY_NOT_MODELLED defect recorded against
+    `nacl-legacy-symmetry-tags`. Here the warning's text is true. There it is false. Both fire
+    identically today, because the warning keys on the column's presence — and having the two
+    cases side by side is what will prove the slice 3 fix actually distinguishes them rather
+    than merely quieting the warning.
+notes: >-
+  Two axes in one file, which is why it is worth its weight: occupancy < 1 and oxidation-state
+  symbols, on a mineral where both are physically meaningful rather than decorative. The 0.05 /
+  0.95 occupancy pair is more instructive than a tidy 0.5 would be — it is the shape real
+  refinement produces, and it makes the declared composition (Fe2.1) visibly non-integral, so
+  the `partial_occupancy` skip is self-evidently justified rather than merely asserted.

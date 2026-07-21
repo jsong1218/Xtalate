@@ -100,6 +100,22 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** MASTER_SPEC Part 2 §8.1 worked example (2-frame, 3-atom plain XYZ)
 
+## `cif` / `calcium-hexaaluminate-large-expansion` (wild)
+
+- **Source file:** `cod-1000039.cif`
+- **Origin:** published-dataset
+- **License:** CC0-1.0
+- **Source:** Crystallography Open Database entry 1000039 (calcium cyclo-hexaaluminate)
+- **URL:** https://www.crystallography.net/cod/1000039.cif
+
+## `cif` / `corundum-oxidation-state-symbols` (wild)
+
+- **Source file:** `cod-1000032.cif`
+- **Origin:** published-dataset
+- **License:** CC0-1.0
+- **Source:** Crystallography Open Database entry 1000032 (corundum, Al2O3)
+- **URL:** https://www.crystallography.net/cod/1000032.cif
+
 ## `cif` / `ferrocene-symbol-without-operations` (wild)
 
 - **Source file:** `cod-2101932.cif`
@@ -107,6 +123,30 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** CC0-1.0
 - **Source:** Crystallography Open Database entry 2101932 (ferrocene, C10H10Fe)
 - **URL:** https://www.crystallography.net/cod/2101932.cif
+
+## `cif` / `fluorite-no-occupancy-column` (wild)
+
+- **Source file:** `cod-9007064.cif`
+- **Origin:** published-dataset
+- **License:** CC0-1.0
+- **Source:** Crystallography Open Database entry 9007064 (fluorite, CaF2)
+- **URL:** https://www.crystallography.net/cod/9007064.cif
+
+## `cif` / `hydrogens-declared-but-not-deposited` (wild)
+
+- **Source file:** `cod-2100034.cif`
+- **Origin:** published-dataset
+- **License:** CC0-1.0
+- **Source:** Crystallography Open Database entry 2100034
+- **URL:** https://www.crystallography.net/cod/2100034.cif
+
+## `cif` / `lithium-niobate-rhombohedral` (wild)
+
+- **Source file:** `cod-1521772.cif`
+- **Origin:** published-dataset
+- **License:** CC0-1.0
+- **Source:** Crystallography Open Database entry 1521772 (lithium niobate, LiNbO3)
+- **URL:** https://www.crystallography.net/cod/1521772.cif
 
 ## `cif` / `mgo-uncertainty-parentheses` (wild)
 
@@ -123,3 +163,19 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** CC0-1.0
 - **Source:** Crystallography Open Database entry 1000041 (Abrahams & Bernstein, Acta Cryst. 18, 926, 1965)
 - **URL:** https://www.crystallography.net/cod/1000041.cif
+
+## `cif` / `pyrrhotite-partial-occupancy-and-oxidation` (wild)
+
+- **Source file:** `cod-1011179.cif`
+- **Origin:** published-dataset
+- **License:** CC0-1.0
+- **Source:** Crystallography Open Database entry 1011179 (pyrrhotite, Fe(1-x)S)
+- **URL:** https://www.crystallography.net/cod/1011179.cif
+
+## `cif` / `unknown-value-markers-and-half-occupancy` (wild)
+
+- **Source file:** `cod-4000034.cif`
+- **Origin:** published-dataset
+- **License:** CC0-1.0
+- **Source:** Crystallography Open Database entry 4000034
+- **URL:** https://www.crystallography.net/cod/4000034.cif
