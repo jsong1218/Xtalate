@@ -14,6 +14,8 @@ directly on ``Frame`` rather than in a sub-model.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 from xtalate.schema.models import (
@@ -76,6 +78,29 @@ DERIVED_PATHS: frozenset[str] = frozenset({"atoms.atomic_numbers"})
 #: and when the promotion happens, the key being migrated *from* is a schema fact, so the
 #: migration is written where the schema is.
 OCCUPANCY_CUSTOM_KEY = "cif:occupancy"
+
+
+def is_full_occupancy(value: Any) -> bool:
+    """True only for a value that *states* an occupancy of exactly 1.
+
+    ``None`` (an unknown occupancy, ``?``/``.`` carried through) and any non-numeric spelling are
+    not such a statement, so they are not full: treating silence as fullness would turn the
+    source's unknown into an assertion (**P4**).
+
+    It lives beside the key for the same reason the key lives here. What counts as a full site is
+    a fact about ``cif:occupancy`` itself, not a policy of whichever layer happens to ask — and
+    two layers do ask, from opposite ends of the pipeline. The pre-flight diff asks in order to
+    warn that no target can represent a partial site; the CIF parser asks in order to say
+    something *true* in its own warning. A parser cannot import the conversion layer without
+    inverting the import graph, so a second definition would have had to be written next to the
+    first, and the two spellings of "full" would then be free to drift apart — which, on a
+    predicate this small and this load-bearing, would be a silent stoichiometry bug waiting to
+    happen (v0.4 standing rule 4).
+    """
+    try:
+        return float(value) == 1.0
+    except (TypeError, ValueError):
+        return False
 
 
 def is_valid_path(path: str) -> bool:

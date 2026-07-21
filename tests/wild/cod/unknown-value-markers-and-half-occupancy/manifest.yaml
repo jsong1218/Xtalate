@@ -10,6 +10,7 @@ origin:
 expectation:
   issue_codes:
     - CIF_OCCUPANCY_NOT_MODELLED
+    - CIF_PARTIAL_OCCUPANCY
     - CIF_TAGS_CARRIED
   stoichiometry: partial_occupancy
   stoichiometry_note: >-

@@ -37,6 +37,13 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-written for M18; cell constant and structure from the published rock-salt structure
 
+## `cif` / `occupancy-and-cell-uncertainty` (golden)
+
+- **Source file:** `occupancy_cell_uncertainty.cif`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M20, promoted from the real-world corpus: the minimal file that pins the two defects the COD batch found (D71)
+
 ## `cif` / `rutile-p42mnm` (golden)
 
 - **Source file:** `rutile_p42mnm.cif`

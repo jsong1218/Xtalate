@@ -10,6 +10,7 @@ origin:
 expectation:
   issue_codes:
     - CIF_OCCUPANCY_NOT_MODELLED
+    - CIF_PARTIAL_OCCUPANCY
     - CIF_OXIDATION_NUMBER_DISAGREES_WITH_SYMBOL
     - CIF_TAGS_CARRIED
   stoichiometry: partial_occupancy
@@ -30,12 +31,13 @@ findings:
     the first real file to trip it, and it tripped it for the right reason. A declared issue
     code is not automatically a defect, and this manifest says which kind it is.
   - >-
-    This is the corpus's first file with *genuine* partial occupancy, which makes it the
-    control for the CIF_OCCUPANCY_NOT_MODELLED defect recorded against
-    `nacl-legacy-symmetry-tags`. Here the warning's text is true. There it is false. Both fire
-    identically today, because the warning keys on the column's presence — and having the two
-    cases side by side is what will prove the slice 3 fix actually distinguishes them rather
-    than merely quieting the warning.
+    This is the corpus's first file with *genuine* partial occupancy, and it is what the slice 3
+    occupancy fix was measured against. CIF_PARTIAL_OCCUPANCY appears here and on
+    `unknown-value-markers-and-half-occupancy`, and on no other case in the corpus — not on
+    `nacl-legacy-symmetry-tags`, whose column is all 1.0, and not on
+    `fluorite-no-occupancy-column`, which has no column at all. The three positions were pinned
+    before the fix was written, so the fix had to distinguish them rather than merely quiet the
+    warning; a change that silenced too much would have turned this case red.
 notes: >-
   Two axes in one file, which is why it is worth its weight: occupancy < 1 and oxidation-state
   symbols, on a mineral where both are physically meaningful rather than decorative. The 0.05 /

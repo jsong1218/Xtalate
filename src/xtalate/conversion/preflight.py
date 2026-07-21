@@ -40,7 +40,7 @@ from xtalate.conversion.report import PreservedEntry, RemovedEntry, ReportWarnin
 from xtalate.recovery import RecoveryError, UnresolvedScenario, available_options
 from xtalate.schema import CanonicalObject, PresenceMap
 from xtalate.schema.paths import DERIVED_PATHS as _DERIVED_PATHS
-from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
+from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY, is_full_occupancy
 from xtalate.sdk import CapabilityLevel, FormatCapabilities
 
 # `_DERIVED_PATHS` (`atoms.atomic_numbers`) is a derived mirror of `atoms.symbols` (Part 2 §3.3),
@@ -128,16 +128,7 @@ def partial_occupancy_count(custom_per_atom: Mapping[str, Any]) -> int:
     values = custom_per_atom.get(OCCUPANCY_CUSTOM_KEY)
     if values is None:
         return 0
-    return sum(1 for value in values if not _is_full_occupancy(value))
-
-
-def _is_full_occupancy(value: Any) -> bool:
-    """True only for a value that *states* an occupancy of exactly 1. ``None`` (unknown) and any
-    non-numeric spelling are not such a statement, so they are not full."""
-    try:
-        return float(value) == 1.0
-    except (TypeError, ValueError):
-        return False
+    return sum(1 for value in values if not is_full_occupancy(value))
 
 
 def build_preflight(

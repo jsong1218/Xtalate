@@ -14,13 +14,15 @@ expectation:
   stoichiometry: checked
 findings:
   - >-
-    CIF_OCCUPANCY_NOT_MODELLED fires on a file with *no* partial occupancy: both sites state
-    an occupancy of exactly 1, and the warning's own text claims "CIF states partial site
-    occupancy". The builder keys the warning on the column's presence rather than on its
-    values, and COD writes the column on nearly every entry — so as written this warning will
-    fire on almost every real file while saying something untrue about most of them. A warning
-    that cries wolf on the common case is worse than no warning: it trains the reader to skim
-    past the one file where occupancy really is partial. Fix scheduled for M20 slice 3.
+    FIXED in M20 slice 3 (D71). This file is why. Both its sites state an occupancy of exactly
+    1, yet CIF_OCCUPANCY_NOT_MODELLED fired with text claiming "CIF states partial site
+    occupancy" — false about this file and about most real ones, since COD writes the occupancy
+    column on nearly every entry. The trigger was never the bug: reporting the carried column is
+    M19's plan of record, and the column genuinely is an unmodelled schema gap even when it is
+    all ones. The message was the bug, and the missing distinction behind it. The wording now
+    states only what is true of a carried column, and a second code, CIF_PARTIAL_OCCUPANCY,
+    carries the claim about disorder — which is why that code does *not* appear in this file's
+    expectation above.
 notes: >-
   The corpus's baseline real file, and deliberately the least exotic one: COD's canonical NaCl.
   It exercises the legacy `_symmetry_*` tag spelling (`_symmetry_space_group_name_H-M`,

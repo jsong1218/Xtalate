@@ -1,0 +1,39 @@
+case: occupancy-and-cell-uncertainty
+format_id: cif
+source_file: occupancy_cell_uncertainty.cif
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "991483f5d0783c3957ce5404be6dd2c2f5fa2e986a48cf6b332d4978ee37ef30"
+expected_sha256: "93c762463f1606cddafe72cad301713d263b1a073655cd7869e09081410401f0"
+origin:
+  kind: synthetic
+  source: >-
+    Hand-written for M20, promoted from the real-world corpus: the minimal file that pins the
+    two defects the COD batch found (D71)
+  license: "Apache-2.0"
+notes: >-
+  M20 item 2 — an edge case promoted to a golden after real files surfaced it. The wild corpus
+  found the two defects; this fixture is what makes them stay fixed, in a file small enough to
+  check by hand. The COD entries that revealed them cannot do that job themselves: their
+  expectation is a set of issue codes, not a verified canonical object, so they can prove a
+  behaviour changed but never that the numbers are right.
+
+  Orthorhombic P 1 with all angles 90 keeps every value exact and derivable in one's head:
+  x_cart = x_frac x a, so Cl1 at (0.5, 0.5, 0.5) must land at (2.0, 2.5, 3.0) and Cl2 at
+  (0.5, 0, 0) at (2.0, 0, 0), with the lattice the diagonal (4, 5, 6). Nothing here is expanded
+  — the symop loop is the identity — because the point is the two behaviours below, and an
+  expansion would put 192 coordinates between the reader and the thing being asserted.
+
+  **Cell-parameter precision loss (defect 2).** All three cell lengths carry a standard
+  uncertainty (`4.0000(3)`) while every coordinate is exact. That combination is what the whole
+  synthetic corpus lacked, and is why the defect survived to M20: a fixture author putting an
+  esd somewhere puts it on a coordinate, whereas real refinement puts it on the lattice
+  constants and leaves special-position coordinates as exact `0.` and `0.5`. The parse note must
+  now name all three `_cell_length_*` tags; before the fix it named nothing at all.
+
+  **Occupancy, all three positions in one file (defect 1).** Na1 states 1.000, Cl1 states 0.500,
+  and Cl2 states `?`. The unknown is the subtle one and the reason it is here: an unknown
+  occupancy is not a statement of fullness, so it counts as partial (**P4**) — reading `?` as 1
+  would turn the source's silence into an assertion. Hence `CIF_PARTIAL_OCCUPANCY` reports 2 of
+  3 sites, not 1 of 3. `CIF_OCCUPANCY_NOT_MODELLED` fires alongside it, as it does for any file
+  carrying the column at all; the two codes are what keep those separate claims separable.
