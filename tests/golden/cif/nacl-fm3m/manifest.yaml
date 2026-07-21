@@ -4,7 +4,7 @@ source_file: nacl_fm3m.cif
 expected_canonical: expected.canonical.json
 canonical_schema_version: "0.1.0"
 sha256: "4fa312b03a4024a82a04c1fcb3766182060adb360568ae6d44ee3ef25a64f387"
-expected_sha256: "092d6d3d3d230c3253c8c78dd84c66ad892e5731dc356eeb07863ffeb952f99e"
+expected_sha256: "1897aca8b21d72c2e6cc77a29bc7dce3225f1947ae6fc44e7f36e1bf54ebc978"
 origin:
   kind: synthetic
   source: "Hand-written for M18; cell constant and structure from the published rock-salt structure"

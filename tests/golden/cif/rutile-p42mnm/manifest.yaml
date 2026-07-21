@@ -4,7 +4,7 @@ source_file: rutile_p42mnm.cif
 expected_canonical: expected.canonical.json
 canonical_schema_version: "0.1.0"
 sha256: "2dd7a1c2308eb03288debeef6d9be6df4bf29a96cdfef85b0fd2e049f5d08f5d"
-expected_sha256: "4e47937be3b8565424cb7182a2503913c099e561b095a64507e3f593a44aaff3"
+expected_sha256: "a65ae9af943edc4ce2edba9722ec40f3d4f0a5bb50fcbd1535edc6e15e4f90b4"
 origin:
   kind: synthetic
   source: "Hand-written for M18; cell and the O free parameter from the published rutile structure"

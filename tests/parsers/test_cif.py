@@ -12,7 +12,11 @@ import pytest
 
 from tests._format_helpers import assert_matches_golden, parse_bytes
 from xtalate.parsers.cif import make_cif_parser
-from xtalate.parsers.cif._build import element_of, lattice_from_parameters
+from xtalate.parsers.cif._build import (
+    charge_of_type_symbol,
+    element_of,
+    lattice_from_parameters,
+)
 from xtalate.sdk import ParseError, ParseResult
 
 GOLDEN = Path(__file__).parent.parent / "golden" / "cif" / "zno-hexagonal-p1"
@@ -243,7 +247,7 @@ def test_per_site_columns_are_replicated_onto_generated_atoms() -> None:
         b"loop_\n_atom_site_label",
     )
     per_atom = _parse(data).canonical.user_metadata.custom_per_atom
-    assert list(per_atom["cif:atom_site_occupancy"]) == pytest.approx([1.0, 0.5, 0.5])
+    assert list(per_atom["cif:occupancy"]) == pytest.approx([1.0, 0.5, 0.5])
     assert list(per_atom["cif:atom_site_label"]) == ["Na1", "Cl1", "Cl1"]
 
 
@@ -324,7 +328,7 @@ def test_unmapped_atom_site_columns_are_carried_verbatim() -> None:
     carried = result.canonical.user_metadata.custom_per_atom
     # A wholly-numeric column lands as a float array, a textual one as strings — the schema's
     # custom_per_atom union decides, and either way the source value is preserved.
-    np.testing.assert_allclose(np.asarray(carried["cif:atom_site_occupancy"]), [1.0, 1.0])
+    np.testing.assert_allclose(np.asarray(carried["cif:occupancy"]), [1.0, 1.0])
     assert carried["cif:atom_site_label"] == ["Zn1", "O1"]
     assert carried["cif:type_symbol"] == ["Zn", "O"]
 
@@ -513,3 +517,167 @@ def test_sniff_rejects_a_data_heading_without_cif_tags() -> None:
 def test_sniff_rejects_other_formats() -> None:
     parser = make_cif_parser()
     assert parser.sniff(b"2\ncomment\nH 0 0 0\nH 0 0 1\n", "water.xyz") == 0.0
+
+
+# --- occupancy: the flagged schema gap (M19, Part 3 §3 n.11) --------------------------------
+
+
+def _with_occupancy(*values: str) -> bytes:
+    rows = b"".join(
+        f"{label} {sym} {x} 0.0 0.0 {occ}\n".encode()
+        for label, sym, x, occ in (("Na1", "Na", "0.0", values[0]), ("Cl1", "Cl", "0.5", values[1]))
+    )
+    return CUBIC.replace(
+        b"_atom_site_fract_z\nNa1 Na 0.0 0.0 0.0\nCl1 Cl 0.5 0.5 0.5\n",
+        b"_atom_site_fract_z\n_atom_site_occupancy\n" + rows,
+    )
+
+
+def test_occupancy_lands_under_the_spec_named_key_not_the_tag_spelling() -> None:
+    """The one _atom_site column whose custom key is not its tag: occupancy is a *named*
+    limitation with a documented promotion path (Part 2 §6 rule 4), so the key it will be
+    promoted from is pinned rather than left to the generic carry-through."""
+    per_atom = _parse(_with_occupancy("1.0", "0.5")).canonical.user_metadata.custom_per_atom
+    assert list(per_atom["cif:occupancy"]) == pytest.approx([1.0, 0.5])
+    # And it arrives under exactly one name, never two.
+    assert "cif:atom_site_occupancy" not in per_atom
+
+
+def test_occupancy_warns_that_it_is_carried_rather_than_modelled() -> None:
+    result = _parse(_with_occupancy("1.0", "0.5"))
+    issue = next(i for i in result.issues if i.code == "CIF_OCCUPANCY_NOT_MODELLED")
+    assert issue.severity == "warning"
+    assert "cif:occupancy" in issue.message
+    # The same statement survives into the object itself, so a consumer reading only the
+    # Canonical Object — not the ParseResult — still learns the field is unmodelled.
+    assert any(
+        "occupancy carried as a custom" in n for n in result.canonical.provenance.parse_notes
+    )
+
+
+def test_full_occupancy_still_warns() -> None:
+    """The warning is about the *model*, not about the values: a file stating occupancy 1.0
+    everywhere has still had a column carried rather than modelled, and a reader who is told
+    nothing cannot tell that from a file that stated no occupancy at all."""
+    assert any(
+        i.code == "CIF_OCCUPANCY_NOT_MODELLED" for i in _parse(_with_occupancy("1.0", "1.0")).issues
+    )
+
+
+def test_a_file_without_occupancy_does_not_warn_about_it() -> None:
+    assert not any(i.code == "CIF_OCCUPANCY_NOT_MODELLED" for i in _parse(CUBIC).issues)
+
+
+def test_unknown_occupancy_is_carried_as_absence_not_as_one() -> None:
+    """'?' is absence (P3). CIF's *default* occupancy is 1.0, but a default is a convention the
+    file did not state, and filling it here would put an invented number in a preserved column."""
+    per_atom = _parse(_with_occupancy("1.0", "?")).canonical.user_metadata.custom_per_atom
+    # A column that is not wholly numeric cannot be a float array, so the schema's custom_per_atom
+    # union keeps it as the source spelled it — the absent row stays absent rather than becoming
+    # a number, which is the property under test.
+    assert list(per_atom["cif:occupancy"]) == ["1.0", None]
+
+
+# --- formal charges (M19 deliverable 2) ----------------------------------------------------
+
+
+def _with_oxidation(*rows: str, types: tuple[str, str] = ("Na1+", "Cl1-")) -> bytes:
+    loop = "loop_\n_atom_type_symbol\n_atom_type_oxidation_number\n" + "".join(
+        f"{r}\n" for r in rows
+    )
+    return CUBIC.replace(
+        b"loop_\n_atom_site_label", loop.encode() + b"loop_\n_atom_site_label"
+    ).replace(
+        b"Na1 Na 0.0 0.0 0.0\nCl1 Cl 0.5 0.5 0.5\n",
+        f"Na1 {types[0]} 0.0 0.0 0.0\nCl1 {types[1]} 0.5 0.5 0.5\n".encode(),
+    )
+
+
+def test_declared_oxidation_numbers_populate_charges_with_a_scheme_label() -> None:
+    result = _parse(_with_oxidation("Na1+ 1", "Cl1- -1"))
+    frame = result.canonical.frames[0]
+    assert frame.electronic.charges is not None
+    np.testing.assert_allclose(frame.electronic.charges, [1.0, -1.0])
+    assert result.canonical.simulation is not None
+    # A formal oxidation state is integer bookkeeping, not a population analysis; without the
+    # label a consumer could read an idealized +1 as a computed Mulliken charge.
+    assert result.canonical.simulation.extra["cif:charge_scheme"] == "formal_oxidation_state"
+
+
+def test_charges_are_replicated_onto_symmetry_generated_atoms() -> None:
+    """A charge belongs to the site, so every atom the site generates carries it."""
+    # Cl sits off the inversion centre, so it genuinely doubles; Na at the origin does not.
+    data = (
+        _with_oxidation("Na1+ 1", "Cl1- -1")
+        .replace(b"Cl1 Cl1- 0.5 0.5 0.5\n", b"Cl1 Cl1- 0.25 0.25 0.25\n")
+        .replace(
+            b"loop_\n_atom_site_label",
+            b"loop_\n_space_group_symop_operation_xyz\n'x, y, z'\n'-x, -y, -z'\n"
+            b"loop_\n_atom_site_label",
+        )
+    )
+    charges = _parse(data).canonical.frames[0].electronic.charges
+    assert charges is not None
+    np.testing.assert_allclose(charges, [1.0, -1.0, -1.0])  # Na on a special position, Cl doubled
+
+
+def test_a_partial_oxidation_declaration_leaves_charges_unset() -> None:
+    """charges is all-or-nothing per atom; filling the undeclared atoms with 0.0 would assert a
+    neutrality the file never stated (P4)."""
+    result = _parse(_with_oxidation("Na1+ 1"))
+    assert result.canonical.frames[0].electronic.charges is None
+    issue = next(i for i in result.issues if i.code == "CIF_PARTIAL_OXIDATION_NUMBERS")
+    assert "Cl1-" in issue.message
+
+
+def test_type_symbol_suffix_alone_does_not_populate_charges() -> None:
+    """'Fe3+' is an identifier that conventionally encodes a charge, not a statement of one.
+    Promoting a spelling to a physical quantity is interpretation, so only the tag CIF defines
+    for the purpose populates the field — the suffix stays preserved verbatim."""
+    result = _parse(CUBIC.replace(b"Na1 Na ", b"Na1 Na1+ "))
+    assert result.canonical.frames[0].electronic.charges is None
+    assert result.canonical.user_metadata.custom_per_atom["cif:type_symbol"] == ["Na1+", "Cl"]
+
+
+def test_a_symbol_disagreeing_with_its_declared_number_is_reported() -> None:
+    result = _parse(_with_oxidation("Na1+ 2", "Cl1- -1"))
+    issue = next(i for i in result.issues if i.code == "CIF_OXIDATION_NUMBER_DISAGREES_WITH_SYMBOL")
+    assert "+1" in issue.message and "+2" in issue.message
+    charges = result.canonical.frames[0].electronic.charges
+    assert charges is not None
+    np.testing.assert_allclose(charges, [2.0, -1.0])  # the declared number wins
+
+
+def test_an_oxidation_loop_with_no_symbol_column_is_refused() -> None:
+    """Two independent tables joined by row order would assign charges the file never paired."""
+    data = CUBIC.replace(
+        b"loop_\n_atom_site_label",
+        b"loop_\n_atom_type_oxidation_number\n1\n-1\nloop_\n_atom_site_label",
+    )
+    with pytest.raises(ParseError) as exc:
+        _parse(data)
+    assert exc.value.issues[0].code == "CIF_UNJOINABLE_OXIDATION_NUMBERS"
+
+
+def test_conflicting_oxidation_numbers_for_one_type_are_refused() -> None:
+    with pytest.raises(ParseError) as exc:
+        _parse(_with_oxidation("Na1+ 1", "Na1+ 3", "Cl1- -1"))
+    assert exc.value.issues[0].code == "CIF_CONFLICTING_OXIDATION_NUMBERS"
+
+
+def test_a_file_without_oxidation_numbers_leaves_charges_absent() -> None:
+    """Absence of a declaration is not a declaration of zero (P3)."""
+    result = _parse(CUBIC)
+    assert result.canonical.frames[0].electronic.charges is None
+    assert (
+        result.canonical.simulation is None
+        or "cif:charge_scheme" not in result.canonical.simulation.extra
+    )
+
+
+@pytest.mark.parametrize(
+    ("symbol", "expected"),
+    [("Fe", None), ("Fe3+", 3.0), ("O2-", -2.0), ("Ca+", 1.0), ("Cl-", -1.0), ("Na+1", 1.0)],
+)
+def test_charge_spelled_by_a_type_symbol(symbol: str, expected: float | None) -> None:
+    assert charge_of_type_symbol(symbol) == expected

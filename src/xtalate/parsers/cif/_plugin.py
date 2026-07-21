@@ -117,10 +117,17 @@ class CifParser(ParserPlugin):
                     level=CapabilityLevel.FULL,
                     notes="Hermann-Mauguin or Hall symbol exactly as declared; never derived.",
                 ),
+                "electronic.charges": FieldCapability(
+                    level=CapabilityLevel.PARTIAL,
+                    notes="Only formal oxidation states, from a complete "
+                    "_atom_type_oxidation_number loop; labelled 'formal_oxidation_state' in "
+                    "simulation.extra. A partial declaration leaves the field unset.",
+                ),
                 "user_metadata.custom_per_atom": FieldCapability(
                     level=CapabilityLevel.FULL,
-                    notes="Unmapped _atom_site columns (occupancy, Wyckoff, displacement "
-                    "parameters) carried verbatim under 'cif:' keys.",
+                    notes="Unmapped _atom_site columns (Wyckoff symbols, displacement "
+                    "parameters) carried verbatim under 'cif:' keys, plus occupancy under "
+                    "'cif:occupancy'.",
                 ),
                 "simulation.extra": FieldCapability(
                     level=CapabilityLevel.FULL,
@@ -138,8 +145,11 @@ class CifParser(ParserPlugin):
                 "coinciding within 0.05 Å are merged (Part 3 §3 n.13; DECISIONS.md D67).",
                 "A non-P 1 symbol declared with no operation loop is refused, not guessed from "
                 "a space-group table (DECISIONS.md D66).",
-                "Occupancy is carried as a custom per-atom array, not modelled as a canonical "
-                "field (Part 3 §3 n.11).",
+                "Occupancy is carried as a custom per-atom array under 'cif:occupancy', not "
+                "modelled as a canonical field, and warns at parse (Part 3 §3 n.11).",
+                "A type symbol's oxidation-state suffix ('Fe3+') is preserved verbatim but is "
+                "not read as a charge; only a declared _atom_type_oxidation_number populates "
+                "electronic.charges.",
             ],
         )
 
