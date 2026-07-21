@@ -152,3 +152,35 @@ layers = [
     "xtalate.schema",
     "xtalate._time",
 ]
+
+# The CIF parser is the one format built as a package rather than a module (DECISIONS.md D65),
+# and its four stages only stay replaceable if the flow through them stays one-way. The outer
+# contract treats `xtalate.parsers` as a single layer, so without this the stage ordering would
+# be a convention rather than a checked fact — cheap to add while the modules are small.
+[[tool.importlinter.contracts]]
+name = "CIF reader stage ordering (D65)"
+type = "layers"
+layers = [
+    "xtalate.parsers.cif._plugin",
+    "xtalate.parsers.cif._build",
+    "xtalate.parsers.cif._validate",
+    "xtalate.parsers.cif._document",
+    "xtalate.parsers.cif._lexer",
+]
+
+# Stage 3 is defined by what it is *not* allowed to know: anything requiring the Canonical
+# Model belongs to stage 4. Stated as a contract because the boundary is otherwise invisible —
+# validation and construction entangle naturally, and one convenient import would erase it.
+[[tool.importlinter.contracts]]
+name = "CIF syntax stages know nothing of the Canonical Model (D65)"
+type = "forbidden"
+source_modules = [
+    "xtalate.parsers.cif._lexer",
+    "xtalate.parsers.cif._document",
+    "xtalate.parsers.cif._validate",
+]
+forbidden_modules = ["xtalate.schema"]
+# Direct imports only. These stages legitimately import `sdk` for the ParseError/ParseIssue
+# error contract, and `sdk` reaches `schema` on its own — forbidding that chain would forbid
+# reporting errors at all. What must not happen is a stage reaching for a canonical *model*.
+allow_indirect_imports = true

@@ -1,0 +1,132 @@
+{
+  "schema_version": "0.1.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Zn",
+          "O"
+        ],
+        "atomic_numbers": [
+          30,
+          8
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            -1.4999995689990442e-10,
+            1.7320508076554797,
+            2.5
+          ]
+        ],
+        "masses": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            3.0,
+            0.0,
+            0.0
+          ],
+          [
+            -1.5,
+            2.598076211353316,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            5.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": "P 1"
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": null,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": {
+    "source_code": null,
+    "calculator": null,
+    "xc_functional": null,
+    "pseudopotentials": null,
+    "thermostat": null,
+    "md_ensemble": null,
+    "temperature": null,
+    "extra": {
+      "cif:chemical_name_common": "Xtalate M17 synthetic hexagonal test",
+      "cif:chemical_formula_sum": "Zn O",
+      "cif:publ_author_name": "Xtalate test corpus",
+      "cif:cell_volume": "38.9711(4)",
+      "cif:space_group_it_number": "1"
+    }
+  },
+  "provenance": {
+    "source_filename": "zno_hexagonal.cif",
+    "source_format": "cif",
+    "source_units": {
+      "positions": "fractional",
+      "lattice_vectors": "angstrom"
+    },
+    "original_coordinate_system": "fractional",
+    "parse_notes": [
+      "Fractional coordinates converted to Cartesian using the lattice matrix built from _cell_length_* / _cell_angle_* (Part 2 \u00a74).",
+      "pbc set to (true,true,true): a CIF describes a crystal, so full 3-D periodicity is format-defined (Part 3 \u00a73 n.3), not assumed."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-07-20T22:35:54Z",
+        "operation": "parse",
+        "source_format": "cif",
+        "target_format": null,
+        "tool_version": "0.3.0",
+        "parser_version": "cif-parser 0.4.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {
+      "cif:data_block_name": "zno_hexagonal_p1"
+    },
+    "custom_per_atom": {
+      "cif:atom_site_label": [
+        "Zn1",
+        "O1"
+      ],
+      "cif:atom_site_occupancy": [
+        1.0,
+        1.0
+      ],
+      "cif:type_symbol": [
+        "Zn",
+        "O"
+      ]
+    },
+    "custom_per_frame": {}
+  }
+}

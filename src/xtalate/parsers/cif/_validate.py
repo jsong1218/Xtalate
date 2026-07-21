@@ -1,0 +1,249 @@
+"""Stage 3 of the CIF reader: CIF-level invariants (DECISIONS.md D65).
+
+The stage rule that keeps this module from collapsing into ``_build``: **this stage checks only
+what is expressible without the Canonical Model, and imports nothing from ``xtalate.schema``.**
+Required tags present, loop columns consistent, numerics parseable, symmetry expansion possible
+— all statements about the CIF. Element-table validity, unit conventions and the absence
+convention need schema knowledge and therefore belong to stage 4.
+
+The M17 scope boundary is enforced here rather than discovered later: a file needing symmetry
+expansion is refused, never silently reduced to its asymmetric unit. Two distinct refusals,
+because they have different futures — ``CIF_SYMMETRY_EXPANSION_UNSUPPORTED`` is temporary and
+M18 removes it, while ``CIF_UNEXPANDABLE_SYMMETRY`` is permanent parser behavior whose only
+resolution is an explicit Recovery Workflow (D66).
+"""
+
+from __future__ import annotations
+
+import re
+
+from xtalate.parsers.cif._document import CifBlock, CifDocument, CifLoop
+from xtalate.sdk import ParseError, ParseIssue
+
+# --- tag families -------------------------------------------------------------------------
+# CIF renamed these between the legacy _symmetry_* set and the current _space_group_* set, and
+# real files use both spellings — often within one file. Every lookup accepts all of them.
+
+CELL_LENGTH_TAGS = ("_cell_length_a", "_cell_length_b", "_cell_length_c")
+CELL_ANGLE_TAGS = ("_cell_angle_alpha", "_cell_angle_beta", "_cell_angle_gamma")
+SPACE_GROUP_NAME_TAGS = (
+    "_space_group_name_h-m_alt",
+    "_symmetry_space_group_name_h-m",
+    "_space_group_name_hall",
+    "_symmetry_space_group_name_hall",
+)
+SYMOP_TAGS = ("_space_group_symop_operation_xyz", "_symmetry_equiv_pos_as_xyz")
+FRACT_TAGS = ("_atom_site_fract_x", "_atom_site_fract_y", "_atom_site_fract_z")
+CARTN_TAGS = ("_atom_site_cartn_x", "_atom_site_cartn_y", "_atom_site_cartn_z")
+TYPE_SYMBOL_TAG = "_atom_site_type_symbol"
+LABEL_TAG = "_atom_site_label"
+
+# A standard uncertainty in parentheses — "5.4310(2)" — is CIF's way of writing a value with its
+# estimated error. The value is the number; the parenthesized digits are precision on the last
+# figures. Stripping it is not laundering: the parenthesized part is *metadata about* the value,
+# not a competing value, and dropping it silently would still be loss — so the builder records
+# the raw spelling in provenance for any site that carried one.
+_UNCERTAINTY = re.compile(r"^([+-]?[0-9.eE+-]+?)\(([0-9]+)\)$")
+
+# 'x,y,z' in any spacing/sign spelling — the identity. A symop loop containing only this is a
+# P 1 file wearing a symmetry loop, which M17 can read without expansion machinery.
+_IDENTITY_OPS = frozenset({"x,y,z", "+x,+y,+z"})
+
+
+def _issue(code: str, message: str, *, location: str | None = None) -> ParseError:
+    return ParseError([ParseIssue(severity="error", code=code, message=message, location=location)])
+
+
+def parse_number(raw: str, *, tag: str, line: int) -> float:
+    """A CIF numeric value as a float, tolerating a standard uncertainty suffix."""
+    text = raw.strip()
+    match = _UNCERTAINTY.match(text)
+    if match:
+        text = match.group(1)
+    try:
+        return float(text)
+    except ValueError as exc:
+        raise _issue(
+            "CIF_MALFORMED_NUMBER",
+            f"{tag} is not a number: {raw!r}",
+            location=f"line {line}",
+        ) from exc
+
+
+def has_uncertainty(raw: str) -> bool:
+    """Whether ``raw`` carried a parenthesized standard uncertainty."""
+    return _UNCERTAINTY.match(raw.strip()) is not None
+
+
+def select_block(document: CifDocument) -> tuple[CifBlock, list[ParseIssue]]:
+    """The structure block, plus an issue naming any block this parser does not read.
+
+    CIF blocks are **independent structures, not frames** — a two-block file is two crystals,
+    not a two-frame trajectory — so they cannot be concatenated into one Canonical Object
+    without inventing a time axis the file never declared. Reading the first and naming the
+    rest is therefore the honest reading (Part 3 §3 n.4). The rejected alternative, mapping
+    blocks onto ``frames``, would present unrelated structures as a trajectory and make every
+    downstream frame-selection operation meaningless.
+    """
+    if not document.blocks:
+        raise _issue("CIF_NO_DATA_BLOCK", "file contains no 'data_' block")
+    issues: list[ParseIssue] = []
+    if len(document.blocks) > 1:
+        skipped = [b.name for b in document.blocks[1:]]
+        issues.append(
+            ParseIssue(
+                severity="warning",
+                code="CIF_ADDITIONAL_BLOCKS_NOT_READ",
+                message=(
+                    f"file contains {len(document.blocks)} data blocks; only the first "
+                    f"({document.blocks[0].name!r}) was read. CIF blocks are independent "
+                    f"structures, not frames, so the remaining blocks are not part of this "
+                    f"structure and were not converted: {skipped}"
+                ),
+                location=f"line {document.blocks[1].line}",
+            )
+        )
+    return document.blocks[0], issues
+
+
+def validate_cell(
+    block: CifBlock,
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    """Cell lengths (Å) and angles (degrees), checked for physical sanity."""
+    for tag in (*CELL_LENGTH_TAGS, *CELL_ANGLE_TAGS):
+        if block.find_pair(tag) is None:
+            raise _issue(
+                "CIF_MISSING_CELL",
+                f"required cell parameter {tag} is absent or unknown; a CIF structure "
+                "cannot be placed without a complete cell",
+                location=f"line {block.line}",
+            )
+    a, b, c = (
+        parse_number(_require(block, tag), tag=tag, line=block.line_of(tag))
+        for tag in CELL_LENGTH_TAGS
+    )
+    alpha, beta, gamma = (
+        parse_number(_require(block, tag), tag=tag, line=block.line_of(tag))
+        for tag in CELL_ANGLE_TAGS
+    )
+    lengths = (a, b, c)
+    angles = (alpha, beta, gamma)
+    for tag, value in zip(CELL_LENGTH_TAGS, lengths, strict=True):
+        if value <= 0.0:
+            raise _issue(
+                "CIF_INVALID_CELL",
+                f"{tag} must be positive, found {value}",
+                location=f"line {block.line_of(tag)}",
+            )
+    for tag, value in zip(CELL_ANGLE_TAGS, angles, strict=True):
+        if not 0.0 < value < 180.0:
+            raise _issue(
+                "CIF_INVALID_CELL",
+                f"{tag} must lie strictly between 0 and 180 degrees, found {value}",
+                location=f"line {block.line_of(tag)}",
+            )
+    return lengths, angles
+
+
+def validate_expandable(block: CifBlock) -> str | None:
+    """Confirm this file needs no symmetry expansion, and return its declared symbol.
+
+    M17 reads full-cell files only. Both refusals below exist so that a file whose atoms are an
+    asymmetric unit is never mistaken for a complete structure — the failure mode where a
+    conversion yields a fraction of the atoms, wrong stoichiometry, and a plausible-looking
+    output file (D66).
+    """
+    symbol = block.find_pair(*SPACE_GROUP_NAME_TAGS)
+    loop = None
+    for tag in SYMOP_TAGS:
+        loop = block.find_loop(tag)
+        if loop is not None:
+            ops = [op for op in (loop.column(tag) or []) if op is not None]
+            break
+    else:
+        ops = []
+
+    if loop is not None:
+        non_identity = [op for op in ops if _normalize_op(op) not in _IDENTITY_OPS]
+        if non_identity:
+            raise _issue(
+                "CIF_SYMMETRY_EXPANSION_UNSUPPORTED",
+                f"file declares {len(ops)} symmetry operations, of which "
+                f"{len(non_identity)} are not the identity; its atom sites are an asymmetric "
+                "unit that must be expanded to the full cell before it can be represented. "
+                "Symmetry expansion arrives in M18; until then this file is refused rather "
+                "than read as a partial structure",
+                location=f"line {loop.line}",
+            )
+        return symbol
+
+    if symbol is not None and not _is_p1(symbol):
+        raise _issue(
+            "CIF_UNEXPANDABLE_SYMMETRY",
+            f"file declares space group {symbol!r} but carries no symmetry-operation loop "
+            f"({' or '.join(SYMOP_TAGS)}). Without the operations Xtalate cannot determine "
+            "whether the listed sites are an asymmetric unit or the full cell, and supplying "
+            "the operations from space-group tables would be data the file never declared "
+            "(P4). The file is refused rather than read as a possibly-partial structure",
+            location=f"line {block.line_of(*SPACE_GROUP_NAME_TAGS)}",
+        )
+    return symbol
+
+
+def validate_atom_sites(block: CifBlock) -> tuple[CifLoop, tuple[str, str, str], bool]:
+    """Locate the atom-site loop and its coordinate columns.
+
+    Returns ``(loop, coordinate_tags, fractional)``. Fractional coordinates are preferred when
+    both are present: they are CIF's native form (Part 3 §3), so reading them keeps the
+    conversion one step shorter and records the honest ``original_coordinate_system``.
+    """
+    loop = block.find_loop(FRACT_TAGS[0]) or block.find_loop(CARTN_TAGS[0])
+    if loop is None:
+        raise _issue(
+            "CIF_MISSING_ATOM_SITES",
+            "file contains no _atom_site loop with fractional or Cartesian coordinates",
+            location=f"line {block.line}",
+        )
+    fractional = all(loop.has(tag) for tag in FRACT_TAGS)
+    if not fractional and not all(loop.has(tag) for tag in CARTN_TAGS):
+        present = [t for t in (*FRACT_TAGS, *CARTN_TAGS) if loop.has(t)]
+        raise _issue(
+            "CIF_INCOMPLETE_COORDINATES",
+            "the _atom_site loop needs all three coordinate columns (x, y and z); "
+            f"found only {present}",
+            location=f"line {loop.line}",
+        )
+    if not loop.has(TYPE_SYMBOL_TAG) and not loop.has(LABEL_TAG):
+        raise _issue(
+            "CIF_MISSING_SPECIES",
+            f"the _atom_site loop carries neither {TYPE_SYMBOL_TAG} nor {LABEL_TAG}, so no "
+            "element can be identified; symbols are required and are never invented "
+            "(Part 2 §3.3)",
+            location=f"line {loop.line}",
+        )
+    if not loop.rows:
+        raise _issue(
+            "CIF_EMPTY_ATOM_SITES",
+            "the _atom_site loop declares columns but contains no rows",
+            location=f"line {loop.line}",
+        )
+    return loop, (FRACT_TAGS if fractional else CARTN_TAGS), fractional
+
+
+def _require(block: CifBlock, tag: str) -> str:
+    value = block.find_pair(tag)
+    assert value is not None  # guarded by the caller's presence loop
+    return value
+
+
+def _normalize_op(op: str) -> str:
+    return op.replace(" ", "").replace("'", "").lower()
+
+
+def _is_p1(symbol: str) -> bool:
+    """Whether a space-group symbol denotes P 1 — the one group needing no expansion.
+
+    P -1 is deliberately *not* P 1: it carries an inversion centre, so its sites are an
+    asymmetric unit like any other non-trivial group.
+    """
+    return symbol.replace(" ", "").replace("_", "").lower() in {"p1", "p1(no.1)"}
