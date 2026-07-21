@@ -288,8 +288,42 @@ def test_cif_suppresses_the_partial_occupancy_warning() -> None:
 def test_unknown_occupancy_is_written_back_as_unknown() -> None:
     # '?' in, '?' out (P3). Writing 1.0 for an occupancy the source said was unknown would turn
     # its silence into an assertion.
-    text = _write(_object(custom_per_atom={OCCUPANCY_CUSTOM_KEY: ["?", "1.0"]}))
+    #
+    # `None`, not the string "?", because that is what the parser actually produces: `_resolve`
+    # maps the bare marker to `None` on the way in. This fixture used to say "?" and passed for
+    # the wrong reason — the bare `?` it asserted came from `_quote` failing to quote a literal
+    # (the defect below), not from the absence convention it claims to be testing.
+    text = _write(_object(custom_per_atom={OCCUPANCY_CUSTOM_KEY: [None, "1.0"]}))
     assert "  ?" in text
+    assert _reparse(text).user_metadata.custom_per_atom[OCCUPANCY_CUSTOM_KEY][0] is None
+
+
+def test_a_literal_question_mark_is_quoted_so_it_stays_a_value() -> None:
+    # The other half of the same distinction. A bare `?` is CIF's *unknown* marker; a source that
+    # wrote `'?'` in quotes stated a one-character string. Writing the literal bare collapsed the
+    # two, turning a value the source stated into an absence — and `Token.quoted` exists on the
+    # read side precisely to keep them apart, so throwing it away on write forfeited that work.
+    text = _write(_object(custom_per_atom={"cif:atom_site_label": ["?", "Cl1"]}))
+    assert "  '?'  " in text
+    assert _reparse(text).user_metadata.custom_per_atom["cif:atom_site_label"] == ["?", "Cl1"]
+
+
+def test_an_all_unknown_column_falls_back_per_atom_not_per_column() -> None:
+    # `or` tests truthiness, and [None, None] is a non-empty list — so the column-level fallback
+    # never fired and every atom was written `?` while atoms.symbols held good elements. A source
+    # whose _atom_site_type_symbol was `?` on every row is exactly that case.
+    text = _write(_object(custom_per_atom={"cif:type_symbol": [None, None]}))
+    assert "  Na1  Na  " in text
+    assert "  Cl1  Cl  " in text
+
+
+def test_a_partly_unknown_column_keeps_the_rows_the_source_stated() -> None:
+    # The reason the fallback is per atom rather than "use the column only if it is all present":
+    # a source that spelled the oxidation state for one site and not the other must get its own
+    # spelling back where it made one, and the derived element where it did not.
+    text = _write(_object(custom_per_atom={"cif:type_symbol": ["Na1+", None]}))
+    assert "  Na1  Na1+  " in text
+    assert "  Cl1  Cl  " in text
 
 
 def test_source_site_labels_are_preserved() -> None:

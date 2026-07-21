@@ -39,6 +39,10 @@ FRACT_TAGS = ("_atom_site_fract_x", "_atom_site_fract_y", "_atom_site_fract_z")
 CARTN_TAGS = ("_atom_site_cartn_x", "_atom_site_cartn_y", "_atom_site_cartn_z")
 TYPE_SYMBOL_TAG = "_atom_site_type_symbol"
 LABEL_TAG = "_atom_site_label"
+#: The tags whose presence in a loop marks a block as *the structure block* (see ``select_block``).
+#: Coordinates and identity, in both spellings — a block carrying any of these is describing atoms,
+#: and a block carrying none of them is a header or a bibliography however many tags it has.
+ATOM_SITE_TAGS = (*FRACT_TAGS, *CARTN_TAGS, TYPE_SYMBOL_TAG, LABEL_TAG)
 OCCUPANCY_TAG = "_atom_site_occupancy"
 ATOM_TYPE_SYMBOL_TAG = "_atom_type_symbol"
 OXIDATION_NUMBER_TAG = "_atom_type_oxidation_number"
@@ -96,30 +100,42 @@ def select_block(document: CifDocument) -> tuple[CifBlock, list[ParseIssue]]:
 
     CIF blocks are **independent structures, not frames** — a two-block file is two crystals,
     not a two-frame trajectory — so they cannot be concatenated into one Canonical Object
-    without inventing a time axis the file never declared. Reading the first and naming the
-    rest is therefore the honest reading (Part 3 §3 n.4). The rejected alternative, mapping
-    blocks onto ``frames``, would present unrelated structures as a trajectory and make every
-    downstream frame-selection operation meaningless.
+    without inventing a time axis the file never declared. Reading one and naming the rest is
+    therefore the honest reading (Part 3 §3 n.4). The rejected alternative, mapping blocks onto
+    ``frames``, would present unrelated structures as a trajectory and make every downstream
+    frame-selection operation meaningless.
+
+    *Which* block is the structure block is a separate question from that principle, and taking
+    ``blocks[0]`` answered it wrongly. A `data_global` header block carrying only bibliographic
+    tags is standard in CCDC/CSD depositions, and a file opening with one was refused with
+    `CIF_MISSING_CELL` — an error naming a cause that was not the problem, on a file that is
+    complete and readable. The structure block is the first one carrying an ``_atom_site`` loop;
+    a file with no such block anywhere falls back to the first, so the error it then raises is
+    about the structure block's actual defect rather than about this choice.
     """
     if not document.blocks:
         raise _issue("CIF_NO_DATA_BLOCK", "file contains no 'data_' block")
+    chosen = next(
+        (b for b in document.blocks if any(b.find_loop(tag) is not None for tag in ATOM_SITE_TAGS)),
+        document.blocks[0],
+    )
     issues: list[ParseIssue] = []
     if len(document.blocks) > 1:
-        skipped = [b.name for b in document.blocks[1:]]
+        skipped = [b.name for b in document.blocks if b is not chosen]
         issues.append(
             ParseIssue(
                 severity="warning",
                 code="CIF_ADDITIONAL_BLOCKS_NOT_READ",
                 message=(
-                    f"file contains {len(document.blocks)} data blocks; only the first "
-                    f"({document.blocks[0].name!r}) was read. CIF blocks are independent "
-                    f"structures, not frames, so the remaining blocks are not part of this "
-                    f"structure and were not converted: {skipped}"
+                    f"file contains {len(document.blocks)} data blocks; only {chosen.name!r} "
+                    f"(the first carrying an _atom_site loop) was read. CIF blocks are "
+                    f"independent structures, not frames, so the remaining blocks are not part "
+                    f"of this structure and were not converted: {skipped}"
                 ),
-                location=f"line {document.blocks[1].line}",
+                location=f"line {chosen.line}",
             )
         )
-    return document.blocks[0], issues
+    return chosen, issues
 
 
 def validate_cell(
@@ -176,6 +192,38 @@ def validate_cell(
     return lengths, angles, uncertain
 
 
+def _rejoin_split_symops(values: list[str]) -> list[str]:
+    """Repair a symop column the lexer split on the spaces inside unquoted operations.
+
+    ``x, y, z`` written without quotes is three whitespace-separated tokens, so a single-column
+    loop silently becomes three one-fragment rows — and the row-count check cannot catch it,
+    because ``len(values) % 1`` is zero for any number of values. The failure surfaced two stages
+    later as ``CIF_MALFORMED_SYMOP: 'x,' has 2 components``, naming a defect the file does not
+    have. Strictly the file is malformed CIF 1.1; gemmi, ASE and PyCIFRW all read it, and D65's
+    stage-1/2 seam exists so this reader can be swapped for gemmi, which argues for parity on
+    files gemmi accepts.
+
+    Repair only where it demonstrably works: fragments are joined until each accumulated string
+    is a complete three-component triplet, and the result is returned **only** if every value
+    became one. Otherwise the original list is handed back unchanged, so a genuinely malformed
+    operation still raises its own error rather than being mangled into a neighbour. Nothing is
+    warned about — no information is at risk here, and a warning firing on every unquoted file
+    would be the noise D71 came to regret.
+    """
+    if all(v.count(",") == 2 for v in values):
+        return values  # already whole; the overwhelmingly common quoted case
+    rejoined: list[str] = []
+    buffer = ""
+    for value in values:
+        buffer += value
+        if buffer.count(",") == 2 and not buffer.endswith(","):
+            rejoined.append(buffer)
+            buffer = ""
+    if buffer or not rejoined:
+        return values  # a leftover fragment means this is not the defect being repaired
+    return rejoined
+
+
 def validate_symmetry(block: CifBlock) -> tuple[str | None, list[SymmetryOperation]]:
     """The declared space-group symbol and the declared symmetry operations, parsed.
 
@@ -190,7 +238,7 @@ def validate_symmetry(block: CifBlock) -> tuple[str | None, list[SymmetryOperati
     for tag in SYMOP_TAGS:
         loop = block.find_loop(tag)
         if loop is not None:
-            ops = [op for op in (loop.column(tag) or []) if op is not None]
+            ops = _rejoin_split_symops([op for op in (loop.column(tag) or []) if op is not None])
             break
     else:
         ops = []

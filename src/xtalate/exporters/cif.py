@@ -98,6 +98,13 @@ _EXTRA_PREFIX = "cif:"
 # Characters that force a CIF value to be quoted rather than written bare.
 _UNQUOTED_LEADERS = ("_", "#", "$", "[", "]", "'", '"', ";")
 _RESERVED_WORDS = ("data_", "loop_", "global_", "save_", "stop_")
+#: Values that ARE the unknown/inapplicable markers, and so must always be quoted to be written
+#: as data. A bare ``?`` means "unknown" and a bare ``.`` means "inapplicable"; a source that
+#: wrote ``'?'`` in quotes stated the one-character string. ``Token.quoted`` exists precisely to
+#: keep those apart on the way in, and writing the literal bare threw that distinction away —
+#: turning a value the source stated into an absence, indistinguishable from the ``?`` this
+#: exporter writes for a genuinely missing site value.
+_MARKER_VALUES = ("?", ".")
 
 
 def _fmt(x: float) -> str:
@@ -120,6 +127,7 @@ def _quote(value: str) -> str:
     needs_quote = (
         any(c.isspace() for c in value)
         or value.startswith(_UNQUOTED_LEADERS)
+        or value in _MARKER_VALUES
         or any(lowered.startswith(word) for word in _RESERVED_WORDS)
     )
     if not needs_quote:
@@ -206,6 +214,18 @@ def _column(custom_per_atom: dict[str, Any], key: str, n_atoms: int) -> list[Any
         return None
     column = list(values)
     return column if len(column) == n_atoms else None
+
+
+def _or_else(column: list[Any] | None, index: int, fallback: Any) -> Any:
+    """``column[index]`` when the source stated it there, else ``fallback``.
+
+    Per-atom rather than per-column, because the column-level ``or`` this replaced tested
+    truthiness: an all-``None`` column is a non-empty list, so it won the ``or`` and suppressed
+    the fallback for every atom.
+    """
+    if column is None or column[index] is None:
+        return fallback
+    return column[index]
 
 
 def _generated_labels(symbols: list[str]) -> list[str]:
@@ -317,10 +337,19 @@ class CifExporter(ExporterPlugin):
     ) -> list[str]:
         per_atom = canonical.user_metadata.custom_per_atom
         n = len(symbols)
-        labels = _column(per_atom, _LABEL_KEY, n) or _generated_labels(symbols)
+        # Fallbacks are applied **per atom**, not per column. `or` tests truthiness, and a column
+        # of all-`None` — a source whose _atom_site_type_symbol was `?` on every row — is a
+        # non-empty list and therefore truthy, so the column-level fallback never fired and every
+        # atom was written `?` while atoms.symbols held perfectly good elements. Each site falls
+        # back on its own, so a column that is unknown for some rows and stated for others gets
+        # the source's value where there is one and the derived value where there is not.
+        source_labels = _column(per_atom, _LABEL_KEY, n)
+        generated = _generated_labels(symbols)
+        labels = [_or_else(source_labels, i, generated[i]) for i in range(n)]
         # The raw type symbol carries the oxidation-state suffix ('Fe3+') the element alone drops,
         # so a source that spelled one gets it back; otherwise the element symbol is the type.
-        types = _column(per_atom, _TYPE_SYMBOL_KEY, n) or list(symbols)
+        source_types = _column(per_atom, _TYPE_SYMBOL_KEY, n)
+        types = [_or_else(source_types, i, symbols[i]) for i in range(n)]
         occupancies = _column(per_atom, OCCUPANCY_CUSTOM_KEY, n)
 
         tags = [

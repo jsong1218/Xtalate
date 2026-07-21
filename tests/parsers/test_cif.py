@@ -141,6 +141,71 @@ def test_single_block_file_emits_no_block_warning() -> None:
     assert not [i for i in result.issues if i.code == "CIF_ADDITIONAL_BLOCKS_NOT_READ"]
 
 
+def test_a_leading_header_block_is_skipped_for_the_one_carrying_atoms() -> None:
+    # `data_global` headers carrying only bibliography are standard in CCDC/CSD depositions, and
+    # taking blocks[0] refused the whole file with CIF_MISSING_CELL — an error naming a cause the
+    # file does not have, on a file that is complete and readable. Which block is *the structure*
+    # is a different question from n.4's principle that blocks are not frames, and n.4 is
+    # unchanged: one block is read, the rest are named.
+    data = b"data_global\n_journal_name_full 'J. Test'\n\n" + CUBIC
+    result = _parse(data)
+    assert result.canonical.frames[0].atoms.symbols == ["Na", "Cl"]
+    warnings = [i for i in result.issues if i.code == "CIF_ADDITIONAL_BLOCKS_NOT_READ"]
+    assert len(warnings) == 1
+    assert "global" in warnings[0].message
+
+
+def test_a_file_with_no_atom_site_block_still_reports_its_own_defect() -> None:
+    # The fallback matters as much as the selection: with no atom-bearing block anywhere, the
+    # parser must fail on what is actually wrong with the structure block rather than on the
+    # block choice, or the error message misdirects exactly as CIF_MISSING_CELL used to.
+    with pytest.raises(ParseError) as exc:
+        _parse(b"data_global\n_journal_name_full 'J. Test'\n")
+    assert exc.value.issues[0].code == "CIF_MISSING_CELL"
+
+
+# --- unquoted symmetry operations ------------------------------------------------------------
+
+
+def _with_symops(ops: bytes) -> bytes:
+    """A one-site cell carrying ``ops``. The site is a **general** position (0.1, 0.2, 0.3): on a
+    special position every image coincides with the source and merges, so the atom count would be
+    1 however many operations were read — and the test could not tell expansion from failure."""
+    return (
+        b"data_sym\n_cell_length_a 4.0\n_cell_length_b 4.0\n_cell_length_c 4.0\n"
+        b"_cell_angle_alpha 90.0\n_cell_angle_beta 90.0\n_cell_angle_gamma 90.0\n"
+        b"loop_\n_symmetry_equiv_pos_as_xyz\n" + ops + b"\n"
+        b"loop_\n_atom_site_label\n_atom_site_type_symbol\n"
+        b"_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n"
+        b"Na1 Na 0.1 0.2 0.3\n"
+    )
+
+
+def test_unquoted_operations_containing_spaces_are_read() -> None:
+    # `x, y, z` unquoted is three whitespace-separated tokens, so a one-column loop silently
+    # became three one-fragment rows — and the row-count check cannot catch it, because
+    # len(values) % 1 is zero for any number of values. It surfaced two stages later as
+    # "'x,' has 2 components", naming a defect the file does not have. gemmi, ASE and PyCIFRW all
+    # read this, and D65's stage-1/2 seam exists so this reader can be swapped for gemmi.
+    result = _parse(_with_symops(b"x, y, z\n-x, -y, -z"))
+    assert len(result.canonical.frames[0].atoms.symbols) == 2  # 1 general site x 2 operations
+    assert result.canonical.simulation is not None
+
+
+def test_quoted_operations_are_unaffected_by_the_repair() -> None:
+    result = _parse(_with_symops(b"'x, y, z'\n'-x, -y, -z'"))
+    assert len(result.canonical.frames[0].atoms.symbols) == 2
+
+
+def test_a_genuinely_malformed_operation_still_reports_its_own_error() -> None:
+    # The repair joins fragments only where every value becomes a complete triplet. A real defect
+    # must not be mangled into its neighbour and reported as something else — which is the failure
+    # mode being fixed, and it would be perverse to reintroduce it from the other direction.
+    with pytest.raises(ParseError) as exc:
+        _parse(_with_symops(b"'x, y'\n'-x, -y, -z'"))
+    assert exc.value.issues[0].code == "CIF_MALFORMED_SYMOP"
+
+
 # --- symmetry refusals (D66) ---------------------------------------------------------------
 
 
