@@ -67,6 +67,16 @@ WILDCARD_PREFIXES: frozenset[str] = frozenset(_CATEGORY_MODELS) | {"frame"}
 #: re-derivation of the invariant must not import the value it checks against.)
 DERIVED_PATHS: frozenset[str] = frozenset({"atoms.atomic_numbers"})
 
+#: The ``user_metadata.custom_per_atom`` key holding fractional site occupancy — the Canonical
+#: Model's one *named* gap (Part 3 §3 n.11) and a standing promotion candidate under the
+#: schema-evolution path of Part 2 §6 rule 4. It lives here, with the path authority, rather than
+#: in the CIF parser that currently writes it, for two reasons: the layers that must *recognise*
+#: occupancy without knowing anything about CIF — the pre-flight diff, which warns that no target
+#: can represent partial occupancy — cannot import a parser without inverting the import graph;
+#: and when the promotion happens, the key being migrated *from* is a schema fact, so the
+#: migration is written where the schema is.
+OCCUPANCY_CUSTOM_KEY = "cif:occupancy"
+
 
 def is_valid_path(path: str) -> bool:
     """True if ``path`` is a concrete canonical field path (no wildcard)."""

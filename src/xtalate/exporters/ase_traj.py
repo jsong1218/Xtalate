@@ -110,9 +110,11 @@ class AseTrajExporter(ExporterPlugin):
             )
         self._apply_constraints(atoms, frame)
 
-        # Object-level per-atom carry-through columns apply to every frame (Part 2 §3.10).
-        for key, values in custom_per_atom.items():
-            atoms.new_array(_strip(key), np.asarray(values))
+        # Object-level per-atom carry-through columns are *not* written: the ULM trajectory writer
+        # discards every custom array regardless of name, so setting them here would produce an
+        # object whose arrays silently vanish on the way to disk (D69). Declared NONE, reported
+        # `removed`, and not set at all — so the code says the same thing the capability does.
+        _ = custom_per_atom
 
         # Per-frame comment key-values (+ stress) for this frame.
         stress = None
@@ -186,7 +188,11 @@ class AseTrajExporter(ExporterPlugin):
                     level=partial, notes="Written as the initial_magmoms array."
                 ),
                 "user_metadata.custom_per_atom": FieldCapability(
-                    level=CapabilityLevel.FULL, notes="Written back as per-atom arrays."
+                    level=CapabilityLevel.NONE,
+                    notes="ASE's .traj writer persists no custom per-atom array — not under a "
+                    "format-scoped name, not under a plain one — so a carry-through column cannot "
+                    "be written at all. Per-frame metadata (atoms.info) is unaffected "
+                    "(DECISIONS.md D69).",
                 ),
                 "user_metadata.custom_per_frame": FieldCapability(
                     level=CapabilityLevel.FULL, notes="Written back as atoms.info key-values."

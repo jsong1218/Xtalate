@@ -31,6 +31,7 @@ from tests._invariants import (
     stoichiometry,
     volume_from_parameters,
 )
+from xtalate.exporters.cif import make_cif_exporter
 from xtalate.parsers.cif import make_cif_parser
 from xtalate.schema import CanonicalObject
 
@@ -182,6 +183,70 @@ def test_no_two_atoms_occupy_the_same_place(anchor: Anchor) -> None:
     shortest = minimum_interatomic_distance(frame.atoms.positions, lattice)
     assert shortest > 0.5, f"atoms {shortest:.4f} Å apart — a special-position merge did not fire"
     assert shortest == pytest.approx(anchor.minimum_distance, abs=1e-3)
+
+
+# --- the export side, against the same external anchors (M19, D68) ---------------------------
+
+
+def _export_reparse(anchor: Anchor) -> CanonicalObject:
+    """Write the parsed structure back out as CIF and read it in again."""
+    buf = io.BytesIO()
+    make_cif_exporter().export(_parse(anchor), buf)
+    return make_cif_parser().parse(io.BytesIO(buf.getvalue()), filename="exported.cif").canonical
+
+
+@pytest.mark.parametrize("anchor", ANCHORS, ids=IDS)
+def test_the_exported_file_still_describes_the_published_crystal(anchor: Anchor) -> None:
+    """The export policy's real claim, checked the same way the parse side is: against numbers
+    published before this code existed, not against what the exporter happened to emit.
+
+    This is the assertion D68 has to earn. Xtalate writes the identity operation and every atom
+    explicitly, emitting no space-group symbol — so the *symmetry* is gone from the file while the
+    *structure* must be entirely intact. Rock salt has to come back as 8 atoms, Z = 4, with the
+    nearest Na–Cl still at a/2 = 2.8201 Å. An exporter that wrote only the asymmetric unit while
+    dropping the symbol would produce a file that parses cleanly and describes a different, sparser
+    crystal; that is precisely the failure a golden byte-comparison cannot see and Z can.
+    """
+    frame = _export_reparse(anchor).frames[0]
+    symbols = frame.atoms.symbols
+
+    assert len(symbols) == anchor.atom_count
+    assert formula_unit_multiple(symbols, anchor.formula_unit) == anchor.z
+    assert stoichiometry(symbols) == {
+        element: count * anchor.z for element, count in anchor.formula_unit.items()
+    }
+
+    # Geometry, not just counts: the right atoms in the right places, re-derived through the
+    # minimum-image convention rather than compared coordinate-by-coordinate.
+    cell = frame.cell
+    assert cell is not None and cell.lattice_vectors is not None
+    shortest = minimum_interatomic_distance(frame.atoms.positions, cell.lattice_vectors)
+    assert shortest == pytest.approx(anchor.minimum_distance, abs=1e-3)
+
+    # And the cell the file declares is the cell the source declared, re-derived from the volume
+    # so a transposed lattice on the write side cannot hide behind intact individual parameters.
+    assert cell_volume(cell.lattice_vectors) == pytest.approx(
+        volume_from_parameters(*anchor.parameters), rel=1e-9
+    )
+
+
+@pytest.mark.parametrize("anchor", ANCHORS, ids=IDS)
+def test_the_exported_file_declares_no_symmetry_beyond_the_identity(anchor: Anchor) -> None:
+    """The other half of D68: the structure survives *because* the symmetry was discharged into
+    explicit atoms, so the output must not also claim a space group. A file that carried both the
+    expanded atom list and the original symbol would be doubly wrong — re-expanding it multiplies
+    the cell — and the previous test alone would not catch it, since the atoms are correct.
+    """
+    text = io.BytesIO()
+    make_cif_exporter().export(_parse(anchor), text)
+    written = text.getvalue().decode()
+
+    assert "_space_group_name_H-M_alt" not in written
+    assert "_symmetry_space_group_name_H-M" not in written
+    assert "x, y, z" in written  # the identity operation is written explicitly
+
+    reparsed = _export_reparse(anchor).frames[0].cell
+    assert reparsed is not None and reparsed.space_group is None
 
 
 # --- the assertions have teeth (the milestone's "done means") --------------------------------

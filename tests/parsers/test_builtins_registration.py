@@ -37,8 +37,9 @@ def test_builtins_register_without_error() -> None:
         "ase_traj",
         "cif",
     }
-    # CIF is read-only until M19 adds the exporter — the asymmetry is the point of the
-    # separate assertion, not an oversight.
+    # Symmetric since M19 slice 3: every format Xtalate reads it can also write. The two
+    # assertions stay separate because that symmetry is a fact about the current format set, not
+    # a property of the registry — a read-only format is legitimate and was the case until now.
     assert {e.format_id for e in reg.exporters()} == {
         "xyz",
         "extxyz",
@@ -46,6 +47,7 @@ def test_builtins_register_without_error() -> None:
         "contcar",
         "xdatcar",
         "ase_traj",
+        "cif",
     }
 
 

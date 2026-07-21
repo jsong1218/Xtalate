@@ -9,10 +9,11 @@ declared here is all a parser/exporter author needs.
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class CapabilityLevel(StrEnum):
@@ -65,6 +66,15 @@ class FormatCapabilities(BaseModel):
     # per frame, so a foreign per-frame key (e.g. an extXYZ `config_type`) is honestly dropped.
     # Empty = no per-key restriction; the container's `fields` level governs every key uniformly.
     writable_custom_keys: dict[str, list[str]] = Field(default_factory=dict)
+    # The same restriction expressed as a *name pattern*, for a container whose writable set is
+    # open-ended but whose spelling the format constrains (write side; DECISIONS.md D69). Keyed by
+    # container path, valued by a regex the key must ``fullmatch`` to be written; a key that fails
+    # to match is `removed` exactly as an unlisted key is. extXYZ declares
+    # `{"user_metadata.custom_per_atom": r"extxyz:[^:]*"}` — it writes arbitrary columns, so the set
+    # cannot be enumerated, but the `Properties=` grammar separates fields with `:` and its parser
+    # re-prefixes what it reads, so `extxyz:<name>` is exactly the set that survives write → read
+    # under its own name. A container declares a list or a pattern, never both.
+    writable_custom_key_pattern: dict[str, str] = Field(default_factory=dict)
     native_coordinate_system: Literal["cartesian", "fractional", "both"]
     lossy_notes: list[str] = Field(default_factory=list)  # Format-level caveats -> Warnings.
     # Declared decimal precision per canonical field path (write side) — the machine-readable
@@ -76,3 +86,23 @@ class FormatCapabilities(BaseModel):
     # frozen declaration (DECISIONS.md D24); exporters that don't declare it validate at full
     # precision, which is the honest default for the v0.1 formats.
     numeric_precision: dict[str, int | None] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_custom_key_patterns(self) -> FormatCapabilities:
+        """A declared pattern must compile, and must not compete with a list for the same container
+        (D69). Both are caught at registration rather than at conversion time: a capability
+        declaration is data a plugin author writes once, and a broken one should fail loudly when
+        the plugin registers, not silently mis-route a key on some later user's conversion."""
+        for container, pattern in self.writable_custom_key_pattern.items():
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(
+                    f"writable_custom_key_pattern[{container!r}] is not a valid regex: {exc}"
+                ) from exc
+            if container in self.writable_custom_keys:
+                raise ValueError(
+                    f"{container!r} declares both writable_custom_keys and "
+                    "writable_custom_key_pattern; a container uses one or the other (D69)"
+                )
+        return self

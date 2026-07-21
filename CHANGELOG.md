@@ -62,6 +62,66 @@ The start of **v0.4**.
   operation list is kept as a test that these have teeth — and it demonstrates why the assertion
   is Z rather than a formula, since the truncated cell is still exactly TiO₂ by element *ratio*
   while holding half the atoms the crystal has.
+- **Occupancy under its spec-named key, and declared formal charges (M19).** `_atom_site_occupancy`
+  is read into `user_metadata.custom_per_atom["cif:occupancy"]`, and a file holding any site below
+  full occupancy says so in `parse_notes` — an occupancy the Canonical Model has no first-class
+  field for is still a physical claim, not an annotation. Unknown occupancy (`?`/`.`) counts as
+  partial: silence is not a claim of full occupancy (**P4**). Formal charges declared in the type
+  symbol (`Fe3+`) are read into `electronic.charges` while the raw symbol stays carried per-atom,
+  so the laundering that makes `Fe3+` an `Fe` atom loses nothing.
+- **Partial occupancy is warned about in the Conversion Report, for every target (M19).** Dropping
+  an occupancy column is not an ordinary annotation loss: a site written without an occupancy reads
+  as *fully occupied*, so the output asserts a structure the source never described. The `removed`
+  entry says the column was not carried; it does not say the physical claim changed — now both are
+  reported (**P5**). The gate is a capability declaration rather than a format list: a target
+  suppresses the warning by **naming** `cif:occupancy` in `writable_custom_keys`. A generic
+  per-atom passthrough does not qualify, since it carries the numbers as an unlabelled column
+  nothing downstream reads as occupancy.
+- **CIF exporter — the write side, in `P 1` with every atom explicit (M19, D68).** Cell parameters
+  from the canonical lattice vectors, `_atom_site` rows in fractional coordinates, and the block
+  tags the parser carried through written back to the tags they came from. `max_frames = 1`, so a
+  trajectory reaches it only after the Conversion Engine has recorded the reduction as an
+  Assumption. The Canonical Object holds the *expanded* cell (D67), so the only symmetry true of
+  the coordinates being written is the identity, and the file states exactly that: a one-entry
+  symop loop and **no space-group symbol at all**. A source `cell.space_group` is declared `NONE`
+  and reported `removed`. Writing `P 1` alongside the loop was tried and rejected — re-parsing
+  recovered a value the report had called absent, and a symbol Xtalate supplies makes the output
+  assert what no input stated. CIF is also the first target to *represent* occupancy, so the
+  warning above is suppressed for CIF targets with no edit to the pre-flight diff (**P6**).
+- **CIF is enrolled in the round-trip matrix, and the export side is externally anchored (M19).**
+  The `P 1` hexagonal case joins the golden sources — the one fixture whose native coordinates are
+  fractional against a non-orthogonal cell (γ = 120°), so every hop out of it exercises the
+  fractional → Cartesian boundary against a lattice where a sign or transpose error cannot hide.
+  The exported files are checked against the same published numbers the parse side uses: rock salt
+  must come back as 8 atoms, Z = 4, nearest Na–Cl at 2.8201 Å. The CIF identity round-trip is
+  deliberately lossy by exactly one field (the space-group symbol, per D68), and that set is
+  **derived from the Capability Matrix** rather than hand-listed, so a future change that dropped
+  something else — or stopped declaring the drop — fails.
+
+### Fixed
+
+- **extXYZ and ASE `.traj` over-declared what they can write to `user_metadata.custom_per_atom`,
+  and a format may now declare its writable custom keys as a *name pattern* (D69).** Enrolling CIF
+  in the round-trip matrix made it the first golden source carrying per-atom carry-through columns,
+  which surfaced two latent over-declarations no previous format combination could reach.
+  - **extXYZ was producing unparseable output, not merely lossy output.** The `Properties=` grammar
+    separates its fields with `:`, so a format-scoped key such as `cif:occupancy` was written as
+    `...:cif:occupancy:R:1` and the resulting file did not parse at all — while the Conversion
+    Report claimed the column preserved. The container is now `PARTIAL`, and the writable set is
+    declared as the pattern `extxyz:<name>`: extXYZ writes arbitrary columns, so the set cannot be
+    enumerated, but its parser re-prefixes every column it reads, making `extxyz:<name>` exactly
+    the set that survives write → read under its own name. Keys outside it are reported `removed`
+    in pre-flight, and the exporter guards the same pattern for direct (non-engine) calls.
+  - **ASE `.traj` persists no custom per-atom array under any name**, so it gets no pattern — the
+    container is declared `NONE`, reported `removed`, and no longer set on the `Atoms` object at
+    all, so the code says the same thing the capability does. Per-frame metadata (`atoms.info`) is
+    unaffected.
+  - **New capability field `writable_custom_key_pattern`** (`{container_path: regex}`), applied by
+    the pre-flight in the same place and the same way as `writable_custom_keys`. A container
+    declares a list or a pattern, never both; a pattern that does not compile, or that competes
+    with a list, is rejected when the plugin *registers* rather than on some later user's
+    conversion. The Capability Matrix stays static, inspectable data — consulting the exporter at
+    pre-flight time was considered and rejected on exactly that ground.
 
 ### Changed
 

@@ -55,6 +55,12 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     # M14: the rich CO trajectory enrols ase_traj as a source — the one fixture that flows
     # velocities + forces + a fixed_atoms constraint together through the whole matrix (P6).
     "ase_traj": ("ase_traj/co-relax-3frame", "relax.traj"),
+    # M19: the P 1 hexagonal anchor enrols cif as a source — the one fixture whose *native*
+    # coordinates are fractional against a non-orthogonal cell (gamma = 120), so every hop out of
+    # it exercises the fractional→Cartesian boundary against a lattice where a sign or transpose
+    # error cannot hide. It is also the only source carrying site occupancy, which is how the
+    # partial-occupancy pre-flight warning (M19 slice 2) gets exercised across the whole matrix.
+    "cif": ("cif/zno-hexagonal-p1", "zno_hexagonal.cif"),
 }
 
 # Capability paths that are never round-trip content: provenance records *how* a file was read

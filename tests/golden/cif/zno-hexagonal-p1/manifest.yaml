@@ -4,7 +4,7 @@ source_file: zno_hexagonal.cif
 expected_canonical: expected.canonical.json
 canonical_schema_version: "0.1.0"
 sha256: "5ff3af8b5e05f8c15ce2f97d6145027b12e78570ad9081a0af7ee0864d6cbc74"
-expected_sha256: "bd169c4f5b40755d24d7393ab258665851147c03304c27590cfc16f357ffbaf1"
+expected_sha256: "450bb477dc7dff9f026c1141f43a21da9f963f30f3dce8319f91d22f10500152"
 origin:
   kind: synthetic
   source: "Hand-written for M17; hexagonal P 1 cell chosen so fractional→Cartesian is exact by hand"

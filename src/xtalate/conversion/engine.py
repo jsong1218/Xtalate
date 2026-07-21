@@ -41,6 +41,7 @@ from xtalate.conversion.preflight import (
     build_preflight,
     build_preflight_from_presence,
     on_demand_fabricative_scenarios,
+    partial_occupancy_count,
 )
 from xtalate.conversion.report import (
     Assumption,
@@ -557,6 +558,9 @@ class ConversionEngine:
             presence,
             frame_count=counters["frames"],
             has_constraints=False,  # constraint targets are ineligible; no frame carries a subset
+            # Occupancy is a header-level per-atom array, so the streamed path has it in hand
+            # before the first frame — same scalar the materialized path computes (rule 3).
+            partial_occupancy=partial_occupancy_count(header.custom_per_atom),
             matrix=matrix,
             target_format_id=target_format_id,
         )
@@ -726,6 +730,9 @@ class ConversionEngine:
             presence,
             frame_count=n,
             has_constraints=False,  # guaranteed by the constraint-absence guard just above
+            # Per-atom, so frame selection does not change it: the retained frame carries the same
+            # occupancies as the whole trajectory did.
+            partial_occupancy=partial_occupancy_count(header.custom_per_atom),
             matrix=matrix,
             target_format_id=target_format_id,
         )

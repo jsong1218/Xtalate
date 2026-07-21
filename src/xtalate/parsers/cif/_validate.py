@@ -38,6 +38,9 @@ FRACT_TAGS = ("_atom_site_fract_x", "_atom_site_fract_y", "_atom_site_fract_z")
 CARTN_TAGS = ("_atom_site_cartn_x", "_atom_site_cartn_y", "_atom_site_cartn_z")
 TYPE_SYMBOL_TAG = "_atom_site_type_symbol"
 LABEL_TAG = "_atom_site_label"
+OCCUPANCY_TAG = "_atom_site_occupancy"
+ATOM_TYPE_SYMBOL_TAG = "_atom_type_symbol"
+OXIDATION_NUMBER_TAG = "_atom_type_oxidation_number"
 
 # A standard uncertainty in parentheses — "5.4310(2)" — is CIF's way of writing a value with its
 # estimated error. The value is the number; the parenthesized digits are precision on the last
@@ -215,6 +218,49 @@ def validate_atom_sites(block: CifBlock) -> tuple[CifLoop, tuple[str, str, str],
             location=f"line {loop.line}",
         )
     return loop, (FRACT_TAGS if fractional else CARTN_TAGS), fractional
+
+
+def validate_oxidation_numbers(block: CifBlock) -> dict[str, float]:
+    """Declared formal oxidation states, keyed by the ``_atom_type_symbol`` they belong to.
+
+    CIF states formal charge in a separate ``_atom_type`` loop rather than on the site, so the
+    join key is the type symbol (``Fe3+``) the ``_atom_site`` rows also carry. An oxidation loop
+    with no symbol column has nothing to join on and is refused rather than positionally guessed
+    against the atom sites — the two loops are independent tables, and a file listing three atom
+    types for a two-element structure would silently mis-assign every charge.
+
+    Returns an empty mapping when the file declares no oxidation numbers, which is absence, not
+    zero charge (**P3**): stage 4 leaves ``electronic.charges`` unset rather than filling it.
+    """
+    loop = block.find_loop(OXIDATION_NUMBER_TAG)
+    if loop is None:
+        return {}
+    symbols = loop.column(ATOM_TYPE_SYMBOL_TAG)
+    if symbols is None:
+        raise _issue(
+            "CIF_UNJOINABLE_OXIDATION_NUMBERS",
+            f"the loop carrying {OXIDATION_NUMBER_TAG} has no {ATOM_TYPE_SYMBOL_TAG} column, so "
+            "the declared charges cannot be attached to the atom sites they describe; matching "
+            "them by row order would assign charges the file never paired",
+            location=f"line {loop.line}",
+        )
+    numbers = loop.column(OXIDATION_NUMBER_TAG)
+    assert numbers is not None  # the tag the loop was found by
+    declared: dict[str, float] = {}
+    for symbol, number in zip(symbols, numbers, strict=True):
+        if symbol is None or number is None:
+            continue  # '?' / '.' is absence on one row, not a defect in the loop (P3)
+        key = symbol.strip()
+        value = parse_number(number, tag=OXIDATION_NUMBER_TAG, line=loop.line)
+        if key in declared and declared[key] != value:
+            raise _issue(
+                "CIF_CONFLICTING_OXIDATION_NUMBERS",
+                f"atom type {key!r} is declared with two different oxidation numbers "
+                f"({declared[key]} and {value}); the file states no way to choose between them",
+                location=f"line {loop.line}",
+            )
+        declared[key] = value
+    return declared
 
 
 def _require(block: CifBlock, tag: str) -> str:
