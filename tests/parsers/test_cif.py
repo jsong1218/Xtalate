@@ -436,6 +436,12 @@ def test_quoted_question_mark_is_a_literal_value() -> None:
             "CIF_MALFORMED_NUMBER",
         ),
         (lambda d: d.replace(b"_cell_length_a 4.0", b"_cell_length_a -4.0"), "CIF_INVALID_CELL"),
+        # float() accepts "nan" and "inf", and NaN then defeats every ordinary range guard
+        # downstream (`value <= 0.0` is False for NaN), so these used to escape the ParseError
+        # contract entirely and surface as a pydantic ValidationError traceback out of the CLI.
+        (lambda d: d.replace(b"_cell_length_a 4.0", b"_cell_length_a nan"), "CIF_MALFORMED_NUMBER"),
+        (lambda d: d.replace(b"_cell_length_a 4.0", b"_cell_length_a inf"), "CIF_MALFORMED_NUMBER"),
+        (lambda d: d.replace(b"0.5 0.5 0.5", b"0.5 0.5 nan"), "CIF_MALFORMED_NUMBER"),
         (
             lambda d: d.replace(b"_cell_angle_alpha 90.0", b"_cell_angle_alpha 180.0"),
             "CIF_INVALID_CELL",
@@ -460,6 +466,16 @@ def test_error_fixtures_raise_structured_parse_errors(
         _parse(mutation(CUBIC))
     assert exc.value.issues[0].code == code
     assert exc.value.issues[0].severity == "error"
+
+
+def test_a_non_finite_value_never_escapes_the_parse_error_contract() -> None:
+    # The contract, not just the code: whatever this parser rejects, it rejects *as* a ParseError.
+    # A NaN cell length used to reach AtomsBlock construction and raise pydantic's ValidationError,
+    # which is not a ParseError — so the CLI printed a stack trace and exited 1 where a structured
+    # parse error exits 4. Asserting the type is what pins that; asserting the code is not enough.
+    for value in (b"nan", b"inf", b"-inf", b"NaN", b"Infinity"):
+        with pytest.raises(ParseError):
+            _parse(CUBIC.replace(b"_cell_length_a 4.0", b"_cell_length_a " + value))
 
 
 def test_unterminated_text_field_is_a_syntax_error() -> None:

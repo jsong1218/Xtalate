@@ -55,6 +55,44 @@ _WRITABLE_PER_ATOM = [_LABEL_KEY, _TYPE_SYMBOL_KEY, OCCUPANCY_CUSTOM_KEY]
 #: for what ``electronic.charges`` holds, not a tag any CIF dictionary defines.
 _UNWRITABLE_EXTRA_KEYS = frozenset({"cif:symmetry_operations", "cif:charge_scheme"})
 
+#: Tags that **identify a space group**, and therefore must not be written above the expanded
+#: full-cell atom list, for exactly the reason D68 withholds the Hermann-Mauguin symbol (D72).
+#:
+#: The parser already keeps the four *name* spellings out of ``simulation.extra``
+#: (``_validate.SPACE_GROUP_NAME_TAGS``), but a space group is equally identified by its
+#: International Tables *number* — ``_space_group_IT_number 225`` is ``Fm-3m`` as surely as the
+#: symbol is — and databases mint their own symbol spellings (COD writes
+#: ``_cod_original_sg_symbol_H-M``). Those reached ``simulation.extra`` and were written back, so
+#: the output asserted a 192-operation group above an already-expanded cell carrying only the
+#: identity: the silent re-expansion D66/D67/D68 exist to prevent, emitted by our own writer, while
+#: the report claimed ``cell.space_group`` had been removed.
+#:
+#: The criterion is *identification*, not mention: a tag from which a reader can recover the
+#: operation set is held back. A tag naming only the **crystal system** or **cell setting**
+#: (``_space_group_crystal_system``, ``_symmetry_cell_setting``) is not — it says the cell is
+#: cubic, which stays true of the written cell, and no operations follow from it.
+#:
+#: Both an exact set and a marker scan, because neither alone is right: the set is the predictable,
+#: inspectable statement of what we hold back, and the markers catch the vendor-prefixed variants
+#: that a fixed list silently misses — which is the bug being fixed here.
+_SPACE_GROUP_ID_TAGS = frozenset(
+    {
+        "space_group_it_number",
+        "symmetry_int_tables_number",
+        "space_group_name_h-m_alt",
+        "symmetry_space_group_name_h-m",
+        "space_group_name_hall",
+        "symmetry_space_group_name_hall",
+    }
+)
+_SPACE_GROUP_ID_MARKERS = ("sg_symbol", "space_group_name", "int_tables_number", "it_number")
+
+
+def _identifies_space_group(tag: str) -> bool:
+    """Whether a bare CIF tag name (no leading underscore, lowercased) pins a space group."""
+    return tag in _SPACE_GROUP_ID_TAGS or any(m in tag for m in _SPACE_GROUP_ID_MARKERS)
+
+
 _EXTRA_PREFIX = "cif:"
 
 # Characters that force a CIF value to be quoted rather than written bare.
@@ -93,14 +131,42 @@ def _quote(value: str) -> str:
     return f"\n;{value}\n;"
 
 
+#: The exact cell angles, and the tolerance within which a computed angle is recognised as one.
+#:
+#: This is the inverse of the parser's ``_EXACT_COS_SIN_DEG`` table, and it has to exist for that
+#: table to be worth anything (D73). The parser builds a 120° cell from cos = −0.5 exactly, but the
+#: return trip goes through ``acos`` of a dot product over vector norms, and ``sqrt(3)/2`` squared
+#: is not ``0.75`` — so the angle comes back 120.000000000000014, misses the parser's table on the
+#: next read, and hop 2 gets a lattice with a spurious tilt. CIF→CIF was therefore not idempotent
+#: for any hexagonal, trigonal or rhombohedral cell: exactly the angles the parser's table was
+#: written to protect.
+#:
+#: 1e-9° is roughly five orders of magnitude below the precision CIF states angles to (1e-4°) and
+#: five above the ~1e-14° error being absorbed, so it cannot reach a value a source really meant.
+_EXACT_ANGLES_DEG = (30.0, 60.0, 90.0, 120.0, 150.0)
+_ANGLE_SNAP_TOLERANCE_DEG = 1e-9
+
+
+def _snap_exact_angle(degrees: float) -> float:
+    """A computed cell angle, snapped to the exact crystallographic value it is reproducing."""
+    for exact in _EXACT_ANGLES_DEG:
+        if abs(degrees - exact) <= _ANGLE_SNAP_TOLERANCE_DEG:
+            return exact
+    return degrees
+
+
 def cell_parameters(lattice: np.ndarray) -> tuple[tuple[float, float, float], tuple[float, ...]]:
     """Lattice vectors (rows a, b, c, Å) → ``((a, b, c), (alpha, beta, gamma))`` in Å and degrees.
 
-    The exact inverse of the parser's ``lattice_from_parameters``, and the reason the round-trip
-    holds regardless of orientation: lengths and angles are rotation-invariant, so a cell that was
-    re-oriented on the way in (or arrived from a format that states vectors directly) comes back
-    out with the parameters it always had. ``alpha`` is the angle between **b** and **c**, per the
-    crystallographic convention that each angle is opposite its like-named axis.
+    The inverse of the parser's ``lattice_from_parameters``, including its exact-angle table (see
+    ``_EXACT_ANGLES_DEG``), and the reason the round-trip holds regardless of orientation: lengths
+    and angles are rotation-invariant, so a cell that was re-oriented on the way in (or arrived
+    from a format that states vectors directly) comes back out with the parameters it always had.
+    ``alpha`` is the angle between **b** and **c**, per the crystallographic convention that each
+    angle is opposite its like-named axis.
+
+    The two halves live in different layers (``parsers.cif._build`` and here) and so cannot share
+    the table today; ``tests/exporters/test_cif.py`` pins them as mutual inverses meanwhile.
     """
     a, b, c = (np.asarray(row, dtype=float) for row in lattice)
     lengths = tuple(float(np.linalg.norm(v)) for v in (a, b, c))
@@ -109,7 +175,7 @@ def cell_parameters(lattice: np.ndarray) -> tuple[tuple[float, float, float], tu
         # Clamped because a floating-point dot product of near-parallel vectors can leave the
         # cosine a few ulp outside [-1, 1], where acos is a domain error rather than 0° or 180°.
         cosine = float(np.dot(u, v)) / (lu * lv)
-        return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+        return _snap_exact_angle(math.degrees(math.acos(max(-1.0, min(1.0, cosine)))))
 
     angles = (
         angle(b, c, lengths[1], lengths[2]),
@@ -240,7 +306,10 @@ class CifExporter(ExporterPlugin):
         for key, value in canonical.simulation.extra.items():
             if not key.startswith(_EXTRA_PREFIX) or key in _UNWRITABLE_EXTRA_KEYS:
                 continue
-            lines.append(f"_{key[len(_EXTRA_PREFIX) :]}  {_quote(str(value))}")
+            tag = key[len(_EXTRA_PREFIX) :]
+            if _identifies_space_group(tag):
+                continue
+            lines.append(f"_{tag}  {_quote(str(value))}")
         return [*lines, ""] if lines else []
 
     def _atom_site_loop(
@@ -323,8 +392,12 @@ class CifExporter(ExporterPlugin):
                 "simulation.extra": FieldCapability(
                     level=CapabilityLevel.PARTIAL,
                     notes="Keys prefixed 'cif:' are written back as the block-level tags they came "
-                    "from; other keys have no CIF tag spelling and are dropped. The declared "
-                    "symmetry operations are held back deliberately (DECISIONS.md D68).",
+                    "from; other keys have no CIF tag spelling and are dropped. Two families are "
+                    "held back deliberately: the declared symmetry operations, and any tag that "
+                    "identifies a space group — its International Tables number or a database's "
+                    "own symbol spelling — because the written atom list is the expanded full "
+                    "cell and a reader honouring either would expand it a second time "
+                    "(DECISIONS.md D68, D72). A tag naming only the crystal system is kept.",
                 ),
                 "user_metadata.custom_global": FieldCapability(
                     level=CapabilityLevel.PARTIAL,

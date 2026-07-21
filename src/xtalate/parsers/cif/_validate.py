@@ -15,6 +15,7 @@ Recovery Workflow (D66). Such a file is never silently reduced to its asymmetric
 
 from __future__ import annotations
 
+import math
 import re
 
 from xtalate.parsers.cif._document import CifBlock, CifDocument, CifLoop
@@ -55,19 +56,34 @@ def _issue(code: str, message: str, *, location: str | None = None) -> ParseErro
 
 
 def parse_number(raw: str, *, tag: str, line: int) -> float:
-    """A CIF numeric value as a float, tolerating a standard uncertainty suffix."""
+    """A CIF numeric value as a float, tolerating a standard uncertainty suffix.
+
+    Non-finite values are rejected here rather than left to the Canonical Model. ``float()``
+    accepts ``"nan"`` and ``"inf"``, and NaN then defeats every ordinary range guard downstream
+    (``value <= 0.0`` is ``False`` for NaN), so the failure surfaced two stages later out of
+    ``AtomsBlock`` construction as a raw ``pydantic.ValidationError`` — outside the ``ParseError``
+    contract this parser owes its callers, and a stack trace rather than a structured error in the
+    CLI. A CIF numeric field has no meaningful non-finite value, so this is a malformed number.
+    """
     text = raw.strip()
     match = _UNCERTAINTY.match(text)
     if match:
         text = match.group(1)
     try:
-        return float(text)
+        value = float(text)
     except ValueError as exc:
         raise _issue(
             "CIF_MALFORMED_NUMBER",
             f"{tag} is not a number: {raw!r}",
             location=f"line {line}",
         ) from exc
+    if not math.isfinite(value):
+        raise _issue(
+            "CIF_MALFORMED_NUMBER",
+            f"{tag} is not a finite number: {raw!r}",
+            location=f"line {line}",
+        )
+    return value
 
 
 def has_uncertainty(raw: str) -> bool:

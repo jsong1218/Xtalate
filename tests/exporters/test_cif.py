@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import math
+import pathlib
 
 import numpy as np
 import pytest
@@ -134,6 +135,54 @@ def test_declared_symmetry_operations_are_not_written_back() -> None:
     assert "-x, -y, -z" not in text
 
 
+# --------------------------------------------------------------------------------------------
+# D72 — the space group is not re-asserted through a carried tag either
+# --------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "space_group_it_number",
+        "symmetry_int_tables_number",
+        "cod_original_sg_symbol_h-m",
+        "space_group_name_h-m_alt",
+    ],
+)
+def test_a_carried_tag_identifying_a_space_group_is_not_written_back(tag: str) -> None:
+    # D68 withholds the H-M symbol so the written file cannot claim a setting its expanded
+    # coordinates no longer encode. A space group is identified just as completely by its
+    # International Tables *number* — 225 is Fm-3m — or by a database's own symbol spelling, and
+    # those rode through simulation.extra and were written back, restoring the exact assertion
+    # D68 removed. A reader honouring one expands an already-expanded cell.
+    text = _write(_object(extra={f"cif:{tag}": "225"}))
+    assert f"_{tag}" not in text
+
+
+def test_a_carried_tag_naming_only_the_crystal_system_is_kept() -> None:
+    # The counter-case, so the suppression is a rule and not a blanket. 'cubic' describes the
+    # cell, which the written file reproduces unchanged, and no operation set follows from it —
+    # so withholding it would be dropping a true statement, which is its own kind of dishonesty.
+    text = _write(_object(extra={"cif:symmetry_cell_setting": "cubic"}))
+    assert "_symmetry_cell_setting  cubic" in text
+
+
+def test_a_real_cod_file_round_trips_with_no_space_group_assertion() -> None:
+    # The end-to-end form, on the file that exposed this. The unit tests above pin the predicate;
+    # this pins the artifact, which is what a user actually gets. Asserted over the output bytes
+    # because every in-memory check passed while the file on disk still said 225.
+    source = pathlib.Path("tests/wild/cod/nacl-legacy-symmetry-tags/cod-1000041.cif")
+    canonical = _REGISTRY.get_parser("cif").parse(
+        io.BytesIO(source.read_bytes()), filename=source.name
+    )
+    text = _write(canonical.canonical)
+    assert "_space_group_symop_operation_xyz" in text  # the identity loop is still written
+    assert "225" not in text
+    assert "F m -3 m" not in text
+    assert "-F 4 2 3" not in text  # the Hall symbol
+    assert _reparse(text).frames[0].cell.space_group is None  # type: ignore[union-attr]
+
+
 def test_every_atom_is_listed_explicitly() -> None:
     positions = np.arange(24, dtype=float).reshape(8, 3)
     obj = _object(symbols=["Na"] * 4 + ["Cl"] * 4, positions=positions)
@@ -170,6 +219,30 @@ def test_cell_parameters_invert_the_parser_construction() -> None:
     got_lengths, got_angles = cell_parameters(lattice_from_parameters(lengths, angles))
     assert got_lengths == pytest.approx(lengths)
     assert got_angles == pytest.approx(angles)
+
+
+@pytest.mark.parametrize("gamma", [30.0, 60.0, 90.0, 120.0, 150.0])
+def test_the_standard_angles_invert_exactly_not_approximately(gamma: float) -> None:
+    # Equality, deliberately, where the test above uses approx. The parser keeps a table of exact
+    # cosines for these angles because cos(radians(90)) is 6.1e-17 and a lattice built through it
+    # carries a tilt the source never declared. That table buys nothing if the return trip hands
+    # back 120.00000000000001, which misses it on the next read — so CIF→CIF was not idempotent
+    # for any hexagonal, trigonal or rhombohedral cell (D73). approx would not have caught it.
+    _, angles = cell_parameters(lattice_from_parameters((4.0, 4.0, 6.0), (90.0, 90.0, gamma)))
+    assert angles == (90.0, 90.0, gamma)
+
+
+def test_a_hexagonal_cell_is_a_fixed_point_of_the_cif_round_trip() -> None:
+    # The artifact-level form: the exported bytes, re-read and re-exported, must not drift. This
+    # is the failure a user sees — a 120° cell that is 120.00000000000001° one hop later.
+    source = pathlib.Path("tests/golden/cif/zno-hexagonal-p1/zno_hexagonal.cif")
+    once = _write(
+        _REGISTRY.get_parser("cif")
+        .parse(io.BytesIO(source.read_bytes()), filename=source.name)
+        .canonical
+    )
+    assert "_cell_angle_gamma  120.0\n" in once
+    assert _write(_reparse(once)) == once
 
 
 def test_positions_are_written_as_fractional_coordinates() -> None:
