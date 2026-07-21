@@ -1,0 +1,32 @@
+case: nacl-legacy-symmetry-tags
+format_id: cif
+source_file: cod-1000041.cif
+sha256: "02d4f4fa315f7b97147256118acc7f9f20190d7246c3ea7209cfb8bd5d6e1fed"
+origin:
+  kind: published-dataset
+  source: "Crystallography Open Database entry 1000041 (Abrahams & Bernstein, Acta Cryst. 18, 926, 1965)"
+  url: "https://www.crystallography.net/cod/1000041.cif"
+  license: "CC0-1.0"
+expectation:
+  issue_codes:
+    - CIF_OCCUPANCY_NOT_MODELLED
+    - CIF_TAGS_CARRIED
+  stoichiometry: checked
+findings:
+  - >-
+    CIF_OCCUPANCY_NOT_MODELLED fires on a file with *no* partial occupancy: both sites state
+    an occupancy of exactly 1, and the warning's own text claims "CIF states partial site
+    occupancy". The builder keys the warning on the column's presence rather than on its
+    values, and COD writes the column on nearly every entry — so as written this warning will
+    fire on almost every real file while saying something untrue about most of them. A warning
+    that cries wolf on the common case is worse than no warning: it trains the reader to skim
+    past the one file where occupancy really is partial. Fix scheduled for M20 slice 3.
+notes: >-
+  The corpus's baseline real file, and deliberately the least exotic one: COD's canonical NaCl.
+  It exercises the legacy `_symmetry_*` tag spelling (`_symmetry_space_group_name_H-M`,
+  `_symmetry_Int_Tables_number`) side by side with the modern `_space_group_IT_number`, which
+  is how real entries actually spell symmetry — not one family or the other, but both at once
+  in the same block. Its equivalent-position loop is complete at 192 operations, expanding 2
+  declared sites to 8 atoms, so the stoichiometry oracle has real work to do: `Cl Na` x Z=4
+  must equal the 4 Na + 4 Cl that come out. Being unexotic is the point — if the ordinary case
+  is wrong, nothing built on top of it can be right.

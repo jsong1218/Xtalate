@@ -1,4 +1,11 @@
-"""Golden-corpus governance: manifest schema, integrity, and attribution aggregation.
+"""Test-corpus governance: manifest schema, integrity, and attribution aggregation.
+
+Governs **two** corpora with one set of rules (v0.4 M20, D70): the hand-verified golden corpus
+under ``tests/golden/`` and the real-world corpus under ``tests/wild/``. Sourcing, licensing,
+source-hash integrity and attribution are identical across both — a vendored third-party file
+carries the same obligations whichever suite reads it. Only the *expectation* differs, and only
+where the manifest schema says so: a golden case names an ``expected.canonical.json``, a wild
+case declares an ``expectation`` block (``tests/wild/_wild.py``).
 
 This module is the mechanized form of the sourcing/licensing/versioning policy of
 ``docs/MASTER_SPEC.md`` Part 8 §3 and the licensing decision of Part 10 §4.1 (v0.2 M11).
@@ -7,16 +14,16 @@ running it as a script (``python tests/golden/_governance.py``) regenerates
 ``tests/golden/ATTRIBUTIONS.md`` in place so a contributor can refresh attributions
 locally exactly as CI checks them.
 
-Five guarantees are enforced here, each with a *why* rooted in the mission — a golden
-corpus a stranger can extend without a maintainer in the loop, and that can never
+Five guarantees are enforced here, each with a *why* rooted in the mission — a corpus
+a stranger can extend without a maintainer in the loop, and that can never
 silently rot or lose an attribution:
 
 * **Schema.** Every ``manifest.yaml`` carries the required fields — including
-  ``origin.kind``, ``origin.license``, ``sha256``, and ``expected_sha256`` — with values in
-  the declared vocabularies. *No manifest, no license, no merge* (§3.2): a missing license is a
-  hard failure, not a warning, because redistributing an unlicensed third-party file is the
-  one corpus mistake that cannot be undone after the fact.
-* **Coverage.** *Every* data file under ``tests/golden/`` is claimed by a manifest, and a
+  ``origin.kind``, ``origin.license`` and ``sha256``, plus whichever expectation fields its
+  corpus calls for — with values in the declared vocabularies. *No manifest, no license, no
+  merge* (§3.2): a missing license is a hard failure, not a warning, because redistributing an
+  unlicensed third-party file is the one corpus mistake that cannot be undone after the fact.
+* **Coverage.** *Every* data file under a corpus root is claimed by a manifest, and a
   ``manifest.yml`` misspelling is rejected — so a source + expectation dropped in without a
   manifest cannot bypass the license / hash / schema guarantees. *No manifest, no merge*
   generalized from manifests to files (§3.2).
@@ -47,6 +54,12 @@ import yaml
 from xtalate.schema import SCHEMA_VERSION, CanonicalObject
 
 GOLDEN_ROOT = Path(__file__).parent
+# The real-world corpus (v0.4 M20, DECISIONS.md D70) lives in its own root and carries a
+# different *expectation* — a declared issue-code set rather than a hand-verified canonical
+# JSON — but the sourcing, licensing, hashing and attribution rules are the same ones, applied
+# by this same module. Two roots, one governance.
+WILD_ROOT = GOLDEN_ROOT.parent / "wild"
+ALL_ROOTS = (GOLDEN_ROOT, WILD_ROOT)
 ATTRIBUTIONS_PATH = GOLDEN_ROOT / "ATTRIBUTIONS.md"
 
 # The three admissible origins (Part 8 §3.2), in the spec's preference order.
@@ -68,6 +81,17 @@ class GoldenCase:
 
     manifest_path: Path
     data: dict[str, Any]
+    root: Path = GOLDEN_ROOT
+
+    @property
+    def is_wild(self) -> bool:
+        """Whether this case belongs to the real-world corpus (D70).
+
+        The *location* is the discriminator, not a manifest field: a directory a contributor
+        drops a file into is unambiguous and cannot be mis-declared, whereas a ``corpus:`` key
+        would need a default, and a defaulted corpus kind is exactly the kind of silent
+        assumption this project refuses everywhere else."""
+        return self.root == WILD_ROOT
 
     @property
     def directory(self) -> Path:
@@ -90,16 +114,26 @@ class GoldenCase:
 
 
 def discover_cases(root: Path = GOLDEN_ROOT) -> list[GoldenCase]:
-    """Every golden case under ``root``, one per ``manifest.yaml``, sorted by path."""
+    """Every case under ``root``, one per ``manifest.yaml``, sorted by path."""
 
     cases: list[GoldenCase] = []
+    if not root.is_dir():
+        return cases
     for manifest_path in sorted(root.rglob("manifest.yaml")):
         with manifest_path.open(encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
         if not isinstance(data, dict):
             raise ManifestError(f"{manifest_path}: manifest must be a YAML mapping")
-        cases.append(GoldenCase(manifest_path=manifest_path, data=data))
+        cases.append(GoldenCase(manifest_path=manifest_path, data=data, root=root))
     return cases
+
+
+def discover_all_cases() -> list[GoldenCase]:
+    """Every case in every corpus root — what attribution aggregation must cover.
+
+    An attribution obligation is a property of the *file*, not of which suite reads it, so
+    ``ATTRIBUTIONS.md`` renders from this and never from one root alone."""
+    return [case for root in ALL_ROOTS for case in discover_cases(root)]
 
 
 def find_misspelled_manifests(root: Path = GOLDEN_ROOT) -> list[str]:
@@ -148,7 +182,8 @@ def find_unclaimed_files(root: Path = GOLDEN_ROOT) -> list[str]:
     claimed: set[Path] = set()
     for case in discover_cases(root):
         claimed.add(case.source_path.resolve())
-        claimed.add(case.expected_path.resolve())
+        if not case.is_wild:
+            claimed.add(case.expected_path.resolve())
     return sorted(
         p.relative_to(root).as_posix()
         for p in corpus_data_files(root)
@@ -168,16 +203,13 @@ def validate_manifest_schema(case: GoldenCase) -> None:
     data = case.data
     where = case.rel_manifest
 
-    required = (
-        "case",
-        "format_id",
-        "source_file",
-        "expected_canonical",
-        "canonical_schema_version",
-        "sha256",
-        "expected_sha256",
-        "origin",
-    )
+    # Sourcing, licensing and source-integrity are corpus-independent — every admitted file
+    # obeys them. Only the *expectation* differs between the two corpora (D70).
+    required: tuple[str, ...] = ("case", "format_id", "source_file", "sha256", "origin")
+    if case.is_wild:
+        required += ("expectation",)
+    else:
+        required += ("expected_canonical", "canonical_schema_version", "expected_sha256")
     for key in required:
         if key not in data:
             raise ManifestError(f"{where}: missing required field '{key}'")
@@ -185,13 +217,14 @@ def validate_manifest_schema(case: GoldenCase) -> None:
     if not _SHA256_RE.match(str(data["sha256"])):
         raise ManifestError(f"{where}: 'sha256' must be 64 lowercase hex chars")
 
-    if not _SHA256_RE.match(str(data["expected_sha256"])):
-        raise ManifestError(f"{where}: 'expected_sha256' must be 64 lowercase hex chars")
+    if not case.is_wild:
+        if not _SHA256_RE.match(str(data["expected_sha256"])):
+            raise ManifestError(f"{where}: 'expected_sha256' must be 64 lowercase hex chars")
 
-    if not _SEMVER_RE.match(str(data["canonical_schema_version"])):
-        raise ManifestError(
-            f"{where}: 'canonical_schema_version' must be a semver string (e.g. '0.1.0')"
-        )
+        if not _SEMVER_RE.match(str(data["canonical_schema_version"])):
+            raise ManifestError(
+                f"{where}: 'canonical_schema_version' must be a semver string (e.g. '0.1.0')"
+            )
 
     origin = data["origin"]
     if not isinstance(origin, dict):
@@ -221,10 +254,19 @@ def validate_manifest_schema(case: GoldenCase) -> None:
             "(it is the obligation ATTRIBUTIONS.md aggregates)"
         )
 
+    # A public-domain dedication is still a provenance obligation: a CC0 file whose origin
+    # cannot be traced back to the database record it came from is not auditable, so the wild
+    # corpus requires the URL as well as the source (D70).
+    if case.is_wild and not str(origin.get("url", "")).strip():
+        raise ManifestError(
+            f"{where}: origin.url is required for a real-world case — a vendored third-party "
+            "file must be traceable to the record it was taken from"
+        )
+
     # The source and expectation files the manifest names must actually exist.
     if not case.source_path.is_file():
         raise ManifestError(f"{where}: source_file '{data['source_file']}' not found")
-    if not case.expected_path.is_file():
+    if not case.is_wild and not case.expected_path.is_file():
         raise ManifestError(f"{where}: expected_canonical '{data['expected_canonical']}' not found")
 
 
@@ -318,17 +360,21 @@ def check_schema_version_lag(case: GoldenCase) -> None:
 _ATTRIBUTIONS_HEADER = """\
 <!-- GENERATED FILE — do not edit by hand.
      Regenerate with: python tests/golden/_governance.py
-     Source of truth: the per-fixture tests/golden/**/manifest.yaml files.
+     Source of truth: the per-fixture manifest.yaml files under tests/golden/ and tests/wild/.
      CI regenerates this file and fails if it drifts (Part 8 §3.2; Part 10 §4.5). -->
 
-# Golden-corpus attributions
+# Test-corpus attributions
 
-Every file in the golden test corpus (`tests/golden/`) is admitted only with a license
-recorded in its `manifest.yaml` (Part 8 §3.2). This file aggregates those licenses and
-attributions so the obligations can never silently lapse. Synthetic, hand-authored
-fixtures are the project's own work under Apache-2.0; third-party data (CC0 / CC-BY /
-contributor grants) carries its source attribution here and is surfaced in the top-level
-`NOTICE` file.
+Every file in the project's two test corpora — the hand-verified golden corpus
+(`tests/golden/`) and the real-world corpus (`tests/wild/`, v0.4 M20) — is admitted only
+with a license recorded in its `manifest.yaml` (Part 8 §3.2). This file aggregates those
+licenses and attributions so the obligations can never silently lapse. Synthetic,
+hand-authored fixtures are the project's own work under Apache-2.0; third-party data
+(CC0 / CC-BY / contributor grants) carries its source attribution here and is surfaced in
+the top-level `NOTICE` file.
+
+Each entry is labelled with the corpus it belongs to, since the two carry different
+*expectations* (a canonical JSON versus a declared issue set) but the same obligations.
 """
 
 
@@ -336,9 +382,10 @@ def render_attributions(cases: list[GoldenCase]) -> str:
     """Render ``ATTRIBUTIONS.md`` from the manifests. Deterministic and byte-stable."""
 
     lines = [_ATTRIBUTIONS_HEADER]
-    for case in sorted(cases, key=lambda c: (c.data["format_id"], c.data["case"])):
+    for case in sorted(cases, key=lambda c: (c.is_wild, c.data["format_id"], c.data["case"])):
         origin = case.data["origin"]
-        lines.append(f"## `{case.data['format_id']}` / `{case.data['case']}`\n")
+        corpus = "wild" if case.is_wild else "golden"
+        lines.append(f"## `{case.data['format_id']}` / `{case.data['case']}` ({corpus})\n")
         lines.append(f"- **Source file:** `{case.data['source_file']}`")
         lines.append(f"- **Origin:** {origin['kind']}")
         lines.append(f"- **License:** {origin['license']}")
@@ -358,10 +405,10 @@ def render_attributions(cases: list[GoldenCase]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def write_attributions(root: Path = GOLDEN_ROOT) -> str:
-    """Regenerate ``ATTRIBUTIONS.md`` on disk and return the content written."""
+def write_attributions() -> str:
+    """Regenerate ``ATTRIBUTIONS.md`` on disk from *every* corpus and return what was written."""
 
-    content = render_attributions(discover_cases(root))
+    content = render_attributions(discover_all_cases())
     ATTRIBUTIONS_PATH.write_text(content, encoding="utf-8")
     return content
 

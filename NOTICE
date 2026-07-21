@@ -3,9 +3,25 @@ Copyright 2026 jsong1218 and the Xtalate contributors
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
-This NOTICE file is the attribution home required by the golden-corpus
-sourcing policy: third-party
-test data admitted under CC0 / CC-BY / contributor grants carries its
-attribution here (aggregated from per-fixture manifests into
-tests/golden/ATTRIBUTIONS.md, then surfaced in this file) once such data
-is added. No third-party data is vendored yet.
+This NOTICE file is the attribution home required by the test-corpus
+sourcing policy: third-party test data admitted under CC0 / CC-BY /
+contributor grants carries its attribution here (aggregated from
+per-fixture manifests into tests/golden/ATTRIBUTIONS.md, then surfaced in
+this file).
+
+Third-party test data vendored in this repository
+-------------------------------------------------
+
+Crystallography Open Database (COD), https://www.crystallography.net/cod/
+
+  Entries from the COD are vendored verbatim under tests/wild/cod/ as the
+  project's real-world CIF corpus. All data in the COD have been placed in
+  the public domain by their contributors; the entries here are used under
+  the CC0 1.0 Universal public-domain dedication. Each entry records its
+  COD number and source URL in its manifest.yaml, and the per-entry list
+  is generated into tests/golden/ATTRIBUTIONS.md.
+
+  CC0 imposes no attribution requirement. The entries are listed anyway,
+  because a public-domain dedication does not make provenance optional:
+  a reader must be able to trace any file in this repository back to the
+  record it came from.

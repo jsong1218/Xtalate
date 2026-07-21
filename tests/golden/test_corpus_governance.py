@@ -1,12 +1,18 @@
-"""Golden-corpus governance tests (v0.2 M11, Part 8 §3).
+"""Test-corpus governance tests (v0.2 M11, Part 8 §3; extended to the wild corpus in v0.4 M20).
 
 These are the CI teeth behind the sourcing/licensing/versioning policy: a PR that adds a
-golden case with a missing license, a wrong hash, a lagging schema version, or a stale
+case with a missing license, a wrong hash, a lagging schema version, or a stale
 ``ATTRIBUTIONS.md`` fails here with a readable message. The logic lives in
 ``tests/golden/_governance.py`` (also runnable as a script to regenerate attributions).
+
+Both corpora are governed here — ``tests/golden/`` and ``tests/wild/`` (D70). The wild corpus
+is where the teeth matter most: its files are genuinely third-party, so it is the only place a
+lapsed attribution could become a real licensing problem rather than a hypothetical one.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 
@@ -14,13 +20,25 @@ from tests.golden import _governance as gov
 
 
 def _cases() -> list[gov.GoldenCase]:
-    return gov.discover_cases()
+    """Every case in every corpus root.
+
+    Sourcing, licensing, hashing and attribution are corpus-independent (D70), so the teeth
+    bite on the wild corpus exactly as hard as on the golden one — a vendored COD file with no
+    license is no more admissible than a synthetic fixture with none. The handful of checks
+    that *are* golden-only (the canonical-JSON hash, the migration-chain load) filter to
+    ``not case.is_wild`` at their own parametrization rather than here."""
+    return gov.discover_all_cases()
+
+
+def _golden_cases() -> list[gov.GoldenCase]:
+    """Cases whose expectation is a hand-verified ``expected.canonical.json``."""
+    return [case for case in gov.discover_all_cases() if not case.is_wild]
 
 
 def test_corpus_is_non_empty() -> None:
     # A vacuously-passing governance suite (no manifests discovered) would be worse than
     # no suite at all — it would advertise a guarantee it does not check.
-    assert _cases(), "no golden manifests discovered under tests/golden/"
+    assert _cases(), "no manifests discovered under tests/golden/ or tests/wild/"
 
 
 @pytest.mark.parametrize("case", _cases(), ids=lambda c: c.rel_manifest)
@@ -33,35 +51,37 @@ def test_source_hash_matches(case: gov.GoldenCase) -> None:
     gov.verify_source_hash(case)
 
 
-@pytest.mark.parametrize("case", _cases(), ids=lambda c: c.rel_manifest)
+@pytest.mark.parametrize("case", _golden_cases(), ids=lambda c: c.rel_manifest)
 def test_expected_hash_matches(case: gov.GoldenCase) -> None:
     gov.verify_expected_hash(case)
 
 
-def test_no_misspelled_manifests() -> None:
-    stray = gov.find_misspelled_manifests()
+@pytest.mark.parametrize("root", gov.ALL_ROOTS, ids=lambda r: r.name)
+def test_no_misspelled_manifests(root: Path) -> None:
+    stray = gov.find_misspelled_manifests(root)
     assert not stray, (
         f"manifest(s) named 'manifest.yml' bypass discovery — rename to 'manifest.yaml': {stray}"
     )
 
 
-def test_every_corpus_data_file_is_claimed_by_a_manifest() -> None:
-    # The generalization of "no manifest, no merge": a source or expectation file dropped under
-    # tests/golden/ without a manifest would bypass license/hash/schema governance entirely.
-    orphans = gov.find_unclaimed_files()
+@pytest.mark.parametrize("root", gov.ALL_ROOTS, ids=lambda r: r.name)
+def test_every_corpus_data_file_is_claimed_by_a_manifest(root: Path) -> None:
+    # The generalization of "no manifest, no merge": a source or expectation file dropped into
+    # a corpus root without a manifest would bypass license/hash/schema governance entirely.
+    orphans = gov.find_unclaimed_files(root)
     assert not orphans, (
         "corpus data file(s) claimed by no manifest (no license, no hash, no schema check) — "
-        f"add a manifest.yaml or move them out of tests/golden/: {orphans}"
+        f"add a manifest.yaml or move them out of {root.name}/: {orphans}"
     )
 
 
-@pytest.mark.parametrize("case", _cases(), ids=lambda c: c.rel_manifest)
+@pytest.mark.parametrize("case", _golden_cases(), ids=lambda c: c.rel_manifest)
 def test_expectation_loads_through_migration_chain(case: gov.GoldenCase) -> None:
     obj = gov.load_expected_through_migration_chain(case)
     assert obj.frame_count >= 1
 
 
-@pytest.mark.parametrize("case", _cases(), ids=lambda c: c.rel_manifest)
+@pytest.mark.parametrize("case", _golden_cases(), ids=lambda c: c.rel_manifest)
 def test_schema_version_lag_within_bounds(case: gov.GoldenCase) -> None:
     gov.check_schema_version_lag(case)
 

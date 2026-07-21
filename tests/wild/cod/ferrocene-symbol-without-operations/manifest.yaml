@@ -1,0 +1,26 @@
+case: ferrocene-symbol-without-operations
+format_id: cif
+source_file: cod-2101932.cif
+sha256: "b352485991557810cf423c32b7f649a86e22bbfe1daa73c0bfefb6af7cdea5c3"
+origin:
+  kind: published-dataset
+  source: "Crystallography Open Database entry 2101932 (ferrocene, C10H10Fe)"
+  url: "https://www.crystallography.net/cod/2101932.cif"
+  license: "CC0-1.0"
+expectation:
+  parse_error: CIF_UNEXPANDABLE_SYMMETRY
+notes: >-
+  D66 meeting a real file. The block declares `_symmetry_space_group_name_H-M 'P 1 21/a 1'` and
+  `_symmetry_space_group_name_Hall '-P 2yab'` but carries no `_symmetry_equiv_pos_as_xyz` loop
+  at all: the symbol asserts four symmetry operations that the file never spells out, and the
+  atom list is therefore the asymmetric unit alone, not the cell. D66 refuses this rather than
+  returning the unexpanded sites, and that decision — made against synthetic fixtures in M17 —
+  is vindicated here: silently accepting the file would have produced a structure with a
+  quarter of ferrocene's atoms while reporting no problem whatsoever, and its declared
+  `_chemical_formula_sum` of `C10 H10 Fe` at Z=2 would have gone unchecked because a partial
+  structure looks exactly like a complete one from the inside.
+
+  This case is also the corpus's proof that a *refusal* is an expressible expectation. A
+  real-world suite that could only assert successes would push every hard file out of the
+  corpus and quietly redefine "real world" as "the files we already handle", which is the
+  failure mode M20 was budgeted to prevent.
