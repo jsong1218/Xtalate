@@ -213,3 +213,58 @@ def test_xyz_target_keeps_comment_key_per_key_in_write_plan() -> None:
     assert "user_metadata.custom_per_frame['xyz:comment']" in {e.path for e in diff.preserved}
     assert "user_metadata.custom_per_frame['xyz:comment']" in diff.write_plan
     assert "user_metadata.custom_per_frame" not in diff.write_plan
+
+
+# --- pattern-declared writable sets (D69) ----------------------------------------------------
+
+
+def test_extxyz_target_removes_a_per_atom_key_its_grammar_cannot_spell() -> None:
+    # extXYZ's writable per-atom set is open-ended, so it is declared as a *pattern* rather than a
+    # list (D69). A CIF source's `cif:occupancy` fails that pattern — the Properties= grammar
+    # separates its fields with ':', so the column cannot be written under that name at all. This
+    # must be predicted Removed, and the stakes are higher than the usual over-promise: writing it
+    # anyway does not merely lose the column, it produces a file ASE cannot re-parse.
+    reg = _registry()
+    source = _parse(reg, "cif", GOLDEN / "cif" / "zno-hexagonal-p1" / "zno_hexagonal.cif")
+    diff = build_preflight(source, _matrix(reg), "extxyz")
+
+    key = "user_metadata.custom_per_atom['cif:occupancy']"
+    removed = {e.path: e for e in diff.removed}
+    assert key in removed
+    assert key not in {e.path for e in diff.preserved}
+    assert key not in diff.write_plan
+    # The reason names the pattern, so a user reading the report can see *why* this key and not
+    # some blanket "extXYZ drops custom columns" claim, which would be false.
+    assert "extxyz:" in removed[key].reason
+
+
+def test_extxyz_target_preserves_a_per_atom_key_that_matches_the_pattern() -> None:
+    # The other half: a key extXYZ *can* spell is Preserved and enters the write_plan per key, the
+    # same granularity a list-declared container gets. The extXYZ parser prefixes every column it
+    # reads, so a source column `tag` arrives canonically as `extxyz:tag` — which is exactly the
+    # shape the pattern admits, and is why the pattern is `extxyz:<name>` and not merely "no colon".
+    reg = _registry()
+    data = b"1\nProperties=species:S:1:pos:R:3:tag:S:1\nH 0 0 0 core\n"
+    source = reg.get_parser("extxyz").parse(io.BytesIO(data), filename="s.extxyz").canonical
+    assert "extxyz:tag" in source.user_metadata.custom_per_atom
+
+    diff = build_preflight(source, _matrix(reg), "extxyz")
+    key = "user_metadata.custom_per_atom['extxyz:tag']"
+    assert key in {e.path for e in diff.preserved}
+    assert key in diff.write_plan
+    assert "user_metadata.custom_per_atom" not in diff.write_plan
+
+
+def test_ase_traj_target_removes_every_per_atom_key_regardless_of_name() -> None:
+    # ASE's .traj writer persists no custom per-atom array under any name, so it gets no pattern —
+    # it declares the container NONE (D69). Verified through the whole container, not one key.
+    reg = _registry()
+    source = _parse(reg, "cif", GOLDEN / "cif" / "zno-hexagonal-p1" / "zno_hexagonal.cif")
+    diff = build_preflight(source, _matrix(reg), "ase_traj")
+
+    per_atom = {
+        f"user_metadata.custom_per_atom['{k}']" for k in source.user_metadata.custom_per_atom
+    }
+    assert per_atom  # the fixture must actually carry columns, or this proves nothing
+    assert per_atom <= {e.path for e in diff.removed}
+    assert not (per_atom & diff.write_plan)

@@ -67,6 +67,51 @@ def test_bad_direction_rejected() -> None:
         )
 
 
+# --- writable_custom_key_pattern (D69) -------------------------------------------------
+
+
+def _caps(**extra: object) -> FormatCapabilities:
+    return FormatCapabilities(
+        format_id="x",
+        format_name="X",
+        direction="write",
+        native_coordinate_system="cartesian",
+        **extra,  # type: ignore[arg-type]
+    )
+
+
+def test_custom_key_pattern_is_accepted_and_kept_verbatim() -> None:
+    # The pattern is data the pre-flight applies with `fullmatch`; the model stores the source
+    # string rather than a compiled object so a declaration stays inspectable and serialisable.
+    caps = _caps(writable_custom_key_pattern={"user_metadata.custom_per_atom": r"extxyz:[^:]*"})
+    assert caps.writable_custom_key_pattern["user_metadata.custom_per_atom"] == r"extxyz:[^:]*"
+
+
+def test_uncompilable_pattern_is_rejected_at_declaration_time() -> None:
+    # A broken regex must fail when the plugin registers, not silently mis-route some later user's
+    # key at conversion time (D69) — the whole point of catching it in the model validator.
+    with pytest.raises(ValidationError, match="not a valid regex"):
+        _caps(writable_custom_key_pattern={"user_metadata.custom_per_atom": "extxyz:[unclosed"})
+
+
+def test_a_container_cannot_declare_both_a_list_and_a_pattern() -> None:
+    # Two answers to "is this key writable?" for one container is a declaration bug, not a merge
+    # rule to invent: the pre-flight would have to pick one, and either pick would surprise someone.
+    with pytest.raises(ValidationError, match="one or the other"):
+        _caps(
+            writable_custom_keys={"user_metadata.custom_per_atom": ["extxyz:tag"]},
+            writable_custom_key_pattern={"user_metadata.custom_per_atom": r"extxyz:[^:]*"},
+        )
+
+
+def test_a_list_and_a_pattern_may_coexist_on_different_containers() -> None:
+    caps = _caps(
+        writable_custom_keys={"user_metadata.custom_per_frame": ["x:comment"]},
+        writable_custom_key_pattern={"user_metadata.custom_per_atom": r"x:[^:]*"},
+    )
+    assert caps.writable_custom_keys and caps.writable_custom_key_pattern
+
+
 # --- error contract ------------------------------------------------------------------
 
 

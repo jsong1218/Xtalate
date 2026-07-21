@@ -11,6 +11,7 @@ report as ``removed`` (Part 4); this exporter simply writes what the object hold
 from __future__ import annotations
 
 import io
+import re
 from collections.abc import Iterator
 from typing import Any, BinaryIO
 
@@ -33,6 +34,11 @@ from xtalate.sdk import (
 FORMAT_ID = "extxyz"
 _KEY_PREFIX = "extxyz:"
 _STRESS_KEY = "extxyz:stress"
+# The per-atom custom keys extXYZ can write *and* read back under the same name (D69). Declared to
+# the pre-flight as `writable_custom_key_pattern` and compiled here for the exporter's own guard,
+# from this single string so the declaration and the behaviour cannot drift apart.
+_WRITABLE_PER_ATOM_PATTERN = rf"{_KEY_PREFIX}[^:]*"
+_WRITABLE_PER_ATOM_KEY = re.compile(_WRITABLE_PER_ATOM_PATTERN)
 # The velocity conversion factor in units of (Å/fs) per one ASE internal velocity unit — i.e.
 # `ase_units.fs`. Named for its units so the export direction reads correctly: canonical Å/fs
 # *divided by* this factor yields ASE units (the exact inverse of the parser's multiply). Defined
@@ -105,9 +111,14 @@ class ExtxyzExporter(ExporterPlugin):
             v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ANG_PER_FS_PER_ASE_VEL
             atoms.set_velocities(v_ase)
 
-        # Object-level per-atom carry-through columns apply to every frame (Part 2 §3.10).
+        # Object-level per-atom carry-through columns apply to every frame (Part 2 §3.10), but only
+        # under a name the Properties= grammar can spell (D69). The pre-flight has normally already
+        # dropped the rest, so this filter usually removes nothing; it is here because `export` is
+        # also called directly, outside the engine, and a foreign key written here does not degrade
+        # the output — it makes the file unparseable.
         for key, values in custom_per_atom.items():
-            atoms.new_array(_strip(key), np.asarray(values))
+            if _WRITABLE_PER_ATOM_KEY.fullmatch(key):
+                atoms.new_array(_strip(key), np.asarray(values))
 
         # Per-frame comment key-values (+ stress) for this frame.
         stress = None
@@ -165,11 +176,22 @@ class ExtxyzExporter(ExporterPlugin):
                     level=partial, notes="Written as a per-atom magmoms column."
                 ),
                 "user_metadata.custom_per_atom": FieldCapability(
-                    level=CapabilityLevel.FULL, notes="Written back as Properties= columns."
+                    level=CapabilityLevel.PARTIAL,
+                    notes="Written back as Properties= columns, but only under a name extXYZ can "
+                    "spell: the Properties= grammar separates its fields with ':', so a "
+                    "format-scoped key such as 'cif:occupancy' cannot be written at all, and a "
+                    "bare name is read back re-prefixed as 'extxyz:<name>'. Keys matching "
+                    "'extxyz:<name>' round-trip exactly; the rest are dropped (DECISIONS.md D69).",
                 ),
                 "user_metadata.custom_per_frame": FieldCapability(
                     level=CapabilityLevel.FULL, notes="Written back as comment key-values."
                 ),
+            },
+            # Open-ended by design — extXYZ's arbitrary columns are why anyone reaches for it — so
+            # the writable set is a name *pattern*, not a list (D69). Per-frame keys need no
+            # pattern: they ride the comment line's key=value grammar, where a colon is legal.
+            writable_custom_key_pattern={
+                "user_metadata.custom_per_atom": _WRITABLE_PER_ATOM_PATTERN
             },
             max_frames=None,
             required_fields=["atoms.symbols", "atoms.positions"],

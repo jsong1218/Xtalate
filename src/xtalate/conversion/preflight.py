@@ -30,6 +30,7 @@ object, calls an exporter, or resolves a recovery.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -209,17 +210,35 @@ def build_preflight_from_presence(
         # *per key* (so only it survives into `canonical′`); any other present key is Removed — the
         # exporter cannot express it, and predicting it Preserved would false-fail validation when
         # the exporter drops it. Plain XYZ, e.g., holds only its `xyz:comment` free-text line.
+        # The same classification for a container whose writable set is a *name pattern* rather than
+        # a fixed list (D69) — extXYZ writes arbitrary per-atom columns, but only under names its
+        # `Properties=` grammar can spell and its parser reads back unchanged. Routed here, before
+        # any bytes exist, because an unwritable name does not merely get dropped by the extXYZ
+        # exporter: it corrupts the header and the output file will not parse at all.
         allowed = caps.writable_custom_keys.get(container)
-        if allowed is not None and path != container:
+        pattern = caps.writable_custom_key_pattern.get(container)
+        if (allowed is not None or pattern is not None) and path != container:
             key = _custom_key(path)
-            if key in allowed:
+            is_writable = (
+                key in allowed
+                if allowed is not None
+                else re.fullmatch(pattern or "", key) is not None
+            )
+            if is_writable:
                 diff.preserved.append(PreservedEntry(path=path, detail=detail))
                 diff.write_plan.add(path)
             else:
-                reason = cap.notes or (
+                default = (
                     f"Target format {target_format_id!r} stores only {allowed} in {container}."
+                    if allowed is not None
+                    else (
+                        f"Target format {target_format_id!r} can only store keys matching "
+                        f"{pattern!r} in {container}."
+                    )
                 )
-                diff.removed.append(RemovedEntry(path=path, reason=reason, detail=detail))
+                diff.removed.append(
+                    RemovedEntry(path=path, reason=cap.notes or default, detail=detail)
+                )
             continue
 
         if cap.level == CapabilityLevel.FULL:

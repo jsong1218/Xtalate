@@ -19,11 +19,15 @@ import io
 
 import pytest
 
+from xtalate.capabilities import Registry
 from xtalate.conversion import ConversionEngine
 from xtalate.conversion.preflight import build_preflight, partial_occupancy_count
+from xtalate.exporters import builtin_exporters
+from xtalate.parsers import builtin_parsers
 from xtalate.registry import default_registry
 from xtalate.schema import CanonicalObject
 from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
+from xtalate.sdk import CapabilityLevel, ExporterPlugin, FieldCapability, FormatCapabilities
 
 _REGISTRY = default_registry()
 _WARNING_CODE = "PARTIAL_OCCUPANCY_NOT_REPRESENTED"
@@ -188,53 +192,77 @@ def test_warning_accompanies_rather_than_replaces_the_removed_entry() -> None:
 # --------------------------------------------------------------------------------------------
 
 
+def _stub_exporter(format_id: str, *, names_the_key: bool = False) -> ExporterPlugin:
+    """A POSCAR-derived stand-in that *can* hold a custom per-atom column, optionally declaring
+    that it stores occupancy specifically. The pair of stubs is the whole point of the gate: both
+    carry the numbers, only the one that names the key represents the quantity."""
+    poscar_cls = type(_REGISTRY.get_exporter("poscar"))
+
+    class StubExporter(poscar_cls):  # type: ignore[misc, valid-type]
+        def capabilities(self) -> FormatCapabilities:
+            base = super().capabilities()
+            fields = dict(base.fields)
+            fields["user_metadata.custom_per_atom"] = FieldCapability(
+                level=CapabilityLevel.FULL, notes="Stub target that stores a per-atom column."
+            )
+            update: dict[str, object] = {"format_id": self.format_id, "fields": fields}
+            if names_the_key:
+                update["writable_custom_keys"] = {
+                    "user_metadata.custom_per_atom": [OCCUPANCY_CUSTOM_KEY]
+                }
+            return base.model_copy(update=update)
+
+    return StubExporter(format_id=format_id)
+
+
+def _registry_with(exporter: ExporterPlugin) -> Registry:
+    reg = Registry()
+    for parser in builtin_parsers():
+        reg.register_parser(parser)
+    for builtin in builtin_exporters():
+        reg.register_exporter(builtin)
+    reg.register_exporter(exporter)
+    return reg
+
+
 def test_verbatim_carriage_is_not_representation() -> None:
-    # extXYZ writes arbitrary per-atom columns, so the occupancy numbers survive the conversion —
-    # and the warning fires anyway. An unlabelled extra column is not occupancy: no reader of the
-    # output treats those numbers as site occupancies, so the structure the file describes is still
-    # fully occupied. Carrying the bytes is not the same as representing the quantity.
+    # A target that carries the occupancy numbers through untouched must warn anyway. An unlabelled
+    # extra column is not occupancy: no reader of the output treats those numbers as site
+    # occupancies, so the structure the file describes is still fully occupied. Carrying the bytes
+    # is not the same as representing the quantity — which is why the gate is the *named* key.
+    #
+    # Stated against a stub rather than extXYZ, which used to be the live example. D69 established
+    # that extXYZ cannot in fact write `cif:occupancy` at all (the Properties= grammar separates
+    # its fields with ':'), so it now removes the key and no builtin target carries it verbatim.
+    # The claim this test makes is about the *gate*, not about extXYZ, so it needs a target that
+    # really does carry the numbers — and after D69 that has to be constructed.
+    reg = _registry_with(_stub_exporter("verbatim_stub"))
     source = _occupancies("0.5", "1.0")
-    diff = build_preflight(source, _REGISTRY.capability_matrix(), "extxyz")
+    diff = build_preflight(source, reg.capability_matrix(), "verbatim_stub")
+
     preserved = {e.path for e in diff.preserved}
     assert f"user_metadata.custom_per_atom[{OCCUPANCY_CUSTOM_KEY!r}]" in preserved
     assert _WARNING_CODE in [w.code for w in diff.warnings]
 
 
+def test_extxyz_cannot_even_carry_the_occupancy_column() -> None:
+    # The correction D69 made, pinned so it cannot regress: extXYZ was declaring it would write
+    # this key and then emitting a file that did not parse. It now reports the key `removed` —
+    # alongside the occupancy warning, which was firing correctly all along and still does.
+    source = _occupancies("0.5", "1.0")
+    diff = build_preflight(source, _REGISTRY.capability_matrix(), "extxyz")
+
+    key = f"user_metadata.custom_per_atom[{OCCUPANCY_CUSTOM_KEY!r}]"
+    assert key in {e.path for e in diff.removed}
+    assert key not in {e.path for e in diff.preserved}
+    assert _WARNING_CODE in [w.code for w in diff.warnings]
+
+
 def test_naming_the_key_suppresses_the_warning() -> None:
-    # The P6 escape hatch, exercised against a stand-in: a format that declares it handles
-    # 'cif:occupancy' specifically silences this with no edit to the pre-flight diff. When the
-    # CIF exporter lands (or occupancy is promoted to a canonical field), this is the mechanism.
-    from xtalate.capabilities import Registry
-    from xtalate.exporters import builtin_exporters
-    from xtalate.parsers import builtin_parsers
-    from xtalate.sdk import CapabilityLevel, FieldCapability, FormatCapabilities
-
-    poscar_cls = type(_REGISTRY.get_exporter("poscar"))
-
-    class OccupancyAwareExporter(poscar_cls):  # type: ignore[misc, valid-type]
-        def capabilities(self) -> FormatCapabilities:
-            base = super().capabilities()
-            fields = dict(base.fields)
-            fields["user_metadata.custom_per_atom"] = FieldCapability(
-                level=CapabilityLevel.FULL, notes="Stub target that stores site occupancy."
-            )
-            return base.model_copy(
-                update={
-                    "format_id": self.format_id,
-                    "fields": fields,
-                    "writable_custom_keys": {
-                        "user_metadata.custom_per_atom": [OCCUPANCY_CUSTOM_KEY]
-                    },
-                }
-            )
-
-    reg = Registry()
-    for parser in builtin_parsers():
-        reg.register_parser(parser)
-    for exporter in builtin_exporters():
-        reg.register_exporter(exporter)
-    reg.register_exporter(OccupancyAwareExporter(format_id="occupancy_aware_stub"))
-
+    # The P6 escape hatch, exercised against the same stand-in with one declaration changed: a
+    # format that says it handles 'cif:occupancy' specifically silences this with no edit to the
+    # pre-flight diff. The real CIF exporter (M19 slice 3) now uses exactly this mechanism.
+    reg = _registry_with(_stub_exporter("occupancy_aware_stub", names_the_key=True))
     source = _occupancies("0.5", "1.0")
     diff = build_preflight(source, reg.capability_matrix(), "occupancy_aware_stub")
     assert _WARNING_CODE not in [w.code for w in diff.warnings]
