@@ -71,6 +71,21 @@ def test_lattice_from_parameters_matches_standard_orientation() -> None:
     np.testing.assert_allclose(lattice[2], [0.0, 0.0, 5.0], atol=1e-12)
 
 
+def test_right_angles_give_exactly_zero_components() -> None:
+    """A 90 degree angle means *exactly* orthogonal.
+
+    Routing it through ``cos(radians(90))`` yields 6.1e-17, which both fabricates a tilt the
+    source never declared (P1) and varies in its last bit between platforms, making any golden
+    file built from it machine-dependent. Exact equality, not a tolerance, is the assertion.
+    """
+    lattice = lattice_from_parameters((3.0, 4.0, 5.0), (90.0, 90.0, 90.0))
+    assert lattice.tolist() == [[3.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 5.0]]
+
+    hexagonal = lattice_from_parameters((3.0, 3.0, 5.0), (90.0, 90.0, 120.0))
+    assert hexagonal[1][0] == -1.5
+    assert hexagonal[2].tolist() == [0.0, 0.0, 5.0]
+
+
 def test_lattice_preserves_cell_lengths_and_angles() -> None:
     """Round-tripping parameters through the matrix is the orientation-independent check:
     whatever convention is chosen, the lengths and angles must come back unchanged."""

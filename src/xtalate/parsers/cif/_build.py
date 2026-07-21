@@ -82,6 +82,31 @@ def _error(code: str, message: str, *, location: str | None = None) -> ParseErro
     return ParseError([ParseIssue(severity="error", code=code, message=message, location=location)])
 
 
+_SQRT3_OVER_2 = math.sqrt(3.0) / 2.0
+# The cell angles crystallography states *exactly*: the right angle of every non-triclinic
+# system, and the 30/60/120/150° angles of the hexagonal and rhombohedral ones. libm evaluates
+# cos(radians(90)) as 6.1e-17 rather than 0, so a lattice built through it is both spuriously
+# non-orthogonal — a 1e-16 tilt the source never declared, which P1 has no business inventing —
+# and machine-dependent in its last bit, since the platform's libm, not IEEE 754, decides that
+# digit. Both problems disappear by using the exact value the angle actually denotes.
+_EXACT_COS_SIN_DEG: dict[float, tuple[float, float]] = {
+    30.0: (_SQRT3_OVER_2, 0.5),
+    60.0: (0.5, _SQRT3_OVER_2),
+    90.0: (0.0, 1.0),
+    120.0: (-0.5, _SQRT3_OVER_2),
+    150.0: (-_SQRT3_OVER_2, 0.5),
+}
+
+
+def _cos_sin_deg(degrees: float) -> tuple[float, float]:
+    """``(cos, sin)`` of an angle in degrees, exact for the standard crystallographic angles."""
+    exact = _EXACT_COS_SIN_DEG.get(degrees)
+    if exact is not None:
+        return exact
+    radians = math.radians(degrees)
+    return math.cos(radians), math.sin(radians)
+
+
 def lattice_from_parameters(
     lengths: tuple[float, float, float], angles: tuple[float, float, float]
 ) -> np.ndarray:
@@ -95,9 +120,9 @@ def lattice_from_parameters(
     Cartesian coordinates, which is why it is pinned rather than left to floating-point luck.
     """
     a, b, c = lengths
-    alpha, beta, gamma = (math.radians(x) for x in angles)
-    cos_alpha, cos_beta = math.cos(alpha), math.cos(beta)
-    cos_gamma, sin_gamma = math.cos(gamma), math.sin(gamma)
+    cos_alpha, _ = _cos_sin_deg(angles[0])
+    cos_beta, _ = _cos_sin_deg(angles[1])
+    cos_gamma, sin_gamma = _cos_sin_deg(angles[2])
 
     cx = c * cos_beta
     cy = c * (cos_alpha - cos_beta * cos_gamma) / sin_gamma
