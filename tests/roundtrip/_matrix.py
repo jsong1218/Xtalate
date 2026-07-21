@@ -147,10 +147,24 @@ def two_hop_pairs(registry: Registry) -> list[tuple[str, str]]:
 # are not both available on the current branch (``ase_traj`` lands with the M14 ASE-trajectory
 # format) drops out silently, so the list is correct everywhere and auto-completes as formats
 # register (**P6**). The full matrix (nightly) is the superset; nothing here is a new pair.
+#
+# ``cif↔poscar`` joins in the post-v0.4 review. CIF was in neither curated set, so every CIF pair
+# ran nightly-only and the newest, most structurally unusual format — the first fractional-native
+# source, the first stating a cell as *parameters*, the only one with a canonical field NONE on
+# write — had no golden-anchored coverage on the PR gate at all. That is the accepted risk in this
+# module's own header, sitting on the format least able to afford it. POSCAR is the counterpart
+# because ``cif↔poscar`` is the only CIF pair whose comparable subspace contains
+# ``cell.lattice_vectors`` (extXYZ and ASE traj both declare the cell PARTIAL, which the FULL∩FULL
+# rule excludes) — so it is the one that can witness a cell-parameter or angle error, and it
+# reorders atoms on the POSCAR leg, exercising the ``atom_permutation`` seam from a fractional
+# source. It also satisfies the existing coordinate-transform criterion more strongly than
+# ``poscar↔extxyz`` does: fractional against a γ = 120° cell, where a sign or transpose error
+# cannot hide behind an orthogonal lattice.
 _HIGH_RISK_PAIRS: tuple[tuple[str, str], ...] = (
     ("xyz", "extxyz"),
     ("poscar", "extxyz"),
     ("ase_traj", "poscar"),
+    ("cif", "poscar"),
 )
 
 
