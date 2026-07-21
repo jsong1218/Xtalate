@@ -35,7 +35,10 @@ def test_builtins_register_without_error() -> None:
         "contcar",
         "xdatcar",
         "ase_traj",
+        "cif",
     }
+    # CIF is read-only until M19 adds the exporter — the asymmetry is the point of the
+    # separate assertion, not an oversight.
     assert {e.format_id for e in reg.exporters()} == {
         "xyz",
         "extxyz",

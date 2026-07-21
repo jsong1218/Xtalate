@@ -1,0 +1,21 @@
+case: zno-hexagonal-p1
+format_id: cif
+source_file: zno_hexagonal.cif
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "5ff3af8b5e05f8c15ce2f97d6145027b12e78570ad9081a0af7ee0864d6cbc74"
+expected_sha256: "9cb905e4997629b2b501adc20678400c41b89f548292c69ba5608f66935e5856"
+origin:
+  kind: synthetic
+  source: "Hand-written for M17; hexagonal P 1 cell chosen so fractional→Cartesian is exact by hand"
+  license: "Apache-2.0"
+notes: >-
+  The M17 anchor case. a=b=3, c=5, gamma=120 makes the lattice construction from cell
+  *parameters* (CIF's native form, unlike every other Phase 1 format) hand-checkable:
+  site O1 at fractional (1/3, 2/3, 1/2) must land at Cartesian (0, sqrt(3), 2.5).
+  Also covers the identity-only symop loop (a P 1 file wearing a symmetry loop, which needs
+  no expansion), the space-group symbol mapped to cell.space_group rather than duplicated
+  into simulation.extra, format-defined pbc=(T,T,T) (§3 n.3), a standard uncertainty on
+  _cell_volume read as its value, occupancy and site labels carried verbatim into
+  custom_per_atom under 'cif:' keys (§3 n.11), and bibliographic tags carried into
+  simulation.extra (§3 n.9).

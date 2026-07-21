@@ -10,6 +10,34 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 The start of **v0.4**.
 
+### Added
+
+- **CIF core parser — M17 (`docs/private/DECISIONS.md` D65, D66).** The seventh and last Phase-1
+  format begins landing, read side only (the exporter is M19). This version reads **full-cell**
+  files: `P 1`, or a file whose symmetry loop holds nothing but the identity. Covered: multi-block
+  files (the first `data_` block is the structure, every further block is **named** in a warning —
+  blocks are independent structures, not frames); cell *parameters* → lattice vectors in the
+  standard orientation, with fractional → Cartesian at the parser boundary and
+  `original_coordinate_system = "fractional"` recorded; `_atom_site` loops with type-symbol
+  laundering (`Fe3+` → `Fe`, raw symbol preserved per-atom for M19); format-defined `pbc=(T,T,T)`
+  as a `parse_notes` entry, never assumed; legacy `_symmetry_*` and modern `_space_group_*` tag
+  spellings both recognised; bare `?`/`.` read as **absence** rather than as values (**P3**);
+  standard uncertainties (`5.4310(2)`) read as the value; and every unmapped `_atom_site` column
+  (occupancy above all) and block tag carried verbatim under `cif:` keys, never dropped.
+- **The CIF reader is built as four replaceable stages (D65)** — lexer → document → validator →
+  builder — the first parser shipped as a package rather than a module. The stage-2 document type
+  is deliberately shaped like `gemmi.cif`'s `Document`/`Block` API so a future gemmi-backed reader
+  replaces stages 1–2 without touching the validation rules, the `ParseError` contract, or the
+  builder. Two new `import-linter` contracts make the ordering and the "syntax stages know nothing
+  of the Canonical Model" rule machine-checked rather than conventional.
+- **A CIF needing symmetry expansion is refused, never read as a partial structure (D66).** A file
+  declaring a non-`P 1` symbol with **no** operation loop raises `CIF_UNEXPANDABLE_SYMMETRY` —
+  permanently, because supplying the operations from space-group tables would be data the file
+  never declared (**P4**); expansion-from-symbol belongs to a future `missing_symmetry_operations`
+  Recovery Workflow. A file declaring real operations raises `CIF_SYMMETRY_EXPANSION_UNSUPPORTED`
+  until **M18** implements expansion. Both exist so a conversion never silently yields a fraction
+  of the atoms — wrong stoichiometry behind a plausible-looking output file.
+
 ### Changed
 
 - **Documentation: architectural-review changelog attributions corrected to match each release's

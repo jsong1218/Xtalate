@@ -26,6 +26,13 @@ contributor grants) carries its source attribution here and is surfaced in the t
 - **License:** Apache-2.0
 - **Source:** Hand-authored for M14C via tests/golden/ase_traj/_generate.py (ASE .traj ULM container, a single isolated water molecule).
 
+## `cif` / `zno-hexagonal-p1`
+
+- **Source file:** `zno_hexagonal.cif`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M17; hexagonal P 1 cell chosen so fractional→Cartesian is exact by hand
+
 ## `contcar` / `co-md-restart`
 
 - **Source file:** `CONTCAR`
