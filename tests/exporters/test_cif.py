@@ -18,6 +18,7 @@ import math
 
 import numpy as np
 import pytest
+from pydantic import JsonValue
 
 from xtalate.conversion import ConversionEngine
 from xtalate.conversion.preflight import build_preflight
@@ -33,6 +34,7 @@ from xtalate.schema import (
     SimulationMetadata,
     UserMetadata,
 )
+from xtalate.schema.arrays import ArrayNx
 from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
 
 _REGISTRY = default_registry()
@@ -45,8 +47,8 @@ def _object(
     positions: np.ndarray | None = None,
     lattice: np.ndarray | None = None,
     space_group: str | None = None,
-    custom_per_atom: dict | None = None,
-    custom_global: dict | None = None,
+    custom_per_atom: dict[str, ArrayNx | list[JsonValue]] | None = None,
+    custom_global: dict[str, JsonValue] | None = None,
     extra: dict[str, str] | None = None,
     n_frames: int = 1,
 ) -> CanonicalObject:
@@ -119,7 +121,9 @@ def test_the_source_symbol_is_reported_removed() -> None:
 def test_reparsing_the_output_recovers_no_space_group() -> None:
     # The property-harness invariant, pinned locally: a path the report calls removed must not
     # reappear in the re-parsed output. Writing 'P 1' would fail exactly here.
-    assert _reparse(_write(_object(space_group="Fm-3m"))).frames[0].cell.space_group is None
+    cell = _reparse(_write(_object(space_group="Fm-3m"))).frames[0].cell
+    assert cell is not None
+    assert cell.space_group is None
 
 
 def test_declared_symmetry_operations_are_not_written_back() -> None:

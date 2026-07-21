@@ -200,7 +200,7 @@ def _stub_exporter(format_id: str, *, names_the_key: bool = False) -> ExporterPl
 
     class StubExporter(poscar_cls):  # type: ignore[misc, valid-type]
         def capabilities(self) -> FormatCapabilities:
-            base = super().capabilities()
+            base: FormatCapabilities = super().capabilities()
             fields = dict(base.fields)
             fields["user_metadata.custom_per_atom"] = FieldCapability(
                 level=CapabilityLevel.FULL, notes="Stub target that stores a per-atom column."
