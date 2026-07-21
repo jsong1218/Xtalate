@@ -1,4 +1,4 @@
-"""Symmetry-operation strings → affine operations (Part 3 §3 n.13, M18 deliverable 1).
+"""Declared symmetry: operation strings → affine maps → expanded sites (Part 3 §3 n.13, M18).
 
 A stage-3 sibling of ``_validate``: it reads what the *file declares* and imports nothing from
 ``xtalate.schema``. Expanding a declared operation list is reading the file as the standard
@@ -138,6 +138,10 @@ def parse_symops(texts: list[str], *, line: int) -> list[SymmetryOperation]:
     Order is preserved because ``parse_notes`` reports per-site multiplicities against the
     operation list as the file wrote it; a reordered list would make that report unverifiable
     against the source.
+
+    The list must contain the identity. Every symmetry group does, and a loop omitting it would
+    expand a structure into one where *no* atom sits where the file put it — every site moved,
+    silently, by an operation list that looked well-formed term by term.
     """
     if not texts:
         raise _error(
@@ -145,7 +149,124 @@ def parse_symops(texts: list[str], *, line: int) -> list[SymmetryOperation]:
             "at all must say which operations apply",
             line=line,
         )
-    return [parse_symop(text, line=line) for text in texts]
+    operations = [parse_symop(text, line=line) for text in texts]
+    if not any(op.is_identity for op in operations):
+        raise _error(
+            f"the symmetry-operation loop declares {len(operations)} operations but none is the "
+            "identity 'x,y,z'; every symmetry group contains it, and expanding without it would "
+            "move every site off the position the file declared",
+            line=line,
+        )
+    return operations
+
+
+@dataclass(frozen=True)
+class Expansion:
+    """The result of applying a declared operation list to a set of fractional sites.
+
+    ``source_index[i]`` is the index of the *declared* site that generated expanded site *i*,
+    which is what lets the builder replicate per-site columns (occupancy, labels, Wyckoff
+    symbols) onto the atoms they describe. ``multiplicity[j]`` is how many atoms declared site
+    *j* produced — smaller than the operation count exactly when the site lies on a symmetry
+    element. ``merged`` counts the coincident images dropped, so a reader can check the
+    arithmetic of the provenance note: sites × operations − merged = atoms.
+    """
+
+    coordinates: tuple[tuple[Fraction, Fraction, Fraction], ...]
+    source_index: tuple[int, ...]
+    multiplicity: tuple[int, ...]
+    merged: int
+
+
+# The special-position merge threshold, in ångström (DECISIONS.md D67). A physical distance
+# rather than a fractional tolerance: 1e-4 fractional is 3e-4 Å in a 3 Å cell and 1e-2 Å in a
+# 100 Å one, so one fractional number is simultaneously too strict for small cells and too
+# permissive for large ones — and the permissive end is where two distinct atoms merge into one
+# and the structure silently loses an atom. 0.05 Å is ~10× the worst-case rounding of a
+# four-decimal coordinate in a large cell, and ~20× below the shortest distance real crystals
+# exhibit (~1 Å, H–H), so both failure directions have room.
+MERGE_THRESHOLD_ANGSTROM = 0.05
+
+_Lattice = tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
+
+
+def expand_sites(
+    coordinates: list[tuple[Fraction, Fraction, Fraction]],
+    operations: list[SymmetryOperation],
+    *,
+    lattice: _Lattice,
+    threshold: float = MERGE_THRESHOLD_ANGSTROM,
+) -> Expansion:
+    """Apply every declared operation to every declared site, merging special positions.
+
+    ``lattice`` is the 3×3 matrix in rows-are-vectors form; it is needed because coincidence is
+    judged as a physical distance, not a fractional one (D67). Merging is scoped to one site's
+    orbit: images of two *different* declared sites are never merged however close they lie,
+    because that coincidence is usually two partially-occupied sites sharing a position — real
+    source data, whose removal would change the occupancy sum and the stoichiometry.
+    """
+    expanded: list[tuple[Fraction, Fraction, Fraction]] = []
+    source_index: list[int] = []
+    multiplicity: list[int] = []
+    merged = 0
+
+    for index, coordinate in enumerate(coordinates):
+        orbit: list[tuple[Fraction, Fraction, Fraction]] = []
+        for operation in operations:
+            if operation.is_identity:
+                # The identity's image *is* the declared site, so it is carried exactly as the
+                # file spelled it — including a coordinate outside [0,1), which is data.
+                image = coordinate
+            else:
+                # Wrapping applies only to coordinates this parser *constructed*. A number the
+                # file declared is a source fact and is never rewritten to look tidier (that is
+                # laundering, P1); a number produced by applying an operation has no source
+                # spelling to be faithful to, so choosing its representative inside the unit
+                # cell is part of constructing it. D67 rule 3.
+                image = _wrap(operation.apply(coordinate))
+            if any(
+                _coincident(image, seen, lattice=lattice, threshold=threshold) for seen in orbit
+            ):
+                merged += 1
+                continue
+            orbit.append(image)
+        expanded.extend(orbit)
+        source_index.extend([index] * len(orbit))
+        multiplicity.append(len(orbit))
+
+    return Expansion(
+        coordinates=tuple(expanded),
+        source_index=tuple(source_index),
+        multiplicity=tuple(multiplicity),
+        merged=merged,
+    )
+
+
+def _wrap(
+    coordinate: tuple[Fraction, Fraction, Fraction],
+) -> tuple[Fraction, Fraction, Fraction]:
+    """A generated coordinate moved into [0,1) — exactly, since these are rationals."""
+    return (coordinate[0] % 1, coordinate[1] % 1, coordinate[2] % 1)
+
+
+def _coincident(
+    a: tuple[Fraction, Fraction, Fraction],
+    b: tuple[Fraction, Fraction, Fraction],
+    *,
+    lattice: _Lattice,
+    threshold: float,
+) -> bool:
+    """Whether two fractional sites are the same atom, as a minimum-image Cartesian distance.
+
+    Minimum-image because a fractional difference of 0.999 is a lattice translation, not a
+    separation: the same atom, deposited by the operation in the neighbouring cell.
+    """
+    delta = [float(a[i] - b[i] - round(a[i] - b[i])) for i in range(3)]
+    squared = 0.0
+    for axis in range(3):
+        component = sum(delta[vector] * lattice[vector][axis] for vector in range(3))
+        squared += component * component
+    return squared <= threshold * threshold
 
 
 def _parse_component(
@@ -203,4 +324,12 @@ def _determinant(rotation: list[tuple[Fraction, Fraction, Fraction]]) -> Fractio
     return a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
 
 
-__all__ = ["IDENTITY", "SymmetryOperation", "parse_symop", "parse_symops"]
+__all__ = [
+    "IDENTITY",
+    "MERGE_THRESHOLD_ANGSTROM",
+    "Expansion",
+    "SymmetryOperation",
+    "expand_sites",
+    "parse_symop",
+    "parse_symops",
+]

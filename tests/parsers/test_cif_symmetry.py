@@ -1,7 +1,12 @@
-"""Symmetry-operation parsing (M18 deliverable 1, ``parsers/cif/_symmetry.py``).
+"""Symmetry-operation parsing and expansion (M18 deliverables 1–2, ``parsers/cif/_symmetry.py``).
 
-Expansion itself is not exercised here: this module is the pure string→affine-operation layer,
-and its whole contract is that it reads every spelling real files use *exactly*, or refuses.
+Two contracts, tested in two halves. The parser reads every spelling real files use *exactly*
+or refuses outright; the expander applies what was read, merging the coincident images a site on
+a symmetry element produces, and never merging anything else.
+
+These tests work in fractional coordinates against a chosen lattice, which is why they can pin
+exact rationals. The reader-level behaviour — the same expansion seen through a whole CIF — is
+in ``test_cif.py``.
 """
 
 from __future__ import annotations
@@ -10,10 +15,20 @@ from fractions import Fraction
 
 import pytest
 
-from xtalate.parsers.cif._symmetry import IDENTITY, parse_symop, parse_symops
+from xtalate.parsers.cif._symmetry import (
+    IDENTITY,
+    Expansion,
+    expand_sites,
+    parse_symop,
+    parse_symops,
+)
 from xtalate.sdk import ParseError
 
 F = Fraction
+
+# A 10 Å cube: fractional differences map to ångström by a factor of 10, so every distance in
+# the expansion tests below is readable straight off the coordinates.
+CUBE = ((10.0, 0.0, 0.0), (0.0, 10.0, 0.0), (0.0, 0.0, 10.0))
 
 
 def _row(*values: str | int) -> tuple[Fraction, ...]:
@@ -131,3 +146,97 @@ def test_operation_order_is_preserved() -> None:
     """``parse_notes`` reports multiplicities against the list as the file wrote it."""
     ops = parse_symops(["x,y,z", "-x,-y,-z", "x+1/2,y+1/2,z"], line=1)
     assert [op.text for op in ops] == ["x,y,z", "-x,-y,-z", "x+1/2,y+1/2,z"]
+
+
+def test_an_operation_loop_without_the_identity_is_refused() -> None:
+    """Every symmetry group contains ``x,y,z``; a list omitting it moves every declared site."""
+    with pytest.raises(ParseError) as excinfo:
+        parse_symops(["-x,-y,-z", "x+1/2,y+1/2,z"], line=4)
+    assert excinfo.value.issues[0].code == "CIF_MALFORMED_SYMOP"
+
+
+# --- expansion ------------------------------------------------------------------------------
+
+
+def _expand(
+    sites: list[tuple[str, str, str]],
+    ops: list[str],
+    lattice: tuple[
+        tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]
+    ] = CUBE,
+) -> Expansion:
+    coordinates = [(F(a), F(b), F(c)) for a, b, c in sites]
+    return expand_sites(coordinates, parse_symops(ops, line=1), lattice=lattice)
+
+
+def test_a_general_position_gains_one_atom_per_operation() -> None:
+    result = _expand([("1/8", "1/5", "1/7")], ["x,y,z", "-x,-y,-z", "y,x,z", "-y,-x,-z"])
+    assert result.multiplicity == (4,)
+    assert result.merged == 0
+    assert len(result.coordinates) == 4
+
+
+def test_a_site_on_a_symmetry_element_has_multiplicity_below_the_operation_count() -> None:
+    """The origin is fixed by inversion, so four operations produce fewer than four atoms."""
+    result = _expand([("0", "0", "0")], ["x,y,z", "-x,-y,-z", "y,x,z", "-y,-x,-z"])
+    assert result.multiplicity == (1,)
+    assert result.merged == 3
+
+
+def test_generated_coordinates_are_wrapped_but_declared_ones_are_not() -> None:
+    """Wrapping is construction, not laundering of source data (DECISIONS.md D67 rule 3).
+
+    A declared coordinate is a source fact and survives verbatim even at 1.25; a coordinate this
+    module *built* by applying an operation has no source spelling to be faithful to, so placing
+    it inside the unit cell is part of constructing it.
+    """
+    result = _expand([("1/4", "1/4", "5/4")], ["x,y,z", "-x,-y,-z"])
+    assert result.coordinates[0] == (F(1, 4), F(1, 4), F(5, 4))
+    assert result.coordinates[1] == (F(3, 4), F(3, 4), F(3, 4))
+
+
+def test_images_a_lattice_translation_apart_are_one_atom() -> None:
+    """0.999 and 0.001 differ by a lattice vector, not a distance — the minimum-image rule."""
+    result = _expand([("0", "0", "1/1000")], ["x,y,z", "x,y,-z"])
+    assert result.multiplicity == (1,)
+
+
+def test_coincidence_is_judged_in_angstrom_not_in_fractional_units() -> None:
+    """The same fractional gap merges in a small cell and survives in a large one.
+
+    This is why the threshold is physical (D67 rule 1): 0.004 fractional is 0.004 Å in a 1 Å
+    cell — the same atom, rounded — and 0.4 Å in a 100 Å cell, which is a real separation.
+    """
+    ops = ["x,y,z", "x,y,-z"]
+    tiny = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+    huge = ((100.0, 0.0, 0.0), (0.0, 100.0, 0.0), (0.0, 0.0, 100.0))
+    assert _expand([("0", "0", "1/500")], ops, tiny).multiplicity == (1,)
+    assert _expand([("0", "0", "1/500")], ops, huge).multiplicity == (2,)
+
+
+def test_coincident_images_of_different_sites_are_never_merged() -> None:
+    """Two sites sharing a position are partial occupancy — source data, not a special position.
+
+    Merging them would delete an atom the file explicitly declared and change the occupancy sum
+    (D67 rule 2), so both survive expansion despite lying at the same place.
+    """
+    result = _expand([("1/4", "1/4", "1/4"), ("1/4", "1/4", "1/4")], ["x,y,z"])
+    assert result.multiplicity == (1, 1)
+    assert result.source_index == (0, 1)
+
+
+def test_source_index_maps_every_atom_back_to_the_site_that_generated_it() -> None:
+    """What lets the builder replicate occupancy and labels onto the atoms they describe."""
+    result = _expand([("1/8", "1/5", "1/7"), ("0", "0", "0")], ["x,y,z", "-x,-y,-z"])
+    assert result.source_index == (0, 0, 1)
+    assert result.multiplicity == (2, 1)
+
+
+def test_the_expansion_arithmetic_is_checkable_from_the_reported_counts() -> None:
+    """sites × operations − merged = atoms — the arithmetic the provenance note lets a reader
+    check against the source, without re-deriving the expansion."""
+    sites = [("1/8", "1/5", "1/7"), ("0", "0", "0"), ("1/2", "0", "0")]
+    ops = ["x,y,z", "-x,-y,-z", "y,x,z", "-y,-x,-z"]
+    result = _expand(sites, ops)
+    assert len(sites) * len(ops) - result.merged == len(result.coordinates)
+    assert sum(result.multiplicity) == len(result.coordinates)

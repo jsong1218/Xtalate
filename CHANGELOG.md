@@ -34,9 +34,21 @@ The start of **v0.4**.
   declaring a non-`P 1` symbol with **no** operation loop raises `CIF_UNEXPANDABLE_SYMMETRY` —
   permanently, because supplying the operations from space-group tables would be data the file
   never declared (**P4**); expansion-from-symbol belongs to a future `missing_symmetry_operations`
-  Recovery Workflow. A file declaring real operations raises `CIF_SYMMETRY_EXPANSION_UNSUPPORTED`
-  until **M18** implements expansion. Both exist so a conversion never silently yields a fraction
-  of the atoms — wrong stoichiometry behind a plausible-looking output file.
+  Recovery Workflow. A file that *does* declare its operations is expanded (see below). The refusal
+  exists so a conversion never silently yields a fraction of the atoms — wrong stoichiometry
+  behind a plausible-looking output file.
+- **Symmetry expansion applies the operations a CIF declares (M18, D67).** Operation strings are
+  parsed into exact affine maps over `Fraction`, never floats, so a translation written `1/3` is a
+  third; an operation that cannot be read exactly — or whose rotation is not crystallographic
+  (determinant ≠ ±1), or a loop omitting the identity — is a `ParseError`, never a silently
+  skipped operation. Sites on a symmetry element are merged within **0.05 Å**, judged as a
+  minimum-image *physical* distance rather than a fractional tolerance, and merging is scoped to
+  one site's orbit so partially-occupied sites sharing a position are never collapsed. Coordinates
+  the expansion *generates* are wrapped into the unit cell; coordinates the file *declared* are
+  carried exactly as spelled. `parse_notes` records the operation count, the per-site
+  multiplicities and the merge count — so `sites × operations − merged = atoms` is checkable from
+  the report — and the declared operation strings are carried verbatim in
+  `simulation.extra["cif:symmetry_operations"]`.
 
 ### Changed
 

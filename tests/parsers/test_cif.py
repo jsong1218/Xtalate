@@ -163,15 +163,18 @@ def test_p_minus_1_is_not_treated_as_p1() -> None:
     assert exc.value.issues[0].code == "CIF_UNEXPANDABLE_SYMMETRY"
 
 
-def test_non_identity_operations_are_refused_until_m18() -> None:
-    data = CUBIC.replace(
+def test_non_identity_operations_expand_the_structure() -> None:
+    # A site off any symmetry element: inversion genuinely doubles it. This is the base case the
+    # milestone exists for — the atoms an asymmetric unit implies but does not list.
+    data = CUBIC.replace(b"Cl1 Cl 0.5 0.5 0.5\n", b"Cl1 Cl 0.25 0.25 0.25\n").replace(
         b"loop_\n_atom_site_label",
         b"loop_\n_space_group_symop_operation_xyz\n'x, y, z'\n'-x, -y, -z'\n"
         b"loop_\n_atom_site_label",
     )
-    with pytest.raises(ParseError) as exc:
-        _parse(data)
-    assert exc.value.issues[0].code == "CIF_SYMMETRY_EXPANSION_UNSUPPORTED"
+    atoms = _parse(data).canonical.frames[0].atoms
+    assert atoms.symbols == ["Na", "Cl", "Cl"]
+    # The generated Cl sits at fractional (0.75, 0.75, 0.75) — 3.0 Å along each axis of a 4 Å cell.
+    assert atoms.positions[2] == pytest.approx([3.0, 3.0, 3.0])
 
 
 def test_identity_only_operation_loop_parses() -> None:
@@ -182,16 +185,105 @@ def test_identity_only_operation_loop_parses() -> None:
     assert _parse(data).canonical.frames[0].atoms.symbols == ["Na", "Cl"]
 
 
-def test_legacy_symmetry_tag_spelling_is_recognised() -> None:
-    # A file using the legacy _symmetry_equiv_pos_as_xyz spelling must hit the same refusal as
-    # the modern one; missing the alias would silently read an asymmetric unit as a full cell.
-    data = CUBIC.replace(
+def test_legacy_symmetry_tag_spelling_is_expanded_too() -> None:
+    # A file using the legacy _symmetry_equiv_pos_as_xyz spelling must expand exactly as the
+    # modern one does; missing the alias would silently read an asymmetric unit as a full cell.
+    data = CUBIC.replace(b"Cl1 Cl 0.5 0.5 0.5\n", b"Cl1 Cl 0.25 0.25 0.25\n").replace(
         b"loop_\n_atom_site_label",
         b"loop_\n_symmetry_equiv_pos_as_xyz\n'x, y, z'\n'-x, -y, -z'\nloop_\n_atom_site_label",
     )
+    assert _parse(data).canonical.frames[0].atoms.symbols == ["Na", "Cl", "Cl"]
+
+
+def test_sites_on_a_symmetry_element_merge_rather_than_double() -> None:
+    """Both CUBIC sites sit on inversion centres, so inversion adds no atoms at all.
+
+    Multiplicity below the operation count is the whole reason the merge exists: without it this
+    file would report four atoms where the crystal has two, which is the wrong-stoichiometry
+    failure every other guard in this milestone is also aimed at.
+    """
+    data = CUBIC.replace(
+        b"loop_\n_atom_site_label",
+        b"loop_\n_space_group_symop_operation_xyz\n'x, y, z'\n'-x, -y, -z'\n"
+        b"loop_\n_atom_site_label",
+    )
+    result = _parse(data)
+    assert result.canonical.frames[0].atoms.symbols == ["Na", "Cl"]
+    note = next(n for n in result.canonical.provenance.parse_notes if "Symmetry expansion" in n)
+    assert "Per-site multiplicities: [1, 1]" in note
+    assert "2 coincident image(s) were merged" in note
+
+
+def test_generated_coordinates_are_wrapped_but_declared_ones_are_not() -> None:
+    """Wrapping is construction, not laundering of source data (DECISIONS.md D67 rule 3).
+
+    The declared site at z=1.25 stays at 1.25 — rewriting it to 0.25 would be editing what the
+    file said. Its inversion image has no source spelling to be faithful to, so it is placed in
+    the unit cell as part of being constructed: -1.25 is reported at 0.75, not at -1.25.
+    """
+    data = CUBIC.replace(b"Cl1 Cl 0.5 0.5 0.5\n", b"Cl1 Cl 0.0 0.0 1.25\n").replace(
+        b"loop_\n_atom_site_label",
+        b"loop_\n_space_group_symop_operation_xyz\n'x, y, z'\n'-x, -y, -z'\n"
+        b"loop_\n_atom_site_label",
+    )
+    positions = _parse(data).canonical.frames[0].atoms.positions
+    assert positions[1][2] == pytest.approx(5.0)  # declared 1.25 × 4 Å, carried verbatim
+    assert positions[2][2] == pytest.approx(3.0)  # generated -1.25 → 0.75 × 4 Å
+
+
+def test_per_site_columns_are_replicated_onto_generated_atoms() -> None:
+    """Occupancy and label describe the site, so every atom it generates carries them."""
+    data = CUBIC.replace(
+        b"_atom_site_fract_z\nNa1 Na 0.0 0.0 0.0\nCl1 Cl 0.5 0.5 0.5\n",
+        b"_atom_site_fract_z\n_atom_site_occupancy\n"
+        b"Na1 Na 0.0 0.0 0.0 1.0\nCl1 Cl 0.25 0.25 0.25 0.5\n",
+    ).replace(
+        b"loop_\n_atom_site_label",
+        b"loop_\n_space_group_symop_operation_xyz\n'x, y, z'\n'-x, -y, -z'\n"
+        b"loop_\n_atom_site_label",
+    )
+    per_atom = _parse(data).canonical.user_metadata.custom_per_atom
+    assert list(per_atom["cif:atom_site_occupancy"]) == pytest.approx([1.0, 0.5, 0.5])
+    assert list(per_atom["cif:atom_site_label"]) == ["Na1", "Cl1", "Cl1"]
+
+
+def test_declared_operations_are_carried_verbatim() -> None:
+    data = CUBIC.replace(
+        b"loop_\n_atom_site_label",
+        b"loop_\n_space_group_symop_operation_xyz\n'x, y, z'\n'-x, -y, -z'\n"
+        b"loop_\n_atom_site_label",
+    )
+    simulation = _parse(data).canonical.simulation
+    assert simulation is not None
+    assert simulation.extra["cif:symmetry_operations"] == "x, y, z\n-x, -y, -z"
+
+
+def test_an_operation_loop_without_the_identity_is_refused() -> None:
+    """Expanding without it would move every atom off the position the file declared."""
+    data = CUBIC.replace(
+        b"loop_\n_atom_site_label",
+        b"loop_\n_space_group_symop_operation_xyz\n'-x, -y, -z'\nloop_\n_atom_site_label",
+    )
     with pytest.raises(ParseError) as exc:
         _parse(data)
-    assert exc.value.issues[0].code == "CIF_SYMMETRY_EXPANSION_UNSUPPORTED"
+    assert exc.value.issues[0].code == "CIF_MALFORMED_SYMOP"
+
+
+def test_cartesian_sites_with_real_symmetry_are_refused() -> None:
+    """Operations are defined on fractional axes; applying them to Å would be nonsense."""
+    data = (
+        CUBIC.replace(b"_atom_site_fract_x", b"_atom_site_Cartn_x")
+        .replace(b"_atom_site_fract_y", b"_atom_site_Cartn_y")
+        .replace(b"_atom_site_fract_z", b"_atom_site_Cartn_z")
+        .replace(
+            b"loop_\n_atom_site_label",
+            b"loop_\n_space_group_symop_operation_xyz\n'x, y, z'\n'-x, -y, -z'\n"
+            b"loop_\n_atom_site_label",
+        )
+    )
+    with pytest.raises(ParseError) as exc:
+        _parse(data)
+    assert exc.value.issues[0].code == "CIF_CARTESIAN_SITES_WITH_SYMMETRY"
 
 
 # --- type-symbol laundering ----------------------------------------------------------------
