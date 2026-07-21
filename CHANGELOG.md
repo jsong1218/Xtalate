@@ -8,7 +8,16 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ## [Unreleased]
 
-The start of **v0.4**.
+## [0.4.0] — 2026-07-21
+
+v0.4 — **"Phase 1 Complete."** CIF, the seventh and last Phase-1 format, lands read and write:
+cell parameters, symmetry expansion from the operations a file declares, occupancy and formal
+charges, and a `P 1` exporter. With it the format set the roadmap called Phase 1 is closed, and
+the claim that adding a format is O(1) in the existing formats has now been paid three times.
+
+The version ends where a CIF parser has to end — against real files. A corpus of Crystallography
+Open Database entries, vendored verbatim and governed like the golden one, found two reporting
+defects that seven milestones of synthetic fixtures had not.
 
 ### Added
 
@@ -98,8 +107,62 @@ The start of **v0.4**.
   **derived from the Capability Matrix** rather than hand-listed, so a future change that dropped
   something else — or stopped declaring the drop — fails.
 
+- **A real-world corpus, governed like the golden one but expected differently (M20, D70).**
+  Crystallography Open Database entries (CC0) are vendored verbatim under `tests/wild/`, a second
+  corpus root sharing `tests/golden/`'s governance module — same manifest schema, same `sha256`
+  tripwire, same *no manifest, no license, no merge* rule, one generated `ATTRIBUTIONS.md` across
+  both. What differs is the expectation, because a golden expectation is *hand-verified* and
+  nobody can attest to 192 expanded coordinates. A wild case instead declares the **exact** set of
+  `ParseIssue` codes the file must produce — equality, so a code that appears untriaged and a code
+  that silently stops appearing both fail — and its stoichiometry is checked against
+  `_chemical_formula_sum` × `_cell_formula_units_Z` read straight from the source text with a
+  regex that shares no code with the parser under test. The file is its own oracle: a symmetry bug
+  that produces the wrong atom count is caught by contradicting the very file that produced it,
+  with nobody having to know the right answer in advance. Skipping that check requires naming a
+  reason from a fixed vocabulary *and* arguing it in prose, and the suite checks the skip against
+  the file. Ten entries span the axes M20 named — legacy `_symmetry_*` spelling, mixed-case tags,
+  `?`/`.` markers, uncertainty parentheses, occupancy < 1, oxidation-state symbols — several
+  carrying more than one, as real files do. Multi-block is not among them and could not be: COD
+  serves one structure per file, and ~60 entries sampled across its numbering space held no second
+  `data_` block. That is recorded in the corpus rather than left to look like an oversight.
+
 ### Fixed
 
+- **The occupancy warning carried two claims that are true of different files (M20, D71).**
+  `CIF_OCCUPANCY_NOT_MODELLED` fired whenever `_atom_site_occupancy` was present — correct, since
+  the column is an unmodelled schema gap whatever its values — while its message claimed the file
+  "states partial site occupancy", which was false for most files it fired on. COD writes that
+  column on nearly every entry, so the warning was on track to fire almost universally while
+  saying something untrue almost as often, which trains a reader to skim past the file where
+  occupancy really is partial. The trigger is unchanged (suppressing it would trade a misleading
+  warning for a silent loss, the worse failure under **P5**); the wording now states only what is
+  true of a carried column, and the disorder claim moves to a new **`CIF_PARTIAL_OCCUPANCY`**,
+  raised only when some site's occupancy is not 1 — with unknown (`?`/`.`) counting as not-1,
+  since silence is not a statement of fullness (**P4**). The predicate deciding that moved to
+  `schema/paths.py` beside the key it interprets, because the parser cannot import the pre-flight
+  layer that owned it and a second definition of "full" would be free to drift.
+- **Precision loss on cell parameters was reported nowhere (M20, D71).** A parenthesized standard
+  uncertainty (`4.217(1)`) is read as its value and its precision digits discarded, and
+  `parse_notes` said so — but only for coordinates, because the note was emitted from the
+  coordinate reader alone. Real refinement is the other way round: a lattice constant essentially
+  always carries an esd while an atom on a special position is written as an exact `0.` or `0.5`,
+  so the note covered the rare case and missed the universal one, silently, for three milestones.
+  `validate_cell` now returns the cell tags that carried an uncertainty and the builder folds them
+  into the same note. A synthetic fixture could not have found this — a fixture author
+  demonstrating uncertainty parentheses puts them on a coordinate, and the golden corpus did.
+- **The package version was declared three times and nothing compared them (M20).** `pyproject.toml`
+  names the version the artifact carries, `xtalate.__version__` is what the code reports, and a
+  smoke test pinned a third copy as a literal — so a release bump edited two lines in one file and
+  the suite stayed green while the two real declarations disagreed. This is not only a metadata
+  nit: `__version__` is stamped into `provenance.history[].tool_version` on every object Xtalate
+  produces, so the drift would attribute every converted file to the wrong tool version. The
+  literal is replaced by a check that `__version__` equals the version in `pyproject.toml`, read
+  from the file rather than from installed metadata (which goes stale in an editable checkout —
+  it reported a third number again during this fix).
+- **A stale claim in the occupancy note, caught in passing (M20, D71).** It ended "No Phase 1
+  export target can represent it", true when M19 wrote it and false once M19's own CIF exporter
+  declared `cif:occupancy` writable. Nothing tested the sentence: prose inside a note is pinned
+  byte-exact by the golden expectations, which catches *changes* to it and never its *truth*.
 - **extXYZ and ASE `.traj` over-declared what they can write to `user_metadata.custom_per_atom`,
   and a format may now declare its writable custom keys as a *name pattern* (D69).** Enrolling CIF
   in the round-trip matrix made it the first golden source carrying per-atom carry-through columns,
@@ -615,7 +678,8 @@ byte of scientific information kept, dropped, or fabricated.
 - Recovery is preset-only; tolerance profiles are the three named ones (custom tables are later
   seams).
 
-[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/jsong1218/Xtalate/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jsong1218/Xtalate/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jsong1218/Xtalate/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jsong1218/Xtalate/releases/tag/v0.1.0

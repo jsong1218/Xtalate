@@ -8,9 +8,13 @@
 
 Every conversion produces a structured **Conversion Report** (what was preserved, dropped, or fabricated, and the reason for each) and an automatic **Validation Report** (the output re-parsed and diffed against the source to prove the report told the truth). The guiding rule is simple: *never silently lose scientific information.* If you diffed the input and output by hand, nothing should surprise you that Xtalate didn't already tell you about.
 
-## What v0.3 does
+## What v0.4 does
 
-- **Formats** (read *and* write): plain **XYZ**, **extended XYZ** (ASE-backed), **POSCAR**, **CONTCAR** — including the POSCAR/CONTCAR **velocity block** (Cartesian + Direct) — **XDATCAR**, and the **ASE `.traj`** format. That's **six of the seven Phase-1 formats**; CIF is the last, landing in v0.4.
+**Phase 1 is complete: all seven formats read *and* write.**
+
+- **Formats** (read *and* write): plain **XYZ**, **extended XYZ** (ASE-backed), **POSCAR**, **CONTCAR** — including the POSCAR/CONTCAR **velocity block** (Cartesian + Direct) — **XDATCAR**, the **ASE `.traj`** format, and **CIF**. Every pair among them converts, and the nightly matrix runs all 7 × 7.
+- **CIF, with crystallography taken seriously.** Cell *parameters* → lattice vectors, fractional → Cartesian at the parser boundary, and **symmetry expansion from the operations the file declares** — parsed as exact affine maps over rationals, so a translation written `1/3` is a third, with sites on a symmetry element merged on a physical 0.05 Å distance. A file that names a space group but declares *no* operations is **refused**, never read as a partial structure: supplying the operations from space-group tables would be data the file never stated, and the failure it prevents is a conversion that silently yields a fraction of the atoms. Occupancy and declared formal charges are carried, and the exporter writes `P 1` with every atom explicit rather than asserting a symmetry the written coordinates no longer encode.
+- **Validated against real files, not just fixtures.** A corpus of Crystallography Open Database entries is vendored verbatim and asserted against the composition each file declares for its own unit cell (`_chemical_formula_sum` × `_cell_formula_units_Z`) — so a symmetry bug is caught by contradicting the very file that produced it, rather than by a number someone hoped was right. It found two loss-reporting defects that seven milestones of synthetic fixtures had not.
 - **Scales to large trajectories** — a frame-chunked streaming core makes pipeline memory **sub-linear in the number of frames**: `convert` streams a 10⁴-configuration XDATCAR at roughly constant memory and produces a Conversion Report **byte-identical** to the materialized path. XDATCAR and ASE `.traj` are streaming-first.
 - **Inspect** — the Information Discovery Engine reports a ✓/✗ inventory of which canonical fields a file contains, each annotated with the format's capability.
 - **Convert** — a single spine, `Native File → Canonical Object → Native File`, driven by a per-format **Capability Matrix** that predicts loss *before* writing. No format ever talks to another format.
@@ -19,10 +23,10 @@ Every conversion produces a structured **Conversion Report** (what was preserved
 - **Round-trip matrix** — beyond identity round-trips, a cross-format **two-hop** (`A→B→Canonical′`) and **three-hop** (`A→B→A`) test suite whose comparable subspace is computed from the Capability Matrix, catching parser/exporter asymmetry.
 - **Third-party formats via plugins** — a parser/exporter shipped in a separate installable package is discovered automatically through Python **entry points** (`xtalate.parsers` / `xtalate.exporters`), with no fork or edit to Xtalate; it joins sniffing, Discovery, conversion, and validation on equal footing (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
-## What v0.3 does *not* do (yet)
+## What v0.4 does *not* do (yet)
 
 - **No web service, REST API, or UI.** Xtalate is a pure-Python **library + CLI**. The FastAPI Service and Next.js Web UI are later versions (v0.5 / v0.6) and attach to this core without re-implementing it.
-- **CIF — the seventh and last Phase-1 format — is not yet implemented.** It lands in v0.4.
+- **CIF is read and written, but not every CIF.** A file whose symmetry must be reconstructed from a space-group *symbol* alone is refused rather than guessed at; occupancy is carried under a namespaced key rather than modelled as a first-class canonical field, and only the CIF target writes it back.
 - **Recovery is preset-only.** There is no interactive prompt; the CLI takes choices up front or refuses (interactive recovery is Service/UI machinery).
 - **Pre-1.0, a minor version may break.** The plugin SDK is not frozen until v1.0 (risk R12); the canonical schema is still `0.1.0`.
 
@@ -120,7 +124,9 @@ Native File → Format Sniffer → Parser → Canonical Object → Exporter → 
 
 The **Canonical Object** is the only thing that crosses the parser/exporter boundary — parsers never call other parsers, and the absence convention distinguishes "the source never had this" (`None`) from "the source had it, and the value is zero." The design and its principles are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); the library and CLI surface in [`docs/API.md`](docs/API.md); building and extending Xtalate in [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md).
 
-Architectural decisions (D1–D66) and MASTER_SPEC are maintained privately. Public commits may
+That spine is what makes **adding a format O(1) in the number of formats already present** — a claim now paid three times over. XDATCAR, ASE `.traj`, and CIF each arrived as one parser and one exporter against the Canonical Object plus a row in the Capability Matrix, and each joined sniffing, Discovery, conversion, validation, and the full n×n round-trip matrix without a single edit to any other format. CIF is the strongest evidence, because it is the least like the others: it is the only format whose native coordinates are fractional, the only one carrying symmetry, and the only one that needed a whole expansion stage — and it still cost no format-to-format code, because there is none to write.
+
+Architectural decisions (D1–D71) and MASTER_SPEC are maintained privately. Public commits may
 reference decision IDs. If you need the rationale for a particular decision, feel free to open an
 issue or contact me.
 
@@ -134,15 +140,21 @@ lint-imports                             # acyclic package layering (P2)
 pytest                                   # tests
 ```
 
-CI runs this matrix on Python 3.11 and 3.13, plus the golden-corpus governance suite
-(manifest schema + license, source hashes, `ATTRIBUTIONS.md` regeneration) and a coverage
+CI runs this matrix on Python 3.11 and 3.13, plus the corpus governance suite over both corpus
+roots (manifest schema + license, source hashes, `ATTRIBUTIONS.md` regeneration) and a coverage
 ratchet.
 
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). The invited path today is
-**golden-corpus contributions**: real, licensed sample files that harden the converter. Parser
-plugins are welcome too, with the caveat that the plugin SDK is not frozen until v1.0.
+**corpus contributions**: real, licensed sample files that harden the converter. There are two
+kinds and they ask different things of you. A **golden** case (`tests/golden/`) asserts what a file
+*should* produce and needs an expectation you verified by hand. A **wild** case (`tests/wild/`) is
+a real third-party file asserting what it *does* produce — the exact set of issue codes, plus the
+composition the file declares for itself — so it needs a triage rather than a derivation, which
+makes it much cheaper to add. Both need a manifest and a license; no manifest, no license, no
+merge. Parser plugins are welcome too, with the caveat that the plugin SDK is not frozen until
+v1.0.
 
 ## License
 

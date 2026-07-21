@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xtalate"
-version = "0.3.0"
+version = "0.4.0"
 description = "The trusted translation layer between computational chemistry file formats — a converter that tells you exactly what it kept, what it lost, and why."
 readme = "README.md"
 requires-python = ">=3.11"
