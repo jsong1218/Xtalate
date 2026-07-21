@@ -11,7 +11,6 @@ full 3-D periodicity, which CIF implies by describing a crystal and never states
 
 from __future__ import annotations
 
-import math
 import re
 from fractions import Fraction
 from typing import Any
@@ -50,7 +49,8 @@ from xtalate.schema import (
     SimulationMetadata,
     UserMetadata,
 )
-from xtalate.schema.elements import is_valid_symbol
+from xtalate.schema.cell import lattice_from_parameters, to_cartesian
+from xtalate.schema.elements import UNKNOWN_SYMBOL, normalize_symbol
 from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY, is_full_occupancy
 from xtalate.sdk import ParseError, ParseIssue
 
@@ -137,67 +137,6 @@ def _error(code: str, message: str, *, location: str | None = None) -> ParseErro
     return ParseError([ParseIssue(severity="error", code=code, message=message, location=location)])
 
 
-_SQRT3_OVER_2 = math.sqrt(3.0) / 2.0
-# The cell angles crystallography states *exactly*: the right angle of every non-triclinic
-# system, and the 30/60/120/150° angles of the hexagonal and rhombohedral ones. libm evaluates
-# cos(radians(90)) as 6.1e-17 rather than 0, so a lattice built through it is both spuriously
-# non-orthogonal — a 1e-16 tilt the source never declared, which P1 has no business inventing —
-# and machine-dependent in its last bit, since the platform's libm, not IEEE 754, decides that
-# digit. Both problems disappear by using the exact value the angle actually denotes.
-_EXACT_COS_SIN_DEG: dict[float, tuple[float, float]] = {
-    30.0: (_SQRT3_OVER_2, 0.5),
-    60.0: (0.5, _SQRT3_OVER_2),
-    90.0: (0.0, 1.0),
-    120.0: (-0.5, _SQRT3_OVER_2),
-    150.0: (-_SQRT3_OVER_2, 0.5),
-}
-
-
-def _cos_sin_deg(degrees: float) -> tuple[float, float]:
-    """``(cos, sin)`` of an angle in degrees, exact for the standard crystallographic angles."""
-    exact = _EXACT_COS_SIN_DEG.get(degrees)
-    if exact is not None:
-        return exact
-    radians = math.radians(degrees)
-    return math.cos(radians), math.sin(radians)
-
-
-def lattice_from_parameters(
-    lengths: tuple[float, float, float], angles: tuple[float, float, float]
-) -> np.ndarray:
-    """Build the 3×3 lattice matrix (rows a, b, c, in Å) from cell parameters.
-
-    CIF is the only Phase 1 format that states a cell as *parameters* rather than vectors, so
-    an orientation convention has to be chosen; a≈+x with b in the xy half-plane is the
-    crystallographic standard and is documented here because it is otherwise invisible. The
-    choice is not observable in any physical quantity — lengths, angles, volume and all
-    interatomic distances are rotation-invariant — but it *is* observable in the exported
-    Cartesian coordinates, which is why it is pinned rather than left to floating-point luck.
-    """
-    a, b, c = lengths
-    cos_alpha, _ = _cos_sin_deg(angles[0])
-    cos_beta, _ = _cos_sin_deg(angles[1])
-    cos_gamma, sin_gamma = _cos_sin_deg(angles[2])
-
-    cx = c * cos_beta
-    cy = c * (cos_alpha - cos_beta * cos_gamma) / sin_gamma
-    cz_squared = c * c - cx * cx - cy * cy
-    if cz_squared <= 0.0:
-        raise _error(
-            "CIF_INVALID_CELL",
-            f"cell angles alpha={angles[0]}, beta={angles[1]}, gamma={angles[2]} do not "
-            "describe a realizable cell (the implied volume is zero or negative)",
-        )
-    return np.asarray(
-        [
-            [a, 0.0, 0.0],
-            [b * cos_gamma, b * sin_gamma, 0.0],
-            [cx, cy, math.sqrt(cz_squared)],
-        ],
-        dtype=float,
-    )
-
-
 def element_of(raw_type: str | None, raw_label: str | None, *, line: int) -> str:
     """The element symbol for one site, laundered from its type symbol or label.
 
@@ -214,9 +153,23 @@ def element_of(raw_type: str | None, raw_label: str | None, *, line: int) -> str
         match = pattern.match(raw.strip())
         if match is None:
             continue
-        symbol = next(g for g in match.groups() if g)
-        symbol = symbol[0].upper() + symbol[1:].lower()
-        if is_valid_symbol(symbol):
+        letters = next(g for g in match.groups() if g)
+        # Two candidates, longest first. The regex is greedy over ``[A-Za-z]{1,2}`` and a regex
+        # alternation does not backtrack once a branch has matched, so ``Ow1`` — the conventional
+        # label for a water oxygen, and ubiquitous in hydrate CIFs — matched ``Ow``, failed the
+        # element table, and raised CIF_INVALID_SYMBOL on a file whose element is unambiguous.
+        # Retrying the one-letter prefix recovers it without loosening anything: a two-letter
+        # symbol that *is* an element still wins, so ``Co1`` is cobalt and never carbon.
+        for candidate in (letters, letters[:1]) if len(letters) == 2 else (letters,):
+            symbol = normalize_symbol(candidate)
+            # The one-letter retry must never *manufacture* the unknown marker. `X` is a valid
+            # symbol, so without this every unrecognizable two-letter label beginning with x —
+            # `Xx1`, the canonical example of a species Xtalate cannot identify — would shorten to
+            # `X` and become an atom of unknown species instead of the error this function
+            # promises. A file that states `X` outright still gets it; only the *fallback* is
+            # barred from inventing it, which is the difference between reading and guessing.
+            if symbol is None or (symbol == UNKNOWN_SYMBOL and candidate is not letters):
+                continue
             return symbol
     raise _error(
         "CIF_INVALID_SYMBOL",
@@ -236,7 +189,12 @@ def build(
     loop, coord_tags, fractional = validate_atom_sites(block)
     oxidation_numbers = validate_oxidation_numbers(block)
 
-    lattice = lattice_from_parameters(lengths, angles)
+    # schema states the geometry failure as a ValueError (it sits below `sdk`, where the parse
+    # error contract lives); this layer is what knows the failure has a CIF tag and a line.
+    try:
+        lattice = lattice_from_parameters(lengths, angles)
+    except ValueError as exc:
+        raise _error("CIF_INVALID_CELL", str(exc)) from exc
     coords, coord_uncertain = _coordinates(loop, coord_tags)
     uncertain = coord_uncertain | cell_uncertain
 
@@ -245,7 +203,7 @@ def build(
         coords = np.asarray(
             [[float(value) for value in site] for site in expansion.coordinates], dtype=float
         )
-    positions = coords @ lattice if fractional else coords
+    positions = to_cartesian(coords, lattice) if fractional else coords
 
     # Every per-site fact — element, occupancy, label — belongs to the atoms its declared site
     # generated, so each is replicated through the same source_index mapping.
@@ -260,6 +218,28 @@ def build(
         )
         for i in site_of
     ]
+    # `X` is a valid symbol (schema.elements), so a site labelled `X1` — real CIFs use it for
+    # unassigned electron density — passed the element table and became an atom with no warning
+    # anywhere. That contradicts both `elements.py` ("a parser emitting it must accompany it with
+    # a warning (§3.3) — that policy lives in the parsers") and `element_of`'s own promise never to
+    # return a placeholder. It stays a valid parse: the file really does say a scatterer sits
+    # there, and refusing would discard a real site. It just stops being silent.
+    if UNKNOWN_SYMBOL in symbols:
+        count = symbols.count(UNKNOWN_SYMBOL)
+        issues.append(
+            ParseIssue(
+                severity="warning",
+                code="CIF_UNKNOWN_SPECIES",
+                message=(
+                    f"{count} site(s) carry the reserved unknown-species symbol "
+                    f"{UNKNOWN_SYMBOL!r} (Part 2 §3.3): the file names no element for them, so "
+                    "they are atoms of unidentified species rather than a specific element. "
+                    "Stoichiometry, masses and anything derived from atomic number are "
+                    "correspondingly undefined for those sites."
+                ),
+                location=f"line {loop.line}",
+            )
+        )
 
     custom_per_atom: dict[str, Any] = {
         key: [column[i] for i in site_of] for key, column in _carried_columns(loop).items()
@@ -593,5 +573,4 @@ __all__ = [
     "build",
     "charge_of_type_symbol",
     "element_of",
-    "lattice_from_parameters",
 ]

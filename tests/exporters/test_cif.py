@@ -23,9 +23,8 @@ from pydantic import JsonValue
 
 from xtalate.conversion import ConversionEngine
 from xtalate.conversion.preflight import build_preflight
-from xtalate.exporters.cif import cell_parameters, make_cif_exporter
+from xtalate.exporters.cif import make_cif_exporter
 from xtalate.parsers._common import build_provenance
-from xtalate.parsers.cif._build import lattice_from_parameters
 from xtalate.registry import default_registry
 from xtalate.schema import (
     AtomsBlock,
@@ -36,6 +35,7 @@ from xtalate.schema import (
     UserMetadata,
 )
 from xtalate.schema.arrays import ArrayNx
+from xtalate.schema.cell import cell_parameters, lattice_from_parameters
 from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
 
 _REGISTRY = default_registry()

@@ -20,12 +20,12 @@ it is spelled — but both are floating-point, so they are noted rather than ass
 
 from __future__ import annotations
 
-import math
 from typing import Any, BinaryIO
 
 import numpy as np
 
 from xtalate.schema import CanonicalObject
+from xtalate.schema.cell import cell_parameters, to_fractional
 from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
 from xtalate.sdk import (
     CapabilityLevel,
@@ -139,71 +139,6 @@ def _quote(value: str) -> str:
     return f"\n;{value}\n;"
 
 
-#: The exact cell angles, and the tolerance within which a computed angle is recognised as one.
-#:
-#: This is the inverse of the parser's ``_EXACT_COS_SIN_DEG`` table, and it has to exist for that
-#: table to be worth anything (D73). The parser builds a 120° cell from cos = −0.5 exactly, but the
-#: return trip goes through ``acos`` of a dot product over vector norms, and ``sqrt(3)/2`` squared
-#: is not ``0.75`` — so the angle comes back 120.000000000000014, misses the parser's table on the
-#: next read, and hop 2 gets a lattice with a spurious tilt. CIF→CIF was therefore not idempotent
-#: for any hexagonal, trigonal or rhombohedral cell: exactly the angles the parser's table was
-#: written to protect.
-#:
-#: 1e-9° is roughly five orders of magnitude below the precision CIF states angles to (1e-4°) and
-#: five above the ~1e-14° error being absorbed, so it cannot reach a value a source really meant.
-_EXACT_ANGLES_DEG = (30.0, 60.0, 90.0, 120.0, 150.0)
-_ANGLE_SNAP_TOLERANCE_DEG = 1e-9
-
-
-def _snap_exact_angle(degrees: float) -> float:
-    """A computed cell angle, snapped to the exact crystallographic value it is reproducing."""
-    for exact in _EXACT_ANGLES_DEG:
-        if abs(degrees - exact) <= _ANGLE_SNAP_TOLERANCE_DEG:
-            return exact
-    return degrees
-
-
-def cell_parameters(lattice: np.ndarray) -> tuple[tuple[float, float, float], tuple[float, ...]]:
-    """Lattice vectors (rows a, b, c, Å) → ``((a, b, c), (alpha, beta, gamma))`` in Å and degrees.
-
-    The inverse of the parser's ``lattice_from_parameters``, including its exact-angle table (see
-    ``_EXACT_ANGLES_DEG``), and the reason the round-trip holds regardless of orientation: lengths
-    and angles are rotation-invariant, so a cell that was re-oriented on the way in (or arrived
-    from a format that states vectors directly) comes back out with the parameters it always had.
-    ``alpha`` is the angle between **b** and **c**, per the crystallographic convention that each
-    angle is opposite its like-named axis.
-
-    The two halves live in different layers (``parsers.cif._build`` and here) and so cannot share
-    the table today; ``tests/exporters/test_cif.py`` pins them as mutual inverses meanwhile.
-    """
-    a, b, c = (np.asarray(row, dtype=float) for row in lattice)
-    lengths = tuple(float(np.linalg.norm(v)) for v in (a, b, c))
-
-    def angle(u: np.ndarray, v: np.ndarray, lu: float, lv: float) -> float:
-        # Clamped because a floating-point dot product of near-parallel vectors can leave the
-        # cosine a few ulp outside [-1, 1], where acos is a domain error rather than 0° or 180°.
-        cosine = float(np.dot(u, v)) / (lu * lv)
-        return _snap_exact_angle(math.degrees(math.acos(max(-1.0, min(1.0, cosine)))))
-
-    angles = (
-        angle(b, c, lengths[1], lengths[2]),
-        angle(a, c, lengths[0], lengths[2]),
-        angle(a, b, lengths[0], lengths[1]),
-    )
-    return lengths, angles  # type: ignore[return-value]
-
-
-def _to_fractional(positions: np.ndarray, lattice: np.ndarray) -> np.ndarray:
-    """Cartesian Å → fractional against ``lattice`` (rows a, b, c).
-
-    ``cart = frac @ lattice``, so ``frac`` solves ``lattice.T @ frac.T = cart.T``. Solved rather
-    than multiplied by an explicit inverse, for the same conditioning reason XDATCAR gives: on the
-    skewed cells low-symmetry crystals routinely have, the solve keeps the inversion error at the
-    ulp level the declared representational bound assumes.
-    """
-    return np.asarray(np.linalg.solve(lattice.T, positions.T).T)
-
-
 def _column(custom_per_atom: dict[str, Any], key: str, n_atoms: int) -> list[Any] | None:
     """One ``custom_per_atom`` column as a plain list, or ``None`` if it is absent or the wrong
     length. A mismatched length is treated as absent rather than raising: it means the column
@@ -288,7 +223,7 @@ class CifExporter(ExporterPlugin):
 
         lattice = np.asarray(cell.lattice_vectors, dtype=float)
         lengths, angles = cell_parameters(lattice)
-        fractional = _to_fractional(np.asarray(atoms.positions, dtype=float), lattice)
+        fractional = to_fractional(np.asarray(atoms.positions, dtype=float), lattice)
 
         out: list[str] = [f"data_{self._block_name(canonical)}", ""]
 

@@ -31,6 +31,7 @@ import numpy as np
 
 from xtalate.exporters._common import group_by_element
 from xtalate.schema import CanonicalObject, Frame
+from xtalate.schema.cell import to_fractional
 from xtalate.sdk import (
     CapabilityLevel,
     ExporterPlugin,
@@ -46,17 +47,6 @@ _COMMENT_KEY = "xdatcar:comment"
 
 def _fmt(x: float) -> str:
     return repr(float(x))
-
-
-def _to_fractional(positions: np.ndarray, lattice: np.ndarray) -> np.ndarray:
-    """Cartesian Å → Direct (fractional) against ``lattice`` (rows a, b, c).
-
-    ``cart = frac @ lattice``, so ``frac`` solves ``lattice.T @ frac.T = cart.T``. Solved rather
-    than multiplied by an explicit inverse: for the skewed cells MD cells routinely become, a
-    solve is the better-conditioned of the two and keeps the round-trip error at the ulp level
-    the declared precision bound assumes.
-    """
-    return np.linalg.solve(lattice.T, positions.T).T
 
 
 class XdatcarExporter(ExporterPlugin):
@@ -110,7 +100,7 @@ class XdatcarExporter(ExporterPlugin):
             previous_lattice = lattice
 
             stream.write(f"Direct configuration=  {i + 1:>5}\n".encode())
-            frac = _to_fractional(
+            frac = to_fractional(
                 np.asarray(frame.atoms.positions, dtype=float), np.asarray(lattice, dtype=float)
             )
             for atom_idx in permutation:

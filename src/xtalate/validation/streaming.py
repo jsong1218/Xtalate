@@ -30,6 +30,7 @@ from xtalate.sdk import ParseError, StreamFrame, StreamHeader, stream_of
 from xtalate.validation._shared import AGGREGATE as _AGGREGATE
 from xtalate.validation._shared import NUMERIC_FIELDS as _NUMERIC_FIELDS
 from xtalate.validation._shared import RANK as _RANK
+from xtalate.validation._shared import require_supported_precision
 from xtalate.validation.engine import (
     ConversionReportView,
     _content_matches_values,
@@ -399,6 +400,11 @@ class StreamingValidator:
                 "warn": eff.warn,
                 "fail": eff.fail,
                 "missing": state["missing"],
+                # Recorded per path so an offline re-threshold can reproduce this judgement. The
+                # scalar checks carry their bound in `tolerance_applied`; this check judges eight
+                # paths at once, so a single slot cannot hold it and the re-thresholder was
+                # silently re-judging without one (tightening the tolerance it re-applied).
+                "representational_bound": bound,
             }
             if _RANK[status] > _RANK[worst]:
                 worst = status
@@ -546,7 +552,10 @@ def validate_stream(
     needed (a reordering streaming target would thread one, and is excluded until one exists).
     """
     parser = registry.get_parser(target_format_id)
-    precision = registry.get_exporter(target_format_id).capabilities().numeric_precision
+    caps = registry.get_exporter(target_format_id).capabilities()
+    precision = require_supported_precision(
+        target_format_id, caps.numeric_precision, caps.native_coordinate_system
+    )
     validator = StreamingValidator(tolerance, precision, perm=None)
     try:
         if parser.supports_streaming():

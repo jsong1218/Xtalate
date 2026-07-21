@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from xtalate.validation._shared import require_supported_precision
 from xtalate.validation.tolerance import K_FAIL, K_WARN, Bounds, ToleranceProfile
 
 
@@ -103,3 +104,31 @@ def test_from_mapping_rejects_bad_tables_with_actionable_errors(
 ) -> None:
     with pytest.raises(ValueError, match=match):
         ToleranceProfile.from_mapping("custom", mapping)
+
+
+def test_a_fractional_exporter_declaring_precision_is_refused_not_mis_judged() -> None:
+    """Part 5 §4.2's ``x max||L_i||`` scaling is not implemented, so the case must refuse.
+
+    ``_representational_bound`` returns ``0.5*10**-d`` in the field's own units. For a Cartesian
+    format that is angstrom and the checks compare angstrom, so it is right; for a fractional
+    format the decimals are fractional units and need the lattice scaling to become a distance.
+    No Phase 1 exporter declares reduced precision (all write ``repr(float(x))``), so the branch
+    has no consumer and building it would be speculative (P6) — but a future fractional exporter
+    declaring four-decimal coordinates would otherwise get a tolerance ~|L| times too tight,
+    silently. A validation engine that cannot judge a field correctly must say so.
+    """
+    with pytest.raises(NotImplementedError, match="lattice scaling"):
+        require_supported_precision("someformat", {"atoms.positions": 4}, "fractional")
+
+
+def test_a_cartesian_exporter_declaring_precision_is_supported() -> None:
+    # The counter-case: Cartesian decimals are angstrom already, so the unscaled bound is correct
+    # and the guard must not fire. Otherwise it would block the case D24 actually built the field
+    # for (a low-precision Cartesian writer).
+    precision: dict[str, int | None] = {"atoms.positions": 4}
+    assert require_supported_precision("someformat", precision, "cartesian") == precision
+
+
+def test_a_fractional_exporter_with_no_precision_declaration_is_supported() -> None:
+    # Every Phase 1 fractional exporter today: full precision, nothing declared, bound 0.0.
+    assert require_supported_precision("cif", {}, "fractional") == {}

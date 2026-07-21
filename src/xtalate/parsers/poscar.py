@@ -33,6 +33,7 @@ from xtalate.schema import (
     Frame,
     UserMetadata,
 )
+from xtalate.schema.cell import to_cartesian
 from xtalate.schema.elements import is_valid_symbol
 from xtalate.sdk import (
     CapabilityLevel,
@@ -331,7 +332,7 @@ class PoscarParser(ParserPlugin):
 
         frac = np.asarray(coords, dtype=float)
         if fractional:
-            positions = frac @ lattice  # cart = fx*a + fy*b + fz*c (rows of lattice are a,b,c)
+            positions = to_cartesian(frac, lattice)
             coord_system = "fractional"
             source_units = {"positions": "fractional", "lattice_vectors": "angstrom"}
             coord_note = "Direct coordinates converted to Cartesian using lattice matrix (§4)."
@@ -377,7 +378,7 @@ class PoscarParser(ParserPlugin):
                 # Direct-mode velocities are fractional; convert to Cartesian Å/fs with the same
                 # lattice matrix used for the coordinates (§4), so a Direct CONTCAR tail is read as
                 # faithfully as a Cartesian one.
-                velocities = raw_vel @ lattice
+                velocities = to_cartesian(raw_vel, lattice)
                 source_units["velocities"] = "direct"
                 parse_notes.append(
                     "Direct-mode velocities converted to Cartesian Å/fs via the lattice (§4)."

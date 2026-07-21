@@ -12,11 +12,8 @@ import pytest
 
 from tests._format_helpers import assert_matches_golden, parse_bytes
 from xtalate.parsers.cif import make_cif_parser
-from xtalate.parsers.cif._build import (
-    charge_of_type_symbol,
-    element_of,
-    lattice_from_parameters,
-)
+from xtalate.parsers.cif._build import charge_of_type_symbol, element_of
+from xtalate.schema.cell import lattice_from_parameters
 from xtalate.sdk import ParseError, ParseResult
 
 GOLDEN = Path(__file__).parent.parent / "golden" / "cif" / "zno-hexagonal-p1"
@@ -376,6 +373,57 @@ def test_unrecognisable_species_is_an_error_not_a_placeholder() -> None:
     with pytest.raises(ParseError) as exc:
         _parse(data)
     assert exc.value.issues[0].code == "CIF_INVALID_SYMBOL"
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("Ow1", "O"),  # water oxygen — ubiquitous in hydrate CIFs
+        ("Hw1", "H"),  # its hydrogens
+        ("Co1", "Co"),  # the two-letter symbol still wins: cobalt, never carbon
+        ("O1", "O"),
+    ],
+)
+def test_a_decorated_site_label_falls_back_to_its_one_letter_element(
+    label: str, expected: str
+) -> None:
+    # `_LABEL` is greedy over [A-Za-z]{1,2} and a regex alternation does not backtrack once a
+    # branch matches, so `Ow1` matched `Ow`, failed the element table, and raised
+    # CIF_INVALID_SYMBOL on a file whose element is unambiguous. The retry is ordered longest
+    # first, which is what keeps `Co1` cobalt.
+    data = CUBIC.replace(b"Na1 Na ", label.encode() + b" ? ")
+    assert _parse(data).canonical.frames[0].atoms.symbols[0] == expected
+
+
+def test_the_one_letter_fallback_never_manufactures_the_unknown_marker() -> None:
+    # `X` is a valid symbol, so without an explicit bar every unrecognizable two-letter label
+    # beginning with x would shorten to `X` and become an atom of unknown species — turning the
+    # error `element_of` promises into the placeholder it promises never to invent. This is the
+    # case that caught it.
+    with pytest.raises(ParseError) as exc:
+        _parse(CUBIC.replace(b"Na1 Na ", b"Xx1 Qq "))
+    assert exc.value.issues[0].code == "CIF_INVALID_SYMBOL"
+
+
+def test_a_site_stating_unknown_species_parses_but_says_so() -> None:
+    # `elements.py` states that a parser emitting the reserved `X` must accompany it with a
+    # warning, and that "that policy lives in the parsers" — where no parser implemented it. Real
+    # CIFs use X labels for unassigned electron density, so this stays a valid parse: the file
+    # really does say a scatterer sits there. It just stops being silent.
+    result = _parse(CUBIC.replace(b"Na1 Na ", b"X1 X "))
+    assert result.canonical.frames[0].atoms.symbols[0] == "X"
+    warnings = [i for i in result.issues if i.code == "CIF_UNKNOWN_SPECIES"]
+    assert len(warnings) == 1
+    assert "unidentified species" in warnings[0].message
+
+
+def test_element_case_is_normalized_through_the_shared_helper() -> None:
+    # `FE` and `Fe` are the same element; which one a file writes is typography, not information.
+    # The normalizer now lives beside `is_valid_symbol` in schema.elements rather than only in
+    # this parser — see its docstring for why the other parsers deliberately still reject `FE`.
+    assert (
+        _parse(CUBIC.replace(b"Na1 Na ", b"Na1 FE ")).canonical.frames[0].atoms.symbols[0] == "Fe"
+    )
 
 
 def test_raw_type_symbol_is_preserved_per_atom() -> None:

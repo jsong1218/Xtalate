@@ -145,6 +145,29 @@ def is_valid_symbol(symbol: str) -> bool:
     return symbol in SYMBOL_TO_Z
 
 
+def normalize_symbol(raw: str) -> str | None:
+    """``raw`` as a canonical element symbol (``FE``/``fe``/``Fe`` → ``Fe``), or ``None``.
+
+    Case is not information: ``FE`` and ``Fe`` are the same element, and which one a file writes is
+    a fact about the file's typography, not about the structure. So normalizing is not laundering —
+    unlike, say, rewriting a coordinate, nothing a source stated is changed by it.
+
+    It lives here rather than in a parser because "what counts as a spelling of iron" is a fact
+    about the element table, and the CIF parser had the only copy — which meant ``FE`` parsed as
+    iron from a CIF and was rejected from an XYZ, the same content reading differently by format.
+
+    **Note the deliberate limit:** this is the shared *definition*; the other Phase 1 parsers still
+    call :func:`is_valid_symbol` on the raw string and so still reject ``FE``. Widening what XYZ,
+    POSCAR or XDATCAR accept changes those formats' contracts and wants its own decision and
+    fixtures — it is not a side effect to smuggle in under a refactor.
+    """
+    stripped = raw.strip()
+    if not stripped:
+        return None
+    candidate = stripped[0].upper() + stripped[1:].lower()
+    return candidate if candidate in SYMBOL_TO_Z else None
+
+
 def atomic_number(symbol: str) -> int:
     """Atomic number for ``symbol``. Raises ``KeyError`` for an unknown symbol."""
     return SYMBOL_TO_Z[symbol]
