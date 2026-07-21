@@ -48,7 +48,10 @@ class CifParser(ParserPlugin):
 
     format_id = FORMAT_ID
     format_name = "Crystallographic Information File"
-    version = "0.4.0"
+    #: The *plugin* version, as every other first-party plugin declares it — not the release the
+    #: format shipped in. This read "0.4.0", which happened to equal the package version and so
+    #: looked right, while meaning something different; see ``parse`` for what that cost.
+    version = "0.1.0"
     file_extensions = (".cif",)
 
     def sniff(self, head: bytes, filename: str | None) -> float:
@@ -83,11 +86,17 @@ class CifParser(ParserPlugin):
                 ]
             ) from exc
         block, block_issues = select_block(document)
+        # No ``parser_version`` override: the default in ``parsers._common.parse_record`` is
+        # ``f"{format_id}-parser {package __version__}"``, which is what every other format
+        # records. The override exists for a parser that *wraps* something whose version belongs
+        # in provenance — ase_traj folds in ``ase.__version__`` (D59) — and CIF wraps nothing.
+        # Passing ``self.version`` here read identically today only because the class attribute
+        # happened to be "0.4.0" too; at 0.5.0 every other format would have moved and CIF alone
+        # would still have claimed 0.4.0, in shipped provenance records.
         canonical, build_issues = build(
             block,
             format_id=self.format_id,
             filename=filename,
-            parser_version=f"{self.format_id}-parser {self.version}",
         )
         return ParseResult(canonical=canonical, issues=[*block_issues, *build_issues])
 

@@ -290,9 +290,7 @@ class CifExporter(ExporterPlugin):
         lengths, angles = cell_parameters(lattice)
         fractional = _to_fractional(np.asarray(atoms.positions, dtype=float), lattice)
 
-        block_name = canonical.user_metadata.custom_global.get(_BLOCK_NAME_KEY)
-        name = str(block_name) if block_name else _DEFAULT_BLOCK_NAME
-        out: list[str] = [f"data_{name.split()[0] if name.split() else _DEFAULT_BLOCK_NAME}", ""]
+        out: list[str] = [f"data_{self._block_name(canonical)}", ""]
 
         for tag, value in zip(("a", "b", "c"), lengths, strict=True):
             out.append(f"_cell_length_{tag}     {_fmt(value)}")
@@ -313,6 +311,36 @@ class CifExporter(ExporterPlugin):
         out.extend(self._carried_tags(canonical))
         out.extend(self._atom_site_loop(canonical, atoms.symbols, fractional))
         stream.write(("\n".join(out) + "\n").encode("utf-8"))
+
+    def _block_name(self, canonical: CanonicalObject) -> str:
+        """The ``data_`` heading: the source's own block name, or a synthesized default.
+
+        Absent is not a defect — a structure arriving from POSCAR never had a block name, and CIF
+        requires a heading, so ``xtalate`` is synthesized. What *is* a defect is a stated name this
+        grammar cannot spell. The heading runs to the first whitespace, so this used to write
+        ``name.split()[0]``: a name of "my structure" was silently truncated to ``data_my`` while
+        ``writable_custom_keys`` declared the key writable and the pre-flight therefore reported it
+        **preserved**. That is worse than the over-declarations D69 fixed — those dropped a value,
+        this substituted a different one and called it preserved.
+
+        Refusing is the proportionate answer, on D66's reasoning: Xtalate cannot write this name,
+        and no truncation of it is the name the object stated, so it declines rather than emit an
+        artifact that quietly disagrees with its own report. Nothing reachable through a CIF source
+        can trigger it — the CIF grammar forbids whitespace in a heading, so a round-tripped name is
+        always legal — which is exactly why it went unnoticed and why refusing costs nothing.
+        """
+        raw = canonical.user_metadata.custom_global.get(_BLOCK_NAME_KEY)
+        if raw is None:
+            return _DEFAULT_BLOCK_NAME
+        name = str(raw)
+        if name == "" or any(c.isspace() for c in name):
+            raise ValueError(
+                f"user_metadata.custom_global[{_BLOCK_NAME_KEY!r}] is {name!r}, which cannot be "
+                "written as a CIF data-block heading: a heading is a single token, so it may not "
+                "be empty or contain whitespace. Set a heading-legal name, or drop the key to "
+                f"have one synthesized ({_DEFAULT_BLOCK_NAME!r})"
+            )
+        return name
 
     def _carried_tags(self, canonical: CanonicalObject) -> list[str]:
         """The block-level tags the parser carried into ``simulation.extra``, written back.

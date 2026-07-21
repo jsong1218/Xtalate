@@ -374,6 +374,34 @@ def test_the_data_block_name_round_trips() -> None:
     assert _reparse(_write(obj)).user_metadata.custom_global["cif:data_block_name"] == "rocksalt"
 
 
+@pytest.mark.parametrize("name", ["my structure", "", "  ", "two\ttabs"])
+def test_a_block_name_the_grammar_cannot_spell_is_refused_not_truncated(name: str) -> None:
+    # writable_custom_keys declares cif:data_block_name writable, so the pre-flight reports it
+    # *preserved* — and the writer took name.split()[0], so "my structure" became `data_my`. The
+    # report claimed preservation of a value the artifact did not carry. That is worse than the
+    # over-declarations D69 fixed: those dropped a value, this substituted a different one.
+    # Refusing is D66's answer — decline rather than emit a file that disagrees with its report.
+    with pytest.raises(ValueError, match="data-block heading"):
+        _write(_object(custom_global={"cif:data_block_name": name}))
+
+
+def test_a_missing_block_name_is_synthesized_not_refused() -> None:
+    # Absence is not a defect: a structure arriving from POSCAR never had a block name, and CIF
+    # requires a heading. Only a *stated* name this grammar cannot spell is refused.
+    assert _write(_object()).startswith("data_xtalate")
+
+
+def test_a_legal_block_name_survives_whole() -> None:
+    # The regression the truncation would show up as: a legal multi-token-looking name is not
+    # clipped, and re-parsing recovers it byte for byte.
+    obj = _object(custom_global={"cif:data_block_name": "cod_1000041_phase2"})
+    assert _write(obj).startswith("data_cod_1000041_phase2\n")
+    assert (
+        _reparse(_write(obj)).user_metadata.custom_global["cif:data_block_name"]
+        == "cod_1000041_phase2"
+    )
+
+
 def test_a_multi_frame_object_is_refused_rather_than_truncated() -> None:
     # Reducing a trajectory to one structure is the Conversion Engine's recorded choice, never an
     # exporter's silent one (Part 4 §3).

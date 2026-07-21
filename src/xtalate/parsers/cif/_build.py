@@ -227,7 +227,7 @@ def element_of(raw_type: str | None, raw_label: str | None, *, line: int) -> str
 
 
 def build(
-    block: CifBlock, *, format_id: str, filename: str | None, parser_version: str
+    block: CifBlock, *, format_id: str, filename: str | None
 ) -> tuple[CanonicalObject, list[ParseIssue]]:
     """Assemble the Canonical Object for one validated ``data_`` block."""
     issues: list[ParseIssue] = []
@@ -369,7 +369,6 @@ def build(
             original_coordinate_system="fractional" if fractional else "cartesian",
             source_units=source_units,
             parse_notes=parse_notes,
-            parser_version=parser_version,
         ),
         user_metadata=UserMetadata(
             custom_global={"cif:data_block_name": block.name},
