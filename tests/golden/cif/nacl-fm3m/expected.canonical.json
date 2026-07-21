@@ -1,0 +1,194 @@
+{
+  "schema_version": "0.1.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Na",
+          "Na",
+          "Na",
+          "Na",
+          "Cl",
+          "Cl",
+          "Cl",
+          "Cl"
+        ],
+        "atomic_numbers": [
+          11,
+          11,
+          11,
+          11,
+          17,
+          17,
+          17,
+          17
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            2.8201,
+            2.8201
+          ],
+          [
+            2.8201,
+            0.0,
+            2.8201
+          ],
+          [
+            2.8201,
+            2.8201,
+            0.0
+          ],
+          [
+            2.8201,
+            2.8201,
+            2.8201
+          ],
+          [
+            2.8201,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            2.8201,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            2.8201
+          ]
+        ],
+        "masses": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            5.6402,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            5.6402,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            5.6402
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": "F m -3 m"
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": null,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": {
+    "source_code": null,
+    "calculator": null,
+    "xc_functional": null,
+    "pseudopotentials": null,
+    "thermostat": null,
+    "md_ensemble": null,
+    "temperature": null,
+    "extra": {
+      "cif:chemical_name_common": "Sodium chloride (rock salt)",
+      "cif:chemical_formula_sum": "Na Cl",
+      "cif:chemical_formula_units_z": "4",
+      "cif:publ_author_name": "Xtalate test corpus",
+      "cif:space_group_it_number": "225",
+      "cif:symmetry_operations": "x, y, z\nx, y, -z\nx, -y, z\nx, -y, -z\n-x, y, z\n-x, y, -z\n-x, -y, z\n-x, -y, -z\nx, z, y\nx, z, -y\nx, -z, y\nx, -z, -y\n-x, z, y\n-x, z, -y\n-x, -z, y\n-x, -z, -y\ny, x, z\ny, x, -z\ny, -x, z\ny, -x, -z\n-y, x, z\n-y, x, -z\n-y, -x, z\n-y, -x, -z\ny, z, x\ny, z, -x\ny, -z, x\ny, -z, -x\n-y, z, x\n-y, z, -x\n-y, -z, x\n-y, -z, -x\nz, x, y\nz, x, -y\nz, -x, y\nz, -x, -y\n-z, x, y\n-z, x, -y\n-z, -x, y\n-z, -x, -y\nz, y, x\nz, y, -x\nz, -y, x\nz, -y, -x\n-z, y, x\n-z, y, -x\n-z, -y, x\n-z, -y, -x\nx, y+1/2, z+1/2\nx, y+1/2, -z+1/2\nx, -y+1/2, z+1/2\nx, -y+1/2, -z+1/2\n-x, y+1/2, z+1/2\n-x, y+1/2, -z+1/2\n-x, -y+1/2, z+1/2\n-x, -y+1/2, -z+1/2\nx, z+1/2, y+1/2\nx, z+1/2, -y+1/2\nx, -z+1/2, y+1/2\nx, -z+1/2, -y+1/2\n-x, z+1/2, y+1/2\n-x, z+1/2, -y+1/2\n-x, -z+1/2, y+1/2\n-x, -z+1/2, -y+1/2\ny, x+1/2, z+1/2\ny, x+1/2, -z+1/2\ny, -x+1/2, z+1/2\ny, -x+1/2, -z+1/2\n-y, x+1/2, z+1/2\n-y, x+1/2, -z+1/2\n-y, -x+1/2, z+1/2\n-y, -x+1/2, -z+1/2\ny, z+1/2, x+1/2\ny, z+1/2, -x+1/2\ny, -z+1/2, x+1/2\ny, -z+1/2, -x+1/2\n-y, z+1/2, x+1/2\n-y, z+1/2, -x+1/2\n-y, -z+1/2, x+1/2\n-y, -z+1/2, -x+1/2\nz, x+1/2, y+1/2\nz, x+1/2, -y+1/2\nz, -x+1/2, y+1/2\nz, -x+1/2, -y+1/2\n-z, x+1/2, y+1/2\n-z, x+1/2, -y+1/2\n-z, -x+1/2, y+1/2\n-z, -x+1/2, -y+1/2\nz, y+1/2, x+1/2\nz, y+1/2, -x+1/2\nz, -y+1/2, x+1/2\nz, -y+1/2, -x+1/2\n-z, y+1/2, x+1/2\n-z, y+1/2, -x+1/2\n-z, -y+1/2, x+1/2\n-z, -y+1/2, -x+1/2\nx+1/2, y, z+1/2\nx+1/2, y, -z+1/2\nx+1/2, -y, z+1/2\nx+1/2, -y, -z+1/2\n-x+1/2, y, z+1/2\n-x+1/2, y, -z+1/2\n-x+1/2, -y, z+1/2\n-x+1/2, -y, -z+1/2\nx+1/2, z, y+1/2\nx+1/2, z, -y+1/2\nx+1/2, -z, y+1/2\nx+1/2, -z, -y+1/2\n-x+1/2, z, y+1/2\n-x+1/2, z, -y+1/2\n-x+1/2, -z, y+1/2\n-x+1/2, -z, -y+1/2\ny+1/2, x, z+1/2\ny+1/2, x, -z+1/2\ny+1/2, -x, z+1/2\ny+1/2, -x, -z+1/2\n-y+1/2, x, z+1/2\n-y+1/2, x, -z+1/2\n-y+1/2, -x, z+1/2\n-y+1/2, -x, -z+1/2\ny+1/2, z, x+1/2\ny+1/2, z, -x+1/2\ny+1/2, -z, x+1/2\ny+1/2, -z, -x+1/2\n-y+1/2, z, x+1/2\n-y+1/2, z, -x+1/2\n-y+1/2, -z, x+1/2\n-y+1/2, -z, -x+1/2\nz+1/2, x, y+1/2\nz+1/2, x, -y+1/2\nz+1/2, -x, y+1/2\nz+1/2, -x, -y+1/2\n-z+1/2, x, y+1/2\n-z+1/2, x, -y+1/2\n-z+1/2, -x, y+1/2\n-z+1/2, -x, -y+1/2\nz+1/2, y, x+1/2\nz+1/2, y, -x+1/2\nz+1/2, -y, x+1/2\nz+1/2, -y, -x+1/2\n-z+1/2, y, x+1/2\n-z+1/2, y, -x+1/2\n-z+1/2, -y, x+1/2\n-z+1/2, -y, -x+1/2\nx+1/2, y+1/2, z\nx+1/2, y+1/2, -z\nx+1/2, -y+1/2, z\nx+1/2, -y+1/2, -z\n-x+1/2, y+1/2, z\n-x+1/2, y+1/2, -z\n-x+1/2, -y+1/2, z\n-x+1/2, -y+1/2, -z\nx+1/2, z+1/2, y\nx+1/2, z+1/2, -y\nx+1/2, -z+1/2, y\nx+1/2, -z+1/2, -y\n-x+1/2, z+1/2, y\n-x+1/2, z+1/2, -y\n-x+1/2, -z+1/2, y\n-x+1/2, -z+1/2, -y\ny+1/2, x+1/2, z\ny+1/2, x+1/2, -z\ny+1/2, -x+1/2, z\ny+1/2, -x+1/2, -z\n-y+1/2, x+1/2, z\n-y+1/2, x+1/2, -z\n-y+1/2, -x+1/2, z\n-y+1/2, -x+1/2, -z\ny+1/2, z+1/2, x\ny+1/2, z+1/2, -x\ny+1/2, -z+1/2, x\ny+1/2, -z+1/2, -x\n-y+1/2, z+1/2, x\n-y+1/2, z+1/2, -x\n-y+1/2, -z+1/2, x\n-y+1/2, -z+1/2, -x\nz+1/2, x+1/2, y\nz+1/2, x+1/2, -y\nz+1/2, -x+1/2, y\nz+1/2, -x+1/2, -y\n-z+1/2, x+1/2, y\n-z+1/2, x+1/2, -y\n-z+1/2, -x+1/2, y\n-z+1/2, -x+1/2, -y\nz+1/2, y+1/2, x\nz+1/2, y+1/2, -x\nz+1/2, -y+1/2, x\nz+1/2, -y+1/2, -x\n-z+1/2, y+1/2, x\n-z+1/2, y+1/2, -x\n-z+1/2, -y+1/2, x\n-z+1/2, -y+1/2, -x"
+    }
+  },
+  "provenance": {
+    "source_filename": "nacl_fm3m.cif",
+    "source_format": "cif",
+    "source_units": {
+      "positions": "fractional",
+      "lattice_vectors": "angstrom"
+    },
+    "original_coordinate_system": "fractional",
+    "parse_notes": [
+      "Fractional coordinates converted to Cartesian using the lattice matrix built from _cell_length_* / _cell_angle_* (Part 2 §4).",
+      "pbc set to (true,true,true): a CIF describes a crystal, so full 3-D periodicity is format-defined (Part 3 §3 n.3), not assumed.",
+      "Symmetry expansion: 2 declared site(s) expanded to 8 atom(s) by applying the 192 symmetry operation(s) the file declares (Part 3 §3 n.13). Per-site multiplicities: [4, 4]. 376 coincident image(s) were merged as special positions within 0.05 Å (DECISIONS.md D67). Coordinates generated by an operation were wrapped into the unit cell; declared coordinates are carried as the file spelled them."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-07-21T03:15:40Z",
+        "operation": "parse",
+        "source_format": "cif",
+        "target_format": null,
+        "tool_version": "0.3.0",
+        "parser_version": "cif-parser 0.4.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {
+      "cif:data_block_name": "nacl_fm3m"
+    },
+    "custom_per_atom": {
+      "cif:atom_site_label": [
+        "Na1",
+        "Na1",
+        "Na1",
+        "Na1",
+        "Cl1",
+        "Cl1",
+        "Cl1",
+        "Cl1"
+      ],
+      "cif:atom_site_occupancy": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "cif:type_symbol": [
+        "Na",
+        "Na",
+        "Na",
+        "Na",
+        "Cl",
+        "Cl",
+        "Cl",
+        "Cl"
+      ]
+    },
+    "custom_per_frame": {}
+  }
+}

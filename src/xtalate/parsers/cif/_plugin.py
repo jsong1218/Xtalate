@@ -34,10 +34,16 @@ _SIGNATURE_TAGS = ("_cell_length_", "_atom_site_", "_symmetry_", "_space_group_"
 class CifParser(ParserPlugin):
     """Crystallographic Information File reader (Part 3 §3).
 
-    v0.4/M17 reads **full-cell** files only: ``P 1``, or a file whose symmetry loop contains
-    nothing but the identity. A file whose sites are an asymmetric unit is refused rather than
-    read as a partial structure — temporarily for a declared operation list (M18 implements
-    expansion), permanently for a bare space-group symbol with no operations (D66).
+    A CIF commonly stores only the **asymmetric unit** plus the symmetry operations that
+    generate the rest. Since M18 those declared operations are applied, so ``atoms.*`` holds
+    the full cell contents — this is reading the file as the CIF standard defines it, a
+    format-defined fact rather than computed symmetry (Part 3 §3 n.13). The expansion is
+    recorded in ``parse_notes`` (operation count, per-site multiplicities, merges) and the
+    operation strings carry verbatim in ``simulation.extra["cif:symmetry_operations"]``.
+
+    What is still refused, permanently, is a file declaring a non-``P 1`` symbol with **no**
+    operation loop: the symbol alone does not say what to apply, and inferring it from a
+    space-group table would be fabricating the structure rather than reading it (D66).
     """
 
     format_id = FORMAT_ID
@@ -127,8 +133,11 @@ class CifParser(ParserPlugin):
             lossy_notes=[
                 "Only the first data_ block is read; further blocks are independent "
                 "structures and are named in a warning, never silently skipped.",
-                "Files whose atom sites are an asymmetric unit are refused, not partially "
-                "read (M18 adds symmetry expansion; DECISIONS.md D66).",
+                "Declared symmetry operations are applied, so atoms are the full cell, not the "
+                "asymmetric unit; generated coordinates are wrapped into the cell and images "
+                "coinciding within 0.05 Å are merged (Part 3 §3 n.13; DECISIONS.md D67).",
+                "A non-P 1 symbol declared with no operation loop is refused, not guessed from "
+                "a space-group table (DECISIONS.md D66).",
                 "Occupancy is carried as a custom per-atom array, not modelled as a canonical "
                 "field (Part 3 §3 n.11).",
             ],

@@ -6,11 +6,11 @@ Required tags present, loop columns consistent, numerics parseable, symmetry exp
 — all statements about the CIF. Element-table validity, unit conventions and the absence
 convention need schema knowledge and therefore belong to stage 4.
 
-The M17 scope boundary is enforced here rather than discovered later: a file needing symmetry
-expansion is refused, never silently reduced to its asymmetric unit. Two distinct refusals,
-because they have different futures — ``CIF_SYMMETRY_EXPANSION_UNSUPPORTED`` is temporary and
-M18 removes it, while ``CIF_UNEXPANDABLE_SYMMETRY`` is permanent parser behavior whose only
-resolution is an explicit Recovery Workflow (D66).
+Symmetry is read here, not decided here: this stage parses the operations the file *declares*
+into affine maps (``_symmetry``, M18) and hands them to stage 4, which applies them. What it
+still refuses is the file that says expansion is required but does not say how —
+``CIF_UNEXPANDABLE_SYMMETRY``, permanent parser behavior whose only resolution is an explicit
+Recovery Workflow (D66). Such a file is never silently reduced to its asymmetric unit.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 
 from xtalate.parsers.cif._document import CifBlock, CifDocument, CifLoop
+from xtalate.parsers.cif._symmetry import SymmetryOperation, parse_symops
 from xtalate.sdk import ParseError, ParseIssue
 
 # --- tag families -------------------------------------------------------------------------
@@ -44,10 +45,6 @@ LABEL_TAG = "_atom_site_label"
 # not a competing value, and dropping it silently would still be loss — so the builder records
 # the raw spelling in provenance for any site that carried one.
 _UNCERTAINTY = re.compile(r"^([+-]?[0-9.eE+-]+?)\(([0-9]+)\)$")
-
-# 'x,y,z' in any spacing/sign spelling — the identity. A symop loop containing only this is a
-# P 1 file wearing a symmetry loop, which M17 can read without expansion machinery.
-_IDENTITY_OPS = frozenset({"x,y,z", "+x,+y,+z"})
 
 
 def _issue(code: str, message: str, *, location: str | None = None) -> ParseError:
@@ -145,13 +142,14 @@ def validate_cell(
     return lengths, angles
 
 
-def validate_expandable(block: CifBlock) -> str | None:
-    """Confirm this file needs no symmetry expansion, and return its declared symbol.
+def validate_symmetry(block: CifBlock) -> tuple[str | None, list[SymmetryOperation]]:
+    """The declared space-group symbol and the declared symmetry operations, parsed.
 
-    M17 reads full-cell files only. Both refusals below exist so that a file whose atoms are an
-    asymmetric unit is never mistaken for a complete structure — the failure mode where a
-    conversion yields a fraction of the atoms, wrong stoichiometry, and a plausible-looking
-    output file (D66).
+    An empty operation list means the file needs no expansion — it declares no operations and
+    either names no space group or names ``P 1``. Anything else is refused rather than read as
+    a partial structure: a file whose atoms are an asymmetric unit must never be mistaken for a
+    complete one, which is the failure where a conversion yields a fraction of the atoms, wrong
+    stoichiometry, and a plausible-looking output file (D66).
     """
     symbol = block.find_pair(*SPACE_GROUP_NAME_TAGS)
     loop = None
@@ -164,18 +162,7 @@ def validate_expandable(block: CifBlock) -> str | None:
         ops = []
 
     if loop is not None:
-        non_identity = [op for op in ops if _normalize_op(op) not in _IDENTITY_OPS]
-        if non_identity:
-            raise _issue(
-                "CIF_SYMMETRY_EXPANSION_UNSUPPORTED",
-                f"file declares {len(ops)} symmetry operations, of which "
-                f"{len(non_identity)} are not the identity; its atom sites are an asymmetric "
-                "unit that must be expanded to the full cell before it can be represented. "
-                "Symmetry expansion arrives in M18; until then this file is refused rather "
-                "than read as a partial structure",
-                location=f"line {loop.line}",
-            )
-        return symbol
+        return symbol, parse_symops(ops, line=loop.line)
 
     if symbol is not None and not _is_p1(symbol):
         raise _issue(
@@ -187,7 +174,7 @@ def validate_expandable(block: CifBlock) -> str | None:
             "(P4). The file is refused rather than read as a possibly-partial structure",
             location=f"line {block.line_of(*SPACE_GROUP_NAME_TAGS)}",
         )
-    return symbol
+    return symbol, []
 
 
 def validate_atom_sites(block: CifBlock) -> tuple[CifLoop, tuple[str, str, str], bool]:
@@ -234,10 +221,6 @@ def _require(block: CifBlock, tag: str) -> str:
     value = block.find_pair(tag)
     assert value is not None  # guarded by the caller's presence loop
     return value
-
-
-def _normalize_op(op: str) -> str:
-    return op.replace(" ", "").replace("'", "").lower()
 
 
 def _is_p1(symbol: str) -> bool:

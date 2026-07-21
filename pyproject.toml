@@ -160,10 +160,16 @@ layers = [
 [[tool.importlinter.contracts]]
 name = "CIF reader stage ordering (D65)"
 type = "layers"
+#
+# `_symmetry` (M18) is not a fifth stage: it is stage 3's operation-string reader, given its own
+# layer only so the direction is checked. It sits below `_validate`, which consumes it, and
+# above `_document`, which must never grow a dependency on symmetry semantics — the document
+# layer's whole value is that it is gemmi-shaped and knows nothing of what the tags mean.
 layers = [
     "xtalate.parsers.cif._plugin",
     "xtalate.parsers.cif._build",
     "xtalate.parsers.cif._validate",
+    "xtalate.parsers.cif._symmetry",
     "xtalate.parsers.cif._document",
     "xtalate.parsers.cif._lexer",
 ]
@@ -178,6 +184,7 @@ source_modules = [
     "xtalate.parsers.cif._lexer",
     "xtalate.parsers.cif._document",
     "xtalate.parsers.cif._validate",
+    "xtalate.parsers.cif._symmetry",
 ]
 forbidden_modules = ["xtalate.schema"]
 # Direct imports only. These stages legitimately import `sdk` for the ParseError/ParseIssue

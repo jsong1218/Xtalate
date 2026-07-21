@@ -34,9 +34,34 @@ The start of **v0.4**.
   declaring a non-`P 1` symbol with **no** operation loop raises `CIF_UNEXPANDABLE_SYMMETRY` —
   permanently, because supplying the operations from space-group tables would be data the file
   never declared (**P4**); expansion-from-symbol belongs to a future `missing_symmetry_operations`
-  Recovery Workflow. A file declaring real operations raises `CIF_SYMMETRY_EXPANSION_UNSUPPORTED`
-  until **M18** implements expansion. Both exist so a conversion never silently yields a fraction
-  of the atoms — wrong stoichiometry behind a plausible-looking output file.
+  Recovery Workflow. A file that *does* declare its operations is expanded (see below). The refusal
+  exists so a conversion never silently yields a fraction of the atoms — wrong stoichiometry
+  behind a plausible-looking output file.
+- **Symmetry expansion applies the operations a CIF declares (M18, D67).** Operation strings are
+  parsed into exact affine maps over `Fraction`, never floats, so a translation written `1/3` is a
+  third; an operation that cannot be read exactly — or whose rotation is not crystallographic
+  (determinant ≠ ±1), or a loop omitting the identity — is a `ParseError`, never a silently
+  skipped operation. Sites on a symmetry element are merged within **0.05 Å**, judged as a
+  minimum-image *physical* distance rather than a fractional tolerance, and merging is scoped to
+  one site's orbit so partially-occupied sites sharing a position are never collapsed. Coordinates
+  the expansion *generates* are wrapped into the unit cell; coordinates the file *declared* are
+  carried exactly as spelled. `parse_notes` records the operation count, the per-site
+  multiplicities and the merge count — so `sites × operations − merged = atoms` is checkable from
+  the report — and the declared operation strings are carried verbatim in
+  `simulation.extra["cif:symmetry_operations"]`. The expansion is anchored on structures whose
+  answers are published independently of this code: **NaCl** (`F m -3 m`, 2 sites and the full
+  192-operation group expanding to the 8-atom conventional cell, Z = 4) and **rutile TiO₂**
+  (`P 4_2/m n m`, 16 operations, Ti on a multiplicity-2 site and O on a multiplicity-4 site
+  giving 6 atoms, Z = 2), alongside the existing `P 1` case whose expansion is the identity.
+- **Scientific invariants run over the expanded structures (`tests/_invariants.py`, Part 8 §1.3).**
+  Stoichiometry is asserted as the published formula-unit count Z; cell volume is cross-checked
+  between the constructed lattice vectors and the source's own cell parameters (two independent
+  derivations, so a transposed construction cannot satisfy both); and the minimum interatomic
+  distance is checked against each structure's known nearest-neighbour contact, which is the
+  assertion a special-position merge that failed to fire cannot survive. A deliberately truncated
+  operation list is kept as a test that these have teeth — and it demonstrates why the assertion
+  is Z rather than a formula, since the truncated cell is still exactly TiO₂ by element *ratio*
+  while holding half the atoms the crystal has.
 
 ### Changed
 
