@@ -191,8 +191,7 @@ class AseTrajExporter(ExporterPlugin):
                     level=CapabilityLevel.NONE,
                     notes="ASE's .traj writer persists no custom per-atom array — not under a "
                     "format-scoped name, not under a plain one — so a carry-through column cannot "
-                    "be written at all. Per-frame metadata (atoms.info) is unaffected "
-                    "(DECISIONS.md D69).",
+                    "be written at all. Per-frame metadata (atoms.info) is unaffected.",
                 ),
                 "user_metadata.custom_per_frame": FieldCapability(
                     level=CapabilityLevel.FULL, notes="Written back as atoms.info key-values."

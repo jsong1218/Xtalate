@@ -151,9 +151,9 @@ class CifParser(ParserPlugin):
                 "structures and are named in a warning, never silently skipped.",
                 "Declared symmetry operations are applied, so atoms are the full cell, not the "
                 "asymmetric unit; generated coordinates are wrapped into the cell and images "
-                "coinciding within 0.05 Å are merged (Part 3 §3 n.13; DECISIONS.md D67).",
+                "coinciding within 0.05 Å are merged (Part 3 §3 n.13).",
                 "A non-P 1 symbol declared with no operation loop is refused, not guessed from "
-                "a space-group table (DECISIONS.md D66).",
+                "a space-group table.",
                 "Occupancy is carried as a custom per-atom array under 'cif:occupancy', not "
                 "modelled as a canonical field, and warns at parse (Part 3 §3 n.11).",
                 "A type symbol's oxidation-state suffix ('Fe3+') is preserved verbatim but is "

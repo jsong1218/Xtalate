@@ -367,8 +367,7 @@ class CifExporter(ExporterPlugin):
                     notes="Xtalate writes the identity operation and the full explicit atom list, "
                     "with no space-group symbol, because the Canonical Object holds the expanded "
                     "cell; a source symbol would assert a setting the written coordinates no "
-                    "longer encode, and re-deriving one from coordinates is a Non-Goal "
-                    "(DECISIONS.md D68).",
+                    "longer encode, and re-deriving one from coordinates is a Non-Goal.",
                 ),
                 "dynamics.velocities": none,
                 "dynamics.forces": none,
@@ -388,8 +387,8 @@ class CifExporter(ExporterPlugin):
                     "held back deliberately: the declared symmetry operations, and any tag that "
                     "identifies a space group — its International Tables number or a database's "
                     "own symbol spelling — because the written atom list is the expanded full "
-                    "cell and a reader honouring either would expand it a second time "
-                    "(DECISIONS.md D68, D72). A tag naming only the crystal system is kept.",
+                    "cell and a reader honouring either would expand it a second time. A tag "
+                    "naming only the crystal system is kept.",
                 ),
                 "user_metadata.custom_global": FieldCapability(
                     level=CapabilityLevel.PARTIAL,
@@ -419,7 +418,7 @@ class CifExporter(ExporterPlugin):
             lossy_notes=[
                 "Written with the identity symmetry operation and every atom listed explicitly; "
                 "no space-group symbol is emitted, and a source symbol is reported removed "
-                "rather than echoed (DECISIONS.md D68).",
+                "rather than echoed.",
                 "Cartesian positions are converted to fractional against the cell on write, so "
                 "sub-ulp differences from the source Cartesian values are possible on round-trip.",
             ],

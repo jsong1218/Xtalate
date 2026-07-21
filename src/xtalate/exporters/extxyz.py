@@ -181,7 +181,7 @@ class ExtxyzExporter(ExporterPlugin):
                     "spell: the Properties= grammar separates its fields with ':', so a "
                     "format-scoped key such as 'cif:occupancy' cannot be written at all, and a "
                     "bare name is read back re-prefixed as 'extxyz:<name>'. Keys matching "
-                    "'extxyz:<name>' round-trip exactly; the rest are dropped (DECISIONS.md D69).",
+                    "'extxyz:<name>' round-trip exactly; the rest are dropped.",
                 ),
                 "user_metadata.custom_per_frame": FieldCapability(
                     level=CapabilityLevel.FULL, notes="Written back as comment key-values."

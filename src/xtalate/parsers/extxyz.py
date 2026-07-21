@@ -532,7 +532,7 @@ class ExtxyzParser(ParserPlugin):
             # to avoid a silent sign-convention error (DECISIONS.md D18; Part 2 §3.7.1).
             lossy_notes=[
                 "stress/virial carried verbatim in user_metadata.custom_per_frame['extxyz:stress'] "
-                "rather than electronic.stress (v0.1; DECISIONS.md D18).",
+                "rather than electronic.stress.",
             ],
         )
 

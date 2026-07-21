@@ -114,9 +114,14 @@ def test_the_identity_operation_is_written_explicitly() -> None:
 
 
 def test_the_source_symbol_is_reported_removed() -> None:
+    # The reason has to *state* the reasoning, not cite it. It used to assert on "D68", but the
+    # design log is unpublished, so a user reading this in a report could not follow the pointer —
+    # and a test keyed to the citation would have gone green on a note that said nothing else.
     diff = build_preflight(_object(space_group="Fm-3m"), _REGISTRY.capability_matrix(), "cif")
     entry = next(e for e in diff.removed if e.path == "cell.space_group")
-    assert "D68" in entry.reason
+    assert "no space-group symbol" in entry.reason
+    assert "expanded cell" in entry.reason
+    assert "DECISIONS" not in entry.reason
 
 
 def test_reparsing_the_output_recovers_no_space_group() -> None:

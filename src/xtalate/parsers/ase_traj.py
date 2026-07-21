@@ -400,7 +400,7 @@ class AseTrajParser(ParserPlugin):
             native_coordinate_system="cartesian",
             lossy_notes=[
                 "stress carried verbatim in user_metadata.custom_per_frame['ase_traj:stress'] "
-                "rather than electronic.stress (sign convention, DECISIONS.md D18).",
+                "rather than electronic.stress (sign convention).",
             ],
         )
 

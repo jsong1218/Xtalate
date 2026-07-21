@@ -4,7 +4,7 @@ All notable changes to Xtalate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The canonical schema version is
 tracked separately from the package version and reaches `1.0.0` only in the v1.0 release
-(`docs/MASTER_SPEC.md` Part 2 §5); v0.1 objects carry `schema_version = "0.1.0"`.
+(`docs/private/MASTER_SPEC.md` Part 2 §5); v0.1 objects carry `schema_version = "0.1.0"`.
 
 ## [Unreleased]
 
@@ -12,7 +12,7 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 v0.4 — **"Phase 1 Complete."** CIF, the seventh and last Phase-1 format, lands read and write:
 cell parameters, symmetry expansion from the operations a file declares, occupancy and formal
-charges, and a `P 1` exporter. With it the format set the roadmap called Phase 1 is closed, and
+charges, and an exporter that writes every atom explicitly under an identity symmetry loop. With it the format set the roadmap called Phase 1 is closed, and
 the claim that adding a format is O(1) in the existing formats has now been paid three times.
 
 The version ends where a CIF parser has to end — against real files. A corpus of Crystallography
@@ -75,9 +75,11 @@ defects that seven milestones of synthetic fixtures had not.
   is read into `user_metadata.custom_per_atom["cif:occupancy"]`, and a file holding any site below
   full occupancy says so in `parse_notes` — an occupancy the Canonical Model has no first-class
   field for is still a physical claim, not an annotation. Unknown occupancy (`?`/`.`) counts as
-  partial: silence is not a claim of full occupancy (**P4**). Formal charges declared in the type
-  symbol (`Fe3+`) are read into `electronic.charges` while the raw symbol stays carried per-atom,
-  so the laundering that makes `Fe3+` an `Fe` atom loses nothing.
+  partial: silence is not a claim of full occupancy (**P4**). Formal charges are read into
+  `electronic.charges` from the `_atom_type_oxidation_number` loop, joined to sites by
+  `_atom_site_type_symbol` — the type symbol is the *join key*, not the source, so a `Fe3+`
+  spelling alone does not populate the field. The raw symbol stays carried per-atom either way, so
+  the laundering that makes `Fe3+` an `Fe` atom loses nothing.
 - **Partial occupancy is warned about in the Conversion Report, for every target (M19).** Dropping
   an occupancy column is not an ordinary annotation loss: a site written without an occupancy reads
   as *fully occupied*, so the output asserts a structure the source never described. The `removed`
@@ -189,7 +191,7 @@ defects that seven milestones of synthetic fixtures had not.
 ### Changed
 
 - **Documentation: architectural-review changelog attributions corrected to match each release's
-  tag and published artifact, and the versioning policy recorded (`docs/DECISIONS.md` D64).** Each
+  tag and published artifact, and the versioning policy recorded (`docs/private/DECISIONS.md` D64).** Each
   version's post-release architectural review is folded into that version before tagging, not
   deferred to the next. The post-`0.2.0` review (D53–D55, golden-corpus governance hardening, the
   velocity-bearing corpus case, and internal de-duplication) now sits under **[0.2.0]** — the tag
@@ -197,6 +199,89 @@ defects that seven milestones of synthetic fixtures had not.
   Cartesian-scale fix, and the CLI plugin-error surfaces) under **[0.3.0]**. No code changes; the
   released `0.2.0` / `0.3.0` artifacts are unaffected. (v0.1 predates the policy — its review first
   shipped in the `0.2.0` artifact.)
+
+### Fixed — the v0.4 architectural review
+
+Per the versioning policy (`docs/private/DECISIONS.md` D64) a version's own post-release review
+ships **inside** it, so these land in `0.4.0` rather than a later release. The CI gates were green
+throughout; none of the below is a gate failure, which is the point of running the review against
+real files and the release checklist rather than against the suite.
+
+- **A written CIF no longer re-asserts the space group it deliberately withheld
+  (`docs/private/DECISIONS.md` D72).** D68 suppresses the Hermann-Mauguin and Hall symbols so the
+  output cannot claim a setting its expanded coordinates no longer encode — and
+  `_space_group_IT_number` reached the file anyway, through `simulation.extra` carry-through. IT
+  number 225 *is* `Fm-3m`: every CIF written from a symmetric source carried a 192-operation group
+  above an already-expanded atom list declaring only the identity, and a standards-compliant reader
+  honouring it expands a second time and gets four times the atoms. Worse, the Conversion Report
+  said `cell.space_group` had been *removed*, so the report was false rather than merely
+  incomplete. The hold-back is now over space-group **identification** — the IT number and any
+  database's own symbol spelling (COD writes `_cod_original_sg_symbol_H-M`) — while a tag naming
+  only the crystal system is kept, because that stays true of the written cell.
+- **CIF → CIF is idempotent again for hexagonal, trigonal and rhombohedral cells (D73).** The
+  parser's exact-angle table (M17) had no inverse on the write side, so a `120.0` cell came back
+  `120.00000000000001`, missed the table on the next read, and reintroduced exactly the spurious
+  tilt the table exists to prevent.
+- **Non-finite numerics stay inside the parse-error contract (Part 3 §5).** `float()` accepts
+  `"nan"`, and NaN then defeats every ordinary range guard downstream, so the failure surfaced two
+  stages later as an uncaught `pydantic.ValidationError` — a stack trace and exit 1 where a
+  structured parse error exits 4.
+- **Two readable files are no longer refused with a misleading cause (D74).** A leading
+  `data_global` block — standard in CCDC/CSD depositions — made the reader take the first block and
+  refuse with `CIF_MISSING_CELL`, naming a missing cell parameter that sits three lines further
+  down; the structure block is now the first one carrying an `_atom_site` loop. And unquoted
+  symmetry operations containing spaces hard-failed, because the ragged-loop guard is vacuous for a
+  single-column loop (`len(values) % 1` is zero for any count); they are now rejoined, but only
+  where every value becomes a complete triplet, so a genuinely malformed operation still reports
+  itself rather than being mangled into its neighbour.
+- **The exporter writes what it holds.** A literal quoted `'?'` was re-emitted bare — which is
+  CIF's *unknown* marker, so a value the source stated became an absence. And the per-column
+  fallbacks used `or`, which tests truthiness: an all-`None` column is a non-empty list, so a
+  source whose `_atom_site_type_symbol` was `?` on every row had every atom written `?` while
+  `atoms.symbols` held good elements. Both fallbacks are now per atom.
+- **A block name the CIF grammar cannot spell is refused, not silently truncated (D75).**
+  `cif:data_block_name` is declared writable, so the pre-flight reported it *preserved* — while the
+  writer truncated at the first space. A D69 over-declaration drops a value; this substituted a
+  different one and still called it preserved. An absent name still synthesizes `xtalate`.
+- **CIF's `parser_version` no longer drifts from every other format's (D75).** It passed a class
+  attribute hardcoded `"0.4.0"`, which equalled the package version and so read correctly while
+  meaning something different; at `0.5.0` every other format would have moved and CIF alone would
+  have gone on claiming `0.4.0` in shipped provenance.
+- **Lattice geometry has one home and one exact-angle table (`schema/cell.py`, D77).** The
+  parameter↔vector inverse pair was split across the parser and exporter layers with no shared
+  table, which is what allowed the angle defect above; `to_fractional` was separately copy-pasted
+  verbatim between two exporters.
+- **D24's fractional lattice-scaling claim is withdrawn (D76).** It recorded the Part 5 §4.2
+  formula as "implemented but unexercised"; there is no lattice term in the code, and two
+  fractional-native exporters have since landed. The branch stays unimplemented — every Phase 1
+  exporter writes full round-trip precision, so no bound is ever non-zero — but the case now
+  refuses rather than silently applying a tolerance roughly `|L|` times too tight. Relatedly, the
+  per-path representational bound was never recorded, so offline re-thresholding had been silently
+  tightening `numeric_field_fidelity` while the scalar checks re-applied theirs correctly.
+- **`Ow1` reads as oxygen, and the label fallback stops inventing `X` (D78).** The site-label regex
+  is greedy over two letters and a regex alternation does not backtrack, so `Ow1` — the
+  conventional water-oxygen label, ubiquitous in hydrate CIFs — raised `CIF_INVALID_SYMBOL` on a
+  file whose element is unambiguous. Element case normalization now lives beside the element table
+  rather than only in the CIF parser. A site that genuinely resolves to the reserved `X` now warns,
+  which `schema/elements.py` has required since M1 and no parser implemented.
+- **CIF joins the curated PR round-trip pairs.** It was in neither curated set, so every CIF pair
+  ran nightly-only and the format never appeared in the three-hop suite — the only backstop against
+  a wrongly-declared capability, since the two-hop diff derives its expectation from the same
+  Capability Matrix that drove the conversion. `cif↔poscar` is the pair added, because it is the
+  only CIF pair whose comparable subspace contains `cell.lattice_vectors`.
+- **Documentation caught up with what v0.4 shipped.** `docs/API.md` and `docs/ARCHITECTURE.md` both
+  still said CIF "is not yet implemented"; the shipped package docstring still described v0.3; the
+  README described the `P 1` export policy D68 had rejected; `CITATION.cff` still said `0.3.0`.
+  MASTER_SPEC received the four Revision notes v0.4's own standing rule required and had not
+  written (1.17–1.20, plus 1.21 for this review), which is also where footnote 11's two false
+  occupancy clauses, footnote 13's blank merge threshold, and three stale capability rows were
+  corrected. The §3 table's claim to be kept in sync with the declarations by a test is
+  **withdrawn**: no such test exists, none can now that the document is private, and the premise
+  was wrong anyway — the table describes a *format's* expressiveness, a declaration describes
+  Xtalate's read and write capability, and the two are not derivable from each other.
+- **User-facing report text no longer cites a document readers cannot open.** Ten capability notes,
+  `lossy_notes` and parse notes named `DECISIONS.md` by bare filename; the design docs became
+  private in v0.3. Docstrings keep their citations — contributors have the file.
 
 ## [0.3.0] — 2026-07-18
 
