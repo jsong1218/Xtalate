@@ -1,0 +1,23 @@
+case: rutile-p42mnm
+format_id: cif
+source_file: rutile_p42mnm.cif
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "2dd7a1c2308eb03288debeef6d9be6df4bf29a96cdfef85b0fd2e049f5d08f5d"
+expected_sha256: "4e47937be3b8565424cb7182a2503913c099e561b095a64507e3f593a44aaff3"
+origin:
+  kind: synthetic
+  source: "Hand-written for M18; cell and the O free parameter from the published rutile structure"
+  license: "Apache-2.0"
+notes: >-
+  The M18 special-position case, and the one that distinguishes *two different*
+  multiplicities in a single file. Rutile's tetragonal cell holds 6 atoms, 2 TiO2 formula
+  units (Z = 2): Ti on the 2a site (multiplicity 2) and O on 4f (multiplicity 4), both
+  well below the 16 operations of P 4_2/m n m. A parser that merged nothing would report
+  32 atoms and a parser that merged across sites would report fewer than 6, so the
+  per-site multiplicities [2, 4] in the provenance note pin the behaviour from both sides.
+  Unlike the NaCl case, O sits at a position with a *free* parameter (x = 0.30478, the
+  published value), so its four images are genuinely distinct coordinates rather than
+  permutations of 0 and 1/2 — which is what makes this case sensitive to an operation
+  applied with the wrong translation component, an error that a fixed-coordinate structure
+  can absorb without changing any count.

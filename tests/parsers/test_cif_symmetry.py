@@ -195,6 +195,23 @@ def test_generated_coordinates_are_wrapped_but_declared_ones_are_not() -> None:
     assert result.coordinates[1] == (F(3, 4), F(3, 4), F(3, 4))
 
 
+def test_the_declared_coordinate_survives_wherever_the_file_lists_the_identity() -> None:
+    """Where the file writes ``x,y,z`` in its loop must not change which number we keep.
+
+    A site declared at z=1 has a generated image at z=0 one lattice vector away — the same atom,
+    so one of them merges. If the orbit were built in list order, an operation listed *before*
+    the identity would claim the slot and the declared ``1`` would be silently replaced by a
+    wrapped ``0``: laundering by list position (D67 rule 3). Real CIFs list the identity first,
+    which is exactly why an ordering bug here would hide until a file that does not.
+    """
+    site = [(F(0), F(0), F(1))]
+    ops = ["x,y,z", "x,y,-z"]
+    identity_first = expand_sites(site, parse_symops(ops, line=1), lattice=CUBE)
+    identity_last = expand_sites(site, parse_symops(ops[::-1], line=1), lattice=CUBE)
+    assert identity_first.coordinates == ((F(0), F(0), F(1)),)
+    assert identity_last.coordinates == identity_first.coordinates
+
+
 def test_images_a_lattice_translation_apart_are_one_atom() -> None:
     """0.999 and 0.001 differ by a lattice vector, not a distance — the minimum-image rule."""
     result = _expand([("0", "0", "1/1000")], ["x,y,z", "x,y,-z"])

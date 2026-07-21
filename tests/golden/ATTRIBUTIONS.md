@@ -26,6 +26,20 @@ contributor grants) carries its source attribution here and is surfaced in the t
 - **License:** Apache-2.0
 - **Source:** Hand-authored for M14C via tests/golden/ase_traj/_generate.py (ASE .traj ULM container, a single isolated water molecule).
 
+## `cif` / `nacl-fm3m`
+
+- **Source file:** `nacl_fm3m.cif`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M18; cell constant and structure from the published rock-salt structure
+
+## `cif` / `rutile-p42mnm`
+
+- **Source file:** `rutile_p42mnm.cif`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M18; cell and the O free parameter from the published rutile structure
+
 ## `cif` / `zno-hexagonal-p1`
 
 - **Source file:** `zno_hexagonal.cif`

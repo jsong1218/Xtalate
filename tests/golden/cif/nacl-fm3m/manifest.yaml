@@ -1,0 +1,24 @@
+case: nacl-fm3m
+format_id: cif
+source_file: nacl_fm3m.cif
+expected_canonical: expected.canonical.json
+canonical_schema_version: "0.1.0"
+sha256: "4fa312b03a4024a82a04c1fcb3766182060adb360568ae6d44ee3ef25a64f387"
+expected_sha256: "092d6d3d3d230c3253c8c78dd84c66ad892e5731dc356eeb07863ffeb952f99e"
+origin:
+  kind: synthetic
+  source: "Hand-written for M18; cell constant and structure from the published rock-salt structure"
+  license: "Apache-2.0"
+notes: >-
+  The M18 externally-checkable anchor. Rock salt is the structure whose answer everyone
+  already knows: the conventional cubic cell holds 8 atoms, 4 NaCl formula units (Z = 4),
+  with Na on the 4a site and Cl on 4b. The file declares only the 2-site asymmetric unit
+  plus the full 192-operation Fm-3m group, so the 8 atoms are entirely the expansion's
+  work — if expansion is wrong, this case cannot accidentally be right.
+  The arithmetic is checkable straight off the provenance note: 2 sites x 192 operations
+  = 384 images, minus 376 merges, is 8 atoms, and the per-site multiplicities [4, 4] are
+  the published site multiplicities. Both sites sit on special positions of very high
+  order (multiplicity 4 against 192 operations), which makes this the corpus's hardest
+  test of the merge threshold: 376 of the 384 images must be recognised as coincident.
+  a = 5.6402 makes the nearest Na-Cl separation exactly a/2 = 2.8201 A, so the minimum
+  interatomic distance invariant has a hand-known value.
