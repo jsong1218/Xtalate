@@ -1,0 +1,27 @@
+# Keep the build context (and so the image) lean and reproducible: the Dockerfile copies exactly
+# pyproject.toml, README.md, src/, backend/, alembic.ini — nothing here belongs in the image.
+.git
+.github
+.venv
+venv
+env
+__pycache__
+*.pyc
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.hypothesis
+htmlcov
+.coverage
+.coverage.*
+dist
+build
+*.egg-info
+tests
+benchmarks
+examples
+docs
+.env
+_xtalate.db
+_xtalate_objects
+.DS_Store
