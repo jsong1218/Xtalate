@@ -75,6 +75,29 @@ class Settings(BaseSettings):
     #: windows; Revision 1.5). ``None`` = indefinite, the self-hosted default posture.
     report_retention_days: int | None = 30
 
+    # --- object storage (v0.5 M21 slice 2) ------------------------------------------------------
+    #: Which object-storage backend to build (:func:`~backend.storage.create_object_store`).
+    #: ``"filesystem"`` is the Tier 0 default (no services); ``"s3"`` targets S3-compatible storage
+    #: (MinIO in Tier 1). Two backends, one interface — Part 9 §1.1.
+    object_store_backend: str = "filesystem"
+
+    #: Root directory for the filesystem backend (created on first use). Ignored for ``s3``.
+    object_store_root: str = "./_xtalate_objects"
+
+    #: Bucket the ``s3`` backend reads and writes. Private always (Part 9 §5.3).
+    object_store_bucket: str = "xtalate"
+
+    #: S3 endpoint URL for the ``s3`` backend (e.g. ``http://minio:9000``); ``None`` = AWS default.
+    object_store_endpoint: str | None = None
+
+    #: S3 region for the ``s3`` backend (MinIO ignores it but boto3 wants one set).
+    object_store_region: str = "us-east-1"
+
+    #: S3 credentials for the ``s3`` backend. Supplied via the environment only, never committed
+    #: (CLAUDE.md "Never commit secrets"); ``None`` falls back to boto3's default credential chain.
+    object_store_access_key: str | None = None
+    object_store_secret_key: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -235,3 +235,5 @@ docs/private/
 credentials.json
 secrets.*
 !secrets.*.example
+# Local filesystem object-store root (backend/storage default; v0.5 M21)
+_xtalate_objects/
