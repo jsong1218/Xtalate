@@ -12,11 +12,8 @@ import pytest
 
 from tests._format_helpers import assert_matches_golden, parse_bytes
 from xtalate.parsers.cif import make_cif_parser
-from xtalate.parsers.cif._build import (
-    charge_of_type_symbol,
-    element_of,
-    lattice_from_parameters,
-)
+from xtalate.parsers.cif._build import charge_of_type_symbol, element_of
+from xtalate.schema.cell import lattice_from_parameters
 from xtalate.sdk import ParseError, ParseResult
 
 GOLDEN = Path(__file__).parent.parent / "golden" / "cif" / "zno-hexagonal-p1"
@@ -139,6 +136,71 @@ K1 K 0.0 0.0 0.0
 def test_single_block_file_emits_no_block_warning() -> None:
     result = _parse(CUBIC)
     assert not [i for i in result.issues if i.code == "CIF_ADDITIONAL_BLOCKS_NOT_READ"]
+
+
+def test_a_leading_header_block_is_skipped_for_the_one_carrying_atoms() -> None:
+    # `data_global` headers carrying only bibliography are standard in CCDC/CSD depositions, and
+    # taking blocks[0] refused the whole file with CIF_MISSING_CELL — an error naming a cause the
+    # file does not have, on a file that is complete and readable. Which block is *the structure*
+    # is a different question from n.4's principle that blocks are not frames, and n.4 is
+    # unchanged: one block is read, the rest are named.
+    data = b"data_global\n_journal_name_full 'J. Test'\n\n" + CUBIC
+    result = _parse(data)
+    assert result.canonical.frames[0].atoms.symbols == ["Na", "Cl"]
+    warnings = [i for i in result.issues if i.code == "CIF_ADDITIONAL_BLOCKS_NOT_READ"]
+    assert len(warnings) == 1
+    assert "global" in warnings[0].message
+
+
+def test_a_file_with_no_atom_site_block_still_reports_its_own_defect() -> None:
+    # The fallback matters as much as the selection: with no atom-bearing block anywhere, the
+    # parser must fail on what is actually wrong with the structure block rather than on the
+    # block choice, or the error message misdirects exactly as CIF_MISSING_CELL used to.
+    with pytest.raises(ParseError) as exc:
+        _parse(b"data_global\n_journal_name_full 'J. Test'\n")
+    assert exc.value.issues[0].code == "CIF_MISSING_CELL"
+
+
+# --- unquoted symmetry operations ------------------------------------------------------------
+
+
+def _with_symops(ops: bytes) -> bytes:
+    """A one-site cell carrying ``ops``. The site is a **general** position (0.1, 0.2, 0.3): on a
+    special position every image coincides with the source and merges, so the atom count would be
+    1 however many operations were read — and the test could not tell expansion from failure."""
+    return (
+        b"data_sym\n_cell_length_a 4.0\n_cell_length_b 4.0\n_cell_length_c 4.0\n"
+        b"_cell_angle_alpha 90.0\n_cell_angle_beta 90.0\n_cell_angle_gamma 90.0\n"
+        b"loop_\n_symmetry_equiv_pos_as_xyz\n" + ops + b"\n"
+        b"loop_\n_atom_site_label\n_atom_site_type_symbol\n"
+        b"_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n"
+        b"Na1 Na 0.1 0.2 0.3\n"
+    )
+
+
+def test_unquoted_operations_containing_spaces_are_read() -> None:
+    # `x, y, z` unquoted is three whitespace-separated tokens, so a one-column loop silently
+    # became three one-fragment rows — and the row-count check cannot catch it, because
+    # len(values) % 1 is zero for any number of values. It surfaced two stages later as
+    # "'x,' has 2 components", naming a defect the file does not have. gemmi, ASE and PyCIFRW all
+    # read this, and D65's stage-1/2 seam exists so this reader can be swapped for gemmi.
+    result = _parse(_with_symops(b"x, y, z\n-x, -y, -z"))
+    assert len(result.canonical.frames[0].atoms.symbols) == 2  # 1 general site x 2 operations
+    assert result.canonical.simulation is not None
+
+
+def test_quoted_operations_are_unaffected_by_the_repair() -> None:
+    result = _parse(_with_symops(b"'x, y, z'\n'-x, -y, -z'"))
+    assert len(result.canonical.frames[0].atoms.symbols) == 2
+
+
+def test_a_genuinely_malformed_operation_still_reports_its_own_error() -> None:
+    # The repair joins fragments only where every value becomes a complete triplet. A real defect
+    # must not be mangled into its neighbour and reported as something else — which is the failure
+    # mode being fixed, and it would be perverse to reintroduce it from the other direction.
+    with pytest.raises(ParseError) as exc:
+        _parse(_with_symops(b"'x, y'\n'-x, -y, -z'"))
+    assert exc.value.issues[0].code == "CIF_MALFORMED_SYMOP"
 
 
 # --- symmetry refusals (D66) ---------------------------------------------------------------
@@ -313,6 +375,57 @@ def test_unrecognisable_species_is_an_error_not_a_placeholder() -> None:
     assert exc.value.issues[0].code == "CIF_INVALID_SYMBOL"
 
 
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("Ow1", "O"),  # water oxygen — ubiquitous in hydrate CIFs
+        ("Hw1", "H"),  # its hydrogens
+        ("Co1", "Co"),  # the two-letter symbol still wins: cobalt, never carbon
+        ("O1", "O"),
+    ],
+)
+def test_a_decorated_site_label_falls_back_to_its_one_letter_element(
+    label: str, expected: str
+) -> None:
+    # `_LABEL` is greedy over [A-Za-z]{1,2} and a regex alternation does not backtrack once a
+    # branch matches, so `Ow1` matched `Ow`, failed the element table, and raised
+    # CIF_INVALID_SYMBOL on a file whose element is unambiguous. The retry is ordered longest
+    # first, which is what keeps `Co1` cobalt.
+    data = CUBIC.replace(b"Na1 Na ", label.encode() + b" ? ")
+    assert _parse(data).canonical.frames[0].atoms.symbols[0] == expected
+
+
+def test_the_one_letter_fallback_never_manufactures_the_unknown_marker() -> None:
+    # `X` is a valid symbol, so without an explicit bar every unrecognizable two-letter label
+    # beginning with x would shorten to `X` and become an atom of unknown species — turning the
+    # error `element_of` promises into the placeholder it promises never to invent. This is the
+    # case that caught it.
+    with pytest.raises(ParseError) as exc:
+        _parse(CUBIC.replace(b"Na1 Na ", b"Xx1 Qq "))
+    assert exc.value.issues[0].code == "CIF_INVALID_SYMBOL"
+
+
+def test_a_site_stating_unknown_species_parses_but_says_so() -> None:
+    # `elements.py` states that a parser emitting the reserved `X` must accompany it with a
+    # warning, and that "that policy lives in the parsers" — where no parser implemented it. Real
+    # CIFs use X labels for unassigned electron density, so this stays a valid parse: the file
+    # really does say a scatterer sits there. It just stops being silent.
+    result = _parse(CUBIC.replace(b"Na1 Na ", b"X1 X "))
+    assert result.canonical.frames[0].atoms.symbols[0] == "X"
+    warnings = [i for i in result.issues if i.code == "CIF_UNKNOWN_SPECIES"]
+    assert len(warnings) == 1
+    assert "unidentified species" in warnings[0].message
+
+
+def test_element_case_is_normalized_through_the_shared_helper() -> None:
+    # `FE` and `Fe` are the same element; which one a file writes is typography, not information.
+    # The normalizer now lives beside `is_valid_symbol` in schema.elements rather than only in
+    # this parser — see its docstring for why the other parsers deliberately still reject `FE`.
+    assert (
+        _parse(CUBIC.replace(b"Na1 Na ", b"Na1 FE ")).canonical.frames[0].atoms.symbols[0] == "Fe"
+    )
+
+
 def test_raw_type_symbol_is_preserved_per_atom() -> None:
     data = CUBIC.replace(b"Na1 Na ", b"Na1 Na1+ ")
     result = _parse(data)
@@ -436,6 +549,12 @@ def test_quoted_question_mark_is_a_literal_value() -> None:
             "CIF_MALFORMED_NUMBER",
         ),
         (lambda d: d.replace(b"_cell_length_a 4.0", b"_cell_length_a -4.0"), "CIF_INVALID_CELL"),
+        # float() accepts "nan" and "inf", and NaN then defeats every ordinary range guard
+        # downstream (`value <= 0.0` is False for NaN), so these used to escape the ParseError
+        # contract entirely and surface as a pydantic ValidationError traceback out of the CLI.
+        (lambda d: d.replace(b"_cell_length_a 4.0", b"_cell_length_a nan"), "CIF_MALFORMED_NUMBER"),
+        (lambda d: d.replace(b"_cell_length_a 4.0", b"_cell_length_a inf"), "CIF_MALFORMED_NUMBER"),
+        (lambda d: d.replace(b"0.5 0.5 0.5", b"0.5 0.5 nan"), "CIF_MALFORMED_NUMBER"),
         (
             lambda d: d.replace(b"_cell_angle_alpha 90.0", b"_cell_angle_alpha 180.0"),
             "CIF_INVALID_CELL",
@@ -460,6 +579,16 @@ def test_error_fixtures_raise_structured_parse_errors(
         _parse(mutation(CUBIC))
     assert exc.value.issues[0].code == code
     assert exc.value.issues[0].severity == "error"
+
+
+def test_a_non_finite_value_never_escapes_the_parse_error_contract() -> None:
+    # The contract, not just the code: whatever this parser rejects, it rejects *as* a ParseError.
+    # A NaN cell length used to reach AtomsBlock construction and raise pydantic's ValidationError,
+    # which is not a ParseError — so the CLI printed a stack trace and exited 1 where a structured
+    # parse error exits 4. Asserting the type is what pins that; asserting the code is not enough.
+    for value in (b"nan", b"inf", b"-inf", b"NaN", b"Infinity"):
+        with pytest.raises(ParseError):
+            _parse(CUBIC.replace(b"_cell_length_a 4.0", b"_cell_length_a " + value))
 
 
 def test_unterminated_text_field_is_a_syntax_error() -> None:

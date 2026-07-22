@@ -34,6 +34,7 @@ from xtalate.sdk import ParseError, ParseIssue
 from xtalate.validation._shared import AGGREGATE as _AGGREGATE
 from xtalate.validation._shared import NUMERIC_FIELDS as _NUMERIC_FIELDS
 from xtalate.validation._shared import RANK as _RANK
+from xtalate.validation._shared import require_supported_precision
 from xtalate.validation.report import CheckResult, ValidationReport
 from xtalate.validation.tolerance import ToleranceProfile
 
@@ -89,7 +90,10 @@ class ValidationEngine:
         """Re-parse ``output`` and run the §2 check catalog against ``expected`` under
         ``tolerance``. Returns exactly one :class:`ValidationReport` (Part 5 §3)."""
         parser = self._registry.get_parser(target_format_id)
-        precision = self._registry.get_exporter(target_format_id).capabilities().numeric_precision
+        caps = self._registry.get_exporter(target_format_id).capabilities()
+        precision = require_supported_precision(
+            target_format_id, caps.numeric_precision, caps.native_coordinate_system
+        )
 
         reparse_issues: list[ParseIssue] = []
         try:
@@ -391,6 +395,9 @@ def _check_numeric_fields(
             "warn": eff.warn,
             "fail": eff.fail,
             "missing": missing,
+            # Recorded per path so an offline re-threshold can reproduce this judgement — see the
+            # matching note in `validation.streaming`.
+            "representational_bound": bound,
         }
         if _RANK[status] > _RANK[worst]:
             worst = status
@@ -535,8 +542,22 @@ def _field_value(frame: Any, path: str) -> Any:
 
 def _representational_bound(precision: dict[str, int | None], path: str) -> float:
     """The per-component representational bound for ``path`` (Part 5 §4.2). A declared decimal count
-    *d* gives ``0.5·10⁻ᵈ``; full precision (``None`` or undeclared) gives 0.0. Fractional-format
-    lattice scaling (``× max‖Lᵢ‖``) is the v0.2 seam — no v0.1 exporter writes fractional."""
+    *d* gives ``0.5·10⁻ᵈ``; full precision (``None`` or undeclared) gives 0.0.
+
+    **The fractional lattice-scaling branch (``× max‖Lᵢ‖``) is not implemented**, and the comment
+    here used to say it was "the v0.2 seam — no v0.1 exporter writes fractional", which is now
+    false twice over: CIF and XDATCAR both declare ``native_coordinate_system="fractional"``, and
+    D24 recorded the formula as present-but-unexercised when in fact there is no lattice term in
+    this function at all.
+
+    It is unimplemented because nothing needs it. The bound this returns is in the *field's own*
+    units, which is correct whenever a format writes coordinates at full round-trip precision — and
+    every Phase 1 exporter does, including both fractional ones (``_fmt`` is ``repr(float(x))``).
+    So no exporter declares ``numeric_precision``, every bound is 0.0, and the §4.3 base tolerances
+    govern unchanged. Building the scaling now would be speculative machinery for a case no format
+    reaches (**P6**); ``require_supported_precision`` is the guard that makes its absence loud
+    rather than silent if one ever does.
+    """
     d = precision.get(path)
     if d is None:
         return 0.0

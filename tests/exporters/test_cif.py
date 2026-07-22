@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import math
+import pathlib
 
 import numpy as np
 import pytest
@@ -22,9 +23,8 @@ from pydantic import JsonValue
 
 from xtalate.conversion import ConversionEngine
 from xtalate.conversion.preflight import build_preflight
-from xtalate.exporters.cif import cell_parameters, make_cif_exporter
+from xtalate.exporters.cif import make_cif_exporter
 from xtalate.parsers._common import build_provenance
-from xtalate.parsers.cif._build import lattice_from_parameters
 from xtalate.registry import default_registry
 from xtalate.schema import (
     AtomsBlock,
@@ -35,6 +35,7 @@ from xtalate.schema import (
     UserMetadata,
 )
 from xtalate.schema.arrays import ArrayNx
+from xtalate.schema.cell import cell_parameters, lattice_from_parameters
 from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
 
 _REGISTRY = default_registry()
@@ -113,9 +114,14 @@ def test_the_identity_operation_is_written_explicitly() -> None:
 
 
 def test_the_source_symbol_is_reported_removed() -> None:
+    # The reason has to *state* the reasoning, not cite it. It used to assert on "D68", but the
+    # design log is unpublished, so a user reading this in a report could not follow the pointer —
+    # and a test keyed to the citation would have gone green on a note that said nothing else.
     diff = build_preflight(_object(space_group="Fm-3m"), _REGISTRY.capability_matrix(), "cif")
     entry = next(e for e in diff.removed if e.path == "cell.space_group")
-    assert "D68" in entry.reason
+    assert "no space-group symbol" in entry.reason
+    assert "expanded cell" in entry.reason
+    assert "DECISIONS" not in entry.reason
 
 
 def test_reparsing_the_output_recovers_no_space_group() -> None:
@@ -132,6 +138,54 @@ def test_declared_symmetry_operations_are_not_written_back() -> None:
     # time — the same false assertion as echoing the symbol, one hop later.
     text = _write(_object(extra={"cif:symmetry_operations": "x, y, z\n-x, -y, -z"}))
     assert "-x, -y, -z" not in text
+
+
+# --------------------------------------------------------------------------------------------
+# D72 — the space group is not re-asserted through a carried tag either
+# --------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "space_group_it_number",
+        "symmetry_int_tables_number",
+        "cod_original_sg_symbol_h-m",
+        "space_group_name_h-m_alt",
+    ],
+)
+def test_a_carried_tag_identifying_a_space_group_is_not_written_back(tag: str) -> None:
+    # D68 withholds the H-M symbol so the written file cannot claim a setting its expanded
+    # coordinates no longer encode. A space group is identified just as completely by its
+    # International Tables *number* — 225 is Fm-3m — or by a database's own symbol spelling, and
+    # those rode through simulation.extra and were written back, restoring the exact assertion
+    # D68 removed. A reader honouring one expands an already-expanded cell.
+    text = _write(_object(extra={f"cif:{tag}": "225"}))
+    assert f"_{tag}" not in text
+
+
+def test_a_carried_tag_naming_only_the_crystal_system_is_kept() -> None:
+    # The counter-case, so the suppression is a rule and not a blanket. 'cubic' describes the
+    # cell, which the written file reproduces unchanged, and no operation set follows from it —
+    # so withholding it would be dropping a true statement, which is its own kind of dishonesty.
+    text = _write(_object(extra={"cif:symmetry_cell_setting": "cubic"}))
+    assert "_symmetry_cell_setting  cubic" in text
+
+
+def test_a_real_cod_file_round_trips_with_no_space_group_assertion() -> None:
+    # The end-to-end form, on the file that exposed this. The unit tests above pin the predicate;
+    # this pins the artifact, which is what a user actually gets. Asserted over the output bytes
+    # because every in-memory check passed while the file on disk still said 225.
+    source = pathlib.Path("tests/wild/cod/nacl-legacy-symmetry-tags/cod-1000041.cif")
+    canonical = _REGISTRY.get_parser("cif").parse(
+        io.BytesIO(source.read_bytes()), filename=source.name
+    )
+    text = _write(canonical.canonical)
+    assert "_space_group_symop_operation_xyz" in text  # the identity loop is still written
+    assert "225" not in text
+    assert "F m -3 m" not in text
+    assert "-F 4 2 3" not in text  # the Hall symbol
+    assert _reparse(text).frames[0].cell.space_group is None  # type: ignore[union-attr]
 
 
 def test_every_atom_is_listed_explicitly() -> None:
@@ -170,6 +224,30 @@ def test_cell_parameters_invert_the_parser_construction() -> None:
     got_lengths, got_angles = cell_parameters(lattice_from_parameters(lengths, angles))
     assert got_lengths == pytest.approx(lengths)
     assert got_angles == pytest.approx(angles)
+
+
+@pytest.mark.parametrize("gamma", [30.0, 60.0, 90.0, 120.0, 150.0])
+def test_the_standard_angles_invert_exactly_not_approximately(gamma: float) -> None:
+    # Equality, deliberately, where the test above uses approx. The parser keeps a table of exact
+    # cosines for these angles because cos(radians(90)) is 6.1e-17 and a lattice built through it
+    # carries a tilt the source never declared. That table buys nothing if the return trip hands
+    # back 120.00000000000001, which misses it on the next read — so CIF→CIF was not idempotent
+    # for any hexagonal, trigonal or rhombohedral cell (D73). approx would not have caught it.
+    _, angles = cell_parameters(lattice_from_parameters((4.0, 4.0, 6.0), (90.0, 90.0, gamma)))
+    assert angles == (90.0, 90.0, gamma)
+
+
+def test_a_hexagonal_cell_is_a_fixed_point_of_the_cif_round_trip() -> None:
+    # The artifact-level form: the exported bytes, re-read and re-exported, must not drift. This
+    # is the failure a user sees — a 120° cell that is 120.00000000000001° one hop later.
+    source = pathlib.Path("tests/golden/cif/zno-hexagonal-p1/zno_hexagonal.cif")
+    once = _write(
+        _REGISTRY.get_parser("cif")
+        .parse(io.BytesIO(source.read_bytes()), filename=source.name)
+        .canonical
+    )
+    assert "_cell_angle_gamma  120.0\n" in once
+    assert _write(_reparse(once)) == once
 
 
 def test_positions_are_written_as_fractional_coordinates() -> None:
@@ -215,8 +293,42 @@ def test_cif_suppresses_the_partial_occupancy_warning() -> None:
 def test_unknown_occupancy_is_written_back_as_unknown() -> None:
     # '?' in, '?' out (P3). Writing 1.0 for an occupancy the source said was unknown would turn
     # its silence into an assertion.
-    text = _write(_object(custom_per_atom={OCCUPANCY_CUSTOM_KEY: ["?", "1.0"]}))
+    #
+    # `None`, not the string "?", because that is what the parser actually produces: `_resolve`
+    # maps the bare marker to `None` on the way in. This fixture used to say "?" and passed for
+    # the wrong reason — the bare `?` it asserted came from `_quote` failing to quote a literal
+    # (the defect below), not from the absence convention it claims to be testing.
+    text = _write(_object(custom_per_atom={OCCUPANCY_CUSTOM_KEY: [None, "1.0"]}))
     assert "  ?" in text
+    assert _reparse(text).user_metadata.custom_per_atom[OCCUPANCY_CUSTOM_KEY][0] is None
+
+
+def test_a_literal_question_mark_is_quoted_so_it_stays_a_value() -> None:
+    # The other half of the same distinction. A bare `?` is CIF's *unknown* marker; a source that
+    # wrote `'?'` in quotes stated a one-character string. Writing the literal bare collapsed the
+    # two, turning a value the source stated into an absence — and `Token.quoted` exists on the
+    # read side precisely to keep them apart, so throwing it away on write forfeited that work.
+    text = _write(_object(custom_per_atom={"cif:atom_site_label": ["?", "Cl1"]}))
+    assert "  '?'  " in text
+    assert _reparse(text).user_metadata.custom_per_atom["cif:atom_site_label"] == ["?", "Cl1"]
+
+
+def test_an_all_unknown_column_falls_back_per_atom_not_per_column() -> None:
+    # `or` tests truthiness, and [None, None] is a non-empty list — so the column-level fallback
+    # never fired and every atom was written `?` while atoms.symbols held good elements. A source
+    # whose _atom_site_type_symbol was `?` on every row is exactly that case.
+    text = _write(_object(custom_per_atom={"cif:type_symbol": [None, None]}))
+    assert "  Na1  Na  " in text
+    assert "  Cl1  Cl  " in text
+
+
+def test_a_partly_unknown_column_keeps_the_rows_the_source_stated() -> None:
+    # The reason the fallback is per atom rather than "use the column only if it is all present":
+    # a source that spelled the oxidation state for one site and not the other must get its own
+    # spelling back where it made one, and the derived element where it did not.
+    text = _write(_object(custom_per_atom={"cif:type_symbol": ["Na1+", None]}))
+    assert "  Na1  Na1+  " in text
+    assert "  Cl1  Cl  " in text
 
 
 def test_source_site_labels_are_preserved() -> None:
@@ -265,6 +377,34 @@ def test_a_value_containing_a_newline_is_written_as_a_text_field() -> None:
 def test_the_data_block_name_round_trips() -> None:
     obj = _object(custom_global={"cif:data_block_name": "rocksalt"})
     assert _reparse(_write(obj)).user_metadata.custom_global["cif:data_block_name"] == "rocksalt"
+
+
+@pytest.mark.parametrize("name", ["my structure", "", "  ", "two\ttabs"])
+def test_a_block_name_the_grammar_cannot_spell_is_refused_not_truncated(name: str) -> None:
+    # writable_custom_keys declares cif:data_block_name writable, so the pre-flight reports it
+    # *preserved* — and the writer took name.split()[0], so "my structure" became `data_my`. The
+    # report claimed preservation of a value the artifact did not carry. That is worse than the
+    # over-declarations D69 fixed: those dropped a value, this substituted a different one.
+    # Refusing is D66's answer — decline rather than emit a file that disagrees with its report.
+    with pytest.raises(ValueError, match="data-block heading"):
+        _write(_object(custom_global={"cif:data_block_name": name}))
+
+
+def test_a_missing_block_name_is_synthesized_not_refused() -> None:
+    # Absence is not a defect: a structure arriving from POSCAR never had a block name, and CIF
+    # requires a heading. Only a *stated* name this grammar cannot spell is refused.
+    assert _write(_object()).startswith("data_xtalate")
+
+
+def test_a_legal_block_name_survives_whole() -> None:
+    # The regression the truncation would show up as: a legal multi-token-looking name is not
+    # clipped, and re-parsing recovers it byte for byte.
+    obj = _object(custom_global={"cif:data_block_name": "cod_1000041_phase2"})
+    assert _write(obj).startswith("data_cod_1000041_phase2\n")
+    assert (
+        _reparse(_write(obj)).user_metadata.custom_global["cif:data_block_name"]
+        == "cod_1000041_phase2"
+    )
 
 
 def test_a_multi_frame_object_is_refused_rather_than_truncated() -> None:

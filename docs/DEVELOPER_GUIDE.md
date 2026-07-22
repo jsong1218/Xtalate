@@ -99,13 +99,28 @@ There are two ways to add a format. Implementing it **in-tree** puts it in `src/
 and `src/xtalate/exporters/`; shipping it as a **separate installable plugin** requires no fork.
 Both use the same SDK and the same rules.
 
+Most formats are a single module per side. CIF is the exception and the precedent for a large one:
+its reader is a *package*, `src/xtalate/parsers/cif/`, split into four stages with a one-way flow —
+tokens, then a format-shaped document, then format-level invariants, then the Canonical Object —
+where the first three know nothing of `xtalate.schema`. If a format you are adding is big enough
+that its syntax and its semantics want separating, follow that shape; the split is worth its cost
+when the backend might later be replaced by a library, and not otherwise.
+
 ### 5.1 Implement the parser/exporter
 
 1. Subclass `ParserPlugin` / `ExporterPlugin` from `xtalate.sdk`. A parser reads one format into a
    Canonical Object and **never** reads another format or calls another parser (P2); an exporter
    writes one format from a Canonical Object and never reads native files.
 2. Declare `capabilities()` **honestly**: a `PARTIAL` field with a note beats an optimistic `FULL`.
-   The capability table has a sync test that will hold you to your declarations.
+   An over-declaration is not a cosmetic slip — the pre-flight predicts the field preserved, so
+   the Conversion Report promises the user something the artifact does not carry.
+   - For a carry-through container you write only *some* keys of, name them in
+     `writable_custom_keys`. If the writable set is genuinely open-ended but its *spelling* is
+     constrained, declare a `writable_custom_key_pattern` instead — a `{container_path: regex}`
+     map applied in the same place, so a present key whose name does not `fullmatch` is reported
+     `removed` before any bytes are written. extXYZ declares `^extxyz:[^:]*$` because its
+     `Properties=` grammar separates fields with `:`, so a key like `cif:occupancy` cannot be
+     spelled at all. Declare a list or a pattern for a container, never both.
 3. Keep the **default-laundering** suite green: prove your parser returns `None` for anything the
    source file does not actually state. Never default an absent field to a zero/identity value.
 4. Add golden cases with licensed manifests, and pass the identity round-trip.

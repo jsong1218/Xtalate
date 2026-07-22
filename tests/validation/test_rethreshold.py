@@ -75,3 +75,58 @@ def test_discrete_checks_are_untouched() -> None:
     out = rethreshold(_report(rmsd=0.0), ToleranceProfile.named("strict"))
     assert _status(out, "atom_count") == "pass"
     assert out.tolerance_profile["name"] == "strict"
+
+
+def _numeric_report(bound: float) -> ValidationReport:
+    """A stored report whose ``numeric_field_fidelity`` carries a per-path
+    representational bound."""
+    return ValidationReport(
+        report_id="v2",
+        conversion_report_id="c2",
+        created_at="2026-01-01T00:00:00Z",
+        status="passed",
+        checks=[
+            CheckResult(
+                check_id="numeric_field_fidelity",
+                status="pass",
+                paths=["dynamics.forces"],
+                measured={
+                    "dynamics.forces": {
+                        "max_abs_diff": 5e-4,
+                        "warn": 1e-6,
+                        "fail": 1e-4,
+                        "missing": False,
+                        "representational_bound": bound,
+                    }
+                },
+                message="ok",
+            )
+        ],
+        tolerance_profile={"name": "default"},
+        reparse_issues=[],
+        schema_version="0.1.0",
+    )
+
+
+def test_numeric_rethreshold_reapplies_the_stored_representational_bound() -> None:
+    """The representational floor is a property of the *format's* declared precision, not of the
+    profile, so re-judging must re-apply it exactly as the live engine did.
+
+    ``_rejudge_scalar`` always did; ``_rejudge_numeric`` called ``effective(quantity)`` with no
+    bound, silently tightening ``numeric_field_fidelity`` on every offline re-threshold. It was
+    inert only because no exporter declares ``numeric_precision``, so every stored bound was 0.0 —
+    a latent mis-judgement waiting for the first format that declares one. The bound could not be
+    re-applied even in principle before this, because the engine never recorded it per path.
+    """
+    strict = ToleranceProfile.named("strict")
+    without = rethreshold(_numeric_report(0.0), strict)
+    with_bound = rethreshold(_numeric_report(1e-2), strict)
+
+    sub_without = without.checks[0].measured["dynamics.forces"]
+    sub_with = with_bound.checks[0].measured["dynamics.forces"]
+    assert isinstance(sub_without, dict) and isinstance(sub_with, dict)
+    # A generous representational bound must *loosen* the effective thresholds, and the 5e-4
+    # measurement that fails without it must pass with it.
+    assert float(str(sub_with["fail"])) > float(str(sub_without["fail"]))
+    assert without.checks[0].status == "fail"
+    assert with_bound.checks[0].status == "pass"

@@ -4,7 +4,7 @@ source_file: occupancy_cell_uncertainty.cif
 expected_canonical: expected.canonical.json
 canonical_schema_version: "0.1.0"
 sha256: "991483f5d0783c3957ce5404be6dd2c2f5fa2e986a48cf6b332d4978ee37ef30"
-expected_sha256: "93c762463f1606cddafe72cad301713d263b1a073655cd7869e09081410401f0"
+expected_sha256: "857dc2ba69327fb6b7b9a0fad89644b021cab4f12fff77091f7bef1b4eeb0737"
 origin:
   kind: synthetic
   source: >-

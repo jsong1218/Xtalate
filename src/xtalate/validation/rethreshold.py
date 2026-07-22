@@ -95,7 +95,12 @@ def _rejudge_numeric(check: CheckResult, profile: ToleranceProfile) -> CheckResu
         if not isinstance(sub, dict) or quantity is None:
             new_measured[path] = sub
             continue
-        eff = profile.effective(quantity)
+        # The stored per-path bound, for the same reason `_rejudge_scalar` reads its own: the
+        # representational floor is a property of the *format's* declared precision, not of the
+        # profile, so re-thresholding must re-apply it rather than drop it. Omitting it silently
+        # tightened `numeric_field_fidelity` on re-threshold — inert only while every exporter
+        # declares full precision, and a real mis-judgement the moment one does not.
+        eff = profile.effective(quantity, _as_number(sub.get("representational_bound")))
         diff = float(_as_number(sub.get("max_abs_diff")))
         missing = bool(sub.get("missing"))
         status = "fail" if (missing or diff > eff.fail) else "warn" if diff > eff.warn else "pass"

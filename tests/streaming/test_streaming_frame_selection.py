@@ -187,3 +187,68 @@ def test_memory_bounded_capture_holds_one_frame(engine: ConversionEngine) -> Non
     single frame regardless of source length."""
     streamed, _ = _streamed(engine, _traj(50), {"choice": "last"})
     assert streamed.canonical_out.frame_count == 1
+
+
+# --- CIF as the single-structure target (v0.4 review, tier 5.2) --------------------------------
+#
+# `frame_selection_streaming_eligible` gates on "the source streams" plus `max_frames == 1` on the
+# target, so CIF became a live streaming target the moment it registered — with no test naming it.
+# The route is real: xdatcar → cif reports eligible today. It is the same code path POSCAR
+# exercises above, which is exactly the argument for pinning it rather than assuming it: the
+# streamed path hands the retained frame to the exporter's ordinary whole-file `export`, and CIF is
+# the only target whose `export` refuses a multi-frame object outright, so a reduction that
+# silently failed to reduce would surface here as a refusal rather than a wrong file.
+
+
+def _streamed_to(engine: ConversionEngine, data: bytes, target: str, choice: dict[str, Any]) -> Any:
+    out = io.BytesIO()
+    result = engine.convert_stream_select(
+        io.BytesIO(data),
+        source_format_id="xdatcar",
+        target_format_id=target,
+        output=out,
+        frame_selection=choice,
+        source_filename="XDATCAR",
+    )
+    return result, out
+
+
+def test_a_trajectory_streams_into_cif_the_same_as_it_materializes() -> None:
+    # Standing rule 3 for the pair v0.4 added: chunking changes memory, never report truth.
+    engine = ConversionEngine(default_registry())
+    data = _traj(10)
+    choice = {"choice": "last"}
+    source = make_xdatcar_parser().parse(io.BytesIO(data), filename="XDATCAR").canonical
+    materialized = engine.convert(
+        source,
+        source_format_id="xdatcar",
+        target_format_id="cif",
+        source_filename="XDATCAR",
+        recovery_choices={"frame_selection": choice},
+    )
+    streamed, out = _streamed_to(engine, data, "cif", choice)
+
+    assert _norm(streamed.report) == _norm(materialized.report)
+    assert out.getvalue() == materialized.output
+    assert b"data_" in out.getvalue()  # a real CIF, not an empty artifact
+
+
+def test_the_frame_cif_receives_is_the_chosen_one() -> None:
+    # The reduction has to happen *before* the exporter, and be the right frame. `last` of the
+    # 10-frame run drifts the first atom to 0.09 fractional; `first` leaves it at the origin.
+    engine = ConversionEngine(default_registry())
+    last, _ = _streamed_to(engine, _traj(10), "cif", {"choice": "last"})
+    first, _ = _streamed_to(engine, _traj(10), "cif", {"choice": "first"})
+    assert last.canonical_out.frames[0].atoms.positions[0][0] == pytest.approx(0.504)
+    assert first.canonical_out.frames[0].atoms.positions[0][0] == pytest.approx(0.0)
+
+
+def test_cif_as_a_source_is_not_offered_the_streaming_route() -> None:
+    # The other half of the gate, asserted so a future `parse_stream` on the CIF parser cannot
+    # quietly enrol a single-structure format in a frame-selection path that means nothing for it.
+    engine = ConversionEngine(default_registry())
+    assert engine.frame_selection_streaming_eligible("cif", "poscar") is False
+    assert engine.streaming_eligible("cif", "cif") is False
+    # ...while a genuine trajectory source into CIF is eligible, so the assertion above is about
+    # CIF-as-source specifically and not about CIF being excluded everywhere.
+    assert engine.frame_selection_streaming_eligible("xdatcar", "cif") is True

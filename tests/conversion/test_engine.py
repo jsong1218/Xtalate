@@ -414,3 +414,62 @@ def test_identity_conversion_preserves_everything() -> None:
     assert result.output is not None
     reparsed = reg.get_parser("extxyz").parse(io.BytesIO(result.output), filename=None).canonical
     assert_scientifically_equal(source, reparsed)
+
+
+# --- CIF as a recovery-requiring target (v0.4 review, tier 5.2) --------------------------------
+#
+# CIF declares `cell.lattice_vectors` in `required_fields`, so the pre-flight maps it to the
+# `missing_lattice` scenario exactly as POSCAR and XDATCAR do — by declaration, with no CIF-shaped
+# special case anywhere in the recovery layer. Nothing under tests/recovery/ or tests/conversion/
+# named CIF, so that generic wiring was true only by inspection. These pin both halves of the
+# bright line for the format v0.4 added: refusal without a preset, fabrication *recorded* with one.
+
+
+def _lattice_less_source(reg: Registry) -> CanonicalObject:
+    # Plain XYZ carries no cell at all — the honest single-frame source for this gap.
+    return _parse(reg, "xyz", GOLDEN / "xyz" / "water-traj" / "water_traj.xyz")
+
+
+def test_a_cell_less_source_to_cif_is_refused_without_a_preset() -> None:
+    # P4: a CIF cannot be written without a cell, and inventing one nobody asked for is the silent
+    # fabrication the Recovery Engine exists to prevent. Refusal is the default, not an error.
+    reg = _registry()
+    source = _lattice_less_source(reg)
+    result = ConversionEngine(reg).convert(
+        source,
+        source_format_id="xyz",
+        target_format_id="cif",
+        source_filename="water_traj.xyz",
+        recovery_choices={"frame_selection": {"choice": "first"}},
+    )
+    assert result.report.status == "refused"
+    refusal = result.report.refusal
+    assert refusal is not None
+    assert refusal["code"] == "RECOVERY_REQUIRED"
+    unresolved = refusal["unresolved_scenarios"]
+    assert {u["scenario"] for u in unresolved} == {"missing_lattice"}
+    # The refusal names the choices available, so the user can act on it without reading source.
+    assert "bounding_box" in unresolved[0]["options"]
+
+
+def test_a_fabricated_cell_reaches_cif_and_is_recorded_as_supplied() -> None:
+    # With the choice made explicitly, the conversion completes — and the fabrication is *audited*:
+    # an Assumption records it, `supplied` names the path, and the artifact is a real CIF. A
+    # fabricated cell that reached the file without either record would be the failure P4 names.
+    reg = _registry()
+    source = _lattice_less_source(reg)
+    result = ConversionEngine(reg).convert(
+        source,
+        source_format_id="xyz",
+        target_format_id="cif",
+        source_filename="water_traj.xyz",
+        recovery_choices={
+            "frame_selection": {"choice": "first"},
+            "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}},
+        },
+    )
+    assert result.report.status == "completed"
+    assert "cell.lattice_vectors" in {s.path for s in result.report.supplied}
+    assert any(a.scenario == "missing_lattice" for a in result.report.assumptions)
+    assert result.output is not None and result.output.startswith(b"data_")
+    assert result.validation is not None and result.validation.status == "passed"

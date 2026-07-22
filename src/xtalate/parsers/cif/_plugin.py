@@ -48,7 +48,10 @@ class CifParser(ParserPlugin):
 
     format_id = FORMAT_ID
     format_name = "Crystallographic Information File"
-    version = "0.4.0"
+    #: The *plugin* version, as every other first-party plugin declares it — not the release the
+    #: format shipped in. This read "0.4.0", which happened to equal the package version and so
+    #: looked right, while meaning something different; see ``parse`` for what that cost.
+    version = "0.1.0"
     file_extensions = (".cif",)
 
     def sniff(self, head: bytes, filename: str | None) -> float:
@@ -83,11 +86,17 @@ class CifParser(ParserPlugin):
                 ]
             ) from exc
         block, block_issues = select_block(document)
+        # No ``parser_version`` override: the default in ``parsers._common.parse_record`` is
+        # ``f"{format_id}-parser {package __version__}"``, which is what every other format
+        # records. The override exists for a parser that *wraps* something whose version belongs
+        # in provenance — ase_traj folds in ``ase.__version__`` (D59) — and CIF wraps nothing.
+        # Passing ``self.version`` here read identically today only because the class attribute
+        # happened to be "0.4.0" too; at 0.5.0 every other format would have moved and CIF alone
+        # would still have claimed 0.4.0, in shipped provenance records.
         canonical, build_issues = build(
             block,
             format_id=self.format_id,
             filename=filename,
-            parser_version=f"{self.format_id}-parser {self.version}",
         )
         return ParseResult(canonical=canonical, issues=[*block_issues, *build_issues])
 
@@ -142,9 +151,9 @@ class CifParser(ParserPlugin):
                 "structures and are named in a warning, never silently skipped.",
                 "Declared symmetry operations are applied, so atoms are the full cell, not the "
                 "asymmetric unit; generated coordinates are wrapped into the cell and images "
-                "coinciding within 0.05 Å are merged (Part 3 §3 n.13; DECISIONS.md D67).",
+                "coinciding within 0.05 Å are merged (Part 3 §3 n.13).",
                 "A non-P 1 symbol declared with no operation loop is refused, not guessed from "
-                "a space-group table (DECISIONS.md D66).",
+                "a space-group table.",
                 "Occupancy is carried as a custom per-atom array under 'cif:occupancy', not "
                 "modelled as a canonical field, and warns at parse (Part 3 §3 n.11).",
                 "A type symbol's oxidation-state suffix ('Fe3+') is preserved verbatim but is "

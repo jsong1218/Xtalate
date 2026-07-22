@@ -20,12 +20,12 @@ it is spelled — but both are floating-point, so they are noted rather than ass
 
 from __future__ import annotations
 
-import math
 from typing import Any, BinaryIO
 
 import numpy as np
 
 from xtalate.schema import CanonicalObject
+from xtalate.schema.cell import cell_parameters, to_fractional
 from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
 from xtalate.sdk import (
     CapabilityLevel,
@@ -55,11 +55,56 @@ _WRITABLE_PER_ATOM = [_LABEL_KEY, _TYPE_SYMBOL_KEY, OCCUPANCY_CUSTOM_KEY]
 #: for what ``electronic.charges`` holds, not a tag any CIF dictionary defines.
 _UNWRITABLE_EXTRA_KEYS = frozenset({"cif:symmetry_operations", "cif:charge_scheme"})
 
+#: Tags that **identify a space group**, and therefore must not be written above the expanded
+#: full-cell atom list, for exactly the reason D68 withholds the Hermann-Mauguin symbol (D72).
+#:
+#: The parser already keeps the four *name* spellings out of ``simulation.extra``
+#: (``_validate.SPACE_GROUP_NAME_TAGS``), but a space group is equally identified by its
+#: International Tables *number* — ``_space_group_IT_number 225`` is ``Fm-3m`` as surely as the
+#: symbol is — and databases mint their own symbol spellings (COD writes
+#: ``_cod_original_sg_symbol_H-M``). Those reached ``simulation.extra`` and were written back, so
+#: the output asserted a 192-operation group above an already-expanded cell carrying only the
+#: identity: the silent re-expansion D66/D67/D68 exist to prevent, emitted by our own writer, while
+#: the report claimed ``cell.space_group`` had been removed.
+#:
+#: The criterion is *identification*, not mention: a tag from which a reader can recover the
+#: operation set is held back. A tag naming only the **crystal system** or **cell setting**
+#: (``_space_group_crystal_system``, ``_symmetry_cell_setting``) is not — it says the cell is
+#: cubic, which stays true of the written cell, and no operations follow from it.
+#:
+#: Both an exact set and a marker scan, because neither alone is right: the set is the predictable,
+#: inspectable statement of what we hold back, and the markers catch the vendor-prefixed variants
+#: that a fixed list silently misses — which is the bug being fixed here.
+_SPACE_GROUP_ID_TAGS = frozenset(
+    {
+        "space_group_it_number",
+        "symmetry_int_tables_number",
+        "space_group_name_h-m_alt",
+        "symmetry_space_group_name_h-m",
+        "space_group_name_hall",
+        "symmetry_space_group_name_hall",
+    }
+)
+_SPACE_GROUP_ID_MARKERS = ("sg_symbol", "space_group_name", "int_tables_number", "it_number")
+
+
+def _identifies_space_group(tag: str) -> bool:
+    """Whether a bare CIF tag name (no leading underscore, lowercased) pins a space group."""
+    return tag in _SPACE_GROUP_ID_TAGS or any(m in tag for m in _SPACE_GROUP_ID_MARKERS)
+
+
 _EXTRA_PREFIX = "cif:"
 
 # Characters that force a CIF value to be quoted rather than written bare.
 _UNQUOTED_LEADERS = ("_", "#", "$", "[", "]", "'", '"', ";")
 _RESERVED_WORDS = ("data_", "loop_", "global_", "save_", "stop_")
+#: Values that ARE the unknown/inapplicable markers, and so must always be quoted to be written
+#: as data. A bare ``?`` means "unknown" and a bare ``.`` means "inapplicable"; a source that
+#: wrote ``'?'`` in quotes stated the one-character string. ``Token.quoted`` exists precisely to
+#: keep those apart on the way in, and writing the literal bare threw that distinction away —
+#: turning a value the source stated into an absence, indistinguishable from the ``?`` this
+#: exporter writes for a genuinely missing site value.
+_MARKER_VALUES = ("?", ".")
 
 
 def _fmt(x: float) -> str:
@@ -82,6 +127,7 @@ def _quote(value: str) -> str:
     needs_quote = (
         any(c.isspace() for c in value)
         or value.startswith(_UNQUOTED_LEADERS)
+        or value in _MARKER_VALUES
         or any(lowered.startswith(word) for word in _RESERVED_WORDS)
     )
     if not needs_quote:
@@ -91,43 +137,6 @@ def _quote(value: str) -> str:
     if '"' not in value:
         return f'"{value}"'
     return f"\n;{value}\n;"
-
-
-def cell_parameters(lattice: np.ndarray) -> tuple[tuple[float, float, float], tuple[float, ...]]:
-    """Lattice vectors (rows a, b, c, Å) → ``((a, b, c), (alpha, beta, gamma))`` in Å and degrees.
-
-    The exact inverse of the parser's ``lattice_from_parameters``, and the reason the round-trip
-    holds regardless of orientation: lengths and angles are rotation-invariant, so a cell that was
-    re-oriented on the way in (or arrived from a format that states vectors directly) comes back
-    out with the parameters it always had. ``alpha`` is the angle between **b** and **c**, per the
-    crystallographic convention that each angle is opposite its like-named axis.
-    """
-    a, b, c = (np.asarray(row, dtype=float) for row in lattice)
-    lengths = tuple(float(np.linalg.norm(v)) for v in (a, b, c))
-
-    def angle(u: np.ndarray, v: np.ndarray, lu: float, lv: float) -> float:
-        # Clamped because a floating-point dot product of near-parallel vectors can leave the
-        # cosine a few ulp outside [-1, 1], where acos is a domain error rather than 0° or 180°.
-        cosine = float(np.dot(u, v)) / (lu * lv)
-        return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
-
-    angles = (
-        angle(b, c, lengths[1], lengths[2]),
-        angle(a, c, lengths[0], lengths[2]),
-        angle(a, b, lengths[0], lengths[1]),
-    )
-    return lengths, angles  # type: ignore[return-value]
-
-
-def _to_fractional(positions: np.ndarray, lattice: np.ndarray) -> np.ndarray:
-    """Cartesian Å → fractional against ``lattice`` (rows a, b, c).
-
-    ``cart = frac @ lattice``, so ``frac`` solves ``lattice.T @ frac.T = cart.T``. Solved rather
-    than multiplied by an explicit inverse, for the same conditioning reason XDATCAR gives: on the
-    skewed cells low-symmetry crystals routinely have, the solve keeps the inversion error at the
-    ulp level the declared representational bound assumes.
-    """
-    return np.asarray(np.linalg.solve(lattice.T, positions.T).T)
 
 
 def _column(custom_per_atom: dict[str, Any], key: str, n_atoms: int) -> list[Any] | None:
@@ -140,6 +149,18 @@ def _column(custom_per_atom: dict[str, Any], key: str, n_atoms: int) -> list[Any
         return None
     column = list(values)
     return column if len(column) == n_atoms else None
+
+
+def _or_else(column: list[Any] | None, index: int, fallback: Any) -> Any:
+    """``column[index]`` when the source stated it there, else ``fallback``.
+
+    Per-atom rather than per-column, because the column-level ``or`` this replaced tested
+    truthiness: an all-``None`` column is a non-empty list, so it won the ``or`` and suppressed
+    the fallback for every atom.
+    """
+    if column is None or column[index] is None:
+        return fallback
+    return column[index]
 
 
 def _generated_labels(symbols: list[str]) -> list[str]:
@@ -202,11 +223,9 @@ class CifExporter(ExporterPlugin):
 
         lattice = np.asarray(cell.lattice_vectors, dtype=float)
         lengths, angles = cell_parameters(lattice)
-        fractional = _to_fractional(np.asarray(atoms.positions, dtype=float), lattice)
+        fractional = to_fractional(np.asarray(atoms.positions, dtype=float), lattice)
 
-        block_name = canonical.user_metadata.custom_global.get(_BLOCK_NAME_KEY)
-        name = str(block_name) if block_name else _DEFAULT_BLOCK_NAME
-        out: list[str] = [f"data_{name.split()[0] if name.split() else _DEFAULT_BLOCK_NAME}", ""]
+        out: list[str] = [f"data_{self._block_name(canonical)}", ""]
 
         for tag, value in zip(("a", "b", "c"), lengths, strict=True):
             out.append(f"_cell_length_{tag}     {_fmt(value)}")
@@ -228,6 +247,36 @@ class CifExporter(ExporterPlugin):
         out.extend(self._atom_site_loop(canonical, atoms.symbols, fractional))
         stream.write(("\n".join(out) + "\n").encode("utf-8"))
 
+    def _block_name(self, canonical: CanonicalObject) -> str:
+        """The ``data_`` heading: the source's own block name, or a synthesized default.
+
+        Absent is not a defect — a structure arriving from POSCAR never had a block name, and CIF
+        requires a heading, so ``xtalate`` is synthesized. What *is* a defect is a stated name this
+        grammar cannot spell. The heading runs to the first whitespace, so this used to write
+        ``name.split()[0]``: a name of "my structure" was silently truncated to ``data_my`` while
+        ``writable_custom_keys`` declared the key writable and the pre-flight therefore reported it
+        **preserved**. That is worse than the over-declarations D69 fixed — those dropped a value,
+        this substituted a different one and called it preserved.
+
+        Refusing is the proportionate answer, on D66's reasoning: Xtalate cannot write this name,
+        and no truncation of it is the name the object stated, so it declines rather than emit an
+        artifact that quietly disagrees with its own report. Nothing reachable through a CIF source
+        can trigger it — the CIF grammar forbids whitespace in a heading, so a round-tripped name is
+        always legal — which is exactly why it went unnoticed and why refusing costs nothing.
+        """
+        raw = canonical.user_metadata.custom_global.get(_BLOCK_NAME_KEY)
+        if raw is None:
+            return _DEFAULT_BLOCK_NAME
+        name = str(raw)
+        if name == "" or any(c.isspace() for c in name):
+            raise ValueError(
+                f"user_metadata.custom_global[{_BLOCK_NAME_KEY!r}] is {name!r}, which cannot be "
+                "written as a CIF data-block heading: a heading is a single token, so it may not "
+                "be empty or contain whitespace. Set a heading-legal name, or drop the key to "
+                f"have one synthesized ({_DEFAULT_BLOCK_NAME!r})"
+            )
+        return name
+
     def _carried_tags(self, canonical: CanonicalObject) -> list[str]:
         """The block-level tags the parser carried into ``simulation.extra``, written back.
 
@@ -240,7 +289,10 @@ class CifExporter(ExporterPlugin):
         for key, value in canonical.simulation.extra.items():
             if not key.startswith(_EXTRA_PREFIX) or key in _UNWRITABLE_EXTRA_KEYS:
                 continue
-            lines.append(f"_{key[len(_EXTRA_PREFIX) :]}  {_quote(str(value))}")
+            tag = key[len(_EXTRA_PREFIX) :]
+            if _identifies_space_group(tag):
+                continue
+            lines.append(f"_{tag}  {_quote(str(value))}")
         return [*lines, ""] if lines else []
 
     def _atom_site_loop(
@@ -248,10 +300,19 @@ class CifExporter(ExporterPlugin):
     ) -> list[str]:
         per_atom = canonical.user_metadata.custom_per_atom
         n = len(symbols)
-        labels = _column(per_atom, _LABEL_KEY, n) or _generated_labels(symbols)
+        # Fallbacks are applied **per atom**, not per column. `or` tests truthiness, and a column
+        # of all-`None` — a source whose _atom_site_type_symbol was `?` on every row — is a
+        # non-empty list and therefore truthy, so the column-level fallback never fired and every
+        # atom was written `?` while atoms.symbols held perfectly good elements. Each site falls
+        # back on its own, so a column that is unknown for some rows and stated for others gets
+        # the source's value where there is one and the derived value where there is not.
+        source_labels = _column(per_atom, _LABEL_KEY, n)
+        generated = _generated_labels(symbols)
+        labels = [_or_else(source_labels, i, generated[i]) for i in range(n)]
         # The raw type symbol carries the oxidation-state suffix ('Fe3+') the element alone drops,
         # so a source that spelled one gets it back; otherwise the element symbol is the type.
-        types = _column(per_atom, _TYPE_SYMBOL_KEY, n) or list(symbols)
+        source_types = _column(per_atom, _TYPE_SYMBOL_KEY, n)
+        types = [_or_else(source_types, i, symbols[i]) for i in range(n)]
         occupancies = _column(per_atom, OCCUPANCY_CUSTOM_KEY, n)
 
         tags = [
@@ -306,8 +367,7 @@ class CifExporter(ExporterPlugin):
                     notes="Xtalate writes the identity operation and the full explicit atom list, "
                     "with no space-group symbol, because the Canonical Object holds the expanded "
                     "cell; a source symbol would assert a setting the written coordinates no "
-                    "longer encode, and re-deriving one from coordinates is a Non-Goal "
-                    "(DECISIONS.md D68).",
+                    "longer encode, and re-deriving one from coordinates is a Non-Goal.",
                 ),
                 "dynamics.velocities": none,
                 "dynamics.forces": none,
@@ -323,8 +383,12 @@ class CifExporter(ExporterPlugin):
                 "simulation.extra": FieldCapability(
                     level=CapabilityLevel.PARTIAL,
                     notes="Keys prefixed 'cif:' are written back as the block-level tags they came "
-                    "from; other keys have no CIF tag spelling and are dropped. The declared "
-                    "symmetry operations are held back deliberately (DECISIONS.md D68).",
+                    "from; other keys have no CIF tag spelling and are dropped. Two families are "
+                    "held back deliberately: the declared symmetry operations, and any tag that "
+                    "identifies a space group — its International Tables number or a database's "
+                    "own symbol spelling — because the written atom list is the expanded full "
+                    "cell and a reader honouring either would expand it a second time. A tag "
+                    "naming only the crystal system is kept.",
                 ),
                 "user_metadata.custom_global": FieldCapability(
                     level=CapabilityLevel.PARTIAL,
@@ -354,7 +418,7 @@ class CifExporter(ExporterPlugin):
             lossy_notes=[
                 "Written with the identity symmetry operation and every atom listed explicitly; "
                 "no space-group symbol is emitted, and a source symbol is reported removed "
-                "rather than echoed (DECISIONS.md D68).",
+                "rather than echoed.",
                 "Cartesian positions are converted to fractional against the cell on write, so "
                 "sub-ulp differences from the source Cartesian values are possible on round-trip.",
             ],

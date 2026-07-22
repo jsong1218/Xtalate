@@ -8,9 +8,17 @@ truth), makes the ``A → B → A`` trip, and diffs the returned object against 
 matrix-computed comparable subspace under the **strict** tolerance profile.
 
 The pair list is curated to the high-risk set of Part 8 §2.4 — ``xyz↔extxyz`` (near-superset),
-``poscar↔extxyz`` (fractional↔Cartesian), ``poscar↔contcar`` (near-identical) — chosen so no leg
-needs frame reduction or lattice fabrication; the golden anchor therefore stays exact. Recovery-
-exercising and inexpressible-field pairs are the two-hop suite's job (``test_two_hop``).
+``poscar↔extxyz`` (fractional↔Cartesian), ``poscar↔contcar`` (near-identical), ``cif↔poscar``
+(cell *parameters* ↔ vectors) — chosen so no leg needs frame reduction or lattice fabrication; the
+golden anchor therefore stays exact. Recovery-exercising and inexpressible-field pairs are the
+two-hop suite's job (``test_two_hop``).
+
+``cif↔poscar`` was added by the post-v0.4 architectural review. CIF is the only Phase 1 format that
+states a cell as lengths and angles rather than vectors, so a CIF leg is the only one where the
+lattice is *reconstructed* rather than copied — and it is the only CIF pair whose comparable
+subspace contains ``cell.lattice_vectors`` at all, which is what makes that reconstruction
+assertable here against external truth rather than against the same Capability Matrix that drove
+it (this suite's whole reason for existing, see ``_matrix``'s accepted-risk note).
 """
 
 from __future__ import annotations
@@ -34,10 +42,13 @@ _PAIRS: list[tuple[str, str]] = [
     ("xyz", "extxyz"),
     ("poscar", "extxyz"),
     ("poscar", "contcar"),
+    ("cif", "poscar"),
 ]
 # Exercise each unordered pair in both directions, but only starting from a format that has a golden
-# source fixture (the anchor). `contcar` is a target-only format (no golden source, Part 3 §6.1), so
-# `poscar↔contcar` runs as `poscar → contcar → poscar` only.
+# source fixture (the anchor); a direction whose source has none drops out silently. The guard is
+# live rather than decorative — it is what lets a pair be listed here before its source fixture
+# exists — though every format named above currently has one, CONTCAR included since M8 committed
+# the velocity-bearing `contcar/co-md-restart` case.
 _WITH_GOLDEN = set(_matrix.source_formats_with_golden())
 _DIRECTED = [(x, y) for a, b in _PAIRS for x, y in ((a, b), (b, a)) if x in _WITH_GOLDEN]
 

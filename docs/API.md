@@ -208,7 +208,7 @@ responses (no parallel DTOs).
 
 ## 4. Supported formats
 
-Read **and** write: `xyz`, `extxyz`, `poscar`, `contcar`, `xdatcar`, `ase_traj`. That is six of the
-seven Phase 1 formats; `cif` is the last and is not yet implemented. Third-party formats registered
+Read **and** write: `xyz`, `extxyz`, `poscar`, `contcar`, `xdatcar`, `ase_traj`, `cif` — all seven
+Phase 1 formats, so every pair among them converts. Third-party formats registered
 via entry points (see the [Developer Guide](DEVELOPER_GUIDE.md)) appear here on equal footing —
 `xtalate capabilities` always reflects the live set.

@@ -151,7 +151,8 @@ library with no web framework required.
 src/xtalate/
   schema/         Canonical Model; depends on nothing else in xtalate/
   sdk/            stable parser/exporter base classes + capability models + streaming interface
-  parsers/        one per format (xyz, extxyz, poscar, contcar, xdatcar, ase_traj)
+  parsers/        one per format (xyz, extxyz, poscar, contcar, xdatcar, ase_traj); cif/ is a
+                  four-stage package — the one format too large for a single module
   exporters/      one per format
   capabilities/   Capability Matrix: assembles + queries declarations
   discovery/      Information Discovery Engine + Format Sniffer + Discovery Report
@@ -189,11 +190,22 @@ project exists to guarantee.
 
 ## 9. Current status
 
-Xtalate is a pure-Python **library + CLI**. Six of the seven Phase 1 formats are implemented and
-registered — XYZ, extXYZ, POSCAR, CONTCAR, XDATCAR, and the ASE `.traj` format; CIF is the last
-and is not yet implemented. A frame-chunked streaming core keeps pipeline memory sub-linear in the
-number of frames, so large trajectories convert at roughly constant memory with a Conversion
-Report proven identical to the materialized path.
+Xtalate is a pure-Python **library + CLI**. **Phase 1 is complete**: all seven Phase 1 formats are
+implemented and registered — XYZ, extXYZ, POSCAR, CONTCAR, XDATCAR, the ASE `.traj` format, and
+CIF — and every pair among them converts. A frame-chunked streaming core keeps pipeline memory
+sub-linear in the number of frames, so large trajectories convert at roughly constant memory with
+a Conversion Report proven identical to the materialized path.
+
+CIF is the one format whose reader is a **package rather than a module**
+(`src/xtalate/parsers/cif/`), split into four stages with a one-way data flow: tokens (`_lexer`) →
+a format-shaped document (`_document`) → CIF-level invariants (`_validate`, with `_symmetry` for
+operation strings) → the Canonical Object (`_build`). The stage boundary is drawn by what each
+stage is allowed to *know*: the first three know nothing of the Canonical Model, which is enforced
+by two dedicated import-linter contracts rather than left as convention. Stage 2's output is
+deliberately shaped like `gemmi.cif`'s `Document`/`Block` API, so adopting gemmi later means
+deleting the first two stages and re-exposing the same calls, leaving the validation rules, the
+error contract and the builder untouched. CIF is priced at more than the other six formats
+combined, which is what makes that reversibility worth its cost.
 
 The FastAPI **Service** layer and Next.js **Web UI** described as future destinations do not exist
 yet; they attach to this same core without re-implementing it. Pre-1.0, a minor version may break:

@@ -12,8 +12,18 @@ untouched. An idiosyncratic model would keep the seam but forfeit the benefit (D
 Two CIF conventions are resolved at this layer because both are purely lexical:
 
 * **Tags are case-insensitive.** ``_Cell_Length_A`` and ``_cell_length_a`` are one tag. Lookup
-  normalizes to lowercase while ``CifBlock.spellings`` retains each tag's original casing, so
-  carry-through can reproduce what the file actually said (**P1**).
+  normalizes to lowercase, and ``CifBlock.spellings`` records each tag's original casing so this
+  document layer remains a faithful account of the file it read.
+
+  **Known limitation, stated because the docstring used to claim otherwise.** Nothing downstream
+  reads ``spellings``: the builder keys carry-through off the lowercased tags, so a source's
+  ``_space_group_IT_number`` becomes ``cif:space_group_it_number`` and is written back lowercased.
+  Tag case is laundered on every round trip. That is cosmetic — CIF tags are case-insensitive, so
+  no reader is misled and no value changes — but it is *not* the "carry-through reproduces what
+  the file said (**P1**)" this comment previously asserted, and a live P1 promise no code keeps is
+  worse than an acknowledged gap. Honouring it means carrying the spelling alongside the canonical
+  key, which changes a canonical path's derivation and wants its own decision; until then this is
+  the honest description.
 * **Bare ``?`` and ``.`` are absence.** CIF's "unknown" and "inapplicable" markers become
   ``None`` here, which is exactly the Canonical Model's absence convention (**P3**) — a value
   the source did not state never reaches the builder as a string to be misread as data. Quoted
@@ -75,18 +85,14 @@ class CifBlock:
         Accepts several spellings because CIF renamed a whole family of tags between the
         legacy ``_symmetry_*`` set and the current ``_space_group_*`` set, and real files use
         both — often in the same file. Returns ``None`` both when the tag is absent and when it
-        is present with an absence marker; the two are equivalent for the builder's purposes,
-        and ``has_tag`` distinguishes them where it matters.
+        is present with an absence marker: the two are equivalent everywhere this is called, since
+        a tag carrying ``?`` states nothing, which is what an absent tag states too.
         """
         for tag in tags:
             value = self.pairs.get(tag.lower())
             if value is not None:
                 return value
         return None
-
-    def has_tag(self, *tags: str) -> bool:
-        """Whether any of ``tags`` appears in the block at all, even carrying ``?`` or ``.``."""
-        return any(tag.lower() in self.pairs for tag in tags)
 
     def line_of(self, *tags: str) -> int:
         """Source line of the first of ``tags`` present, falling back to the block heading."""
