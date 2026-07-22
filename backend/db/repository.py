@@ -1,0 +1,145 @@
+"""The repository — the one door the service has into the relational store (v0.5 M21 slice 3).
+
+A thin, backend-agnostic surface over the ORM: it opens a session per operation, commits, and hands
+back detached ORM objects (readable post-commit via ``expire_on_commit=False``). Nothing above this
+layer writes SQL or touches a session, so the same code runs unchanged on SQLite and PostgreSQL —
+the parity suite proves it. M21 provides the create/read surface plus the two byte-lifecycle
+mutations (delete an upload, clear a conversion's output) that the **reports-outlive-bytes** test
+exercises; the job-state transitions, idempotent inspect, and history queries are added by
+M22–M24 on this same class.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from datetime import datetime
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
+
+from backend.config import Settings
+from backend.db.engine import build_engine, build_sessionmaker, utcnow
+from backend.db.models import Conversion, Job, Report, Upload
+
+
+class Repository:
+    """CRUD over uploads, jobs, conversions, and reports, backend-agnostic by construction."""
+
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session_factory = session_factory
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> Repository:
+        """Build a repository (and its engine/sessionmaker) from configuration — the usual path."""
+        return cls(build_sessionmaker(build_engine(settings)))
+
+    # --- uploads --------------------------------------------------------------------------------
+
+    def add_upload(self, upload: Upload) -> Upload:
+        with self._session_factory.begin() as session:
+            session.add(upload)
+        return upload
+
+    def get_upload(self, file_id: str) -> Upload | None:
+        with self._session_factory() as session:
+            return session.get(Upload, file_id)
+
+    def mark_upload_bytes_deleted(self, file_id: str) -> None:
+        """Record that the byte sweep removed the object, without deleting the row."""
+        with self._session_factory.begin() as session:
+            upload = session.get(Upload, file_id)
+            if upload is not None:
+                upload.bytes_deleted = True
+
+    def delete_upload(self, file_id: str) -> None:
+        """Delete an upload row. ``ON DELETE SET NULL`` nulls any conversion's ``source_file_id`` —
+        the reports and conversion records survive (reports-outlive-bytes)."""
+        with self._session_factory.begin() as session:
+            upload = session.get(Upload, file_id)
+            if upload is not None:
+                session.delete(upload)
+
+    # --- jobs -----------------------------------------------------------------------------------
+
+    def add_job(self, job: Job) -> Job:
+        with self._session_factory.begin() as session:
+            session.add(job)
+        return job
+
+    def get_job(self, job_id: str) -> Job | None:
+        with self._session_factory() as session:
+            return session.get(Job, job_id)
+
+    def set_job_state(
+        self,
+        job_id: str,
+        state: str,
+        *,
+        started_at: datetime | None = None,
+        finished_at: datetime | None = None,
+        error: dict[str, object] | None = None,
+    ) -> Job | None:
+        """Minimal state write (the *validated* transition table is M22's job — this just persists).
+
+        Always stamps ``updated_at``; sets the optional timestamps/error when given.
+        """
+        with self._session_factory.begin() as session:
+            job = session.get(Job, job_id)
+            if job is None:
+                return None
+            job.state = state
+            job.updated_at = utcnow()
+            if started_at is not None:
+                job.started_at = started_at
+            if finished_at is not None:
+                job.finished_at = finished_at
+            if error is not None:
+                job.error = error
+            return job
+
+    # --- conversions ----------------------------------------------------------------------------
+
+    def add_conversion(self, conversion: Conversion) -> Conversion:
+        with self._session_factory.begin() as session:
+            session.add(conversion)
+        return conversion
+
+    def get_conversion(self, conversion_id: str) -> Conversion | None:
+        with self._session_factory() as session:
+            return session.get(Conversion, conversion_id)
+
+    def clear_output_bytes(self, conversion_id: str) -> Conversion | None:
+        """Byte expiry of the *output*: drop the storage key and mark it unavailable, keeping the
+        record and its reports (the reports-outlive-bytes promise for the output side)."""
+        with self._session_factory.begin() as session:
+            conversion = session.get(Conversion, conversion_id)
+            if conversion is None:
+                return None
+            conversion.output_storage_key = None
+            conversion.output_available = False
+            return conversion
+
+    # --- reports --------------------------------------------------------------------------------
+
+    def add_report(self, report: Report) -> Report:
+        with self._session_factory.begin() as session:
+            session.add(report)
+        return report
+
+    def get_report(self, report_id: str) -> Report | None:
+        with self._session_factory() as session:
+            return session.get(Report, report_id)
+
+    def get_reports_for_conversion(self, conversion_id: str) -> Sequence[Report]:
+        with self._session_factory() as session:
+            stmt = (
+                select(Report)
+                .where(Report.conversion_id == conversion_id)
+                .order_by(Report.created_at)
+            )
+            return list(session.scalars(stmt))
+
+    def get_reports_for_job(self, job_id: str) -> Sequence[Report]:
+        with self._session_factory() as session:
+            stmt = select(Report).where(Report.job_id == job_id).order_by(Report.created_at)
+            return list(session.scalars(stmt))

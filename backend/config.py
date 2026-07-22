@@ -75,6 +75,14 @@ class Settings(BaseSettings):
     #: windows; Revision 1.5). ``None`` = indefinite, the self-hosted default posture.
     report_retention_days: int | None = 30
 
+    # --- database (v0.5 M21 slice 3) ------------------------------------------------------------
+    #: SQLAlchemy URL. SQLite (Tier 0, no services) is the default; Tier 1 sets a PostgreSQL URL
+    #: (``postgresql+psycopg://…``). One interface, two backends — Part 9 §1.1.
+    database_url: str = "sqlite+pysqlite:///./_xtalate.db"
+
+    #: Echo SQL to logs (debugging only; never on in a deployment — logs must not carry content).
+    database_echo: bool = False
+
     # --- object storage (v0.5 M21 slice 2) ------------------------------------------------------
     #: Which object-storage backend to build (:func:`~backend.storage.create_object_store`).
     #: ``"filesystem"`` is the Tier 0 default (no services); ``"s3"`` targets S3-compatible storage

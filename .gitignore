@@ -237,3 +237,5 @@ secrets.*
 !secrets.*.example
 # Local filesystem object-store root (backend/storage default; v0.5 M21)
 _xtalate_objects/
+# Default Tier 0 SQLite database (backend.db default database_url; v0.5 M21)
+_xtalate.db
