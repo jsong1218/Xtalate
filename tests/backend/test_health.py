@@ -1,4 +1,4 @@
-"""``/v1/health`` — liveness always, readiness green with an empty probe registry (M21)."""
+"""``/v1/health`` — liveness always; readiness runs the real dependency probes (M21 slice 4)."""
 
 from __future__ import annotations
 
@@ -16,16 +16,20 @@ def test_liveness_ok(client: TestClient) -> None:
     assert isinstance(body["version"], str) and body["version"]
 
 
-def test_readiness_green_with_no_dependencies(client: TestClient) -> None:
-    # M21 registers no probes, so readiness is trivially green (M24 adds db/object probes).
+def test_readiness_green_runs_the_real_probes(client: TestClient) -> None:
+    # M21 slice 4 registers the database + object-store probes; against the Tier 0 backends the
+    # test settings point at (an isolated SQLite file, a temp filesystem root) both answer green.
     resp = client.get("/v1/health", params={"ready": "true"})
     assert resp.status_code == 200
-    assert resp.json()["status"] == "ok"
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["checks"]["database"] == {"ok": True, "detail": "sqlite"}
+    assert body["checks"]["object_store"] == {"ok": True, "detail": "filesystem"}
 
 
 def test_readiness_degraded_returns_503(client: TestClient) -> None:
-    # Simulate the M24 shape: a failing probe must flip status to degraded AND the code to 503,
-    # so an orchestrator's readiness gate reacts. Registered directly on app.state for the test.
+    # A failing probe must flip status to degraded AND the code to 503, so an orchestrator's
+    # readiness gate reacts. Registered directly on app.state for the test.
     from backend.models import ReadinessCheck
 
     async def _failing_probe() -> ReadinessCheck:

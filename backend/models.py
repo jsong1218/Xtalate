@@ -71,7 +71,7 @@ class HealthResponse(BaseModel):
     """``GET /v1/health`` — liveness always; readiness when ``?ready=true``.
 
     Liveness (``status == "ok"``, ``checks`` empty) proves the process is up. Readiness runs the
-    registered dependency checks (database, object storage — populated in M24); ``status`` is
+    registered dependency checks (database and object storage, registered in M21); ``status`` is
     ``"ok"`` only when every check passed, ``"degraded"`` otherwise, and the endpoint returns
     ``503`` on ``degraded`` so an orchestrator's probe fails correctly.
     """

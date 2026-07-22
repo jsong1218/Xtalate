@@ -32,6 +32,7 @@ from alembic.config import Config  # noqa: E402
 
 from backend.config import Settings  # noqa: E402
 from backend.db import Repository  # noqa: E402
+from backend.db.engine import build_engine, build_sessionmaker  # noqa: E402
 
 _PG_URL_ENV = "XTALATE_TEST_DATABASE_URL"
 _ALEMBIC_INI = Path(__file__).resolve().parents[3] / "alembic.ini"
@@ -55,7 +56,13 @@ def repository(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Repos
         database_url = f"sqlite+pysqlite:///{tmp_path / 'parity.db'}"
         config = _alembic_config(database_url)
         command.upgrade(config, "head")
-        yield Repository.from_settings(_settings(database_url))
+        # Build the engine explicitly so the fixture can dispose its pool on teardown (no leaked
+        # SQLite connections warned about at GC); the Repository is the same either way.
+        engine = build_engine(_settings(database_url))
+        try:
+            yield Repository(build_sessionmaker(engine))
+        finally:
+            engine.dispose()
         return
 
     pg_url = os.environ.get(_PG_URL_ENV)
@@ -64,9 +71,11 @@ def repository(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Repos
     config = _alembic_config(pg_url)
     command.downgrade(config, "base")  # start from empty even if a prior run left tables
     command.upgrade(config, "head")
+    engine = build_engine(_settings(pg_url))
     try:
-        yield Repository.from_settings(_settings(pg_url))
+        yield Repository(build_sessionmaker(engine))
     finally:
+        engine.dispose()
         command.downgrade(config, "base")
 
 

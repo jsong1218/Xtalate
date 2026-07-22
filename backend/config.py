@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     #: Echo SQL to logs (debugging only; never on in a deployment — logs must not carry content).
     database_echo: bool = False
 
+    # --- job queue (v0.5 M21 slice 4; the worker + enqueue path arrive in M22) -------------------
+    #: Redis URL the RQ queue connects to (``docs/private/DECISIONS.md`` D82). Surfaced now so the
+    #: Tier 1 compose stack (``queue`` service) is wired from the first shape; no queue code reads
+    #: it until M22 — a resting-state placeholder, not a dead setting.
+    redis_url: str = "redis://127.0.0.1:6379/0"
+
     # --- object storage (v0.5 M21 slice 2) ------------------------------------------------------
     #: Which object-storage backend to build (:func:`~backend.storage.create_object_store`).
     #: ``"filesystem"`` is the Tier 0 default (no services); ``"s3"`` targets S3-compatible storage

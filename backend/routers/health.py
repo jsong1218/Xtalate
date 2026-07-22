@@ -3,9 +3,9 @@
 Liveness (the bare call) proves the process is up and answers immediately with no dependency
 touched. Readiness (``?ready=true``) runs every probe registered on ``app.state.readiness_checks``
 (:mod:`backend.readiness`) and is green only when all pass; on any failure the response is
-``503`` so an orchestrator's readiness probe removes the instance from rotation. In M21 the probe
-registry is empty, so readiness is trivially green — the database and object-storage probes join
-it in M24 without changing this handler.
+``503`` so an orchestrator's readiness probe removes the instance from rotation. M21 registers the
+database and object-storage probes (:func:`backend.app.create_app`); further dependencies attach to
+the same registry without changing this handler.
 """
 
 from __future__ import annotations
