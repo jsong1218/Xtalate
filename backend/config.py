@@ -1,0 +1,87 @@
+"""Service settings — environment variables only (MASTER_SPEC Part 9 §2).
+
+Configuration is read from the process environment (prefix ``XTALATE_``) with an optional ``.env``
+file for local development; ``.env.example`` is the committed, commented template. There is no
+config file format and no code-baked default that a deployment cannot override — Part 9 §2 makes
+the environment the single source, so that one artifact (the same image) behaves per its
+environment in Tier 0, Tier 1, and a hosted instance without a rebuild.
+
+The *limit* values below are surfaced by ``GET /v1/limits`` from M21, but their **enforcement**
+lands with the surfaces that need them (upload size and rate limits in M24, the
+``awaiting_recovery`` TTL in M23). Surfacing them first is deliberate: the client learns the rules
+before it hits them (Part 6 §5). Default values are the *design-intent* numbers of Part 6 §5,
+re-validated per-version rather than inherited silently (v0.5 standing rule 4) — they are not yet
+a hosted-instance policy, which is v1.0 work.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """All service configuration, populated from the environment (``XTALATE_`` prefix).
+
+    Instances are immutable-by-convention and cached (:func:`get_settings`); a test constructs its
+    own ``Settings(...)`` and passes it to :func:`~backend.app.create_app` to override without
+    touching the process environment.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="XTALATE_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # --- identity -------------------------------------------------------------------------------
+    #: Free-form deployment label surfaced in logs and ``/v1/health`` (e.g. "development",
+    #: "tier1", "production"). Never branches scientific behaviour — the library is environment-
+    #: blind by construction.
+    environment: str = "development"
+
+    #: Base URL the error envelope's ``documentation_url`` is built from (Part 6 §6). Points at
+    #: the published API error reference; the per-error anchor is the stable machine ``code``.
+    docs_base_url: str = "https://github.com/jsong1218/Xtalate/blob/main/docs/API.md"
+
+    # --- limits (surfaced by GET /v1/limits now; enforced in M23/M24) ---------------------------
+    #: Largest upload accepted, in bytes (enforced during streaming in M24 → ``413``).
+    max_upload_bytes: int = 100 * 1024 * 1024
+
+    #: Hard cap on trajectory frames a single job will read; already enforced by the parser
+    #: (``FRAME_LIMIT_EXCEEDED``), surfaced here so a client can size a request in advance.
+    max_frames: int = 100_000
+
+    #: Concurrent non-terminal jobs a single caller may hold (enforced in M24 → ``429``).
+    max_concurrent_jobs: int = 4
+
+    #: Sustained request rate per caller per minute (enforced in M24 → ``429`` + ``Retry-After``).
+    rate_limit_per_minute: int = 120
+
+    #: How long uploaded input bytes live before the storage lifecycle sweeps them (Part 9 §5.2).
+    #: Reports outlive this window by construction (M24 reports-outlive-bytes).
+    upload_retention_hours: int = 24
+
+    #: How long converted output bytes remain downloadable before the same sweep removes them.
+    output_retention_hours: int = 24
+
+    #: TTL for a job paused in ``awaiting_recovery`` before it resolves to a **refusal** — never a
+    #: silently applied default (Part 6 §3.2, enforced in M23). Capped by the input's own expiry.
+    awaiting_recovery_ttl_minutes: int = 30
+
+    #: Days a conversion record + its reports are retained (the longer of the two retention
+    #: windows; Revision 1.5). ``None`` = indefinite, the self-hosted default posture.
+    report_retention_days: int | None = 30
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """The process-wide cached :class:`Settings` (read once from the environment).
+
+    Cached so every request and dependency observes the same configuration snapshot. Tests that
+    need a different configuration construct ``Settings(...)`` directly and pass it to
+    :func:`~backend.app.create_app`, bypassing this cache.
+    """
+    return Settings()

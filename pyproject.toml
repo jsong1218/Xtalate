@@ -43,6 +43,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The Service layer (v0.5, MASTER_SPEC Part 6). Kept OUT of `[project].dependencies` on purpose:
+# `pip install xtalate` stays the pure library + CLI (Tier 0), and a parser bug fix must never
+# require FastAPI (Part 9 §1.1). A deployment installs `xtalate[service]`. pydantic-settings is
+# the environment-only config reader (Part 9 §2); uvicorn is the ASGI server the image runs.
+# (DECISIONS.md D79.)
+service = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic-settings>=2.3",
+]
 # hypothesis is a *test-only* dependency (M10 stage 2, DECISIONS.md D50): property-based
 # generation of randomized Canonical Objects with shrinking. It ships no runtime code — the
 # minimal-dependency posture (D4/D7) applies to `[project].dependencies`, not the dev extras.
@@ -54,6 +64,14 @@ dev = [
     "import-linter>=2.0",
     "types-PyYAML>=6",
     "hypothesis>=6.100",
+    # The service dependencies are pulled into `dev` so the one existing CI gate (which installs
+    # `.[dev]`) type-checks and tests `backend/` from M21 — the backend suite runs beside the
+    # library suite, gaining CI teeth a version before M25 formalizes the compose integration job.
+    # httpx backs Starlette's TestClient (the backend tests' HTTP transport).
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic-settings>=2.3",
+    "httpx>=0.27",
     # pip-audit runs the nightly dependency vulnerability audit (M15C; Part 8 §5). Nightly-only
     # and non-blocking — a new advisory against a pinned dep surfaces in the scheduled run, it
     # never gates a PR. Dev-extra, so it ships no runtime code (the D4/D7 posture is unchanged).
@@ -69,10 +87,28 @@ packages = ["src/xtalate"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests"]
+src = ["src", "tests", "backend"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+# FastAPI's dependency-injection idiom puts `Depends(...)`/`Query(...)` calls in parameter
+# defaults; flake8-bugbear's B008 (function call in default argument) is a false positive for
+# these framework sentinels, so they are declared immutable (the FastAPI-recommended settling).
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+]
+
+# `backend` lives at the repo root (not under a `src` entry), so isort would otherwise file it as
+# third-party and interleave it with FastAPI. Name both first-party packages explicitly so import
+# groups stay: stdlib, third-party, then (xtalate | backend).
+[tool.ruff.lint.isort]
+known-first-party = ["xtalate", "backend"]
 
 [tool.mypy]
 # Decoupled from the 3.11 runtime floor (DECISIONS.md D2): numpy>=2.5 ships type stubs
@@ -86,7 +122,7 @@ select = ["E", "F", "I", "UP", "B"]
 # the stubs without either breaking 3.11 or upper-capping a foundational dependency.
 python_version = "3.12"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "backend"]
 # The M16B entry-point discovery fixture (tests/fixtures/xtalate_toyfmt) is an independently
 # packaged distribution with its own src/ root. It is installed — and thus importable — only
 # right before pytest, never when mypy runs, and its package root sits off the module search
@@ -136,7 +172,20 @@ source = ["xtalate"]
 # (only `cli` sits above it), and `_time` is the dependency-free leaf any layer
 # may use — listing them means a future P2 inversion through either is caught.
 [tool.importlinter]
-root_package = "xtalate"
+# Two root packages from v0.5 M21: the library and the service. `backend` sits above `xtalate`
+# and imports it freely; the reverse is forbidden by the contract below, encoding Part 1 §2 (the
+# API is a presenter over the library — nothing in the library may import the service).
+root_packages = ["xtalate", "backend"]
+
+# The service depends on the library, never the reverse (v0.5 M21; Part 1 §2). Stated as a
+# `forbidden` contract rather than a layer of the graph above because `backend` is a separate root
+# package, not an `xtalate` subpackage — the rule is simply that no library module may import the
+# presenter. `lint-imports` fails the moment a stray `import backend` appears anywhere under `src/`.
+[[tool.importlinter.contracts]]
+name = "Library never imports the service (v0.5 M21, Part 1 §2)"
+type = "forbidden"
+source_modules = ["xtalate"]
+forbidden_modules = ["backend"]
 
 [[tool.importlinter.contracts]]
 name = "Acyclic dependency direction (P2, Part 1 §5.1)"
