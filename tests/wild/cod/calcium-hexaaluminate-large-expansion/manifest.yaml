@@ -1,0 +1,25 @@
+case: calcium-hexaaluminate-large-expansion
+format_id: cif
+source_file: cod-1000039.cif
+sha256: "fd8cdd104ffa96ce7d3ab0d7784930aa49f82c1054a1653317b742f310963f3d"
+origin:
+  kind: published-dataset
+  source: "Crystallography Open Database entry 1000039 (calcium cyclo-hexaaluminate)"
+  url: "https://www.crystallography.net/cod/1000039.cif"
+  license: "CC0-1.0"
+expectation:
+  issue_codes:
+    - CIF_OCCUPANCY_NOT_MODELLED
+    - CIF_TAGS_CARRIED
+  stoichiometry: checked
+notes: >-
+  The corpus's largest expansion: 14 declared sites become 264 atoms across three elements,
+  every one of which the file's own formula (`Al8 Ca12 O24` x Z=6) accounts for exactly. Scale
+  is the axis being tested. D67's special-position merge runs on a physical distance threshold,
+  and a threshold that is slightly too generous costs nothing on a 6-atom cell while silently
+  eating atoms on a large one — 264 sites give it far more chances to be wrong, and the
+  three-element breakdown localises the damage if it ever is.
+
+  The failure this guards against is the cardinal sin in its quietest form. A structure with
+  too few atoms still parses, still writes, still looks plausible in a viewer; nothing announces
+  it. Only an independent count catches it, and here the file supplies one.

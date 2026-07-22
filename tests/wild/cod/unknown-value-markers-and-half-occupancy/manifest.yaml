@@ -1,0 +1,32 @@
+case: unknown-value-markers-and-half-occupancy
+format_id: cif
+source_file: cod-4000034.cif
+sha256: "c0612090cda0efdff5ec18ad8a12d5ce67652acc6a4c609b4a4925886d84ae5d"
+origin:
+  kind: published-dataset
+  source: "Crystallography Open Database entry 4000034"
+  url: "https://www.crystallography.net/cod/4000034.cif"
+  license: "CC0-1.0"
+expectation:
+  issue_codes:
+    - CIF_OCCUPANCY_NOT_MODELLED
+    - CIF_PARTIAL_OCCUPANCY
+    - CIF_TAGS_CARRIED
+  stoichiometry: partial_occupancy
+  stoichiometry_note: >-
+    The file declares 88 As per cell; the expansion produces 96. The difference is exactly the
+    eight half-occupied arsenic sites, each contributing a whole atom to the atom list and half
+    an atom to the declared formula. Europium (112) and manganese (8) agree exactly, which is
+    the useful part: the discrepancy is confined to the element that carries the disorder, so
+    the symmetry expansion itself is corroborated even though the total is not.
+notes: >-
+  The unknown-value axis, and the reason it needs a real file rather than a fixture. Both CIF
+  absence markers appear here — `?` for genuinely unknown and `.` for inapplicable — scattered
+  through the metadata the way real deposition software emits them, rather than placed where a
+  test author would think to put them. P3 (the absence convention) says these must arrive as
+  absence and never as the strings "?" or ".", and this file is the check that nothing in the
+  chain quietly stringifies one.
+
+  It carries a half-occupied site as well, which is what makes the stoichiometry note above
+  worth reading: the per-element breakdown localises the mismatch to arsenic and leaves the
+  other two elements as independent witnesses that expansion is right.

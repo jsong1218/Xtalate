@@ -1,0 +1,27 @@
+case: corundum-oxidation-state-symbols
+format_id: cif
+source_file: cod-1000032.cif
+sha256: "8f539f0811f51cc1f4fe6e539c5cf0e5d9c4fe9bf4770372424be8ee499e1b2f"
+origin:
+  kind: published-dataset
+  source: "Crystallography Open Database entry 1000032 (corundum, Al2O3)"
+  url: "https://www.crystallography.net/cod/1000032.cif"
+  license: "CC0-1.0"
+expectation:
+  issue_codes:
+    - CIF_OCCUPANCY_NOT_MODELLED
+    - CIF_TAGS_CARRIED
+  stoichiometry: checked
+notes: >-
+  The oxidation-state axis in its agreeing form, and the counterpart to pyrrhotite's
+  disagreeing one. Type symbols carry charge suffixes (`Al3+`, `O2-`) and
+  `_atom_type_oxidation_number` states the same values, so M19's reconciliation must stay
+  silent — the check has to be as reliable about agreement as it is about conflict, or its
+  warnings mean nothing.
+
+  What the stoichiometry oracle proves here is separate and larger. Corundum's rhombohedral
+  symmetry expands 2 declared sites into 30 atoms, and `Al2 O3` x Z=6 says exactly 12 Al and
+  18 O. Charge suffixes have to be stripped to element identity for that to come out right: a
+  parser that let `Al3+` through as its own species would produce a composition with no
+  aluminium in it at all, and the file's own formula catches that without anyone having to
+  anticipate it.

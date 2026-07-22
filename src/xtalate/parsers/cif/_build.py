@@ -51,7 +51,7 @@ from xtalate.schema import (
     UserMetadata,
 )
 from xtalate.schema.elements import is_valid_symbol
-from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
+from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY, is_full_occupancy
 from xtalate.sdk import ParseError, ParseIssue
 
 _PBC_NOTE = (
@@ -85,10 +85,17 @@ CHARGE_SCHEME_KEY = "cif:charge_scheme"
 CHARGE_SCHEME = "formal_oxidation_state"
 
 _OCCUPANCY_NOTE = (
-    "occupancy carried as a custom per-atom array: CIF states partial site occupancy "
-    f"(_atom_site_occupancy) and the Canonical Model has no occupancy field, so the column is "
-    f"preserved verbatim in user_metadata.custom_per_atom[{OCCUPANCY_KEY!r}] rather than "
-    "modelled (Part 3 §3 n.11). No Phase 1 export target can represent it."
+    "occupancy carried as a custom per-atom array: the file declares _atom_site_occupancy and "
+    "the Canonical Model has no occupancy field, so the column is preserved verbatim in "
+    f"user_metadata.custom_per_atom[{OCCUPANCY_KEY!r}] rather than modelled (Part 3 §3 n.11). "
+    "Only the CIF target can write it back."
+)
+_PARTIAL_OCCUPANCY_NOTE = (
+    "partial site occupancy: {partial} of {total} sites declare an occupancy that is not 1 "
+    "(unknown values, '?' or '.', count as not-1 — silence is not a claim of fullness). The "
+    "structure carries a whole atom at every such site, so its composition is the fully-occupied "
+    "one and does not equal the file's own _chemical_formula_sum. CIF is the only Phase 1 target "
+    "that writes the column back; converting to any other target discards the distinction."
 )
 _CHARGE_NOTE = (
     "electronic.charges populated from the formal oxidation states the file declares in its "
@@ -224,13 +231,14 @@ def build(
 ) -> tuple[CanonicalObject, list[ParseIssue]]:
     """Assemble the Canonical Object for one validated ``data_`` block."""
     issues: list[ParseIssue] = []
-    lengths, angles = validate_cell(block)
+    lengths, angles, cell_uncertain = validate_cell(block)
     space_group, operations = validate_symmetry(block)
     loop, coord_tags, fractional = validate_atom_sites(block)
     oxidation_numbers = validate_oxidation_numbers(block)
 
     lattice = lattice_from_parameters(lengths, angles)
-    coords, uncertain = _coordinates(loop, coord_tags)
+    coords, coord_uncertain = _coordinates(loop, coord_tags)
+    uncertain = coord_uncertain | cell_uncertain
 
     expansion = _expand(coords, operations, lattice=lattice, fractional=fractional, loop=loop)
     if expansion is not None:
@@ -263,8 +271,10 @@ def build(
         custom_per_atom["cif:type_symbol"] = [types[i] for i in site_of]
 
     occupancy = loop.column(OCCUPANCY_TAG)
+    partial_note: str | None = None
     if occupancy is not None:
-        custom_per_atom[OCCUPANCY_KEY] = [occupancy[i] for i in site_of]
+        carried_occupancy = [occupancy[i] for i in site_of]
+        custom_per_atom[OCCUPANCY_KEY] = carried_occupancy
         issues.append(
             ParseIssue(
                 severity="warning",
@@ -273,6 +283,26 @@ def build(
                 location=f"line {loop.line}",
             )
         )
+        # Two separate facts, deliberately two separate codes. That the column exists at all is a
+        # schema gap and is reported whenever it appears (M19's plan of record). That some site is
+        # *actually* partial is a statement about this structure's chemistry, and it is the one a
+        # reader needs: COD writes an occupancy column on nearly every entry, so a single code
+        # covering both would fire on almost every real file while saying nothing about which
+        # ones hold real disorder — and a warning that cries wolf on the common case trains its
+        # reader to skim past the rare one that matters.
+        partial = sum(1 for value in carried_occupancy if not is_full_occupancy(value))
+        if partial:
+            partial_note = _PARTIAL_OCCUPANCY_NOTE.format(
+                partial=partial, total=len(carried_occupancy)
+            )
+            issues.append(
+                ParseIssue(
+                    severity="warning",
+                    code="CIF_PARTIAL_OCCUPANCY",
+                    message=partial_note,
+                    location=f"line {loop.line}",
+                )
+            )
 
     charges, charge_issues = _charges(oxidation_numbers, types, site_of, line=loop.line)
     issues.extend(charge_issues)
@@ -291,6 +321,8 @@ def build(
         )
     if occupancy is not None:
         parse_notes.append(_OCCUPANCY_NOTE)
+    if partial_note is not None:
+        parse_notes.append(partial_note)
     if charges is not None:
         parse_notes.append(_CHARGE_NOTE)
     if uncertain:

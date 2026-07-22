@@ -1,0 +1,37 @@
+case: hydrogens-declared-but-not-deposited
+format_id: cif
+source_file: cod-2100034.cif
+sha256: "e2b48e537ef8f18287b07f284b32d49626aa457930fec42dc5ebe6944d1d6502"
+origin:
+  kind: published-dataset
+  source: "Crystallography Open Database entry 2100034"
+  url: "https://www.crystallography.net/cod/2100034.cif"
+  license: "CC0-1.0"
+expectation:
+  issue_codes:
+    - CIF_TAGS_CARRIED
+  stoichiometry: formula_disagrees_with_source
+  stoichiometry_note: >-
+    The file declares 108 hydrogens per cell and deposits 24 sites' worth (48 after expansion).
+    Every other element — C, Ca, O, S, Te, W — agrees to the atom. The formula sum is the
+    chemist's account of the compound; the atom-site loop is the crystallographer's account of
+    what the diffraction experiment actually located, and hydrogens are routinely in the first
+    and not the second. Nothing is wrong with the parser here, and nothing is wrong with the
+    file.
+findings:
+  - >-
+    This file sets the limit of the stoichiometry oracle's authority, which is worth stating
+    plainly because the oracle is the corpus's strongest assertion. `_chemical_formula_sum` is
+    not an inventory of the deposited atom list. For small-molecule structures the two differ
+    by exactly the hydrogens, routinely and legitimately, because H is often unlocatable by
+    X-ray diffraction and is omitted or only partly modelled. An oracle that treated every
+    disagreement as a parser bug would therefore be wrong about a large fraction of real
+    organic CIFs — and, worse, would train whoever maintains this corpus to reach for the skip
+    key reflexively. The per-element comparison is what saves it: because the mismatch is
+    confined to one element and the other six agree exactly, the skip can be justified on the
+    evidence rather than on faith.
+notes: >-
+  Chosen for the hydrogen-deposition axis and kept for its size: 256 atoms, seven elements, no
+  occupancy column. Six of the seven elements agreeing to the atom makes this one of the
+  corpus's better expansion checks despite the check itself being formally skipped — the
+  disagreement is localised, and localisation is evidence.

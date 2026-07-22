@@ -1,0 +1,40 @@
+case: mgo-uncertainty-parentheses
+format_id: cif
+source_file: cod-1000053.cif
+sha256: "d4ea4453e9712fc12dff925cb7812b8a5b68a19e9afa03449be062540b8ad9c7"
+origin:
+  kind: published-dataset
+  source: "Crystallography Open Database entry 1000053 (periclase, MgO)"
+  url: "https://www.crystallography.net/cod/1000053.cif"
+  license: "CC0-1.0"
+expectation:
+  issue_codes:
+    - CIF_OCCUPANCY_NOT_MODELLED
+    - CIF_TAGS_CARRIED
+  stoichiometry: checked
+findings:
+  - >-
+    Precision loss on the *cell parameters* is silent. All three cell lengths are written
+    `4.217(1)`, the parenthesized standard uncertainty is stripped to reach a float, and no
+    parse note says so — the reader is told nothing about the discarded precision digits.
+    The uncertainty note exists (`_UNCERTAINTY_NOTE_PREFIX` in the builder) but is emitted only
+    from the coordinate reader, so it covers the one place real files rarely carry an
+    uncertainty and misses the place they almost always do: an atom on a special position is
+    written as an exact `0.` or `0.5`, while a refined lattice constant essentially always
+    carries its esd. Reporting every loss in plain language is the converter's central promise,
+    so this is a promise gap, not a cosmetic one. FIXED in M20 slice 3 (D71): `validate_cell`
+    now returns the cell tags that carried an uncertainty and the builder folds them into the
+    same note, so this file's three lattice constants are named in it.
+  - >-
+    Second sighting of the misleading CIF_OCCUPANCY_NOT_MODELLED text recorded under
+    `nacl-legacy-symmetry-tags` — this file's sites are also fully occupied. Two files, two
+    firings, zero partial occupancy is what made the case that one code was carrying two claims.
+    Resolved by the same slice 3 change; the code still fires here, truthfully now, and
+    CIF_PARTIAL_OCCUPANCY does not.
+notes: >-
+  The uncertainty-parentheses axis, in the form real files take it: the esds are on the cell
+  lengths (`4.217(1)`), not on the coordinates. Both Mg and O sit on fixed special positions
+  written as exact `0.` and `0.5`, which is exactly why a corpus of hand-written fixtures would
+  have missed this case — an author inventing an "uncertainty fixture" naturally puts the
+  parentheses on a coordinate, because that is where the parser looks for them. This file is
+  the counterexample that the wild corpus exists to supply.

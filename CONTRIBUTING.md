@@ -5,10 +5,19 @@ transparent file conversion** — and the contribution process is built to prote
 This guide is the practical companion to the [Architecture Overview](docs/ARCHITECTURE.md) and
 [Developer Guide](docs/DEVELOPER_GUIDE.md); where they disagree, the design docs win.
 
-> **What we're inviting right now (v0.3).** The **golden-corpus contribution** path is the
-> invited, fully-supported way to contribute today: real-world sample files, with licenses,
-> that harden the converter against formats we can't fake by hand. See
+> **What we're inviting right now (v0.4).** The **corpus contribution** path is the invited,
+> fully-supported way to contribute today: real-world sample files, with licenses, that harden
+> the converter against what we can't fake by hand. See
 > [Contributing a golden case](#contributing-a-golden-case).
+>
+> As of v0.4 there are two corpus roots, and the cheaper one is probably what you want. A
+> **golden** case (`tests/golden/`) asserts what a file *should* produce and needs an expectation
+> you verified by hand. A **wild** case (`tests/wild/`) is a real third-party file asserting what
+> it *does* produce — the exact set of issue codes it raises, plus the composition the file
+> declares for its own unit cell — so contributing one is a triage, not a derivation: you run it,
+> read what the parser says about it, and write down whether each thing it said was true. That is
+> a review any domain expert can do without reverse-engineering this codebase, and it is how the
+> two defects fixed in v0.4 were found.
 >
 > **Parser/exporter contributions are welcome — with a churn warning.** The plugin SDK
 > (`xtalate.sdk`) is **not frozen until v1.0** (roadmap risk R12). Until then, a format

@@ -1,0 +1,34 @@
+case: nacl-legacy-symmetry-tags
+format_id: cif
+source_file: cod-1000041.cif
+sha256: "02d4f4fa315f7b97147256118acc7f9f20190d7246c3ea7209cfb8bd5d6e1fed"
+origin:
+  kind: published-dataset
+  source: "Crystallography Open Database entry 1000041 (Abrahams & Bernstein, Acta Cryst. 18, 926, 1965)"
+  url: "https://www.crystallography.net/cod/1000041.cif"
+  license: "CC0-1.0"
+expectation:
+  issue_codes:
+    - CIF_OCCUPANCY_NOT_MODELLED
+    - CIF_TAGS_CARRIED
+  stoichiometry: checked
+findings:
+  - >-
+    FIXED in M20 slice 3 (D71). This file is why. Both its sites state an occupancy of exactly
+    1, yet CIF_OCCUPANCY_NOT_MODELLED fired with text claiming "CIF states partial site
+    occupancy" — false about this file and about most real ones, since COD writes the occupancy
+    column on nearly every entry. The trigger was never the bug: reporting the carried column is
+    M19's plan of record, and the column genuinely is an unmodelled schema gap even when it is
+    all ones. The message was the bug, and the missing distinction behind it. The wording now
+    states only what is true of a carried column, and a second code, CIF_PARTIAL_OCCUPANCY,
+    carries the claim about disorder — which is why that code does *not* appear in this file's
+    expectation above.
+notes: >-
+  The corpus's baseline real file, and deliberately the least exotic one: COD's canonical NaCl.
+  It exercises the legacy `_symmetry_*` tag spelling (`_symmetry_space_group_name_H-M`,
+  `_symmetry_Int_Tables_number`) side by side with the modern `_space_group_IT_number`, which
+  is how real entries actually spell symmetry — not one family or the other, but both at once
+  in the same block. Its equivalent-position loop is complete at 192 operations, expanding 2
+  declared sites to 8 atoms, so the stoichiometry oracle has real work to do: `Cl Na` x Z=4
+  must equal the 4 Na + 4 Cl that come out. Being unexotic is the point — if the ordinary case
+  is wrong, nothing built on top of it can be right.

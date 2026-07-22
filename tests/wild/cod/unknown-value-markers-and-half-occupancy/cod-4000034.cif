@@ -1,0 +1,200 @@
+#------------------------------------------------------------------------------
+#$Date: 2017-11-26 05:31:57 +0200 (Sun, 26 Nov 2017) $
+#$Revision: 203582 $
+#$URL: file:///home/coder/svn-repositories/_RELOADED_COD/cod-reloaded/cif/4/00/00/4000034.cif $
+#------------------------------------------------------------------------------
+#
+# This file is available in the Crystallography Open Database (COD),
+# http://www.crystallography.net/
+#
+# All data on this site have been placed in the public domain by the
+# contributors.
+#
+data_4000034
+loop_
+_publ_author_name
+'Payne, Amy C.'
+'Olmstead, Marilyn M.'
+'Kauzlarich, Susan M.'
+'Webb, David J.'
+_publ_section_title
+;
+ Structure, Magnetism, and Magnetoresistance of the Compounds Eu~14~MnAs~11~
+ and Eu~14~MnP~11~
+;
+_journal_coden_ASTM              CMATEX
+_journal_issue                   4
+_journal_name_full               'Chemistry of Materials'
+_journal_page_first              1398
+_journal_page_last               1406
+_journal_paper_doi               10.1021/cm0007050
+_journal_volume                  13
+_journal_year                    2001
+_chemical_formula_sum            'As11 Eu14 Mn'
+_chemical_formula_weight         3006.50
+_space_group_IT_number           142
+_symmetry_cell_setting           tetragonal
+_symmetry_space_group_name_Hall  '-I 4bd 2c'
+_symmetry_space_group_name_H-M   'I 41/a c d :2'
+_atom_sites_solution_hydrogens   ?
+_atom_sites_solution_primary     isomor
+_atom_sites_solution_secondary   difmap
+_cell_angle_alpha                90.00
+_cell_angle_beta                 90.00
+_cell_angle_gamma                90.00
+_cell_formula_units_Z            8
+_cell_length_a                   16.318(2)
+_cell_length_b                   16.318(2)
+_cell_length_c                   21.684(4)
+_cell_measurement_reflns_used    50
+_cell_measurement_temperature    130(2)
+_cell_measurement_theta_max      21.285
+_cell_measurement_theta_min      5.32
+_cell_volume                     5773.7(16)
+_diffrn_ambient_temperature      130(2)
+_diffrn_detector_area_resol_mean ?
+_diffrn_measurement_device_type  'Siemens R3m/V'
+_diffrn_measurement_method       \w
+_diffrn_radiation_monochromator  graphite
+_diffrn_radiation_source         'normal-focus sealed tube'
+_diffrn_radiation_type           MoK\a
+_diffrn_radiation_wavelength     0.71073
+_diffrn_reflns_av_R_equivalents  0.0000
+_diffrn_reflns_av_sigmaI/netI    0.0779
+_diffrn_reflns_limit_h_max       14
+_diffrn_reflns_limit_h_min       0
+_diffrn_reflns_limit_k_max       21
+_diffrn_reflns_limit_k_min       0
+_diffrn_reflns_limit_l_max       28
+_diffrn_reflns_limit_l_min       0
+_diffrn_reflns_number            1910
+_diffrn_reflns_theta_max         27.50
+_diffrn_reflns_theta_min         2.50
+_diffrn_standards_decay_%        1.58
+_diffrn_standards_interval_count 198
+_diffrn_standards_interval_time  ?
+_diffrn_standards_number         2
+_exptl_absorpt_coefficient_mu    42.820
+_exptl_absorpt_correction_T_max  0.6741
+_exptl_absorpt_correction_T_min  0.0426
+_exptl_absorpt_correction_type   'Psi scans'
+_exptl_absorpt_process_details   '(Flack, 1974)'
+_exptl_crystal_colour            Black
+_exptl_crystal_density_diffrn    6.917
+_exptl_crystal_density_meas      ?
+_exptl_crystal_density_method    .
+_exptl_crystal_description       Needle
+_exptl_crystal_F_000             10160
+_exptl_crystal_size_max          0.20
+_exptl_crystal_size_mid          0.01
+_exptl_crystal_size_min          0.01
+_refine_ls_extinction_coef       0.000048(3)
+_refine_ls_extinction_expression Fc^*^=kFc[1+0.001xFc^2^\l^3^/sin(2\q)]^-1/4^
+_refine_ls_extinction_method     SHELXL
+_refine_ls_goodness_of_fit_ref   0.996
+_refine_ls_hydrogen_treatment    ?
+_refine_ls_matrix_type           full
+_refine_ls_number_parameters     64
+_refine_ls_number_reflns         1665
+_refine_ls_number_restraints     0
+_refine_ls_restrained_S_all      0.996
+_refine_ls_R_factor_all          0.0788
+_refine_ls_R_factor_gt           0.0459
+_refine_ls_shift/su_max          0.000
+_refine_ls_shift/su_mean         0.000
+_refine_ls_structure_factor_coef Fsqd
+_refine_ls_weighting_details
+'calc w=1/[\s^2^(Fo^2^)+(0.0205P)^2^+0.0000P] where P=(Fo^2^+2Fc^2^)/3'
+_refine_ls_weighting_scheme      calc
+_refine_ls_wR_factor_gt          0.0781
+_refine_ls_wR_factor_ref         0.0887
+_reflns_number_gt                1180
+_reflns_number_total             1665
+_reflns_threshold_expression     >2\s(I)
+_cod_depositor_comments
+;
+The following automatic conversions were performed:
+'_symmetry_cell_setting' value 'Tetragonal' changed to 'tetragonal'
+according to '/home/saulius/struct/CIF-dictionaries/cif_core.dic'
+dictionary named 'cif_core.dic' version 2.4.1 from 2010-06-29.
+
+Automatic conversion script
+Id: cif_fix_enum 1527 2010-12-29 10:47:43Z saulius 
+;
+_cod_original_sg_symbol_H-M      I4(1)/acd
+_cod_original_formula_sum        'Eu14 Mn As11'
+_cod_database_code               4000034
+loop_
+_symmetry_equiv_pos_as_xyz
+'x, y, z'
+'-x+1/2, -y, z+1/2'
+'-y+1/4, x+3/4, z+1/4'
+'y+1/4, -x+1/4, z+3/4'
+'-x+1/2, y, -z'
+'x, -y, -z+1/2'
+'y+1/4, x+3/4, -z+3/4'
+'-y+1/4, -x+1/4, -z+1/4'
+'x+1/2, y+1/2, z+1/2'
+'-x+1, -y+1/2, z+1'
+'-y+3/4, x+5/4, z+3/4'
+'y+3/4, -x+3/4, z+5/4'
+'-x+1, y+1/2, -z+1/2'
+'x+1/2, -y+1/2, -z+1'
+'y+3/4, x+5/4, -z+5/4'
+'-y+3/4, -x+3/4, -z+3/4'
+'-x, -y, -z'
+'x-1/2, y, -z-1/2'
+'y-1/4, -x-3/4, -z-1/4'
+'-y-1/4, x-1/4, -z-3/4'
+'x-1/2, -y, z'
+'-x, y, z-1/2'
+'-y-1/4, -x-3/4, z-3/4'
+'y-1/4, x-1/4, z-1/4'
+'-x+1/2, -y+1/2, -z+1/2'
+'x, y+1/2, -z'
+'y+1/4, -x-1/4, -z+1/4'
+'-y+1/4, x+1/4, -z-1/4'
+'x, -y+1/2, z+1/2'
+'-x+1/2, y+1/2, z'
+'-y+1/4, -x-1/4, z-1/4'
+'y+1/4, x+1/4, z+1/4'
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_U_iso_or_equiv
+_atom_site_adp_type
+_atom_site_occupancy
+_atom_site_symmetry_multiplicity
+_atom_site_calc_flag
+_atom_site_refinement_flags
+_atom_site_disorder_assembly
+_atom_site_disorder_group
+As1 As 0.13326(12) 0.38326(12) 0.1250 0.0085(5) Uani 1 2 d S . .
+As2 As 0.00465(12) 0.11247(11) 0.81047(8) 0.0088(4) Uani 1 1 d . . .
+As3 As 0.86974(13) 0.97272(12) 0.95302(9) 0.0103(4) Uani 1 1 d . . .
+As4 As 0.0144(2) 0.2644(2) 0.1250 0.0166(18) Uani 0.50 2 d SP . .
+Mn Mn 0.0000 0.2500 0.8750 0.0083(11) Uani 1 4 d S . .
+Eu1 Eu -0.04275(6) -0.07264(6) 0.82795(4) 0.0089(2) Uani 1 1 d . . .
+Eu2 Eu -0.02336(5) 0.12263(6) 0.00261(5) 0.0111(2) Uani 1 1 d . . .
+Eu3 Eu 0.35216(8) 0.0000 0.2500 0.0079(3) Uani 1 2 d S . .
+Eu4 Eu 0.17774(6) 0.40553(6) 0.84404(4) 0.0110(2) Uani 1 1 d . . .
+loop_
+_atom_site_aniso_label
+_atom_site_aniso_U_11
+_atom_site_aniso_U_22
+_atom_site_aniso_U_33
+_atom_site_aniso_U_23
+_atom_site_aniso_U_13
+_atom_site_aniso_U_12
+As1 0.0094(8) 0.0094(8) 0.0067(12) -0.0005(7) 0.0005(7) 0.0031(10)
+As2 0.0085(9) 0.0088(9) 0.0092(8) -0.0017(7) 0.0014(8) -0.0020(8)
+As3 0.0145(10) 0.0087(9) 0.0076(9) -0.0004(7) 0.0002(8) 0.0040(8)
+As4 0.020(3) 0.020(3) 0.011(2) 0.0001(19) -0.0001(19) 0.008(3)
+Mn 0.0066(17) 0.0066(17) 0.011(3) 0.000 0.000 0.000
+Eu1 0.0080(4) 0.0119(5) 0.0068(4) -0.0006(4) 0.0011(4) -0.0026(4)
+Eu2 0.0084(5) 0.0122(5) 0.0126(4) 0.0037(4) 0.0009(4) 0.0028(3)
+Eu3 0.0080(6) 0.0092(6) 0.0065(6) 0.0019(5) 0.000 0.000
+Eu4 0.0077(4) 0.0191(5) 0.0062(4) -0.0036(4) -0.0015(4) 0.0002(4)

@@ -11,4 +11,4 @@ and PR/nightly test-matrix split a scaling release needs. The Service (v0.5) and
 build on this core without re-implementing any of it.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

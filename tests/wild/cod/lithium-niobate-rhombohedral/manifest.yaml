@@ -1,0 +1,24 @@
+case: lithium-niobate-rhombohedral
+format_id: cif
+source_file: cod-1521772.cif
+sha256: "621cea3db32a341d689dc9fb5de56df4702f1076008164a0879537d4b0473977"
+origin:
+  kind: published-dataset
+  source: "Crystallography Open Database entry 1521772 (lithium niobate, LiNbO3)"
+  url: "https://www.crystallography.net/cod/1521772.cif"
+  license: "CC0-1.0"
+expectation:
+  issue_codes:
+    - CIF_OCCUPANCY_NOT_MODELLED
+    - CIF_TAGS_CARRIED
+  stoichiometry: checked
+notes: >-
+  A rhombohedral structure deposited in its hexagonal setting — the case where the space-group
+  symbol and the cell disagree about which lattice they describe, and where a parser that
+  believed the symbol over the operations would produce a third of the atoms. Xtalate reads the
+  operation list and never the symbol (D66, and the reason D66 requires one), so `Li Nb O3` x
+  Z=6 comes out as 6 Li, 6 Nb, 18 O.
+
+  Setting ambiguity is the classic crystallographic footgun and the one most likely to be
+  reintroduced by a future contributor who notices the space-group symbol sitting unused and
+  decides to be helpful with it. This case is what stops that patch.

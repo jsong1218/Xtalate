@@ -108,8 +108,18 @@ def select_block(document: CifDocument) -> tuple[CifBlock, list[ParseIssue]]:
 
 def validate_cell(
     block: CifBlock,
-) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
-    """Cell lengths (Å) and angles (degrees), checked for physical sanity."""
+) -> tuple[tuple[float, float, float], tuple[float, float, float], set[str]]:
+    """Cell lengths (Å) and angles (degrees), checked for physical sanity.
+
+    The third element is the set of cell tags whose value carried a parenthesized standard
+    uncertainty (``5.4310(2)``), which the builder folds into the same precision-loss note it
+    already raises for coordinates. Reporting it here rather than only at the coordinates is not
+    a refinement: real files put their uncertainties on the *lattice constants* far more often
+    than on fractional coordinates, because coordinates at special positions are exact by
+    symmetry (``0.``, ``0.5``) while a refined cell length essentially always has an esd. A note
+    that covered only coordinates therefore covered the rare case and missed the usual one —
+    silently, which is the part that made it a P5 defect rather than a cosmetic gap.
+    """
     for tag in (*CELL_LENGTH_TAGS, *CELL_ANGLE_TAGS):
         if block.find_pair(tag) is None:
             raise _issue(
@@ -142,7 +152,12 @@ def validate_cell(
                 f"{tag} must lie strictly between 0 and 180 degrees, found {value}",
                 location=f"line {block.line_of(tag)}",
             )
-    return lengths, angles
+    uncertain = {
+        tag
+        for tag in (*CELL_LENGTH_TAGS, *CELL_ANGLE_TAGS)
+        if has_uncertainty(_require(block, tag))
+    }
+    return lengths, angles, uncertain
 
 
 def validate_symmetry(block: CifBlock) -> tuple[str | None, list[SymmetryOperation]]:

@@ -1,0 +1,33 @@
+case: fluorite-no-occupancy-column
+format_id: cif
+source_file: cod-9007064.cif
+sha256: "e457ba9741e1606c09e1886229805e90b197cc75d4724634ef4251a0ad4bdacf"
+origin:
+  kind: published-dataset
+  source: "Crystallography Open Database entry 9007064 (fluorite, CaF2)"
+  url: "https://www.crystallography.net/cod/9007064.cif"
+  license: "CC0-1.0"
+expectation:
+  issue_codes:
+    - CIF_TAGS_CARRIED
+  stoichiometry: checked
+findings:
+  - >-
+    The absence of CIF_OCCUPANCY_NOT_MODELLED from the expectation above is the entire point of
+    this case, and it is an assertion rather than an omission: because the corpus demands the
+    *exact* issue set, this manifest states that a file with no occupancy column must produce no
+    occupancy warning. That is v0.4 standing rule 3 in mechanized form — an absent column is
+    absent, never assumed to be 1.0 and never reported as though something were lost.
+
+    It is also the negative half of the CIF_OCCUPANCY_NOT_MODELLED defect. The corpus now holds
+    all three positions: a file with no column (silent, here), a file with a column of exact 1.0
+    (warns, wrongly — `nacl-legacy-symmetry-tags`), and a file with real partial occupancy
+    (warns, rightly — `pyrrhotite-partial-occupancy-and-oxidation`). A fix that merely stopped
+    the warning would turn the third case red, and a fix that keyed on the wrong thing would
+    turn this one red. Together they pin the correct behaviour from both sides, which no single
+    fixture could do.
+notes: >-
+  Textbook CaF2, deliberately: 4 calcium and 8 fluorine, a composition anyone can verify by
+  eye, in a file whose distinguishing feature is what it does *not* contain. Most of the corpus
+  earns its place by being complicated. This one earns its place by being simple in exactly one
+  respect that matters.
