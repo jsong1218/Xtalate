@@ -129,6 +129,23 @@ class Repository:
                 job.recovery = None
             return job
 
+    def set_job_request(self, job_id: str, request: dict[str, object]) -> Job | None:
+        """Replace a job's stored ``request`` payload without a state change (Part 6 §3.2 resume).
+
+        The recovery-resume endpoint merges the client's interactive choices into the request and
+        marks it ``recovery_resumed`` (so the worker records the applied Assumptions as
+        ``origin: "user"``), then re-enqueues; the ``awaiting_recovery → running`` edge itself is
+        the worker's. Reassigns the whole dict (not an in-place mutation) so the JSON column change
+        is tracked. Always stamps ``updated_at``. Returns the updated job, or ``None`` if absent.
+        """
+        with self._session_factory.begin() as session:
+            job = session.get(Job, job_id)
+            if job is None:
+                return None
+            job.request = request
+            job.updated_at = utcnow()
+            return job
+
     def set_job_progress(self, job_id: str, progress: dict[str, object]) -> Job | None:
         """Update a running job's ``progress`` without a state change (phase-boundary stamps)."""
         with self._session_factory.begin() as session:

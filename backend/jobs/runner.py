@@ -85,15 +85,29 @@ def execute_job(
         log_event("job.missing", job_id=job_id)
         return
     request_id = job.request.get("request_id") if isinstance(job.request, dict) else None
-    # Only a freshly-queued job is runnable. An inline double-enqueue or a redelivered RQ message
-    # for an already-running/terminal job is a no-op, never a re-run (idempotent execution).
-    if job.state != "queued":
+    # A freshly-queued job, or one being resumed from awaiting_recovery (Part 6 §3.2, M23), is
+    # runnable. An inline double-enqueue or a redelivered RQ message for an already-running/terminal
+    # job is a no-op, never a re-run (idempotent execution).
+    if job.state not in ("queued", "awaiting_recovery"):
         log_event("job.skip", job_id=job_id, state=job.state, request_id=request_id)
         return
+
+    resuming = job.state == "awaiting_recovery"
+    if resuming:
+        # Resume: go running *first*, clearing the paused block, so a lost input now fails from
+        # running (awaiting_recovery → failed is not a legal edge; the pause TTL was capped by the
+        # upload's expiry, so a live resume normally finds live bytes). started_at is left as the
+        # original run's — the job began working when it first ran, not when it was answered.
+        repository.transition_job(
+            job_id, "running", progress={"phase": "parsing"}, clear_recovery=True
+        )
+        log_event("job.resumed", job_id=job_id, kind=job.kind, request_id=request_id)
 
     try:
         upload = _resolve_preconditions(job, repository, settings, request_id)
     except _JobFailure as failure:
+        # A fresh job fails from queued (the dequeue-precondition edge); a resumed job is already
+        # running, so this same failure is a legal running → failed. Both land in job.error.
         repository.transition_job(job_id, "failed", finished_at=utcnow(), error=failure.body)
         log_event(
             "job.failed",
@@ -104,8 +118,11 @@ def execute_job(
         )
         return
 
-    repository.transition_job(job_id, "running", started_at=utcnow(), progress={"phase": "parsing"})
-    log_event("job.running", job_id=job_id, kind=job.kind, request_id=request_id)
+    if not resuming:
+        repository.transition_job(
+            job_id, "running", started_at=utcnow(), progress={"phase": "parsing"}
+        )
+        log_event("job.running", job_id=job_id, kind=job.kind, request_id=request_id)
 
     try:
         _dispatch(job, upload, repository, object_store, registry, settings)

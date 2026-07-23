@@ -28,6 +28,20 @@ H  0.757  0.586  0.000
 H -0.757  0.586  0.000
 """
 
+# Two frames: a POSCAR target (single-frame, periodic) needs both a frame picked (frame_selection)
+# and a lattice supplied (missing_lattice) — a two-scenario pause, for the partial-resume path.
+MULTIFRAME_XYZ_SAMPLE = b"""3
+frame 1
+O  0.000  0.000  0.000
+H  0.757  0.586  0.000
+H -0.757  0.586  0.000
+3
+frame 2
+O  0.100  0.000  0.000
+H  0.857  0.586  0.000
+H -0.657  0.586  0.000
+"""
+
 
 def _upload(client: TestClient, content: bytes, filename: str) -> str:
     resp = client.post("/v1/upload", files={"file": (filename, content)})
@@ -216,6 +230,131 @@ def test_convert_with_partial_preset_pauses_for_the_rest(client: TestClient) -> 
     assert env["state"] == "completed"
     assert env["awaiting_recovery"] is None
     assert env["result"]["conversion_report"]["status"] == "completed"
+
+
+# --- interactive recovery: resume (M23 slice 2) -------------------------------------------------
+
+
+def _pause_xyz_to_poscar(client: TestClient, content: bytes = XYZ_SAMPLE) -> str:
+    """Submit an allow_recovery XYZ → POSCAR convert that pauses; return its job_id."""
+    file_id = _upload(client, content, "mol.xyz")
+    env = client.post(
+        "/v1/convert",
+        json={
+            "file_id": file_id,
+            "target_format_id": "poscar",
+            "options": {"allow_recovery": True},
+        },
+    ).json()
+    assert env["state"] == "awaiting_recovery", env
+    return str(env["job_id"])
+
+
+def test_resume_unknown_job_is_404(client: TestClient) -> None:
+    resp = client.post("/v1/jobs/nope/recovery", json={"choices": {}})
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "JOB_NOT_FOUND"
+
+
+def test_resume_non_awaiting_job_is_409_with_state(client: TestClient) -> None:
+    # A completed inspect job is not paused: resume is a 409 that names the current state, so a
+    # client that raced the pause window learns why (Part 6 §3.2 endpoint table).
+    file_id = _upload(client, XYZ_SAMPLE, "mol.xyz")
+    job_id = client.post("/v1/inspect", json={"file_id": file_id}).json()["job_id"]
+    resp = client.post(f"/v1/jobs/{job_id}/recovery", json={"choices": {}})
+    assert resp.status_code == 409
+    body = resp.json()["error"]
+    assert body["code"] == "JOB_NOT_AWAITING_RECOVERY"
+    assert body["details"]["state"] == "completed"
+
+
+def test_resume_unoffered_choice_is_422_with_offered_choices(client: TestClient) -> None:
+    # POSCAR is periodic-only, so `non_periodic` was never offered for missing_lattice — picking it
+    # is refused with the actually-offered choices, never coerced (Part 4 §3.3, P5).
+    job_id = _pause_xyz_to_poscar(client)
+    resp = client.post(
+        f"/v1/jobs/{job_id}/recovery",
+        json={"choices": {"missing_lattice": {"choice": "non_periodic"}}},
+    )
+    assert resp.status_code == 422
+    body = resp.json()["error"]
+    assert body["code"] == "INVALID_RECOVERY_CHOICE"
+    assert body["details"]["scenario"] == "missing_lattice"
+    assert "non_periodic" not in body["details"]["offered_choices"]
+    assert "bounding_box" in body["details"]["offered_choices"]
+    # The job is untouched by a rejected resume — still paused, still answerable.
+    assert client.get(f"/v1/jobs/{job_id}").json()["state"] == "awaiting_recovery"
+
+
+def test_resume_unknown_scenario_is_422(client: TestClient) -> None:
+    job_id = _pause_xyz_to_poscar(client)
+    resp = client.post(
+        f"/v1/jobs/{job_id}/recovery",
+        json={"choices": {"missing_masses": {"choice": "manual_input"}}},
+    )
+    assert resp.status_code == 422
+    body = resp.json()["error"]
+    assert body["code"] == "INVALID_RECOVERY_CHOICE"
+    assert body["details"]["scenario"] == "missing_masses"
+    assert body["details"]["offered_choices"] == []
+
+
+def test_resume_with_valid_choice_completes_as_user_origin(client: TestClient) -> None:
+    # The happy path: pause, answer the one open scenario, the job resumes and completes — and the
+    # applied Assumption is recorded origin="user" (interactive), not "preset" (Part 4 §2).
+    job_id = _pause_xyz_to_poscar(client)
+    resp = client.post(
+        f"/v1/jobs/{job_id}/recovery",
+        json={
+            "choices": {
+                "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}}
+            }
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    env = resp.json()
+    assert env["state"] == "completed"
+    assert env["awaiting_recovery"] is None  # the paused block is cleared on resume
+    report = env["result"]["conversion_report"]
+    assert report["status"] == "completed"
+    assert report["supplied"]  # the fabricated lattice, reported (P1/P4)
+    assumptions = {a["scenario"]: a for a in report["assumptions"]}
+    assert assumptions["missing_lattice"]["origin"] == "user"
+
+
+def test_partial_resume_pauses_again_for_the_rest(client: TestClient) -> None:
+    # A two-scenario pause (frame_selection + missing_lattice): answering only one resumes the job,
+    # which pauses again for the still-open scenario — then a second resume completes it. Choices
+    # accumulate across resumes (Part 6 §3.2).
+    job_id = _pause_xyz_to_poscar(client, MULTIFRAME_XYZ_SAMPLE)
+    block = client.get(f"/v1/jobs/{job_id}").json()["awaiting_recovery"]
+    open_scenarios = {s["scenario"] for s in block["unresolved_scenarios"]}
+    assert {"frame_selection", "missing_lattice"} <= open_scenarios
+
+    # Answer only the lattice: the job resumes, converts, and pauses again — now only for the frame.
+    first = client.post(
+        f"/v1/jobs/{job_id}/recovery",
+        json={
+            "choices": {
+                "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}}
+            }
+        },
+    ).json()
+    assert first["state"] == "awaiting_recovery"
+    still_open = {s["scenario"] for s in first["awaiting_recovery"]["unresolved_scenarios"]}
+    assert still_open == {"frame_selection"}  # the answered scenario is gone; the other remains
+
+    # Answer the frame: the accumulated choices now fully resolve, so the job completes.
+    second = client.post(
+        f"/v1/jobs/{job_id}/recovery",
+        json={"choices": {"frame_selection": {"choice": "first"}}},
+    ).json()
+    assert second["state"] == "completed"
+    report = second["result"]["conversion_report"]
+    assert report["status"] == "completed"
+    origins = {a["scenario"]: a["origin"] for a in report["assumptions"]}
+    assert origins["frame_selection"] == "user"
+    assert origins["missing_lattice"] == "user"
 
 
 def test_convert_with_loss_reports_removed_fields(client: TestClient) -> None:

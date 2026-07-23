@@ -95,6 +95,20 @@ class ConvertRequest(BaseModel):
     options: ConvertOptions = Field(default_factory=ConvertOptions)
 
 
+class RecoveryResumeRequest(BaseModel):
+    """``POST /v1/jobs/{job_id}/recovery`` body (Part 6 §2, §3.2) — resume a paused convert job.
+
+    ``choices`` maps a scenario code to the user's decision — ``{choice, parameters}`` — the same
+    shape as :attr:`ConvertOptions.recovery_choices`, but supplied *interactively* after the job
+    paused rather than up front. The endpoint validates each choice against the paused job's own
+    **offered** options before merging it in (an unoffered scenario or choice is
+    ``422 INVALID_RECOVERY_CHOICE``), so a resumed choice lands in the report as ``origin: "user"``.
+    A resume that resolves only some scenarios pauses again for the rest (Part 6 §3.2).
+    """
+
+    choices: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
 class RevalidateRequest(BaseModel):
     """``POST /v1/validate`` body — re-threshold a stored conversion under a new profile (§2, §4.5).
 
