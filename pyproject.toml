@@ -60,6 +60,12 @@ service = [
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "psycopg[binary]>=3.1",
+    # RQ on Redis is the job queue (D82): the API's ``rq`` backend enqueues, ``backend.worker``
+    # executes. Tier 0's ``inline`` backend needs neither — it runs jobs in-process (M22).
+    "rq>=1.16",
+    "redis>=5.0",
+    # python-multipart backs FastAPI's multipart/form-data parsing (the file upload, Part 6 §2).
+    "python-multipart>=0.0.9",
 ]
 # hypothesis is a *test-only* dependency (M10 stage 2, DECISIONS.md D50): property-based
 # generation of randomized Canonical Objects with shrinking. It ships no runtime code — the
@@ -76,6 +82,13 @@ dev = [
     # `.[dev]`) type-checks and tests `backend/` from M21 — the backend suite runs beside the
     # library suite, gaining CI teeth a version before M25 formalizes the compose integration job.
     # httpx backs Starlette's TestClient (the backend tests' HTTP transport).
+    # KNOWN DEPRECATION (deferred, M22): Starlette 1.3 emits a StarletteDeprecationWarning at
+    # TestClient import — "Using `httpx` with `starlette.testclient` is deprecated; install
+    # `httpx2` instead." It is cosmetic (no `filterwarnings=error`, so the gate stays green) and
+    # third-party. We are NOT swapping the whole test transport to the `httpx2` fork to chase a
+    # one-line warning this early. Revisit when a FastAPI/Starlette upgrade makes `httpx2` the
+    # standard path or the warning turns into a failure; the minimal interim move is a scoped
+    # `filterwarnings` ignore, deliberately not added so the signal stays visible.
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pydantic-settings>=2.3",
@@ -83,7 +96,14 @@ dev = [
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "psycopg[binary]>=3.1",
+    "rq>=1.16",
+    "redis>=5.0",
+    "python-multipart>=0.0.9",
     "httpx>=0.27",
+    # fakeredis backs the RQ-queue tests with an in-memory Redis, so the job-queue suite runs in the
+    # ordinary CI gate without a Redis server (the "skip when the service is absent" pattern's
+    # in-process cousin — here the fake stands in so the test always runs).
+    "fakeredis>=2.20",
     # pip-audit runs the nightly dependency vulnerability audit (M15C; Part 8 §5). Nightly-only
     # and non-blocking — a new advisory against a pinned dep surfaces in the scheduled run, it
     # never gates a PR. Dev-extra, so it ships no runtime code (the D4/D7 posture is unchanged).
@@ -114,6 +134,8 @@ extend-immutable-calls = [
     "fastapi.Path",
     "fastapi.Body",
     "fastapi.Header",
+    "fastapi.File",
+    "fastapi.Form",
 ]
 
 # `backend` lives at the repo root (not under a `src` entry), so isort would otherwise file it as

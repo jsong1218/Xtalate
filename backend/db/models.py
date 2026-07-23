@@ -59,6 +59,10 @@ class Upload(Base):
     __tablename__ = "uploads"
 
     file_id: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
+    #: The client-supplied name, kept so the sniffer can use the extension and reports/responses
+    #: echo the original filename (Part 6 §2.2 ``UploadResponse.filename``). Added with the M22 stub
+    #: upload path; M24's real streaming upload fills the same column.
+    filename: Mapped[str | None] = mapped_column(sa.String(512))
     sha256: Mapped[str] = mapped_column(sa.String(64), nullable=False)
     size_bytes: Mapped[int] = mapped_column(sa.BigInteger, nullable=False)
     content_type: Mapped[str | None] = mapped_column(sa.String(255))
@@ -89,6 +93,9 @@ class Job(Base):
     idempotency_key: Mapped[str | None] = mapped_column(sa.String(128), unique=True)
     request: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
     error: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    #: Coarse progress the worker stamps at each pipeline-stage boundary (Part 6 §3.2 envelope
+    #: ``progress``); ``None`` before the job starts. The M22 worker sets ``{phase, frames_*}``.
+    progress: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, default=utcnow
     )

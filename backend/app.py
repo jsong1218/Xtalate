@@ -20,8 +20,10 @@ from sqlalchemy import Engine
 from backend.config import Settings, get_settings
 from backend.db import Repository, build_engine, build_sessionmaker
 from backend.errors import install_error_handlers
+from backend.jobs.queue import create_job_queue
+from backend.jobs.runner import execute_job
 from backend.readiness import ReadinessProbe, database_probe, object_store_probe
-from backend.routers import capabilities, health, limits
+from backend.routers import capabilities, health, jobs, limits, uploads
 from backend.storage import create_object_store
 from xtalate.registry import default_registry
 
@@ -75,10 +77,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     # Built once and shared: capability/format knowledge is read-only, and this is the service's
     # only door into the library (Part 1 §2). Includes any installed entry-point plugins.
-    app.state.registry = default_registry()
+    registry = default_registry()
+    repository = Repository(build_sessionmaker(engine))
+    app.state.registry = registry
     app.state.engine = engine
-    app.state.repository = Repository(build_sessionmaker(engine))
+    app.state.repository = repository
     app.state.object_store = object_store
+
+    # The job queue (M22): inline (Tier 0, runs jobs here) or RQ (Tier 1, hands them to the worker).
+    # The inline backend's runner closes over the app's shared adapters, so a job it runs in-process
+    # uses the same repository/store/registry as the request that submitted it. The RQ backend
+    # ignores this closure — its worker rebuilds the adapters from the environment (Part 9 §2).
+    def _run_job(job_id: str) -> None:
+        execute_job(
+            job_id,
+            repository=repository,
+            object_store=object_store,
+            registry=registry,
+            settings=settings,
+        )
+
+    app.state.job_queue = create_job_queue(settings, runner=_run_job)
 
     # The readiness probes for those two dependencies, so ``/v1/health?ready=true`` is green under
     # ``docker compose up`` (M21 done-means). Registered here, run by the health endpoint — the seam
@@ -104,6 +123,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router, prefix="/v1")
     app.include_router(capabilities.router, prefix="/v1")
     app.include_router(limits.router, prefix="/v1")
+    app.include_router(uploads.router, prefix="/v1")
+    app.include_router(jobs.router, prefix="/v1")
 
     return app
 

@@ -9,6 +9,8 @@ precisely because they are API concerns, not canonical-model concerns.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -37,6 +39,64 @@ class ErrorEnvelope(BaseModel):
     """
 
     error: ErrorBody
+
+
+class UploadResponse(BaseModel):
+    """``POST /v1/upload`` — the stored file's handle (Part 6 §2.2).
+
+    M22 ships a *stub* upload (whole-body read, direct-to-storage) so the job pipeline has a
+    ``file_id`` to convert; M24 replaces the endpoint body with streaming + size enforcement, under
+    this same response. ``expires_at`` is the byte-lifecycle horizon (§5); reports outlive it (M24).
+    """
+
+    file_id: str
+    filename: str
+    size_bytes: int
+    sha256: str
+    expires_at: str
+
+
+class InspectRequest(BaseModel):
+    """``POST /v1/inspect`` body — run the Information Discovery Engine on an uploaded file."""
+
+    file_id: str
+    #: Override the Format Sniffer (Part 3 §6.1); part of the idempotency key (§2), so a different
+    #: override is a different inspect and always does real work.
+    format_override: str | None = None
+
+
+class ConvertOptions(BaseModel):
+    """``POST /v1/convert`` ``options`` (Part 6 §2.1) — names match ``04_Conversion_Engine.md``."""
+
+    mode: str = "permissive"
+    #: Preset recovery choices keyed by scenario code; each ``{choice, parameters}`` (Part 4 §3.3).
+    #: They land in the report as ``origin: "preset"``. Interactive (paused) recovery is M23.
+    recovery_choices: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    acknowledge_loss: bool = False
+    acknowledge_parse_warnings: bool = False
+    #: Named profile (``default``/``strict``/``loose``) or a custom tolerance table (Part 5 §4.4).
+    tolerance_profile: str | dict[str, Any] = "default"
+    output_filename: str | None = None
+
+
+class ConvertRequest(BaseModel):
+    """``POST /v1/convert`` body (Part 6 §2.1)."""
+
+    file_id: str
+    target_format_id: str
+    options: ConvertOptions = Field(default_factory=ConvertOptions)
+
+
+class RevalidateRequest(BaseModel):
+    """``POST /v1/validate`` body — re-threshold a stored conversion under a new profile (§2, §4.5).
+
+    Not a re-parse: it re-evaluates the conversion's **stored** measured values against a different
+    tolerance profile, so it works even after the source/output bytes have expired (reports outlive
+    bytes). ``404`` if the conversion is unknown or its record has passed report retention.
+    """
+
+    conversion_id: str
+    tolerance_profile: str | dict[str, Any] = "default"
 
 
 class LimitsResponse(BaseModel):

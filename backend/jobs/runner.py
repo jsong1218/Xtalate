@@ -1,0 +1,363 @@
+"""The worker's job body — execute one job by calling the library exactly as the CLI does.
+
+:func:`execute_job` is the whole of what a worker does with a dequeued job: move it ``running``,
+drive the same engines the CLI drives (`Appendix A`) over the uploaded bytes, persist the resulting
+reports verbatim, and move it ``completed`` — or ``failed`` on a transport/parse fault. Two rules
+from Part 6 are load-bearing and each has a test:
+
+* **A refusal is a completed job.** ``ConversionEngine.convert`` returns a ``ConversionReport`` with
+  ``status="refused"`` (never raises) when a needed recovery choice was not supplied; that is a
+  *completed* job at HTTP 200, its refusal report the result — not a ``failed`` job (`06 §1`).
+* **A crash is a failed job, never a stuck ``running`` row.** Every exception after the job goes
+  ``running`` is caught and turned into a ``failed`` transition carrying a structured error envelope
+  in ``job.error``. (A true process kill mid-chunk is the reaper's job, M25; within the process,
+  the try/except is the guarantee the done-means tests.)
+
+Dependencies are injected (:func:`execute_job`) so the inline queue can pass the app's shared
+adapters and a test can pass its own; :func:`run_job_from_env` is the module-level entry RQ enqueues
+in the separate worker process, where it rebuilds the adapters from the environment (Part 9 §2).
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import TYPE_CHECKING, Any
+
+from backend.db import as_utc, utcnow
+from backend.jobs.logging import log_event
+from backend.models import ErrorBody
+
+if TYPE_CHECKING:
+    from backend.config import Settings
+    from backend.db import Repository
+    from backend.db.models import Job
+    from backend.storage import ObjectStore
+    from xtalate.capabilities import Registry
+
+
+class _JobFailure(Exception):
+    """A pre-run precondition loss (e.g. the upload expired) — a ``queued → failed`` outcome.
+
+    Carries the error-envelope body to persist in ``job.error``. Distinct from an in-run exception
+    (which fails from ``running``): this fires before the job starts, at the dequeue-precondition
+    check the state diagram draws as ``queued → failed`` (Part 6 §3.2).
+    """
+
+    def __init__(self, body: dict[str, Any]) -> None:
+        self.body = body
+        super().__init__(body.get("code", "FAILED"))
+
+
+def _error_body(
+    settings: Settings, code: str, message: str, details: dict[str, Any], request_id: str | None
+) -> dict[str, Any]:
+    """Build the error-envelope inner body stored in ``job.error`` (the non-2xx body's shape)."""
+    return ErrorBody(
+        code=code,
+        message=message,
+        details=details,
+        request_id=request_id or "unknown",
+        documentation_url=f"{settings.docs_base_url}#{code.lower()}",
+    ).model_dump(mode="json")
+
+
+def _read_bytes(object_store: ObjectStore, key: str) -> bytes:
+    """Materialize an object's bytes. M22 reads the whole file (Tier 0 sizes); the streaming
+    convert path (frame-chunked, `M12`) wires through here in a later increment without a shape
+    change — the object store already yields chunks (**P6**)."""
+    with object_store.open(key) as chunks:
+        return b"".join(chunks)
+
+
+def execute_job(
+    job_id: str,
+    *,
+    repository: Repository,
+    object_store: ObjectStore,
+    registry: Registry,
+    settings: Settings,
+) -> None:
+    """Run one job to a terminal state, persisting every transition (Part 6 §3.2)."""
+    job = repository.get_job(job_id)
+    if job is None:
+        log_event("job.missing", job_id=job_id)
+        return
+    request_id = job.request.get("request_id") if isinstance(job.request, dict) else None
+    # Only a freshly-queued job is runnable. An inline double-enqueue or a redelivered RQ message
+    # for an already-running/terminal job is a no-op, never a re-run (idempotent execution).
+    if job.state != "queued":
+        log_event("job.skip", job_id=job_id, state=job.state, request_id=request_id)
+        return
+
+    try:
+        upload = _resolve_preconditions(job, repository, settings, request_id)
+    except _JobFailure as failure:
+        repository.transition_job(job_id, "failed", finished_at=utcnow(), error=failure.body)
+        log_event(
+            "job.failed",
+            job_id=job_id,
+            state="failed",
+            code=failure.body["code"],
+            request_id=request_id,
+        )
+        return
+
+    repository.transition_job(job_id, "running", started_at=utcnow(), progress={"phase": "parsing"})
+    log_event("job.running", job_id=job_id, kind=job.kind, request_id=request_id)
+
+    try:
+        _dispatch(job, upload, repository, object_store, registry, settings)
+    except Exception as exc:  # noqa: BLE001 - every in-run fault becomes a failed job, not a 500.
+        body = _failure_body(exc, settings, request_id)
+        repository.transition_job(job_id, "failed", finished_at=utcnow(), error=body)
+        log_event(
+            "job.failed", job_id=job_id, state="failed", code=body["code"], request_id=request_id
+        )
+        return
+
+    repository.transition_job(job_id, "completed", finished_at=utcnow(), progress={"phase": "done"})
+    log_event("job.completed", job_id=job_id, kind=job.kind, request_id=request_id)
+
+
+def _resolve_preconditions(
+    job: Job, repository: Repository, settings: Settings, request_id: str | None
+) -> Any:
+    """Load and validate the inputs a job needs *before* it starts (``queued → failed`` on loss).
+
+    inspect/convert need their upload present and its bytes unexpired; validate needs its stored
+    conversion. A lost precondition is a ``_JobFailure`` (→ ``failed``), never a mid-run crash.
+    """
+    if job.kind in ("inspect", "convert"):
+        file_id = job.request.get("file_id")
+        upload = repository.get_upload(file_id) if isinstance(file_id, str) else None
+        if upload is None:
+            raise _JobFailure(
+                _error_body(
+                    settings,
+                    "FILE_NOT_FOUND",
+                    "The uploaded file no longer exists.",
+                    {},
+                    request_id,
+                )
+            )
+        expires_at = as_utc(upload.expires_at)
+        if upload.bytes_deleted or (expires_at is not None and expires_at < utcnow()):
+            raise _JobFailure(
+                _error_body(
+                    settings, "FILE_EXPIRED", "The uploaded file has expired.", {}, request_id
+                )
+            )
+        return upload
+    return None  # validate resolves its conversion inside its dispatch (slice 4)
+
+
+def _failure_body(exc: Exception, settings: Settings, request_id: str | None) -> dict[str, Any]:
+    """Map an in-run exception to a structured error-envelope body (Part 6 §6).
+
+    A ``ParseError`` (the file could not be read) surfaces its own stable code — the
+    ``PARSE_ERROR``/``UNKNOWN_FORMAT`` of the endpoint table — with the parse issues as details; a
+    bad recovery preset is ``INVALID_RECOVERY_CHOICE``; anything else is the ``INTERNAL_ERROR``
+    backstop, whose text is generic (the exception may quote content, which must not leak blindly).
+    """
+    from backend.jobs.revalidate import RevalidateError
+    from xtalate.recovery import RecoveryError
+    from xtalate.sdk import ParseError
+
+    if isinstance(exc, RevalidateError):
+        return _error_body(settings, "VALIDATION_UNAVAILABLE", str(exc), {}, request_id)
+    if isinstance(exc, ParseError):
+        codes = {issue.code for issue in exc.issues if issue.severity == "error"}
+        code = "UNKNOWN_FORMAT" if codes == {"UNKNOWN_FORMAT"} else "PARSE_ERROR"
+        message = "; ".join(i.message for i in exc.issues) or "The file could not be parsed."
+        details = {
+            "issues": [
+                {"code": i.code, "severity": i.severity, "message": i.message} for i in exc.issues
+            ]
+        }
+        return _error_body(settings, code, message, details, request_id)
+    if isinstance(exc, RecoveryError):
+        return _error_body(settings, "INVALID_RECOVERY_CHOICE", str(exc), {}, request_id)
+    return _error_body(
+        settings,
+        "INTERNAL_ERROR",
+        "An unexpected error occurred. Quote the request_id when reporting it.",
+        {},
+        request_id,
+    )
+
+
+# --- per-kind dispatch --------------------------------------------------------------------------
+
+
+def _dispatch(
+    job: Job,
+    upload: Any,
+    repository: Repository,
+    object_store: ObjectStore,
+    registry: Registry,
+    settings: Settings,
+) -> None:
+    """Run the kind-specific body. Each persists its reports/conversion; the completion payload is
+    assembled later from those rows by :func:`~backend.jobs.result.build_job_result` (one source of
+    truth — the persisted state — for both the worker and every poll)."""
+    if job.kind == "inspect":
+        _run_inspect(job, upload, repository, object_store, registry)
+    elif job.kind == "convert":
+        _run_convert(job, upload, repository, object_store, registry)
+    elif job.kind == "validate":
+        _run_validate(job, repository, settings)
+    else:
+        raise ValueError(f"unknown job kind {job.kind!r}")  # a bug (kinds validated at submit).
+
+
+def _run_inspect(
+    job: Job,
+    upload: Any,
+    repository: Repository,
+    object_store: ObjectStore,
+    registry: Registry,
+) -> None:
+    """Discovery Engine over the uploaded bytes — the ``xtalate inspect`` path (Part 3 §6)."""
+    from backend.db.models import Report
+    from xtalate.discovery import DiscoveryEngine
+
+    # inspect's ``format_override`` is a per-request parameter (Part 6 §2); it falls back to any
+    # override recorded on the upload itself.
+    override = job.request.get("format_override") or upload.format_override
+    data = _read_bytes(object_store, upload.storage_key)
+    report = DiscoveryEngine(registry).discover(
+        data, filename=upload.filename, format_override=override
+    )
+    repository.add_report(
+        Report(
+            report_id=_new_id("rep"),
+            job_id=job.job_id,
+            kind="discovery",
+            body=report.model_dump(mode="json"),
+        )
+    )
+
+
+def _run_convert(
+    job: Job,
+    upload: Any,
+    repository: Repository,
+    object_store: ObjectStore,
+    registry: Registry,
+) -> None:
+    """Full conversion — the ``xtalate convert`` path (Part 4): parse (with preset recovery) →
+    convert → automatic validation → persist. Reports are stored verbatim; the output bytes go to
+    object storage under the new ``conversion_id`` (the record outlives them, M24)."""
+    from backend.db.models import Conversion, Report
+    from xtalate.conversion import ConversionEngine, parse_with_recovery
+
+    request = job.request
+    target_format_id = request["target_format_id"]
+    options = request.get("options") or {}
+    recovery_choices = options.get("recovery_choices") or {}
+
+    data = _read_bytes(object_store, upload.storage_key)
+    parsed = parse_with_recovery(
+        registry, data, filename=upload.filename, recovery_choices=recovery_choices
+    )
+    repository.set_job_progress(job.job_id, {"phase": "converting"})
+    result = ConversionEngine(registry).convert(
+        parsed.canonical,
+        source_format_id=parsed.format_id,
+        target_format_id=target_format_id,
+        source_filename=upload.filename,
+        target_filename=options.get("output_filename"),
+        mode=options.get("mode", "permissive"),
+        recovery_choices=recovery_choices,
+        parse_recovery=parsed,
+        acknowledge_loss=options.get("acknowledge_loss", False),
+        acknowledge_parse_warnings=options.get("acknowledge_parse_warnings", False),
+        tolerance_profile=options.get("tolerance_profile", "default"),
+    )
+
+    conversion_id = _new_id("cnv")
+
+    # Store the output bytes (unless refused, which produces none). The record row carries the
+    # storage key; when the output-byte lifecycle sweep clears it (M24) the reports still resolve.
+    output_key: str | None = None
+    output_available = False
+    if result.output is not None:
+        output_key = f"outputs/{conversion_id}"
+        object_store.put(output_key, [result.output])
+        output_available = True
+
+    validation_status = result.validation.status if result.validation else None
+    repository.add_conversion(
+        Conversion(
+            conversion_id=conversion_id,
+            job_id=job.job_id,
+            source_file_id=upload.file_id,
+            source_format=parsed.format_id,
+            target_format=target_format_id,
+            output_storage_key=output_key,
+            output_available=output_available,
+            conversion_status=result.report.status,
+            validation_status=validation_status,
+        )
+    )
+    repository.add_report(
+        Report(
+            report_id=_new_id("rep"),
+            job_id=job.job_id,
+            conversion_id=conversion_id,
+            kind="conversion",
+            body=result.report.model_dump(mode="json"),
+        )
+    )
+    if result.validation is not None:
+        repository.add_report(
+            Report(
+                report_id=_new_id("rep"),
+                job_id=job.job_id,
+                conversion_id=conversion_id,
+                kind="validation",
+                body=result.validation.model_dump(mode="json"),
+            )
+        )
+
+
+def _run_validate(job: Job, repository: Repository, settings: Settings) -> None:
+    """Re-threshold a stored Validation Report under a new tolerance profile (slice 4)."""
+    from backend.jobs.revalidate import run_revalidate
+
+    run_revalidate(job, repository, settings)
+
+
+def _default_output_name(format_id: str) -> str:
+    """A format-conventional output filename (matches the CLI's ``_emit`` conventions, Part 4)."""
+    if format_id in ("poscar", "contcar"):
+        return "POSCAR" if format_id == "poscar" else "CONTCAR"
+    return f"output.{format_id}"
+
+
+def _new_id(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex}"
+
+
+def run_job_from_env(job_id: str) -> None:
+    """Module-level RQ entry point: rebuild the adapters from the environment, then run the job.
+
+    RQ serializes a *function reference* + args onto the queue; the worker process (a different
+    process from the API) imports this and calls it, so it cannot share ``app.state`` — it builds
+    repository, object store, and registry from :func:`~backend.config.get_settings` (Part 9 §2, the
+    environment is the single config source). The inline backend never uses this; it injects the
+    app's already-built adapters into :func:`execute_job` directly.
+    """
+    from backend.config import get_settings
+    from backend.db import Repository
+    from backend.storage import create_object_store
+    from xtalate.registry import default_registry
+
+    settings = get_settings()
+    execute_job(
+        job_id,
+        repository=Repository.from_settings(settings),
+        object_store=create_object_store(settings),
+        registry=default_registry(),
+        settings=settings,
+    )
