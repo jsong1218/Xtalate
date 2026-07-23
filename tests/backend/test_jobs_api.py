@@ -6,8 +6,14 @@ default), so these are genuine HTTP round-trips through the real error envelope 
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from fastapi.testclient import TestClient
+
+if TYPE_CHECKING:
+    from backend.config import Settings
+    from backend.db import Repository
 
 POSCAR_SAMPLE = b"""NaCl primitive test
 1.0
@@ -360,30 +366,31 @@ def test_partial_resume_pauses_again_for_the_rest(client: TestClient) -> None:
 # --- interactive recovery: expiry (M23 slice 3) ------------------------------------------------
 
 
-def _expire_all(client: TestClient) -> list[str]:
+def _expire_all(repository: Repository, settings: Settings) -> list[str]:
     """Drive the expiry sweep with the clock a day ahead — past every live pause's TTL horizon."""
     from datetime import timedelta
 
     from backend.db import utcnow
     from backend.jobs.expiry import sweep_expired
 
-    repository = client.app.state.repository
-    settings = client.app.state.settings
     return sweep_expired(repository, settings, now=utcnow() + timedelta(days=1))
 
 
-def test_expired_pause_resolves_to_a_refused_conversion(client: TestClient) -> None:
+def test_expired_pause_resolves_to_a_refused_conversion(
+    client: TestClient, repository: Repository, settings: Settings
+) -> None:
     # The bright line (Part 4 §3.2): a pause that times out resolves to a *refused* conversion —
     # refusal.code == RECOVERY_REQUIRED — never a silently applied default. The sweep is clock-
     # controlled (an injected `now`), so the transition is deterministic, not wall-clock-dependent.
     job_id = _pause_xyz_to_poscar(client)
-    assert _expire_all(client) == [job_id]
+    assert _expire_all(repository, settings) == [job_id]
 
-    repository = client.app.state.repository
     job = repository.get_job(job_id)
+    assert job is not None
     assert job.state == "expired"
     assert job.finished_at is not None
     assert job.recovery is None  # the paused block is cleared once the job leaves the state
+    assert job.error is not None
     assert job.error["code"] == "RECOVERY_REQUIRED"
 
     reports = repository.get_reports_for_job(job_id)
@@ -401,17 +408,21 @@ def test_expired_pause_resolves_to_a_refused_conversion(client: TestClient) -> N
     assert "bounding_box" in options and "non_periodic" not in options
 
     # An expired pause produces no output file — a refusal, not a fabricated result (Part 6 §3.2).
+    assert conversion_report.conversion_id is not None
     conversion = repository.get_conversion(conversion_report.conversion_id)
+    assert conversion is not None
     assert conversion.conversion_status == "refused"
     assert conversion.output_available is False
     assert conversion.output_storage_key is None
 
 
-def test_expired_job_poll_surfaces_the_error_envelope(client: TestClient) -> None:
+def test_expired_job_poll_surfaces_the_error_envelope(
+    client: TestClient, repository: Repository, settings: Settings
+) -> None:
     # Part 7 §2.4: an expired job renders its error envelope (worded as a refusal for want of a
     # choice). The poll carries error.code == RECOVERY_REQUIRED, no result, and no stale block.
     job_id = _pause_xyz_to_poscar(client)
-    _expire_all(client)
+    _expire_all(repository, settings)
     env = client.get(f"/v1/jobs/{job_id}").json()
     assert env["state"] == "expired"
     assert env["error"]["code"] == "RECOVERY_REQUIRED"
@@ -419,11 +430,13 @@ def test_expired_job_poll_surfaces_the_error_envelope(client: TestClient) -> Non
     assert env["awaiting_recovery"] is None
 
 
-def test_resume_after_expiry_is_409_naming_expired(client: TestClient) -> None:
+def test_resume_after_expiry_is_409_naming_expired(
+    client: TestClient, repository: Repository, settings: Settings
+) -> None:
     # A resume that loses the race to the deadline is a 409 that names the ``expired`` state, so a
     # client learns the pause is gone rather than resuming a job whose bytes may already be gone.
     job_id = _pause_xyz_to_poscar(client)
-    _expire_all(client)
+    _expire_all(repository, settings)
     resp = client.post(
         f"/v1/jobs/{job_id}/recovery",
         json={
@@ -438,7 +451,7 @@ def test_resume_after_expiry_is_409_naming_expired(client: TestClient) -> None:
     assert body["details"]["state"] == "expired"
 
 
-def test_poll_lazily_expires_an_overdue_pause(client: TestClient) -> None:
+def test_poll_lazily_expires_an_overdue_pause(client: TestClient, repository: Repository) -> None:
     # Tier 0 has no background sweeper: a poll of a paused job past its TTL resolves it in place.
     # We push the horizon into the past (as the clock would, TTL minutes on) and poll with no
     # explicit sweep — the poll itself must expire it (the ``expire_if_due`` lazy path).
@@ -448,9 +461,10 @@ def test_poll_lazily_expires_an_overdue_pause(client: TestClient) -> None:
     from backend.db.models import Job
 
     job_id = _pause_xyz_to_poscar(client)
-    repository = client.app.state.repository
     with repository._session_factory.begin() as session:
-        session.get(Job, job_id).expires_at = utcnow() - timedelta(hours=1)
+        paused = session.get(Job, job_id)
+        assert paused is not None
+        paused.expires_at = utcnow() - timedelta(hours=1)
 
     env = client.get(f"/v1/jobs/{job_id}").json()
     assert env["state"] == "expired"
@@ -464,6 +478,80 @@ def test_poll_leaves_a_not_yet_due_pause_awaiting(client: TestClient) -> None:
     env = client.get(f"/v1/jobs/{job_id}", params={"wait": 0.2}).json()
     assert env["state"] == "awaiting_recovery"
     assert env["awaiting_recovery"] is not None
+
+
+# --- interactive recovery: cancellation (M23 slice 4) ------------------------------------------
+
+
+def test_cancel_unknown_job_is_404(client: TestClient) -> None:
+    resp = client.post("/v1/jobs/nope/cancel")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "JOB_NOT_FOUND"
+
+
+def test_cancel_awaiting_recovery_terminates_with_no_report_or_output(
+    client: TestClient, repository: Repository
+) -> None:
+    # Cancelling a paused convert is an abandonment, not a refusal: the job goes terminal
+    # ``cancelled`` with no output file and no Conversion Report, and the envelope carries neither a
+    # result nor an error body — only the state (Part 6 §3.2, §5).
+    job_id = _pause_xyz_to_poscar(client)
+    resp = client.post(f"/v1/jobs/{job_id}/cancel")
+    assert resp.status_code == 200, resp.text
+    env = resp.json()
+    assert env["state"] == "cancelled"
+    assert env["finished_at"] is not None
+    assert env["awaiting_recovery"] is None  # the paused block is cleared on the terminal edge
+    assert env["result"] is None
+    assert env["error"] is None  # not a failure, not a refusal — just abandoned
+
+    # No Conversion Report and no conversion row: a cancel records only that the job was stopped.
+    assert list(repository.get_reports_for_job(job_id)) == []
+    with repository._session_factory() as session:
+        from sqlalchemy import select
+
+        from backend.db.models import Conversion
+
+        rows = session.scalars(select(Conversion).where(Conversion.job_id == job_id)).all()
+        assert list(rows) == []
+
+
+def test_cancel_is_idempotent(client: TestClient) -> None:
+    # A retried cancel of an already-cancelled job is a 200 no-op, never a 409 (Part 6 §5).
+    job_id = _pause_xyz_to_poscar(client)
+    first = client.post(f"/v1/jobs/{job_id}/cancel")
+    assert first.status_code == 200
+    assert first.json()["state"] == "cancelled"
+    second = client.post(f"/v1/jobs/{job_id}/cancel")
+    assert second.status_code == 200
+    assert second.json()["state"] == "cancelled"
+
+
+def test_cancel_completed_job_is_409_already_terminal(client: TestClient) -> None:
+    # A job that already reached a non-cancelled terminal state cannot be cancelled: its outcome is
+    # recorded and must not be overwritten (409 JOB_ALREADY_TERMINAL naming the state).
+    file_id = _upload(client, XYZ_SAMPLE, "mol.xyz")
+    job_id = client.post("/v1/inspect", json={"file_id": file_id}).json()["job_id"]
+    resp = client.post(f"/v1/jobs/{job_id}/cancel")
+    assert resp.status_code == 409
+    body = resp.json()["error"]
+    assert body["code"] == "JOB_ALREADY_TERMINAL"
+    assert body["details"]["state"] == "completed"
+
+
+def test_cancel_after_expiry_is_409_naming_expired(
+    client: TestClient, repository: Repository, settings: Settings
+) -> None:
+    # A cancel that loses the race to the TTL deadline finds the pause already expired-to-refused:
+    # expire_if_due runs first, so the cancel is a 409 naming ``expired``, never an erasure of the
+    # recorded refusal (Part 4 §3.2's bright line survives a late cancel).
+    job_id = _pause_xyz_to_poscar(client)
+    _expire_all(repository, settings)
+    resp = client.post(f"/v1/jobs/{job_id}/cancel")
+    assert resp.status_code == 409
+    body = resp.json()["error"]
+    assert body["code"] == "JOB_ALREADY_TERMINAL"
+    assert body["details"]["state"] == "expired"
 
 
 def test_convert_with_loss_reports_removed_fields(client: TestClient) -> None:

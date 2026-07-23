@@ -23,7 +23,7 @@ import anyio
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from backend.config import Settings
-from backend.db import Repository
+from backend.db import Repository, utcnow
 from backend.db.models import Job
 from backend.deps import (
     get_job_queue,
@@ -35,6 +35,7 @@ from backend.deps import (
 from backend.errors import ApiError
 from backend.jobs.envelope import JobEnvelope
 from backend.jobs.expiry import expire_if_due
+from backend.jobs.logging import log_event
 from backend.jobs.queue import JobQueue
 from backend.jobs.result import build_job_result
 from backend.jobs.state_machine import is_terminal
@@ -269,6 +270,58 @@ def resume_recovery(
     merged = _merge_recovery_choices(job.request, body.choices)
     repository.set_job_request(job_id, merged)
     job_queue.enqueue(job_id)
+    return _job_envelope(_reload(repository, job_id), repository, object_store)
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=JobEnvelope, tags=["jobs"])
+def cancel_job(
+    job_id: str,
+    request: Request,
+    repository: Repository = Depends(get_repository),
+    object_store: ObjectStore = Depends(get_object_store),
+    settings: Settings = Depends(get_settings),
+) -> JobEnvelope:
+    """Cancel a job, moving it to the terminal ``cancelled`` state (Part 6 §3.2, §5).
+
+    ``404 JOB_NOT_FOUND`` for an unknown id. Cancelling an already-``cancelled`` job is an
+    **idempotent** ``200`` — a retried cancel is not an error. Any *other* terminal state
+    (``completed``, ``failed``, ``expired``) is a ``409 JOB_ALREADY_TERMINAL`` naming the state,
+    because that outcome is already recorded and cancellation must not overwrite it. An already
+    ``expired`` pause has resolved to a *refusal*, which a cancel must never erase: the
+    ``expire_if_due`` below makes an overdue pause terminal *before* this check, so a cancel that
+    lost the race to the deadline learns the job expired rather than silently cancelling it.
+
+    A cancellable job (``queued``, ``running``, ``awaiting_recovery``) transitions straight to
+    ``cancelled`` with a finish timestamp and its recovery block cleared. Cancellation produces **no
+    output file and no Conversion Report** — it is an abandonment, not a refusal, so the envelope
+    carries neither a ``result`` nor an ``error`` body, only the terminal state.
+
+    Under the Tier 0 inline queue a submitted job is already terminal by the time a client could
+    call this, so the state actually cancellable here is ``awaiting_recovery`` (a paused convert).
+    Cooperative interruption of a genuinely mid-run job on the Tier 1 RQ worker — a checkpointed
+    stop at a frame-chunk boundary — is a follow-up on this same endpoint (Part 6 §5's stated cut),
+    never a change to this contract: the state machine already holds the ``running → cancelled``
+    edge, so that work attaches as a *caller*, not a new edge (**P6**).
+    """
+    job = repository.get_job(job_id)
+    if job is None:
+        raise ApiError(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="JOB_NOT_FOUND",
+            message=f"No job {job_id!r}.",
+        )
+    job = expire_if_due(job, repository, settings)
+    if job.state == "cancelled":
+        return _job_envelope(job, repository, object_store)  # idempotent re-cancel (200)
+    if is_terminal(job.state):
+        raise ApiError(
+            status_code=status.HTTP_409_CONFLICT,
+            code="JOB_ALREADY_TERMINAL",
+            message=f"Job {job_id!r} is {job.state!r} and cannot be cancelled.",
+            details={"state": job.state},
+        )
+    repository.transition_job(job_id, "cancelled", finished_at=utcnow(), clear_recovery=True)
+    log_event("job.cancelled", job_id=job_id, kind=job.kind, request_id=_request_id(request))
     return _job_envelope(_reload(repository, job_id), repository, object_store)
 
 
