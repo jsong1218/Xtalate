@@ -236,7 +236,7 @@ def _dispatch(
     if job.kind == "inspect":
         _run_inspect(job, upload, repository, object_store, registry)
     elif job.kind == "convert":
-        _run_convert(job, upload, repository, object_store, registry)
+        _run_convert(job, upload, repository, object_store, registry, settings)
     elif job.kind == "validate":
         _run_validate(job, repository, settings)
     else:
@@ -277,6 +277,7 @@ def _run_convert(
     repository: Repository,
     object_store: ObjectStore,
     registry: Registry,
+    settings: Settings,
 ) -> None:
     """Full conversion — the ``xtalate convert`` path (Part 4): parse (with preset recovery) →
     convert → automatic validation → persist. Reports are stored verbatim; the output bytes go to
@@ -350,13 +351,19 @@ def _run_convert(
     conversion_id = _new_id("cnv")
 
     # Store the output bytes (unless refused, which produces none). The record row carries the
-    # storage key; when the output-byte lifecycle sweep clears it (M24) the reports still resolve.
+    # storage key and a byte-expiry horizon; when the output-byte lifecycle sweep clears the bytes
+    # (a bucket rule in Tier 1, Part 9 §5.2) the record and its reports still resolve — a download
+    # past ``output_expires_at`` is a ``410 OUTPUT_EXPIRED`` while the reports stay retrievable
+    # (reports-outlive-bytes). The horizon matches the storage lifecycle window
+    # (``output_retention_hours``) so the record's own clock agrees with the platform's sweep.
     output_key: str | None = None
     output_available = False
+    output_expires_at: datetime | None = None
     if result.output is not None:
         output_key = f"outputs/{conversion_id}"
         object_store.put(output_key, [result.output])
         output_available = True
+        output_expires_at = utcnow() + timedelta(hours=settings.output_retention_hours)
 
     validation_status = result.validation.status if result.validation else None
     repository.add_conversion(
@@ -368,6 +375,7 @@ def _run_convert(
             target_format=target_format_id,
             output_storage_key=output_key,
             output_available=output_available,
+            output_expires_at=output_expires_at,
             conversion_status=result.report.status,
             validation_status=validation_status,
         )
