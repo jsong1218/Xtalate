@@ -19,7 +19,7 @@ import uuid
 from collections.abc import Iterator
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile, status
 
 from backend.config import Settings
 from backend.db import Repository, utcnow
@@ -107,3 +107,30 @@ async def upload(
         sha256=stored.sha256,
         expires_at=expires_at.isoformat(),
     )
+
+
+@router.delete("/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_file(
+    file_id: str,
+    repository: Repository = Depends(get_repository),
+    object_store: ObjectStore = Depends(get_object_store),
+) -> Response:
+    """Immediately remove an uploaded file — its bytes and its row (Part 6 §5, M24 deliverable 3).
+
+    The user-initiated counterpart to the storage lifecycle's timed byte sweep: a client that
+    uploaded a file it did not mean to keep can delete it now rather than waiting out the retention
+    window. The object bytes go first (idempotent — a no-op if the lifecycle rule already swept
+    them), then the row; ``ON DELETE SET NULL`` nulls any conversion's ``source_file_id``, so
+    conversions produced from this file and their reports **survive** (reports-outlive-bytes). A
+    successful delete is ``204`` with no body; an unknown file is ``404 FILE_NOT_FOUND``.
+    """
+    upload = repository.get_upload(file_id)
+    if upload is None:
+        raise ApiError(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="FILE_NOT_FOUND",
+            message=f"No uploaded file {file_id!r}.",
+        )
+    object_store.delete(upload.storage_key)
+    repository.delete_upload(file_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

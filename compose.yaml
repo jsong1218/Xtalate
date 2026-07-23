@@ -61,9 +61,13 @@ services:
       timeout: 5s
       retries: 10
 
-  # One-shot: create the private bucket and install the lifecycle expiry rule, so §5.2 byte-expiry
-  # is locally testable from the first shape (expiry is the storage platform's job, never an app
-  # cron). Per-prefix upload/output windows are refined in M24; here a single short rule proves it.
+  # One-shot: create the private bucket and install the byte-expiry lifecycle rules, so §5.2
+  # byte-expiry is locally testable (expiry is the storage platform's job, never an app cron). M24
+  # refines the M21 single-rule shape into **per-prefix** windows: `uploads/` and `outputs/` expire
+  # independently (their retention hours differ in config), matching the two byte windows the app
+  # advertises. MinIO's ilm granularity is whole days, so both default to 1 day here (the config
+  # defaults are 24 h) — short enough to prove expiry locally. The record-retention window is a
+  # different, much longer thing swept in-app (`backend.jobs.retention`), not a bucket rule.
   minio-init:
     image: minio/mc:latest
     depends_on:
@@ -73,13 +77,16 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-xtalate}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-xtalate-local-dev}
       BUCKET: ${XTALATE_OBJECT_STORE_BUCKET:-xtalate}
+      UPLOAD_EXPIRE_DAYS: ${XTALATE_UPLOAD_EXPIRE_DAYS:-1}
+      OUTPUT_EXPIRE_DAYS: ${XTALATE_OUTPUT_EXPIRE_DAYS:-1}
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
       mc mb --ignore-existing \"local/$$BUCKET\" &&
       mc anonymous set none \"local/$$BUCKET\" &&
-      mc ilm rule add --expire-days 1 \"local/$$BUCKET\" || true &&
-      echo 'minio-init: bucket ready with 1-day expiry'
+      mc ilm rule add --expire-days \"$$UPLOAD_EXPIRE_DAYS\" --prefix 'uploads/' \"local/$$BUCKET\" || true &&
+      mc ilm rule add --expire-days \"$$OUTPUT_EXPIRE_DAYS\" --prefix 'outputs/' \"local/$$BUCKET\" || true &&
+      echo 'minio-init: bucket ready with per-prefix uploads/ + outputs/ expiry'
       "
     restart: "no"
 

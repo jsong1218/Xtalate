@@ -273,6 +273,25 @@ class Repository:
                 r.conversion_id: r for r in session.scalars(stmt) if r.conversion_id is not None
             }
 
+    def delete_conversions_created_before(self, cutoff: datetime) -> list[str]:
+        """Delete conversion records (and, by cascade, their reports) created before ``cutoff``.
+
+        The report-retention sweep (Revision 1.5) — the longer of the two retention windows.
+        Deleting a :class:`~backend.db.models.Conversion` cascades to its Conversion/Validation
+        reports (the ORM ``delete-orphan`` relationship plus the DB ``ON DELETE CASCADE``); the
+        originating job row and any upload survive, because this window governs the durable
+        *records*, not the bytes (those are the storage platform's separate, much shorter sweep, so
+        by the time a record ages out its output bytes are long gone). Returns the ids deleted.
+        """
+        with self._session_factory.begin() as session:
+            conversions = list(
+                session.scalars(select(Conversion).where(Conversion.created_at < cutoff))
+            )
+            deleted = [c.conversion_id for c in conversions]
+            for conversion in conversions:
+                session.delete(conversion)
+            return deleted
+
     def clear_output_bytes(self, conversion_id: str) -> Conversion | None:
         """Byte expiry of the *output*: drop the storage key and mark it unavailable, keeping the
         record and its reports (the reports-outlive-bytes promise for the output side)."""
