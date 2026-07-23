@@ -357,6 +357,115 @@ def test_partial_resume_pauses_again_for_the_rest(client: TestClient) -> None:
     assert origins["missing_lattice"] == "user"
 
 
+# --- interactive recovery: expiry (M23 slice 3) ------------------------------------------------
+
+
+def _expire_all(client: TestClient) -> list[str]:
+    """Drive the expiry sweep with the clock a day ahead — past every live pause's TTL horizon."""
+    from datetime import timedelta
+
+    from backend.db import utcnow
+    from backend.jobs.expiry import sweep_expired
+
+    repository = client.app.state.repository
+    settings = client.app.state.settings
+    return sweep_expired(repository, settings, now=utcnow() + timedelta(days=1))
+
+
+def test_expired_pause_resolves_to_a_refused_conversion(client: TestClient) -> None:
+    # The bright line (Part 4 §3.2): a pause that times out resolves to a *refused* conversion —
+    # refusal.code == RECOVERY_REQUIRED — never a silently applied default. The sweep is clock-
+    # controlled (an injected `now`), so the transition is deterministic, not wall-clock-dependent.
+    job_id = _pause_xyz_to_poscar(client)
+    assert _expire_all(client) == [job_id]
+
+    repository = client.app.state.repository
+    job = repository.get_job(job_id)
+    assert job.state == "expired"
+    assert job.finished_at is not None
+    assert job.recovery is None  # the paused block is cleared once the job leaves the state
+    assert job.error["code"] == "RECOVERY_REQUIRED"
+
+    reports = repository.get_reports_for_job(job_id)
+    conversion_report = next(r for r in reports if r.kind == "conversion")
+    body = conversion_report.body
+    assert body["stage"] == "final"
+    assert body["status"] == "refused"
+    assert body["refusal"]["code"] == "RECOVERY_REQUIRED"
+    # The refusal lists the still-unanswered scenarios as bare option codes (the Part 4 §4 shape),
+    # de-enriched from the pause's ``{choice, parameters_schema}`` block — nothing added or dropped.
+    unresolved = {s["scenario"]: s for s in body["refusal"]["unresolved_scenarios"]}
+    assert "missing_lattice" in unresolved
+    options = unresolved["missing_lattice"]["options"]
+    assert all(isinstance(o, str) for o in options)
+    assert "bounding_box" in options and "non_periodic" not in options
+
+    # An expired pause produces no output file — a refusal, not a fabricated result (Part 6 §3.2).
+    conversion = repository.get_conversion(conversion_report.conversion_id)
+    assert conversion.conversion_status == "refused"
+    assert conversion.output_available is False
+    assert conversion.output_storage_key is None
+
+
+def test_expired_job_poll_surfaces_the_error_envelope(client: TestClient) -> None:
+    # Part 7 §2.4: an expired job renders its error envelope (worded as a refusal for want of a
+    # choice). The poll carries error.code == RECOVERY_REQUIRED, no result, and no stale block.
+    job_id = _pause_xyz_to_poscar(client)
+    _expire_all(client)
+    env = client.get(f"/v1/jobs/{job_id}").json()
+    assert env["state"] == "expired"
+    assert env["error"]["code"] == "RECOVERY_REQUIRED"
+    assert env["result"] is None
+    assert env["awaiting_recovery"] is None
+
+
+def test_resume_after_expiry_is_409_naming_expired(client: TestClient) -> None:
+    # A resume that loses the race to the deadline is a 409 that names the ``expired`` state, so a
+    # client learns the pause is gone rather than resuming a job whose bytes may already be gone.
+    job_id = _pause_xyz_to_poscar(client)
+    _expire_all(client)
+    resp = client.post(
+        f"/v1/jobs/{job_id}/recovery",
+        json={
+            "choices": {
+                "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}}
+            }
+        },
+    )
+    assert resp.status_code == 409
+    body = resp.json()["error"]
+    assert body["code"] == "JOB_NOT_AWAITING_RECOVERY"
+    assert body["details"]["state"] == "expired"
+
+
+def test_poll_lazily_expires_an_overdue_pause(client: TestClient) -> None:
+    # Tier 0 has no background sweeper: a poll of a paused job past its TTL resolves it in place.
+    # We push the horizon into the past (as the clock would, TTL minutes on) and poll with no
+    # explicit sweep — the poll itself must expire it (the ``expire_if_due`` lazy path).
+    from datetime import timedelta
+
+    from backend.db import utcnow
+    from backend.db.models import Job
+
+    job_id = _pause_xyz_to_poscar(client)
+    repository = client.app.state.repository
+    with repository._session_factory.begin() as session:
+        session.get(Job, job_id).expires_at = utcnow() - timedelta(hours=1)
+
+    env = client.get(f"/v1/jobs/{job_id}").json()
+    assert env["state"] == "expired"
+    assert env["error"]["code"] == "RECOVERY_REQUIRED"
+
+
+def test_poll_leaves_a_not_yet_due_pause_awaiting(client: TestClient) -> None:
+    # A long-poll of a live (not-yet-due) pause holds and returns it still ``awaiting_recovery`` —
+    # the lazy expiry check inside the wait loop is a no-op until the horizon actually passes.
+    job_id = _pause_xyz_to_poscar(client)
+    env = client.get(f"/v1/jobs/{job_id}", params={"wait": 0.2}).json()
+    assert env["state"] == "awaiting_recovery"
+    assert env["awaiting_recovery"] is not None
+
+
 def test_convert_with_loss_reports_removed_fields(client: TestClient) -> None:
     file_id = _upload(client, POSCAR_SAMPLE, "POSCAR")
     env = client.post("/v1/convert", json={"file_id": file_id, "target_format_id": "xyz"}).json()

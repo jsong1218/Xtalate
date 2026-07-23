@@ -146,6 +146,19 @@ class Repository:
             job.updated_at = utcnow()
             return job
 
+    def list_awaiting_recovery(self) -> Sequence[Job]:
+        """Every job currently paused in ``awaiting_recovery`` — the expiry sweep's candidate set.
+
+        The sweep (:mod:`backend.jobs.expiry`) applies the ``expires_at <= now`` deadline test in
+        Python (via :func:`~backend.db.as_utc`) so the horizon comparison is tz-correct and
+        identical on SQLite and PostgreSQL, rather than pushing a timezone-sensitive predicate into
+        SQL. Tier 0 holds few paused jobs at once, so returning the whole paused set is cheap; a
+        hosted instance's minute-cadence sweeper (Revision 1.4) narrows it the same way.
+        """
+        with self._session_factory() as session:
+            stmt = select(Job).where(Job.state == "awaiting_recovery")
+            return list(session.scalars(stmt))
+
     def set_job_progress(self, job_id: str, progress: dict[str, object]) -> Job | None:
         """Update a running job's ``progress`` without a state change (phase-boundary stamps)."""
         with self._session_factory.begin() as session:

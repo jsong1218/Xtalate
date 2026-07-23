@@ -22,6 +22,7 @@ from typing import Any
 import anyio
 from fastapi import APIRouter, Depends, Query, Request, status
 
+from backend.config import Settings
 from backend.db import Repository
 from backend.db.models import Job
 from backend.deps import (
@@ -29,9 +30,11 @@ from backend.deps import (
     get_object_store,
     get_registry,
     get_repository,
+    get_settings,
 )
 from backend.errors import ApiError
 from backend.jobs.envelope import JobEnvelope
+from backend.jobs.expiry import expire_if_due
 from backend.jobs.queue import JobQueue
 from backend.jobs.result import build_job_result
 from backend.jobs.state_machine import is_terminal
@@ -231,6 +234,7 @@ def resume_recovery(
     repository: Repository = Depends(get_repository),
     object_store: ObjectStore = Depends(get_object_store),
     job_queue: JobQueue = Depends(get_job_queue),
+    settings: Settings = Depends(get_settings),
 ) -> JobEnvelope:
     """Resume an ``awaiting_recovery`` convert job with the client's choices (Part 6 §3.2).
 
@@ -240,6 +244,10 @@ def resume_recovery(
     re-enqueues. The ``awaiting_recovery → running`` edge is the worker's; a resume that resolves
     only some scenarios pauses again for the rest. The endpoint holds no scientific logic — the
     Recovery Engine still computes and applies the choice on the worker.
+
+    A resume that arrives after the pause's TTL is a ``409`` naming the ``expired`` state: the job
+    is expired-if-due first, so a client racing the deadline learns the pause is gone rather than
+    resuming a job whose input bytes may already have expired (Part 6 §3.2, §5).
     """
     job = repository.get_job(job_id)
     if job is None:
@@ -248,6 +256,7 @@ def resume_recovery(
             code="JOB_NOT_FOUND",
             message=f"No job {job_id!r}.",
         )
+    job = expire_if_due(job, repository, settings)
     if job.state != "awaiting_recovery":
         raise ApiError(
             status_code=status.HTTP_409_CONFLICT,
@@ -329,13 +338,19 @@ async def get_job(
     job_id: str,
     repository: Repository = Depends(get_repository),
     object_store: ObjectStore = Depends(get_object_store),
+    settings: Settings = Depends(get_settings),
     wait: float = Query(
         default=0.0,
         ge=0.0,
         description="Long-poll: seconds to wait for a terminal state before returning (max 30).",
     ),
 ) -> JobEnvelope:
-    """Poll a job's envelope. With ``?wait=<s>`` (capped 30), hold until the job is terminal."""
+    """Poll a job's envelope. With ``?wait=<s>`` (capped 30), hold until the job is terminal.
+
+    A poll of a paused job past its TTL expires it (``awaiting_recovery → expired``, resolving to a
+    refused conversion) before projecting — the lazy sweep Tier 0 relies on, so the no-services tier
+    needs no background sweeper for the expiry-to-refusal rule to hold (Part 6 §3.2).
+    """
     job = repository.get_job(job_id)
     if job is None:
         raise ApiError(
@@ -343,6 +358,7 @@ async def get_job(
             code="JOB_NOT_FOUND",
             message=f"No job {job_id!r}.",
         )
+    job = expire_if_due(job, repository, settings)
 
     if wait > 0 and not is_terminal(job.state):
         deadline = anyio.current_time() + min(wait, MAX_WAIT_SECONDS)
@@ -351,7 +367,7 @@ async def get_job(
             reloaded = repository.get_job(job_id)
             if reloaded is None:  # pragma: no cover - a job row does not vanish mid-poll.
                 break
-            job = reloaded
+            job = expire_if_due(reloaded, repository, settings)
 
     return _job_envelope(job, repository, object_store)
 
