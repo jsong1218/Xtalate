@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from datetime import datetime
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.config import Settings
@@ -91,6 +91,22 @@ class Repository:
     def get_job(self, job_id: str) -> Job | None:
         with self._session_factory() as session:
             return session.get(Job, job_id)
+
+    def count_active_jobs(self) -> int:
+        """The number of non-terminal jobs instance-wide — the concurrent-job cap's counter (§5).
+
+        Active = ``queued``/``running``/``awaiting_recovery`` (the states a job holds before it
+        reaches a terminal one). On an anonymous self-hosted instance the "caller's active jobs" is
+        the instance-wide count, because scoping *is* the instance boundary (Part 6 §4); a hosted
+        instance with per-key ownership narrows this the same way once jobs carry a principal.
+        """
+        with self._session_factory() as session:
+            stmt = (
+                select(func.count())
+                .select_from(Job)
+                .where(Job.state.in_(("queued", "running", "awaiting_recovery")))
+            )
+            return int(session.scalar(stmt) or 0)
 
     def find_job_by_idempotency_key(self, idempotency_key: str) -> Job | None:
         """The existing job for an idempotency key, or ``None`` (Part 6 §2 idempotent inspect).

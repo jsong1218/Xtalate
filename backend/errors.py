@@ -42,12 +42,16 @@ class ApiError(Exception):
         code: str,
         message: str,
         details: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.code = code
         self.message = message
         self.details: dict[str, object] = details or {}
+        #: Extra response headers to emit with the envelope (e.g. ``Retry-After`` on a ``429``).
+        #: Merged into the response by :func:`_envelope`; the ``X-Request-ID`` header always wins.
+        self.headers: dict[str, str] = headers or {}
 
 
 def _request_id(request: Request) -> str:
@@ -73,10 +77,12 @@ def _envelope(request: Request, status_code: int, error: ApiError) -> JSONRespon
             documentation_url=_documentation_url(request, error.code),
         )
     )
+    # The error's own headers (e.g. Retry-After on a 429) render first; X-Request-ID always wins.
+    headers = {**error.headers, "X-Request-ID": _request_id(request)}
     return JSONResponse(
         status_code=status_code,
         content=body.model_dump(mode="json"),
-        headers={"X-Request-ID": _request_id(request)},
+        headers=headers,
     )
 
 

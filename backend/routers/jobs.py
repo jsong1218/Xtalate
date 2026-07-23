@@ -45,10 +45,15 @@ from backend.models import (
     RecoveryResumeRequest,
     RevalidateRequest,
 )
+from backend.security import enforce_active_job_limit
 from backend.storage import ObjectStore
 from xtalate.capabilities import Registry
 
 router = APIRouter()
+
+#: The concurrent-job cap (Part 6 §5) as a submit-only dependency: enforced on inspect/convert/
+#: validate, never on polling/records so a full worker pool never blocks reads.
+_SUBMIT_GUARD = [Depends(enforce_active_job_limit)]
 
 #: Hard ceiling on the long-poll wait (Part 6 §2, §3.1). A client asking for more is clamped, never
 #: refused — the contract is "up to 30 s", and holding a request open longer risks proxy timeouts.
@@ -114,7 +119,12 @@ def _job_envelope(job: Job, repository: Repository, object_store: ObjectStore) -
     return JobEnvelope.from_row(job, result=result)
 
 
-@router.post("/inspect", response_model=JobEnvelope, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/inspect",
+    response_model=JobEnvelope,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=_SUBMIT_GUARD,
+)
 def inspect(
     body: InspectRequest,
     request: Request,
@@ -150,7 +160,12 @@ def inspect(
     return _job_envelope(_reload(repository, job_id), repository, object_store)
 
 
-@router.post("/convert", response_model=JobEnvelope, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/convert",
+    response_model=JobEnvelope,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=_SUBMIT_GUARD,
+)
 def convert(
     body: ConvertRequest,
     request: Request,
@@ -189,7 +204,12 @@ def convert(
     return _job_envelope(_reload(repository, job_id), repository, object_store)
 
 
-@router.post("/validate", response_model=JobEnvelope, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/validate",
+    response_model=JobEnvelope,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=_SUBMIT_GUARD,
+)
 def validate(
     body: RevalidateRequest,
     request: Request,
