@@ -70,8 +70,16 @@ class ConvertOptions(BaseModel):
 
     mode: str = "permissive"
     #: Preset recovery choices keyed by scenario code; each ``{choice, parameters}`` (Part 4 §3.3).
-    #: They land in the report as ``origin: "preset"``. Interactive (paused) recovery is M23.
+    #: They land in the report as ``origin: "preset"``.
     recovery_choices: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    #: Opt into **interactive** recovery (Part 6 §3.2, M23): when set, a conversion whose recovery
+    #: scenarios have no supplied preset **pauses** to ``awaiting_recovery`` (the client resumes via
+    #: ``POST /v1/jobs/{job_id}/recovery``) instead of refusing. Default ``False`` keeps the
+    #: preset-only contract a pipeline or the CLI relies on — an unresolved scenario is a completed
+    #: refused job at HTTP 200, never a pause it must poll (the CLI-refuses / API-pauses split of
+    #: the fabricative bright line, Appendix A vs. Part 6 §3.2). The pause is only ever reachable
+    #: when a client explicitly asks to answer the questions interactively.
+    allow_recovery: bool = False
     acknowledge_loss: bool = False
     acknowledge_parse_warnings: bool = False
     #: Named profile (``default``/``strict``/``loose``) or a custom tolerance table (Part 5 §4.4).
@@ -85,6 +93,20 @@ class ConvertRequest(BaseModel):
     file_id: str
     target_format_id: str
     options: ConvertOptions = Field(default_factory=ConvertOptions)
+
+
+class RecoveryResumeRequest(BaseModel):
+    """``POST /v1/jobs/{job_id}/recovery`` body (Part 6 §2, §3.2) — resume a paused convert job.
+
+    ``choices`` maps a scenario code to the user's decision — ``{choice, parameters}`` — the same
+    shape as :attr:`ConvertOptions.recovery_choices`, but supplied *interactively* after the job
+    paused rather than up front. The endpoint validates each choice against the paused job's own
+    **offered** options before merging it in (an unoffered scenario or choice is
+    ``422 INVALID_RECOVERY_CHOICE``), so a resumed choice lands in the report as ``origin: "user"``.
+    A resume that resolves only some scenarios pauses again for the rest (Part 6 §3.2).
+    """
+
+    choices: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class RevalidateRequest(BaseModel):

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -22,6 +23,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from backend.app import create_app  # noqa: E402
 from backend.config import Settings  # noqa: E402
+from backend.db import Repository  # noqa: E402
 
 _ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 
@@ -65,3 +67,15 @@ def client(settings: Settings) -> Iterator[TestClient]:
     # instead of re-raising into the test process.
     with TestClient(create_app(settings), raise_server_exceptions=False) as client:
         yield client
+
+
+@pytest.fixture
+def repository(client: TestClient) -> Repository:
+    """The running app's :class:`~backend.db.Repository`, typed.
+
+    ``TestClient.app`` is an untyped ASGI callable, so a test that reaches ``client.app.state``
+    for the app's own adapters gets no type from it. Confining that one unavoidable reach to this
+    fixture keeps the state-inspecting tests (expiry sweeps, post-cancel row assertions) type-clean
+    instead of scattering ``# type: ignore`` through the suite.
+    """
+    return cast(Repository, client.app.state.repository)  # type: ignore[attr-defined]
