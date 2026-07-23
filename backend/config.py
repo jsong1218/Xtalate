@@ -84,10 +84,21 @@ class Settings(BaseSettings):
     database_echo: bool = False
 
     # --- job queue (v0.5 M21 slice 4; the worker + enqueue path arrive in M22) -------------------
-    #: Redis URL the RQ queue connects to (``docs/private/DECISIONS.md`` D82). Surfaced now so the
-    #: Tier 1 compose stack (``queue`` service) is wired from the first shape; no queue code reads
-    #: it until M22 — a resting-state placeholder, not a dead setting.
+    #: Redis URL the RQ queue connects to (``docs/private/DECISIONS.md`` D82). Read by the ``rq``
+    #: queue backend and the worker (M22); ignored by the ``inline`` backend.
     redis_url: str = "redis://127.0.0.1:6379/0"
+
+    #: Which job-queue backend to build (:func:`~backend.jobs.queue.create_job_queue`). ``"inline"``
+    #: is the Tier 0 default: a submitted job runs synchronously in-process, so Tier 0 needs no
+    #: Redis and no separate worker (a parser bug fix must never require Docker — Part 9 §1.1).
+    #: ``"rq"`` targets Redis (Tier 1): the API enqueues, the ``backend.worker`` process executes.
+    #: Two backends, one interface — the same pattern as object storage and the database (D82).
+    queue_backend: str = "inline"
+
+    #: RQ queue name and per-job timeout (seconds) for the ``rq`` backend. The timeout is the wall
+    #: clock a single convert/inspect/validate may run before RQ marks it failed (Part 6 §3).
+    queue_name: str = "xtalate"
+    job_timeout_seconds: int = 1800
 
     # --- object storage (v0.5 M21 slice 2) ------------------------------------------------------
     #: Which object-storage backend to build (:func:`~backend.storage.create_object_store`).

@@ -16,10 +16,21 @@ import pytest
 pytest.importorskip("fastapi", reason="service extra not installed")
 pytest.importorskip("httpx", reason="httpx (TestClient transport) not installed")
 
+from alembic import command  # noqa: E402
+from alembic.config import Config  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from backend.app import create_app  # noqa: E402
 from backend.config import Settings  # noqa: E402
+
+_ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
+
+
+def _migrate(database_url: str) -> None:
+    """Run the Alembic chain to ``head`` against ``database_url`` (the M22 job/upload tables)."""
+    config = Config(str(_ALEMBIC_INI))
+    config.cmd_opts = type("_Opts", (), {"x": [f"db_url={database_url}"]})()  # get_x_argument
+    command.upgrade(config, "head")
 
 
 @pytest.fixture
@@ -47,6 +58,9 @@ def client(settings: Settings) -> Iterator[TestClient]:
     Entered as a context manager so the app's lifespan runs — startup and, on teardown, the
     shutdown that disposes the engine's pool (no SQLite connections leaked between tests).
     """
+    # Migrate the isolated temp database before the app opens it, so the M22 job/upload endpoints
+    # have their tables (the stateless M21 endpoints did not need any).
+    _migrate(settings.database_url)
     # raise_server_exceptions=False so the 500-path test exercises the real envelope handler
     # instead of re-raising into the test process.
     with TestClient(create_app(settings), raise_server_exceptions=False) as client:

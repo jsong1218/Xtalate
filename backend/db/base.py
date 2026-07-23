@@ -21,6 +21,20 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def as_utc(value: datetime | None) -> datetime | None:
+    """Normalize a stored timestamp to tz-aware UTC (``None`` stays ``None``).
+
+    SQLite (Tier 0) has no native timezone type, so it returns ``DateTime(timezone=True)`` columns
+    as **naive** datetimes; PostgreSQL (Tier 1) returns them aware. Comparing a naive value against
+    :func:`utcnow` (aware) raises ``TypeError``, so any code comparing a persisted timestamp runs it
+    through here first — treating a naive value as the UTC it was written as. One helper, so the two
+    backends behave identically at every ``expires_at`` comparison.
+    """
+    if value is None:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
 #: Report/request/error bodies are stored verbatim as JSON (Part 6 preamble — the pydantic report
 #: models *are* the wire format, no parallel DTO). JSONB on PostgreSQL, JSON on SQLite. Imported by
 #: the initial migration too, so model and migration agree on the column type by construction.

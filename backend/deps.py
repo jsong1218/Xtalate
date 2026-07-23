@@ -9,16 +9,41 @@ reaches around the factory to find.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import Request
 
 from backend.config import Settings
 from xtalate.capabilities import Registry
+
+if TYPE_CHECKING:
+    from backend.db import Repository
+    from backend.jobs.queue import JobQueue
+    from backend.storage import ObjectStore
 
 
 def get_settings(request: Request) -> Settings:
     """The app's :class:`Settings` snapshot (built by the factory, shared across requests)."""
     settings: Settings = request.app.state.settings
     return settings
+
+
+def get_repository(request: Request) -> Repository:
+    """The app's :class:`~backend.db.Repository` — the one door into the relational store."""
+    repository: Repository = request.app.state.repository
+    return repository
+
+
+def get_object_store(request: Request) -> ObjectStore:
+    """The app's :class:`~backend.storage.ObjectStore` — uploaded input + converted output bytes."""
+    object_store: ObjectStore = request.app.state.object_store
+    return object_store
+
+
+def get_job_queue(request: Request) -> JobQueue:
+    """The app's :class:`~backend.jobs.queue.JobQueue` — inline (Tier 0) or RQ (Tier 1)."""
+    job_queue: JobQueue = request.app.state.job_queue
+    return job_queue
 
 
 def get_registry(request: Request) -> Registry:

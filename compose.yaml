@@ -10,7 +10,22 @@
 # environment (or an untracked .env, which `docker compose` loads automatically) for anything real;
 # `${VAR:-default}` interpolation means the environment always wins. See `.env.example`.
 #
-# This is the M21 "first shape"; compose polish (profiles, resource hints) is the M25 cut line.
+# This is the M21 "first shape" (M22 adds the worker); compose polish (profiles, resource hints) is
+# the M25 cut line.
+
+# Shared service configuration for the two processes on the one image — API and worker — so they
+# never drift on which database/store/queue they use (Part 9 §2, one artifact, no skew).
+x-backend-env: &backend-env
+  XTALATE_ENVIRONMENT: tier1
+  XTALATE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-xtalate}:${POSTGRES_PASSWORD:-xtalate}@postgres:5432/${POSTGRES_DB:-xtalate}
+  XTALATE_OBJECT_STORE_BACKEND: s3
+  XTALATE_OBJECT_STORE_ENDPOINT: http://minio:9000
+  XTALATE_OBJECT_STORE_BUCKET: ${XTALATE_OBJECT_STORE_BUCKET:-xtalate}
+  XTALATE_OBJECT_STORE_ACCESS_KEY: ${MINIO_ROOT_USER:-xtalate}
+  XTALATE_OBJECT_STORE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-xtalate-local-dev}
+  XTALATE_REDIS_URL: redis://queue:6379/0
+  # Tier 1 uses the RQ queue: the backend enqueues, the worker executes (M22).
+  XTALATE_QUEUE_BACKEND: rq
 
 services:
   postgres:
@@ -92,16 +107,31 @@ services:
       queue:
         condition: service_healthy
     environment:
-      XTALATE_ENVIRONMENT: tier1
-      XTALATE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-xtalate}:${POSTGRES_PASSWORD:-xtalate}@postgres:5432/${POSTGRES_DB:-xtalate}
-      XTALATE_OBJECT_STORE_BACKEND: s3
-      XTALATE_OBJECT_STORE_ENDPOINT: http://minio:9000
-      XTALATE_OBJECT_STORE_BUCKET: ${XTALATE_OBJECT_STORE_BUCKET:-xtalate}
-      XTALATE_OBJECT_STORE_ACCESS_KEY: ${MINIO_ROOT_USER:-xtalate}
-      XTALATE_OBJECT_STORE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-xtalate-local-dev}
-      XTALATE_REDIS_URL: redis://queue:6379/0
+      <<: *backend-env
     ports:
       - "${XTALATE_PORT:-8000}:8000"
+
+  # The RQ worker (M22): the same image, the second entrypoint (Part 9 §2). It executes the jobs the
+  # backend enqueues onto Redis. Migrations are the backend's job (its CMD runs `alembic upgrade
+  # head`), so the worker only waits for the queue and runs.
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "backend.worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      queue:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    environment:
+      <<: *backend-env
 
 volumes:
   pgdata:

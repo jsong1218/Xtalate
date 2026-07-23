@@ -70,6 +70,63 @@ class Repository:
         with self._session_factory() as session:
             return session.get(Job, job_id)
 
+    def find_job_by_idempotency_key(self, idempotency_key: str) -> Job | None:
+        """The existing job for an idempotency key, or ``None`` (Part 6 §2 idempotent inspect).
+
+        ``POST /v1/inspect`` computes the key from ``(file_id, format_override, registry version)``
+        and, on a hit, returns this job's envelope rather than enqueueing duplicate work.
+        """
+        with self._session_factory() as session:
+            stmt = select(Job).where(Job.idempotency_key == idempotency_key)
+            return session.scalars(stmt).one_or_none()
+
+    def transition_job(
+        self,
+        job_id: str,
+        target: str,
+        *,
+        started_at: datetime | None = None,
+        finished_at: datetime | None = None,
+        error: dict[str, object] | None = None,
+        progress: dict[str, object] | None = None,
+    ) -> Job | None:
+        """Move a job to ``target`` through the state machine, persisting the edge (Part 6 §3.2).
+
+        The transition is validated by :func:`~backend.jobs.state_machine.assert_transition` before
+        anything is written, so an illegal edge raises :class:`InvalidTransition` and the row stays
+        exactly as it was — there is no path to a corrupt persisted state. ``updated_at`` is always
+        stamped; the optional timestamps/error/progress are set when given. Returns the updated job,
+        or ``None`` if it does not exist.
+        """
+        from backend.jobs.state_machine import assert_transition
+
+        with self._session_factory.begin() as session:
+            job = session.get(Job, job_id)
+            if job is None:
+                return None
+            assert_transition(job.state, target)
+            job.state = target
+            job.updated_at = utcnow()
+            if started_at is not None:
+                job.started_at = started_at
+            if finished_at is not None:
+                job.finished_at = finished_at
+            if error is not None:
+                job.error = error
+            if progress is not None:
+                job.progress = progress
+            return job
+
+    def set_job_progress(self, job_id: str, progress: dict[str, object]) -> Job | None:
+        """Update a running job's ``progress`` without a state change (phase-boundary stamps)."""
+        with self._session_factory.begin() as session:
+            job = session.get(Job, job_id)
+            if job is None:
+                return None
+            job.progress = progress
+            job.updated_at = utcnow()
+            return job
+
     def set_job_state(
         self,
         job_id: str,

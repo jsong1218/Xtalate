@@ -8,7 +8,7 @@ interface, verified by a parity suite — Part 9 §1.1.
 
 from __future__ import annotations
 
-from backend.db.base import Base, utcnow
+from backend.db.base import Base, as_utc, utcnow
 from backend.db.engine import build_engine, build_sessionmaker
 from backend.db.models import Conversion, Job, Report, Upload
 from backend.db.repository import Repository
@@ -20,6 +20,7 @@ __all__ = [
     "Report",
     "Repository",
     "Upload",
+    "as_utc",
     "build_engine",
     "build_sessionmaker",
     "utcnow",
