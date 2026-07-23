@@ -140,6 +140,73 @@ class LimitsResponse(BaseModel):
     report_retention_days: int | None
 
 
+class DownloadInfo(BaseModel):
+    """The ``download`` object on a conversion record (Part 6 §4.4).
+
+    ``available`` goes false once the output bytes pass their lifecycle window — the record and its
+    reports remain retrievable, so a stale link renders as "expired", not "not found" (reports-
+    outlive-bytes). ``requires_ack`` mirrors the download endpoint's failed-validation gate, so a UI
+    can pre-warn before the ``409``. ``size_bytes``/``expires_at`` are ``None`` once unavailable.
+    """
+
+    available: bool
+    requires_ack: bool
+    filename: str
+    size_bytes: int | None = None
+    expires_at: str | None = None
+
+
+class ConversionRecordResponse(BaseModel):
+    """``GET /v1/conversions/{conversion_id}`` — the durable record, both reports verbatim (§4.4).
+
+    Served from persisted rows alone, so it resolves after the output (or input) bytes have expired:
+    the reports embed exactly what the library produced (no DTO reshaping), and ``download`` tells
+    the client whether the bytes are still fetchable. ``validation_report`` is ``None`` for a
+    refused conversion (no output ⇒ no validation) or while validation is still running.
+    """
+
+    conversion_id: str
+    created_at: str
+    source: dict[str, Any]
+    target: dict[str, Any]
+    conversion_report: dict[str, Any]
+    validation_report: dict[str, Any] | None = None
+    download: DownloadInfo
+
+
+class HistoryItem(BaseModel):
+    """One ``items[]`` entry from ``GET /v1/history`` (Part 6 §4.4).
+
+    A compact projection for the list view: source/target formats + filenames (the report's source
+    minus hashes), the two statuses, and the ``summary_counts`` chips
+    (``{preserved, removed, assumptions, warnings}``, counted from the conversion report — the
+    counts the v0.6 UI renders per ``07 §4``). ``file_id`` is present only while the source upload
+    is still live, which is what lets a UI offer a re-convert without a fresh upload (``07 §2.6``).
+    """
+
+    conversion_id: str
+    created_at: str
+    source: dict[str, Any]
+    target: dict[str, Any]
+    conversion_status: str | None
+    validation_status: str | None = None
+    summary_counts: dict[str, int]
+    file_id: str | None = None
+
+
+class HistoryResponse(BaseModel):
+    """``GET /v1/history`` — a page of :class:`HistoryItem` plus the opaque next-page cursor.
+
+    ``next_cursor`` is ``None`` on the last page; otherwise it is passed back as ``?cursor=`` to
+    fetch the following page. Pagination is keyset over ``(created_at, conversion_id)`` descending
+    (newest first), so a record added between page fetches never shifts or duplicates an item the
+    way an offset would — the cursor names a fixed point in the ordering, not a position count.
+    """
+
+    items: list[HistoryItem]
+    next_cursor: str | None = None
+
+
 class ReadinessCheck(BaseModel):
     """One dependency's readiness result, reported by ``GET /v1/health?ready=true``."""
 

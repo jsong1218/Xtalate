@@ -23,7 +23,15 @@ from backend.errors import install_error_handlers
 from backend.jobs.queue import create_job_queue
 from backend.jobs.runner import execute_job
 from backend.readiness import ReadinessProbe, database_probe, object_store_probe
-from backend.routers import capabilities, downloads, health, jobs, limits, uploads
+from backend.routers import (
+    capabilities,
+    conversions,
+    downloads,
+    health,
+    jobs,
+    limits,
+    uploads,
+)
 from backend.storage import create_object_store
 from xtalate.registry import default_registry
 
@@ -126,6 +134,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(uploads.router, prefix="/v1")
     app.include_router(jobs.router, prefix="/v1")
     app.include_router(downloads.router, prefix="/v1")
+    app.include_router(conversions.router, prefix="/v1")
 
     return app
 

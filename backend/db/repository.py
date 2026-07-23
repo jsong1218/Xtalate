@@ -11,13 +11,14 @@ M22–M24 on this same class.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.config import Settings
+from backend.db.base import as_utc
 from backend.db.engine import build_engine, build_sessionmaker, utcnow
 from backend.db.models import Conversion, Job, Report, Upload
 
@@ -43,6 +44,27 @@ class Repository:
     def get_upload(self, file_id: str) -> Upload | None:
         with self._session_factory() as session:
             return session.get(Upload, file_id)
+
+    def live_upload_ids(self, file_ids: Iterable[str]) -> set[str]:
+        """The subset of ``file_ids`` whose upload row still holds unexpired, undeleted bytes.
+
+        Drives ``HistoryItem.file_id`` — present only while a re-convert is still possible (Part 6
+        §4.4). One query per history page, with the tz-correct expiry test applied in Python (via
+        :func:`~backend.db.as_utc`) rather than a tz-sensitive SQL predicate — the same lazy-expiry
+        convention the rest of the service uses.
+        """
+        ids = {f for f in file_ids if f}
+        if not ids:
+            return set()
+        with self._session_factory() as session:
+            uploads = session.scalars(select(Upload).where(Upload.file_id.in_(ids)))
+            now = utcnow()
+            live: set[str] = set()
+            for upload in uploads:
+                expires_at = as_utc(upload.expires_at)
+                if not upload.bytes_deleted and (expires_at is None or expires_at >= now):
+                    live.add(upload.file_id)
+            return live
 
     def mark_upload_bytes_deleted(self, file_id: str) -> None:
         """Record that the byte sweep removed the object, without deleting the row."""
@@ -206,6 +228,50 @@ class Repository:
     def get_conversion(self, conversion_id: str) -> Conversion | None:
         with self._session_factory() as session:
             return session.get(Conversion, conversion_id)
+
+    def list_conversions(
+        self, *, limit: int, before: tuple[datetime, str] | None = None
+    ) -> Sequence[Conversion]:
+        """A page of conversions, newest first, for ``GET /v1/history`` (Part 6 §4.4).
+
+        Keyset pagination over ``(created_at, conversion_id)`` descending: ``before`` is the last
+        item of the previous page, and the predicate is written out as an explicit ``OR`` (rather
+        than a row-value tuple comparison) so it runs identically on SQLite and PostgreSQL. A record
+        inserted between page fetches cannot shift or duplicate an item — the cursor names a fixed
+        point in the ordering, not an offset.
+        """
+        with self._session_factory() as session:
+            stmt = select(Conversion).order_by(
+                Conversion.created_at.desc(), Conversion.conversion_id.desc()
+            )
+            if before is not None:
+                created_at, conversion_id = before
+                stmt = stmt.where(
+                    or_(
+                        Conversion.created_at < created_at,
+                        and_(
+                            Conversion.created_at == created_at,
+                            Conversion.conversion_id < conversion_id,
+                        ),
+                    )
+                )
+            return list(session.scalars(stmt.limit(limit)))
+
+    def get_conversion_reports(self, conversion_ids: Sequence[str]) -> dict[str, Report]:
+        """The ``conversion``-kind Report for each id, keyed by conversion id (history summaries).
+
+        One query for a whole history page (rather than N per-conversion reads); a conversion whose
+        report is somehow absent simply does not appear in the map, and the caller falls back to the
+        record's denormalized fields.
+        """
+        ids = list(conversion_ids)
+        if not ids:
+            return {}
+        with self._session_factory() as session:
+            stmt = select(Report).where(Report.conversion_id.in_(ids), Report.kind == "conversion")
+            return {
+                r.conversion_id: r for r in session.scalars(stmt) if r.conversion_id is not None
+            }
 
     def clear_output_bytes(self, conversion_id: str) -> Conversion | None:
         """Byte expiry of the *output*: drop the storage key and mark it unavailable, keeping the

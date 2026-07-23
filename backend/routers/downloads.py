@@ -28,21 +28,17 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from contextlib import AbstractContextManager
-from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 
-from backend.db import Repository, as_utc, utcnow
+from backend.db import Repository
 from backend.deps import get_object_store, get_repository
 from backend.errors import ApiError
-from backend.jobs.runner import _default_output_name
+from backend.records import download_filename, output_bytes_expired
 from backend.storage import ObjectStore
 from backend.storage.objects import ObjectNotFound
-
-if TYPE_CHECKING:
-    from backend.db.models import Conversion
 
 router = APIRouter()
 
@@ -69,7 +65,7 @@ def download(
             message=f"No conversion {conversion_id!r}.",
         )
 
-    if _output_expired(conversion):
+    if output_bytes_expired(conversion):
         raise _output_expired_error(conversion_id)
 
     # The failed-validation gate (Part 5 §2): an output the service could not verify is downloadable
@@ -88,7 +84,7 @@ def download(
         )
 
     key = conversion.output_storage_key
-    if key is None:  # pragma: no cover - _output_expired already covers a null key.
+    if key is None:  # pragma: no cover - output_bytes_expired already covers a null key.
         raise _output_expired_error(conversion_id)
 
     # Enter the store's context manager eagerly so a missing object becomes a 410 *before* any
@@ -100,26 +96,12 @@ def download(
     except ObjectNotFound as exc:
         raise _output_expired_error(conversion_id) from exc
 
-    filename = _download_filename(conversion, repository)
+    filename = download_filename(conversion, repository)
     return StreamingResponse(
         _drain(manager, chunks),
         media_type="application/octet-stream",
         headers={"Content-Disposition": _content_disposition(filename)},
     )
-
-
-def _output_expired(conversion: Conversion) -> bool:
-    """Whether a conversion's downloadable bytes are gone (the ``410`` condition).
-
-    True when the record marks the output unavailable or keyless, or its ``output_expires_at``
-    horizon has passed — the lazy, storage-agnostic check that holds on both tiers (Tier 0 has no
-    bucket lifecycle at all; Tier 1's record clock agrees with the bucket rule even before the flag
-    is ever touched). A live object that is nonetheless absent is caught separately at ``open``.
-    """
-    if not conversion.output_available or conversion.output_storage_key is None:
-        return True
-    expires_at = as_utc(conversion.output_expires_at)
-    return expires_at is not None and expires_at < utcnow()
 
 
 def _output_expired_error(conversion_id: str) -> ApiError:
@@ -141,20 +123,6 @@ def _drain(
         yield from chunks
     finally:
         manager.__exit__(None, None, None)
-
-
-def _download_filename(conversion: Conversion, repository: Repository) -> str:
-    """The filename to offer — the request's ``output_filename`` if any, else the format default.
-
-    Matches the ``download.filename`` the job result advertised (``backend.jobs.result``), so the
-    downloaded file carries the name the client was told to expect. The custom name lives on the
-    originating job's request options, not the conversion record, so the job is read to recover it.
-    """
-    job = repository.get_job(conversion.job_id)
-    request = job.request if job is not None and isinstance(job.request, dict) else {}
-    options = request.get("options") or {}
-    custom = options.get("output_filename") if isinstance(options, dict) else None
-    return custom or _default_output_name(conversion.target_format)
 
 
 def _content_disposition(filename: str) -> str:
