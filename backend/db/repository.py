@@ -89,14 +89,20 @@ class Repository:
         finished_at: datetime | None = None,
         error: dict[str, object] | None = None,
         progress: dict[str, object] | None = None,
+        expires_at: datetime | None = None,
+        recovery: dict[str, object] | None = None,
+        clear_recovery: bool = False,
     ) -> Job | None:
         """Move a job to ``target`` through the state machine, persisting the edge (Part 6 §3.2).
 
         The transition is validated by :func:`~backend.jobs.state_machine.assert_transition` before
         anything is written, so an illegal edge raises :class:`InvalidTransition` and the row stays
         exactly as it was — there is no path to a corrupt persisted state. ``updated_at`` is always
-        stamped; the optional timestamps/error/progress are set when given. Returns the updated job,
-        or ``None`` if it does not exist.
+        stamped; the optional timestamps/error/progress are set when given. ``expires_at`` and
+        ``recovery`` are the M23 pause fields (``running → awaiting_recovery`` stamps a TTL horizon
+        and the ``awaiting_recovery`` block); ``clear_recovery`` drops that block when a paused job
+        leaves the state (resume/expiry/cancel), so it never lingers on a job no longer paused.
+        Returns the updated job, or ``None`` if it does not exist.
         """
         from backend.jobs.state_machine import assert_transition
 
@@ -115,6 +121,12 @@ class Repository:
                 job.error = error
             if progress is not None:
                 job.progress = progress
+            if expires_at is not None:
+                job.expires_at = expires_at
+            if recovery is not None:
+                job.recovery = recovery
+            if clear_recovery:
+                job.recovery = None
             return job
 
     def set_job_progress(self, job_id: str, progress: dict[str, object]) -> Job | None:

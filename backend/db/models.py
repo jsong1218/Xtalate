@@ -96,6 +96,12 @@ class Job(Base):
     #: Coarse progress the worker stamps at each pipeline-stage boundary (Part 6 §3.2 envelope
     #: ``progress``); ``None`` before the job starts. The M22 worker sets ``{phase, frames_*}``.
     progress: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    #: The ``awaiting_recovery`` block a paused convert job carries (Part 6 §3.2, M23): the
+    #: pre-flight draft report and the **computed** option lists (with ``parameters_schema`` hints)
+    #: the future UI renders its recovery prompt from — persisted verbatim so a poll serves it back,
+    #: and the resume endpoint validates a client's choices against exactly the offered options. Set
+    #: only while ``state == "awaiting_recovery"``; ``None`` otherwise.
+    recovery: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, default=utcnow
     )

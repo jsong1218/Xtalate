@@ -123,6 +123,101 @@ def test_convert_refusal_is_a_completed_job_at_200(client: TestClient) -> None:
     assert env["result"]["download"]["available"] is False
 
 
+# --- interactive recovery: the pause (M23 slice 1) ----------------------------------------------
+
+
+def test_convert_without_allow_recovery_still_refuses(client: TestClient) -> None:
+    # The M22 contract is unchanged when interactive recovery is not opted into: an unresolved
+    # scenario is a *completed* refused job, never a pause the client must poll (Appendix A / CLI).
+    file_id = _upload(client, XYZ_SAMPLE, "mol.xyz")
+    env = client.post("/v1/convert", json={"file_id": file_id, "target_format_id": "poscar"}).json()
+    assert env["state"] == "completed"
+    assert env["result"]["conversion_report"]["status"] == "refused"
+    assert env["awaiting_recovery"] is None
+
+
+def test_convert_allow_recovery_pauses_to_awaiting_recovery(client: TestClient) -> None:
+    # XYZ → POSCAR needs a lattice the source lacks; with allow_recovery the job *pauses* and asks,
+    # instead of refusing (Part 6 §3.2). The block carries the pre-flight draft and the computed
+    # option lists the future UI renders from.
+    file_id = _upload(client, XYZ_SAMPLE, "mol.xyz")
+    resp = client.post(
+        "/v1/convert",
+        json={
+            "file_id": file_id,
+            "target_format_id": "poscar",
+            "options": {"allow_recovery": True},
+        },
+    )
+    assert resp.status_code == 202, resp.text
+    env = resp.json()
+    assert env["state"] == "awaiting_recovery"
+    assert env["result"] is None
+    assert env["error"] is None
+    assert env["progress"]["phase"] == "recovery"
+    assert env["expires_at"] is not None  # a TTL horizon is stamped on the pause
+
+    block = env["awaiting_recovery"]
+    assert block is not None
+    draft = block["draft_report"]
+    assert draft["stage"] == "preflight"
+    assert draft["status"] == "awaiting_recovery"
+
+    scenarios = {s["scenario"]: s for s in block["unresolved_scenarios"]}
+    assert "missing_lattice" in scenarios
+    codes = [o["choice"] for o in scenarios["missing_lattice"]["options"]]
+    # The option list is computed, honest, pair-specific: POSCAR is periodic-only, so `non_periodic`
+    # is absent — never offered then refused (Part 4 §3.3, P5).
+    assert "non_periodic" not in codes
+    assert {"manual_input", "bounding_box", "upload_reference"} <= set(codes)
+    # Choices that take parameters advertise the keys the Recovery Engine consumes.
+    by_choice = {o["choice"]: o for o in scenarios["missing_lattice"]["options"]}
+    assert "padding_ang" in by_choice["bounding_box"]["parameters_schema"]
+    assert "lattice" in by_choice["manual_input"]["parameters_schema"]
+
+
+def test_paused_job_is_served_back_verbatim_on_poll(client: TestClient) -> None:
+    file_id = _upload(client, XYZ_SAMPLE, "mol.xyz")
+    submitted = client.post(
+        "/v1/convert",
+        json={
+            "file_id": file_id,
+            "target_format_id": "poscar",
+            "options": {"allow_recovery": True},
+        },
+    ).json()
+    job_id = submitted["job_id"]
+    polled = client.get(f"/v1/jobs/{job_id}").json()
+    assert polled["state"] == "awaiting_recovery"
+    # The persisted block is served back on every poll, unchanged (the UI polls, then decides).
+    assert polled["awaiting_recovery"] == submitted["awaiting_recovery"]
+
+
+def test_convert_with_partial_preset_pauses_for_the_rest(client: TestClient) -> None:
+    # A single-frame XYZ → POSCAR needs only the lattice, so a complete preset *completes* — even
+    # with allow_recovery set. The interactive contract: a preset that fully resolves never pauses.
+    file_id = _upload(client, XYZ_SAMPLE, "mol.xyz")
+    env = client.post(
+        "/v1/convert",
+        json={
+            "file_id": file_id,
+            "target_format_id": "poscar",
+            "options": {
+                "allow_recovery": True,
+                "recovery_choices": {
+                    "missing_lattice": {
+                        "choice": "bounding_box",
+                        "parameters": {"padding_ang": 5.0},
+                    }
+                },
+            },
+        },
+    ).json()
+    assert env["state"] == "completed"
+    assert env["awaiting_recovery"] is None
+    assert env["result"]["conversion_report"]["status"] == "completed"
+
+
 def test_convert_with_loss_reports_removed_fields(client: TestClient) -> None:
     file_id = _upload(client, POSCAR_SAMPLE, "POSCAR")
     env = client.post("/v1/convert", json={"file_id": file_id, "target_format_id": "xyz"}).json()

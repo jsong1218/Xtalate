@@ -169,6 +169,7 @@ class ConversionEngine:
         target_filename: str | None = None,
         mode: str = "permissive",
         recovery_choices: dict[str, dict[str, Any]] | None = None,
+        recovery_origin: str = "preset",
         parse_issues: list[ParseIssue] | None = None,
         parse_recovery: ParseRecovery | None = None,
         acknowledge_loss: bool = False,
@@ -179,7 +180,12 @@ class ConversionEngine:
 
         ``parse_recovery`` carries any *parse-time* recovery (``missing_species``,
         ``truncate_corrupt_tail``) the caller already applied via ``parse_with_recovery`` — its
-        Assumptions are merged ahead of pre-flight recovery and land in the report identically."""
+        Assumptions are merged ahead of pre-flight recovery and land in the report identically.
+
+        ``recovery_origin`` labels the applied Assumptions' ``origin`` (Part 4 §2): ``"preset"`` for
+        choices a caller supplied up front (the CLI, a pipeline), ``"user"`` for choices answered
+        interactively through the ``awaiting_recovery`` pause (Part 6 §3.2, M23). It is a pure label
+        on the record — it changes no recovery behaviour."""
         recovery_choices = recovery_choices or {}
         parse_issues = list(parse_issues or [])
         if parse_recovery is not None:
@@ -207,7 +213,9 @@ class ConversionEngine:
         recovered = source
         recovery_applied: list[AppliedAssumption] = []
         if all_scenarios:
-            outcome = self._recovery.resolve(source, all_scenarios, recovery_choices)
+            outcome = self._recovery.resolve(
+                source, all_scenarios, recovery_choices, origin=recovery_origin
+            )
             if outcome.canonical is None:
                 # Refusal after a successful parse-time recovery still carries that recovery's
                 # Assumptions/supplied so the refused report is complete (Part 4 §2, §3.3).

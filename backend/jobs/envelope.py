@@ -62,6 +62,11 @@ class JobEnvelope(BaseModel):
     finished_at: str | None = None
     expires_at: str | None = None
     progress: JobProgress = Field(default_factory=JobProgress)
+    #: The interactive-recovery block for a job paused in ``awaiting_recovery`` (Part 6 §3.2, M23):
+    #: ``{draft_report, unresolved_scenarios: [{scenario, path, detail, options: [{choice,
+    #: parameters_schema?}]}]}``. ``None`` in every other state. The future UI renders its recovery
+    #: prompt from this block alone, so its completeness is the M23 pause deliverable.
+    awaiting_recovery: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
 
@@ -71,6 +76,8 @@ class JobEnvelope(BaseModel):
 
         ``result`` is assembled by the caller (runner/router) from the job's stored reports, because
         it is kind-specific and embeds verbatim report bodies the envelope model does not model.
+        The ``awaiting_recovery`` block is the persisted ``job.recovery`` column, served back
+        verbatim while paused (it is set only on that edge and cleared when the job leaves it).
         """
         progress = JobProgress.model_validate(job.progress) if job.progress else JobProgress()
         return cls(
@@ -83,6 +90,7 @@ class JobEnvelope(BaseModel):
             finished_at=_iso(job.finished_at),
             expires_at=_iso(job.expires_at),
             progress=progress,
+            awaiting_recovery=job.recovery,
             result=result,
             error=job.error,
         )

@@ -21,10 +21,12 @@ in the separate worker process, where it rebuilds the adapters from the environm
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from backend.db import as_utc, utcnow
 from backend.jobs.logging import log_event
+from backend.jobs.recovery import RecoveryPause
 from backend.models import ErrorBody
 
 if TYPE_CHECKING:
@@ -107,6 +109,20 @@ def execute_job(
 
     try:
         _dispatch(job, upload, repository, object_store, registry, settings)
+    except RecoveryPause as pause:
+        # Interactive recovery (Part 6 §3.2): the convert needs a choice the client did not preset
+        # and asked to answer interactively — pause, don't refuse. Persist the awaiting_recovery
+        # block and a TTL horizon (capped by the input's own expiry so a paused job never outlives
+        # the bytes it needs to resume, Revision 1.4). Expiry-to-refusal enforcement is M23 slice 3.
+        repository.transition_job(
+            job_id,
+            "awaiting_recovery",
+            progress={"phase": "recovery"},
+            recovery=pause.block,
+            expires_at=_awaiting_recovery_deadline(upload, settings),
+        )
+        log_event("job.awaiting_recovery", job_id=job_id, kind=job.kind, request_id=request_id)
+        return
     except Exception as exc:  # noqa: BLE001 - every in-run fault becomes a failed job, not a 500.
         body = _failure_body(exc, settings, request_id)
         repository.transition_job(job_id, "failed", finished_at=utcnow(), error=body)
@@ -247,21 +263,34 @@ def _run_convert(
 ) -> None:
     """Full conversion — the ``xtalate convert`` path (Part 4): parse (with preset recovery) →
     convert → automatic validation → persist. Reports are stored verbatim; the output bytes go to
-    object storage under the new ``conversion_id`` (the record outlives them, M24)."""
+    object storage under the new ``conversion_id`` (the record outlives them, M24).
+
+    When the request set ``allow_recovery`` and the conversion refused because a recovery choice
+    was not supplied (``RECOVERY_REQUIRED``), this **pauses** instead of persisting the refusal —
+    raising :class:`~backend.jobs.recovery.RecoveryPause` for the runner to turn into a ``running →
+    awaiting_recovery`` transition (Part 6 §3.2, M23). Every other refusal (a strict-mode
+    acknowledgement gate, or the preset-only default when ``allow_recovery`` is unset) is a
+    completed refused job exactly as in M22 — the pause is reachable only when the client asked."""
     from backend.db.models import Conversion, Report
+    from backend.jobs.recovery import build_awaiting_block
     from xtalate.conversion import ConversionEngine, parse_with_recovery
 
     request = job.request
     target_format_id = request["target_format_id"]
     options = request.get("options") or {}
     recovery_choices = options.get("recovery_choices") or {}
+    allow_recovery = bool(options.get("allow_recovery", False))
+    # Resume merges the user's answers into the request and marks them (M23 slice 2); the flag is
+    # absent on the initial submit, so preset choices stay ``origin: "preset"``.
+    recovery_origin = "user" if request.get("recovery_resumed") else "preset"
 
     data = _read_bytes(object_store, upload.storage_key)
     parsed = parse_with_recovery(
         registry, data, filename=upload.filename, recovery_choices=recovery_choices
     )
     repository.set_job_progress(job.job_id, {"phase": "converting"})
-    result = ConversionEngine(registry).convert(
+    engine = ConversionEngine(registry)
+    result = engine.convert(
         parsed.canonical,
         source_format_id=parsed.format_id,
         target_format_id=target_format_id,
@@ -269,11 +298,37 @@ def _run_convert(
         target_filename=options.get("output_filename"),
         mode=options.get("mode", "permissive"),
         recovery_choices=recovery_choices,
+        recovery_origin=recovery_origin,
         parse_recovery=parsed,
         acknowledge_loss=options.get("acknowledge_loss", False),
         acknowledge_parse_warnings=options.get("acknowledge_parse_warnings", False),
         tolerance_profile=options.get("tolerance_profile", "default"),
     )
+
+    # Interactive recovery (Part 6 §3.2): a needed-but-unsupplied choice pauses rather than refuses,
+    # but only when the client opted in. The draft is the pre-flight preview; the option lists come
+    # from the trial convert's refusal (the authoritative, pair-specific computed set).
+    refusal = result.report.refusal  # a plain dict body (Part 4 §4), or None when not refused.
+    if (
+        allow_recovery
+        and result.report.status == "refused"
+        and isinstance(refusal, dict)
+        and refusal.get("code") == "RECOVERY_REQUIRED"
+    ):
+        draft = engine.preflight(
+            parsed.canonical,
+            source_format_id=parsed.format_id,
+            target_format_id=target_format_id,
+            source_filename=upload.filename,
+            target_filename=options.get("output_filename"),
+            mode=options.get("mode", "permissive"),
+        )
+        raise RecoveryPause(
+            build_awaiting_block(
+                draft_report=draft.model_dump(mode="json"),
+                refusal=refusal,
+            )
+        )
 
     conversion_id = _new_id("cnv")
 
@@ -333,6 +388,20 @@ def _default_output_name(format_id: str) -> str:
     if format_id in ("poscar", "contcar"):
         return "POSCAR" if format_id == "poscar" else "CONTCAR"
     return f"output.{format_id}"
+
+
+def _awaiting_recovery_deadline(upload: Any, settings: Settings) -> datetime:
+    """When a paused job expires (Part 6 §5, Revision 1.4): ``now + ttl``, **capped by the input's**
+    own ``expires_at`` so a paused job can never outlive the persisted bytes it needs to resume.
+
+    A paused convert re-reads and re-parses its upload on resume, so once the input bytes are gone
+    the pause is unresolvable — expiring no later than the input keeps the ``awaiting_recovery →
+    running`` edge always honourable, and expiring *to a refusal* (slice 3) keeps the line whole."""
+    deadline = utcnow() + timedelta(minutes=settings.awaiting_recovery_ttl_minutes)
+    upload_expiry = as_utc(getattr(upload, "expires_at", None))
+    if upload_expiry is not None and upload_expiry < deadline:
+        return upload_expiry
+    return deadline
 
 
 def _new_id(prefix: str) -> str:

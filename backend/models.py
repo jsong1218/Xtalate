@@ -70,8 +70,16 @@ class ConvertOptions(BaseModel):
 
     mode: str = "permissive"
     #: Preset recovery choices keyed by scenario code; each ``{choice, parameters}`` (Part 4 §3.3).
-    #: They land in the report as ``origin: "preset"``. Interactive (paused) recovery is M23.
+    #: They land in the report as ``origin: "preset"``.
     recovery_choices: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    #: Opt into **interactive** recovery (Part 6 §3.2, M23): when set, a conversion whose recovery
+    #: scenarios have no supplied preset **pauses** to ``awaiting_recovery`` (the client resumes via
+    #: ``POST /v1/jobs/{job_id}/recovery``) instead of refusing. Default ``False`` keeps the
+    #: preset-only contract a pipeline or the CLI relies on — an unresolved scenario is a completed
+    #: refused job at HTTP 200, never a pause it must poll (the CLI-refuses / API-pauses split of
+    #: the fabricative bright line, Appendix A vs. Part 6 §3.2). The pause is only ever reachable
+    #: when a client explicitly asks to answer the questions interactively.
+    allow_recovery: bool = False
     acknowledge_loss: bool = False
     acknowledge_parse_warnings: bool = False
     #: Named profile (``default``/``strict``/``loose``) or a custom tolerance table (Part 5 §4.4).
