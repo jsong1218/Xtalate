@@ -8,9 +8,9 @@ the toyfmt fixture's "skip when the dependency is absent" pattern.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -67,6 +67,30 @@ def client(settings: Settings) -> Iterator[TestClient]:
     # instead of re-raising into the test process.
     with TestClient(create_app(settings), raise_server_exceptions=False) as client:
         yield client
+
+
+@pytest.fixture
+def build_client(settings: Settings) -> Iterator[Callable[..., TestClient]]:
+    """A factory for a ``TestClient`` over an app built from ``settings`` with field overrides.
+
+    The M24 limits/auth surfaces need per-test configuration (a low rate limit, a small job cap,
+    a configured API key) without mutating the shared ``settings`` object. Each built client shares
+    the same isolated temp database (migrated once), so seeded rows are visible across them; every
+    client is entered as a context manager and torn down at the end of the test.
+    """
+    _migrate(settings.database_url)
+    built: list[TestClient] = []
+
+    def _build(**overrides: Any) -> TestClient:
+        cfg = settings.model_copy(update=overrides) if overrides else settings
+        client = TestClient(create_app(cfg), raise_server_exceptions=False)
+        client.__enter__()
+        built.append(client)
+        return client
+
+    yield _build
+    for client in built:
+        client.__exit__(None, None, None)
 
 
 @pytest.fixture

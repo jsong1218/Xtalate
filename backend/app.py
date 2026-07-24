@@ -14,7 +14,7 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from sqlalchemy import Engine
 
 from backend.config import Settings, get_settings
@@ -23,7 +23,17 @@ from backend.errors import install_error_handlers
 from backend.jobs.queue import create_job_queue
 from backend.jobs.runner import execute_job
 from backend.readiness import ReadinessProbe, database_probe, object_store_probe
-from backend.routers import capabilities, health, jobs, limits, uploads
+from backend.routers import (
+    accounts,
+    capabilities,
+    conversions,
+    downloads,
+    health,
+    jobs,
+    limits,
+    uploads,
+)
+from backend.security import RateLimiter, enforce_request_policy
 from backend.storage import create_object_store
 from xtalate.registry import default_registry
 
@@ -83,6 +93,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = engine
     app.state.repository = repository
     app.state.object_store = object_store
+    # The in-memory per-caller rate limiter (M24 slice 5), shared across requests. Per-process, so
+    # a multi-replica hosted instance swaps it for a shared (Redis) limiter behind the same seam.
+    app.state.rate_limiter = RateLimiter()
 
     # The job queue (M22): inline (Tier 0, runs jobs here) or RQ (Tier 1, hands them to the worker).
     # The inline backend's runner closes over the app's shared adapters, so a job it runs in-process
@@ -120,11 +133,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["X-Request-ID"] = request_id
         return response
 
+    # Health is unguarded — an orchestrator's liveness/readiness probe must not need a key or be
+    # rate-limited. Every other surface carries the request-policy dependency (auth + rate limit);
+    # the concurrent-job cap rides only on the submit endpoints (added inside the jobs router). The
+    # account surface is unguarded too, so it answers NOT_ENABLED rather than challenging for a key.
+    guarded = [Depends(enforce_request_policy)]
     app.include_router(health.router, prefix="/v1")
-    app.include_router(capabilities.router, prefix="/v1")
-    app.include_router(limits.router, prefix="/v1")
-    app.include_router(uploads.router, prefix="/v1")
-    app.include_router(jobs.router, prefix="/v1")
+    app.include_router(accounts.router, prefix="/v1")
+    app.include_router(capabilities.router, prefix="/v1", dependencies=guarded)
+    app.include_router(limits.router, prefix="/v1", dependencies=guarded)
+    app.include_router(uploads.router, prefix="/v1", dependencies=guarded)
+    app.include_router(jobs.router, prefix="/v1", dependencies=guarded)
+    app.include_router(downloads.router, prefix="/v1", dependencies=guarded)
+    app.include_router(conversions.router, prefix="/v1", dependencies=guarded)
 
     return app
 

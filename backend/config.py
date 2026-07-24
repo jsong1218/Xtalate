@@ -75,6 +75,20 @@ class Settings(BaseSettings):
     #: windows; Revision 1.5). ``None`` = indefinite, the self-hosted default posture.
     report_retention_days: int | None = 30
 
+    # --- auth (v0.5 scope: anonymous self-hosted mode + optional static keys; Part 6 §4) ---------
+    #: Optional static API key(s), comma-separated (``XTALATE_API_KEYS="k1,k2"``). **Empty = the
+    #: anonymous self-hosted default**: no key required, history is instance-wide (Part 6 §4). When
+    #: set, every ``/v1`` request (bar health) must carry ``Authorization: Bearer <key>`` with a
+    #: listed key or it is ``401 UNAUTHORIZED``. Account machinery (signup/login, per-user keys) is
+    #: hosted-instance work, deferred — ``/v1/auth/*`` and ``/v1/keys*`` are ``404 NOT_ENABLED``.
+    #: Supplied via the environment only, never committed (CLAUDE.md "Never commit secrets").
+    api_keys: str = ""
+
+    @property
+    def api_key_set(self) -> frozenset[str]:
+        """The configured static API keys as a set (empty = anonymous mode). Comma-separated env."""
+        return frozenset(k.strip() for k in self.api_keys.split(",") if k.strip())
+
     # --- database (v0.5 M21 slice 3) ------------------------------------------------------------
     #: SQLAlchemy URL. SQLite (Tier 0, no services) is the default; Tier 1 sets a PostgreSQL URL
     #: (``postgresql+psycopg://…``). One interface, two backends — Part 9 §1.1.

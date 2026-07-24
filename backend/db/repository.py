@@ -11,13 +11,14 @@ M22–M24 on this same class.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.config import Settings
+from backend.db.base import as_utc
 from backend.db.engine import build_engine, build_sessionmaker, utcnow
 from backend.db.models import Conversion, Job, Report, Upload
 
@@ -44,6 +45,27 @@ class Repository:
         with self._session_factory() as session:
             return session.get(Upload, file_id)
 
+    def live_upload_ids(self, file_ids: Iterable[str]) -> set[str]:
+        """The subset of ``file_ids`` whose upload row still holds unexpired, undeleted bytes.
+
+        Drives ``HistoryItem.file_id`` — present only while a re-convert is still possible (Part 6
+        §4.4). One query per history page, with the tz-correct expiry test applied in Python (via
+        :func:`~backend.db.as_utc`) rather than a tz-sensitive SQL predicate — the same lazy-expiry
+        convention the rest of the service uses.
+        """
+        ids = {f for f in file_ids if f}
+        if not ids:
+            return set()
+        with self._session_factory() as session:
+            uploads = session.scalars(select(Upload).where(Upload.file_id.in_(ids)))
+            now = utcnow()
+            live: set[str] = set()
+            for upload in uploads:
+                expires_at = as_utc(upload.expires_at)
+                if not upload.bytes_deleted and (expires_at is None or expires_at >= now):
+                    live.add(upload.file_id)
+            return live
+
     def mark_upload_bytes_deleted(self, file_id: str) -> None:
         """Record that the byte sweep removed the object, without deleting the row."""
         with self._session_factory.begin() as session:
@@ -69,6 +91,22 @@ class Repository:
     def get_job(self, job_id: str) -> Job | None:
         with self._session_factory() as session:
             return session.get(Job, job_id)
+
+    def count_active_jobs(self) -> int:
+        """The number of non-terminal jobs instance-wide — the concurrent-job cap's counter (§5).
+
+        Active = ``queued``/``running``/``awaiting_recovery`` (the states a job holds before it
+        reaches a terminal one). On an anonymous self-hosted instance the "caller's active jobs" is
+        the instance-wide count, because scoping *is* the instance boundary (Part 6 §4); a hosted
+        instance with per-key ownership narrows this the same way once jobs carry a principal.
+        """
+        with self._session_factory() as session:
+            stmt = (
+                select(func.count())
+                .select_from(Job)
+                .where(Job.state.in_(("queued", "running", "awaiting_recovery")))
+            )
+            return int(session.scalar(stmt) or 0)
 
     def find_job_by_idempotency_key(self, idempotency_key: str) -> Job | None:
         """The existing job for an idempotency key, or ``None`` (Part 6 §2 idempotent inspect).
@@ -206,6 +244,69 @@ class Repository:
     def get_conversion(self, conversion_id: str) -> Conversion | None:
         with self._session_factory() as session:
             return session.get(Conversion, conversion_id)
+
+    def list_conversions(
+        self, *, limit: int, before: tuple[datetime, str] | None = None
+    ) -> Sequence[Conversion]:
+        """A page of conversions, newest first, for ``GET /v1/history`` (Part 6 §4.4).
+
+        Keyset pagination over ``(created_at, conversion_id)`` descending: ``before`` is the last
+        item of the previous page, and the predicate is written out as an explicit ``OR`` (rather
+        than a row-value tuple comparison) so it runs identically on SQLite and PostgreSQL. A record
+        inserted between page fetches cannot shift or duplicate an item — the cursor names a fixed
+        point in the ordering, not an offset.
+        """
+        with self._session_factory() as session:
+            stmt = select(Conversion).order_by(
+                Conversion.created_at.desc(), Conversion.conversion_id.desc()
+            )
+            if before is not None:
+                created_at, conversion_id = before
+                stmt = stmt.where(
+                    or_(
+                        Conversion.created_at < created_at,
+                        and_(
+                            Conversion.created_at == created_at,
+                            Conversion.conversion_id < conversion_id,
+                        ),
+                    )
+                )
+            return list(session.scalars(stmt.limit(limit)))
+
+    def get_conversion_reports(self, conversion_ids: Sequence[str]) -> dict[str, Report]:
+        """The ``conversion``-kind Report for each id, keyed by conversion id (history summaries).
+
+        One query for a whole history page (rather than N per-conversion reads); a conversion whose
+        report is somehow absent simply does not appear in the map, and the caller falls back to the
+        record's denormalized fields.
+        """
+        ids = list(conversion_ids)
+        if not ids:
+            return {}
+        with self._session_factory() as session:
+            stmt = select(Report).where(Report.conversion_id.in_(ids), Report.kind == "conversion")
+            return {
+                r.conversion_id: r for r in session.scalars(stmt) if r.conversion_id is not None
+            }
+
+    def delete_conversions_created_before(self, cutoff: datetime) -> list[str]:
+        """Delete conversion records (and, by cascade, their reports) created before ``cutoff``.
+
+        The report-retention sweep (Revision 1.5) — the longer of the two retention windows.
+        Deleting a :class:`~backend.db.models.Conversion` cascades to its Conversion/Validation
+        reports (the ORM ``delete-orphan`` relationship plus the DB ``ON DELETE CASCADE``); the
+        originating job row and any upload survive, because this window governs the durable
+        *records*, not the bytes (those are the storage platform's separate, much shorter sweep, so
+        by the time a record ages out its output bytes are long gone). Returns the ids deleted.
+        """
+        with self._session_factory.begin() as session:
+            conversions = list(
+                session.scalars(select(Conversion).where(Conversion.created_at < cutoff))
+            )
+            deleted = [c.conversion_id for c in conversions]
+            for conversion in conversions:
+                session.delete(conversion)
+            return deleted
 
     def clear_output_bytes(self, conversion_id: str) -> Conversion | None:
         """Byte expiry of the *output*: drop the storage key and mark it unavailable, keeping the
