@@ -8,9 +8,22 @@
 
 Every conversion produces a structured **Conversion Report** (what was preserved, dropped, or fabricated, and the reason for each) and an automatic **Validation Report** (the output re-parsed and diffed against the source to prove the report told the truth). The guiding rule is simple: *never silently lose scientific information.* If you diffed the input and output by hand, nothing should surprise you that Xtalate didn't already tell you about.
 
-## What v0.4 does
+## What v0.5 does
 
-**Phase 1 is complete: all seven formats read *and* write.**
+**The whole engine, now over HTTP — and Phase 1 stays complete: all seven formats read *and* write.**
+
+New in v0.5, the **Service layer**: a FastAPI application exposes the same engine under `/v1` as
+async jobs (`inspect` / `convert` / `validate` → poll `GET /v1/jobs/{id}` → retrieve). It adds
+nothing scientific — it is a thin presenter that embeds the pydantic report models **verbatim** — and
+it carries the two rules the whole product turns on: a **refused conversion is a completed HTTP-200
+job** (`ConversionReport.status == "refused"`), never a 4xx; and an interactive recovery pause
+(`awaiting_recovery`) that **expires to a refusal, never a silently-applied default**. Reports
+**outlive the bytes** they describe (input and output expire on independent lifecycle windows while
+`GET /v1/conversions/{id}` still serves both reports), uploads are size-gated (`413`), callers are
+rate-limited (`429` + `Retry-After`), and an instance may require a static API key. `docker compose
+up` brings up the full Tier 1 stack (API + worker + PostgreSQL + MinIO + Redis); see the
+[HTTP quickstart](#quickstart-http-service) and the committed [`docs/openapi.json`](docs/openapi.json)
+contract. The library and CLI below are unchanged.
 
 - **Formats** (read *and* write): plain **XYZ**, **extended XYZ** (ASE-backed), **POSCAR**, **CONTCAR** — including the POSCAR/CONTCAR **velocity block** (Cartesian + Direct) — **XDATCAR**, the **ASE `.traj`** format, and **CIF**. Every pair among them converts, and the nightly matrix runs all 7 × 7.
 - **CIF, with crystallography taken seriously.** Cell *parameters* → lattice vectors, fractional → Cartesian at the parser boundary, and **symmetry expansion from the operations the file declares** — parsed as exact affine maps over rationals, so a translation written `1/3` is a third, with sites on a symmetry element merged on a physical 0.05 Å distance. A file that names a space group but declares *no* operations is **refused**, never read as a partial structure: supplying the operations from space-group tables would be data the file never stated, and the failure it prevents is a conversion that silently yields a fraction of the atoms. Occupancy and declared formal charges are carried, and the exporter writes every atom explicitly under a one-entry identity symmetry loop with **no space-group symbol at all** — not even `P 1` — because the coordinates it writes are the already-expanded full cell, and any symbol above them would assert a setting they no longer encode. A source's symbol is reported as removed rather than echoed.
@@ -23,12 +36,12 @@ Every conversion produces a structured **Conversion Report** (what was preserved
 - **Round-trip matrix** — beyond identity round-trips, a cross-format **two-hop** (`A→B→Canonical′`) and **three-hop** (`A→B→A`) test suite whose comparable subspace is computed from the Capability Matrix, catching parser/exporter asymmetry.
 - **Third-party formats via plugins** — a parser/exporter shipped in a separate installable package is discovered automatically through Python **entry points** (`xtalate.parsers` / `xtalate.exporters`), with no fork or edit to Xtalate; it joins sniffing, Discovery, conversion, and validation on equal footing (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
-## What v0.4 does *not* do (yet)
+## What v0.5 does *not* do (yet)
 
-- **No web service, REST API, or UI.** Xtalate is a pure-Python **library + CLI**. The FastAPI Service and Next.js Web UI are later versions (v0.5 / v0.6) and attach to this core without re-implementing it.
+- **No Web UI, and no accounts.** The Service is a headless REST API; the Next.js Web UI is v0.6. The v0.5 service runs in **anonymous mode** (optional static API keys only) — there are no user accounts, sessions, or per-user resources, so the account endpoints answer `404 NOT_ENABLED` and a resource is reachable by anyone holding its unguessable id.
 - **CIF is read and written, but not every CIF.** A file whose symmetry must be reconstructed from a space-group *symbol* alone is refused rather than guessed at; occupancy is carried under a namespaced key rather than modelled as a first-class canonical field, and only the CIF target writes it back.
-- **Recovery is preset-only.** There is no interactive prompt; the CLI takes choices up front or refuses (interactive recovery is Service/UI machinery).
-- **Pre-1.0, a minor version may break.** The plugin SDK is not frozen until v1.0 (risk R12); the canonical schema is still `0.1.0`.
+- **CLI recovery is still preset-only.** The command line takes choices up front or refuses; the *interactive* pause/resume is a Service feature (`allow_recovery` → `awaiting_recovery`).
+- **Pre-1.0, a minor version may break.** The plugin SDK and the REST `/v1` contract are not frozen until v1.0 (risk R12); the canonical schema is still `0.1.0`.
 
 ## Install
 
@@ -112,6 +125,39 @@ A complete, runnable end-to-end example is in [`examples/convert_extxyz_to_posca
 ```bash
 python examples/convert_extxyz_to_poscar.py
 ```
+
+## Quickstart (HTTP service)
+
+Bring up the full Tier 1 stack — API, worker, PostgreSQL, MinIO, Redis — with one command:
+
+```bash
+docker compose up --build --wait
+curl -s "http://localhost:8000/v1/health?ready=true"
+```
+
+Or run a dependency-free Tier 0 instance (SQLite + local filesystem, jobs executed in-process):
+
+```bash
+pip install "xtalate[service]"
+python -m backend                       # http://localhost:8000
+```
+
+Then upload → convert → download over `/v1`. Conversion is an async job; a refusal comes back as a
+**completed HTTP-200 job**, not an error:
+
+```bash
+BASE=http://localhost:8000/v1
+FILE_ID=$(curl -s -F "file=@in.extxyz" "$BASE/upload" | jq -r .file_id)
+JOB=$(curl -s "$BASE/convert" -H 'content-type: application/json' \
+  -d "{\"file_id\":\"$FILE_ID\",\"target_format_id\":\"poscar\"}" | jq -r .job_id)
+curl -s "$BASE/jobs/$JOB" | jq '.state, .result.conversion_report.status'
+CID=$(curl -s "$BASE/jobs/$JOB" | jq -r .result.conversion_id)
+curl -s "$BASE/download/$CID" -o POSCAR
+```
+
+The full flow — including interactive recovery (`allow_recovery` → pause → resume) and the
+reports-outlive-bytes record — is walked through with `curl` in [`docs/API.md` §5](docs/API.md#5-service-http-api),
+and the machine-readable contract is the committed [`docs/openapi.json`](docs/openapi.json).
 
 ## How it works
 

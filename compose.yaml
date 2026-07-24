@@ -10,8 +10,10 @@
 # environment (or an untracked .env, which `docker compose` loads automatically) for anything real;
 # `${VAR:-default}` interpolation means the environment always wins. See `.env.example`.
 #
-# This is the M21 "first shape" (M22 adds the worker); compose polish (profiles, resource hints) is
-# the M25 cut line.
+# M25 finalizes this stack: the backend gains a readiness healthcheck (so the worker and the CI
+# integration job wait for migrations, not just a started process), and one `docker compose up`
+# yields the full upload → inspect → convert (pause/resume) → validate → download loop, expiry
+# included. Further polish (profiles, resource hints) stays out of scope by the M25 cut line.
 
 # Shared service configuration for the two processes on the one image — API and worker — so they
 # never drift on which database/store/queue they use (Part 9 §2, one artifact, no skew).
@@ -117,6 +119,19 @@ services:
       <<: *backend-env
     ports:
       - "${XTALATE_PORT:-8000}:8000"
+    # Ready — not merely alive — so the worker (and the CI integration job) wait until migrations
+    # have run and the database + object store answer. The slim image ships no curl/wget, so the
+    # probe is a stdlib Python one-liner; ``?ready=true`` is exactly the M21 done-means check.
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/v1/health?ready=true').status==200 else 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
 
   # The RQ worker (M22): the same image, the second entrypoint (Part 9 §2). It executes the jobs the
   # backend enqueues onto Redis. Migrations are the backend's job (its CMD runs `alembic upgrade
@@ -136,7 +151,9 @@ services:
       queue:
         condition: service_healthy
       backend:
-        condition: service_started
+        # Wait until the backend is *healthy* — i.e. it has finished ``alembic upgrade head`` — so
+        # the worker never races the schema it reads (the backend owns migrations, Part 9 §2).
+        condition: service_healthy
     environment:
       <<: *backend-env
 

@@ -197,8 +197,8 @@ from xtalate.validation import ValidationEngine, ToleranceProfile, rethreshold
 ## 3. Report schemas
 
 All three reports are pydantic models. Serialize any of them with `.model_dump(mode="json")` or
-`.model_dump_json(indent=2)`; a future Service layer embeds these same models verbatim in its HTTP
-responses (no parallel DTOs).
+`.model_dump_json(indent=2)`; the [Service layer](#5-service-http-api) embeds these same models
+verbatim in its HTTP responses (no parallel DTOs).
 
 | Report | What it records |
 |---|---|
@@ -212,3 +212,82 @@ Read **and** write: `xyz`, `extxyz`, `poscar`, `contcar`, `xdatcar`, `ase_traj`,
 Phase 1 formats, so every pair among them converts. Third-party formats registered
 via entry points (see the [Developer Guide](DEVELOPER_GUIDE.md)) appear here on equal footing —
 `xtalate capabilities` always reflects the live set.
+
+## 5. Service (HTTP API)
+
+The same engine is exposed over HTTP under `/v1`. The API is a thin presenter over the library — it
+contains no scientific logic, and every response embeds the pydantic report models **verbatim** (the
+same schemas as §3, no parallel DTOs). Two rules run through the whole surface:
+
+- **A refused conversion is not an error.** A conversion the engine declines is a *completed* job
+  whose `ConversionReport.status == "refused"`, returned as **HTTP 200** — never a 4xx.
+- **Long operations are async jobs.** `inspect` / `convert` / `validate` return a job; you poll
+  `GET /v1/jobs/{job_id}` until it reaches `completed` (or `awaiting_recovery`, if you opted into
+  interactive recovery). The machine-readable contract is the committed
+  [`openapi.json`](openapi.json) artifact.
+
+### 5.1 Run it locally
+
+One command brings up the Tier 1 stack (API + worker + PostgreSQL + MinIO + Redis):
+
+```bash
+docker compose up --build --wait
+# readiness — green only once migrations ran and the DB + object store answer:
+curl -s "http://localhost:8000/v1/health?ready=true"
+```
+
+For a dependency-free Tier 0 run (SQLite + local filesystem, jobs executed in-process), install the
+service extra and run the app directly — no database or object store to stand up:
+
+```bash
+pip install "xtalate[service]"
+python -m backend            # serves on http://localhost:8000
+```
+
+### 5.2 The full flow with `curl`
+
+Upload a file, convert it interactively (the two-frame molecular input needs both a frame picked and
+a lattice supplied for a periodic POSCAR target — the worked example of the recovery workflow),
+resume with your choices, then download the output.
+
+```bash
+BASE=http://localhost:8000/v1
+
+# 1. Upload — returns a file_id.
+FILE_ID=$(curl -s -F "file=@traj.xyz" "$BASE/upload" | jq -r .file_id)
+
+# 2. Inspect — the Discovery Report (✓/✗ per canonical field). Poll the job to completed.
+JOB=$(curl -s "$BASE/inspect" -H 'content-type: application/json' \
+  -d "{\"file_id\":\"$FILE_ID\"}" | jq -r .job_id)
+curl -s "$BASE/jobs/$JOB" | jq .result.discovery_report
+
+# 3. Convert to POSCAR asking for interactive recovery — the job PAUSES at awaiting_recovery
+#    with the computed options for each unresolved scenario.
+JOB=$(curl -s "$BASE/convert" -H 'content-type: application/json' -d "{
+  \"file_id\": \"$FILE_ID\",
+  \"target_format_id\": \"poscar\",
+  \"options\": { \"allow_recovery\": true }
+}" | jq -r .job_id)
+curl -s "$BASE/jobs/$JOB" | jq '.state, .awaiting_recovery.unresolved_scenarios[].scenario'
+
+# 4. Resume with your choices — every choice is recorded as an Assumption in the report.
+curl -s "$BASE/jobs/$JOB/recovery" -H 'content-type: application/json' -d '{
+  "choices": {
+    "frame_selection": { "choice": "last" },
+    "missing_lattice": { "choice": "bounding_box", "parameters": { "padding_ang": 5.0 } }
+  }
+}' > /dev/null
+CID=$(curl -s "$BASE/jobs/$JOB" | jq -r .result.conversion_id)
+
+# 5. Download the converted POSCAR (streamed through the API, never a presigned URL).
+curl -s "$BASE/download/$CID" -o out.POSCAR
+
+# The durable record serves BOTH reports back verbatim — even after the bytes expire.
+curl -s "$BASE/conversions/$CID" | jq '.conversion_report.status, .validation_report.status'
+```
+
+Supplying the same `recovery_choices` in the initial `convert` request (instead of
+`allow_recovery`) skips the pause and completes in one call — the preset path and the interactive
+path produce byte-equivalent reports. Read the advertised limits (`GET /v1/limits`) before you hit
+them: an oversized upload is `413`, a rate burst is `429` with `Retry-After`, and — on an instance
+configured with a static API key — a keyless mutating request is `401`.

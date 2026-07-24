@@ -8,6 +8,73 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-23
+
+v0.5 — **"Service."** The whole engine, unchanged, now speaks HTTP. A FastAPI application exposes
+`inspect` / `convert` / `validate` under `/v1` as async jobs (submit → poll `GET /v1/jobs/{id}` →
+retrieve), backed by a persistence layer (PostgreSQL + S3-compatible object storage in Tier 1;
+SQLite + filesystem in Tier 0) and an RQ worker. The API contains **no scientific logic** — an
+import-linter contract enforces the direction — and every response embeds the pydantic report models
+**verbatim**, no parallel DTOs. The two rules the product turns on are named tests a future refactor
+cannot delete quietly: a **refused conversion is a completed HTTP-200 job**, never a 4xx; and an
+interactive recovery pause **expires to a refusal, never a silently-applied default**. The library
+and CLI are byte-for-byte unchanged.
+
+### Added
+
+- **Backend skeleton + persistence adapters (M21).** The FastAPI app factory, the request-id
+  middleware, the single error-envelope path (`{error: {code, message, details, request_id,
+  documentation_url}}`), and the backend-agnostic repository over four tables (uploads, jobs,
+  conversions, reports). Two interchangeable backends per interface — SQLite/filesystem (Tier 0) and
+  PostgreSQL/MinIO (Tier 1) — chosen by configuration alone and proven by an adapter parity suite.
+- **Async job model + state machine (M22).** The full lifecycle `queued → running →
+  completed | failed | cancelled`, with a transition-table module tested over every legal and
+  illegal edge; idempotent `inspect`; and a crashed worker mid-job resolving to `failed` with a
+  structured envelope, never a stuck `running` row.
+- **Interactive recovery + cancellation (M23).** `allow_recovery` pauses a convert to
+  `awaiting_recovery` carrying the pre-flight draft report and the **computed** option lists;
+  `POST /v1/jobs/{id}/recovery` validates each choice against exactly the offered options and
+  resumes (a partial resume pauses again); an unattended pause **expires to a refused conversion**.
+  Cancellation is legal from every non-terminal state and writes no report.
+- **Files, downloads, lifecycle, limits (M24).** Bounded streaming upload with a `413` size gate;
+  downloads streamed through the API (never a presigned URL) behind the failed-validation
+  acknowledgment gate, `410` once the output bytes expire; a paginated conversion history; and
+  **reports outlive bytes** — input and output expire on independent per-prefix lifecycle windows
+  while `GET /v1/conversions/{id}` still serves both reports. Rate limiting (`429` + `Retry-After`),
+  a concurrent-job cap, and optional static-API-key auth.
+- **OpenAPI contract artifact (M25).** The `/v1` schema is generated deterministically
+  (`python -m backend.openapi`) and committed as `docs/openapi.json`; a drift-guard test regenerates
+  and diffs it, starting the paper trail the v1.0 freeze will check against. `info.version` is pinned
+  to the source `__version__` so the artifact is a function of the source, not of stale editable
+  metadata.
+- **Recovery feedback aggregation (M25; Part 5 §7).** `(scenario, choice, parameters) → validation
+  status` aggregated over persisted rows (`backend.jobs.feedback`) — **read-only and metadata-only**
+  (no file contents, no report bodies), realized as a Python aggregation rather than a SQL view to
+  keep SQLite/PostgreSQL parity. Logging only: no default ever changes because of these statistics
+  (P4 is untouchable by construction), and surfacing is deferred to the Web UI.
+- **Tier 1 compose stack finalized (M25).** `docker compose up --wait` yields the full upload →
+  inspect → convert (pause/resume) → validate → download loop locally, expiry included, with a
+  backend **readiness** healthcheck so the worker and CI wait for migrations rather than a
+  merely-started process.
+- **CI (M25).** The backend suite runs in the per-PR `ci.yml` gate; a new `main.yml` spins the real
+  compose stack and drives the worked example over HTTP end to end (`tests/integration`, marker
+  `integration`, skipped unless `XTALATE_LIVE_BASE_URL` is set), then builds and pushes the single
+  service image (API + worker share it) to GHCR tagged `main-<sha>`.
+- **Docs.** `docs/API.md` gains a Service (HTTP API) section with a full `curl` walkthrough; the
+  README adds the service story and an HTTP quickstart (the library/CLI story unchanged);
+  `.env.example` documents every setting.
+
+### Notes
+
+- The v0.5 service runs in **anonymous mode** only — optional static API keys, no user accounts.
+  Authorization is instance-level, never resource-level: a resource is reachable by anyone holding
+  its unguessable id, and the account endpoints answer `404 NOT_ENABLED`. Accounts and the Web UI are
+  v0.6.
+- The canonical schema version is unchanged at `0.1.0`; the `/v1` REST contract is **not** frozen
+  until v1.0 (pre-1.0 minors may break).
+- Publishing (the git tag, the PyPI upload, and the GHCR release images) remains the maintainer's
+  manual release step.
+
 ## [0.4.0] — 2026-07-21
 
 v0.4 — **"Phase 1 Complete."** CIF, the seventh and last Phase-1 format, lands read and write:

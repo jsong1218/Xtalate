@@ -120,6 +120,13 @@ packages = ["src/xtalate"]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests", "backend"]
+# Ruff governs Python *source*, never prose. From 0.16 the formatter also reformats fenced Python
+# blocks inside Markdown, which would silently rewrite the published docs (`README.md`,
+# `docs/API.md`) — collapsing the hand-aligned trailing comments that make those samples readable,
+# and doing it as a side effect of a tool upgrade rather than an editorial decision. Excluding
+# Markdown keeps `ruff format --check .` deterministic across ruff versions and leaves the docs'
+# wording and layout to the human who wrote them.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -197,6 +204,7 @@ addopts = "--cov=xtalate --cov-report=term-missing --cov-fail-under=91"
 # here so an unknown-marker warning never masks a typo.
 markers = [
     "nightly: only runs in the nightly workflow (un-gated by XTALATE_FULL_MATRIX=1); PR runs deselect it",
+    "integration: drives a live compose stack over HTTP; skipped unless XTALATE_LIVE_BASE_URL is set (M25 CI job)",
 ]
 
 [tool.coverage.run]
