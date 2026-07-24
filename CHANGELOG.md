@@ -67,7 +67,7 @@ and CLI are byte-for-byte unchanged.
 ### Fixed — the v0.5 architectural review
 
 Folded into 0.5.0 before the tag (the review-inside-the-version rule, `docs/private/DECISIONS.md`
-D64); see D85–D87 and MASTER_SPEC Revision 1.23.
+D64); see D85–D89 and MASTER_SPEC Revision 1.23.
 
 - **`upload_reference` recovery works over HTTP (D86).** The pause advertised a `reference` file_id,
   but the worker handed that string to the Recovery Engine, which needs a *parsed* structure (the
@@ -90,6 +90,9 @@ D64); see D85–D87 and MASTER_SPEC Revision 1.23.
   the output-name helper out of the worker; made the upload handler a threadpool `def` (it ran
   blocking I/O on the event loop); made the in-memory rate limiter sweep stale buckets so its bounded
   memory is real.
+- **D-log backfill (D88, D89).** The review found M24 and M25 had shipped with no decision-log entry
+  (the log jumped from D84 to the review); their decisions are now recorded — D88 for the M24
+  bytes/records surface, D89 for the M25 hardening/OpenAPI/feedback/CI choices.
 
 ### Notes
 
