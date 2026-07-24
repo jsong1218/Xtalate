@@ -5,9 +5,9 @@ reference for both surfaces. For the design and principles behind them, see the
 [Architecture Overview](ARCHITECTURE.md); for building and extending Xtalate, the
 [Developer Guide](DEVELOPER_GUIDE.md).
 
-> There is **no REST API yet.** The FastAPI Service layer is a future version (v0.5); when it lands
-> it exposes the same report models over HTTP without re-implementing the core. Everything below is
-> the in-process library and the `xtalate` command.
+> The in-process **library and `xtalate` CLI** are documented first (§1–§4); the **REST Service**
+> (v0.5) is §5. The Service exposes the same report models over HTTP without re-implementing the
+> core — a thin presenter that embeds the pydantic reports verbatim (no parallel DTOs).
 
 ---
 

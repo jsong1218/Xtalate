@@ -64,6 +64,33 @@ and CLI are byte-for-byte unchanged.
   README adds the service story and an HTTP quickstart (the library/CLI story unchanged);
   `.env.example` documents every setting.
 
+### Fixed — the v0.5 architectural review
+
+Folded into 0.5.0 before the tag (the review-inside-the-version rule, `docs/private/DECISIONS.md`
+D64); see D85–D87 and MASTER_SPEC Revision 1.23.
+
+- **`upload_reference` recovery works over HTTP (D86).** The pause advertised a `reference` file_id,
+  but the worker handed that string to the Recovery Engine, which needs a *parsed* structure (the
+  CLI parses `file=PATH` and injects it; the service did not) — so every `upload_reference` choice
+  failed. The worker now resolves a reference file_id into a parsed canonical object before the
+  parse/convert consume it; an unknown/expired/unparseable reference is `INVALID_RECOVERY_CHOICE`.
+- **A cancel racing a `running` job no longer leaves contradictory artifacts (D86).** Under the RQ
+  worker a cancel could land while a conversion was mid-flight; the worker had already persisted the
+  conversion, its reports, and output bytes, then crashed on the illegal `cancelled → completed`
+  edge — violating "a cancelled conversion produces no output and no Conversion Report." The runner
+  now detects the lost race at its completion boundary and discards what the run persisted.
+- **`/v1/capabilities*` and `/v1/limits` are public (D85).** They were auth-gated, but the spec makes
+  the Capability Matrix public and `/v1/limits` unauthenticated (a pipeline pre-checks them before it
+  authenticates); they are now rate-limited but never require a static key.
+- **Error codes align to the Part 6 §6 table (D85).** The request-validation envelope is
+  `MALFORMED_REQUEST` (was `INVALID_REQUEST`); the capabilities 404 is `FORMAT_NOT_FOUND` (was
+  `UNKNOWN_FORMAT`, a 422 sniff-failure code). The `LimitsResponse`/§5 rate+retention surface is
+  reconciled in the spec to the single per-minute limit and two retention windows that shipped.
+- **Internal soundness (D87).** Removed a state-machine-bypassing `Repository.set_job_state`; moved
+  the output-name helper out of the worker; made the upload handler a threadpool `def` (it ran
+  blocking I/O on the event loop); made the in-memory rate limiter sweep stale buckets so its bounded
+  memory is real.
+
 ### Notes
 
 - The v0.5 service runs in **anonymous mode** only — optional static API keys, no user accounts.
