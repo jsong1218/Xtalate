@@ -197,6 +197,7 @@ addopts = "--cov=xtalate --cov-report=term-missing --cov-fail-under=91"
 # here so an unknown-marker warning never masks a typo.
 markers = [
     "nightly: only runs in the nightly workflow (un-gated by XTALATE_FULL_MATRIX=1); PR runs deselect it",
+    "integration: drives a live compose stack over HTTP; skipped unless XTALATE_LIVE_BASE_URL is set (M25 CI job)",
 ]
 
 [tool.coverage.run]

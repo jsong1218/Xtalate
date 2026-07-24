@@ -1,0 +1,98 @@
+name: main
+
+# Runs on push to the default branch (MASTER_SPEC Part 9 §3, the `main.yml` row): the two things
+# that are too heavy for the per-PR `ci.yml` gate but must hold on `main` before a release is cut —
+#
+#   1. the Tier 1 **compose integration** loop (spin the real stack, drive the worked example over
+#      HTTP end to end), and
+#   2. building and pushing the one **service image** (API + worker share it) to GHCR, tagged
+#      `main-<sha>`, so a release has an immutable artifact to promote.
+#
+# The compose job gates the image push: an image is only published from a commit whose full stack
+# actually completed a conversion. `ci.yml` (lint + type + unit/golden + backend suite) still runs on
+# the same push; this file adds only what needs the daemon and the registry.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: main-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write # push the service image to GHCR
+
+jobs:
+  compose-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      # Only the test client's dependencies (httpx, pytest) — the stack itself runs in containers,
+      # built from the repo's Dockerfile, so nothing under test is installed on the runner.
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # Bring up postgres + minio + minio-init + redis + backend + worker. `--wait` blocks until the
+      # healthchecks pass — including the backend's readiness probe, which only goes green after
+      # `alembic upgrade head` and once the DB + object store answer. So a green `up` already means
+      # the full stack is live; the loop below then proves it actually converts.
+      - name: Start the Tier 1 stack
+        run: docker compose up -d --build --wait
+
+      - name: Drive the lifecycle loop over HTTP
+        env:
+          XTALATE_LIVE_BASE_URL: http://localhost:8000
+        run: pytest tests/integration -m integration --no-cov -v
+
+      # Always capture logs — on failure they are the first thing a maintainer reads; on success they
+      # confirm the worker actually executed the job rather than the API answering from a cache.
+      - name: Stack logs
+        if: always()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  publish-image:
+    needs: compose-integration
+    runs-on: ubuntu-latest
+    # Never publish from a fork PR or a dispatch dry-run — only from an actual push to this repo's
+    # default branch, where the GHCR credentials and the `main-<sha>` contract both apply.
+    if: github.event_name == 'push' && github.repository_owner != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `<sha>` (immutable, what a release promotes) plus `main` (moving, what a local `docker pull`
+      # tracks). Lower-cased owner because GHCR repository names must be lowercase and an org/user
+      # name may not be.
+      - name: Image name
+        id: img
+        run: echo "repo=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/service" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push the service image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ steps.img.outputs.repo }}:main-${{ github.sha }}
+            ${{ steps.img.outputs.repo }}:main
