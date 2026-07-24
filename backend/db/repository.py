@@ -319,6 +319,25 @@ class Repository:
             conversion.output_available = False
             return conversion
 
+    def convert_recovery_outcomes(self) -> Sequence[tuple[dict[str, object], str | None]]:
+        """Every convert's ``(job.request, conversion.validation_status)`` — the feedback-loop join.
+
+        The single read behind the ``(scenario, choice, parameters) → validation status``
+        aggregation (:mod:`backend.jobs.feedback`, Part 5 §7). It selects **only** the request body
+        (which holds the recovery choices the caller made) and the denormalized validation outcome —
+        never a report body or any file bytes — so the aggregation is metadata-only by construction.
+        Joined
+        on ``convert`` jobs that produced a conversion row; a job still queued or one that never
+        reached a conversion contributes nothing.
+        """
+        with self._session_factory() as session:
+            stmt = (
+                select(Job.request, Conversion.validation_status)
+                .join(Conversion, Conversion.job_id == Job.job_id)
+                .where(Job.kind == "convert")
+            )
+            return [(row[0] or {}, row[1]) for row in session.execute(stmt)]
+
     # --- reports --------------------------------------------------------------------------------
 
     def add_report(self, report: Report) -> Report:
