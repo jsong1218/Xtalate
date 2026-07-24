@@ -41,12 +41,22 @@ class RateLimiter:
     over. A fixed window (not a sliding one) is chosen for its bounded memory and trivial
     correctness — the burst-at-boundary imprecision it trades away does not matter at these limits,
     and a sliding-log limiter is the hosted instance's Redis concern, not Tier 0's.
+
+    "Bounded memory" is made true rather than assumed: a naive ``{caller: bucket}`` map grows
+    without limit as distinct client hosts/keys are seen (a public instance meets many), a stale
+    bucket from a past minute is never removed. So each time the wall-clock minute advances, every
+    bucket from a prior window is swept — a bucket from an old window would be reset to zero on that
+    caller's next request anyway, so dropping it loses no enforcement. Memory is then bounded by the
+    number of *distinct callers seen within a single minute*, not by all callers ever seen.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         #: caller key → (minute-window index, count so far in that window).
         self._buckets: dict[str, tuple[int, int]] = {}
+        #: The minute window the live buckets belong to; when the clock advances past it, the stale
+        #: buckets are swept (see :meth:`check`). ``-1`` means "no window seen yet".
+        self._window = -1
 
     def check(self, caller: str, limit_per_minute: int, *, now: float | None = None) -> None:
         """Count one request for ``caller``; raise :class:`ApiError` ``429`` if the window is full.
@@ -58,6 +68,11 @@ class RateLimiter:
         moment = now if now is not None else time.time()
         window = int(moment // 60)
         with self._lock:
+            if window != self._window:
+                # A new minute: drop every bucket from a prior window (each would reset to zero on
+                # its caller's next request anyway), so the map never accumulates dead callers.
+                self._buckets = {c: b for c, b in self._buckets.items() if b[0] == window}
+                self._window = window
             bucket_window, count = self._buckets.get(caller, (window, 0))
             if bucket_window != window:
                 bucket_window, count = window, 0

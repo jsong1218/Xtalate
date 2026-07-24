@@ -64,6 +64,22 @@ def test_health_is_never_rate_limited(build_client: Callable[..., TestClient]) -
         assert client.get("/v1/health").status_code == 200
 
 
+def test_rate_limiter_sweeps_stale_buckets_when_the_minute_advances() -> None:
+    # "Bounded memory" made true: a bucket from a past minute is dropped when the clock advances, so
+    # the map is bounded by distinct callers *within one minute*, not by every caller ever seen.
+    from backend.security import RateLimiter
+
+    limiter = RateLimiter()
+    # A hundred distinct callers in minute 0 (each `now` inside window 0 = [0, 60)).
+    for i in range(100):
+        limiter.check(f"caller-{i}", limit_per_minute=10, now=1.0)
+    assert len(limiter._buckets) == 100
+
+    # One request in the next minute (window 1) sweeps all of window 0's now-dead buckets.
+    limiter.check("caller-new", limit_per_minute=10, now=61.0)
+    assert set(limiter._buckets) == {"caller-new"}
+
+
 # --- concurrent-job cap -------------------------------------------------------------------------
 
 

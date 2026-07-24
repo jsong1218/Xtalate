@@ -438,13 +438,6 @@ def _run_validate(job: Job, repository: Repository, settings: Settings) -> None:
     run_revalidate(job, repository, settings)
 
 
-def _default_output_name(format_id: str) -> str:
-    """A format-conventional output filename (matches the CLI's ``_emit`` conventions, Part 4)."""
-    if format_id in ("poscar", "contcar"):
-        return "POSCAR" if format_id == "poscar" else "CONTCAR"
-    return f"output.{format_id}"
-
-
 def _awaiting_recovery_deadline(upload: Any, settings: Settings) -> datetime:
     """When a paused job expires (Part 6 §5, Revision 1.4): ``now + ttl``, **capped by the input's**
     own ``expires_at`` so a paused job can never outlive the persisted bytes it needs to resume.

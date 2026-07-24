@@ -1,13 +1,24 @@
 """``POST /v1/upload`` — bounded streaming to object storage (Part 6 §2.2, §5; M24 deliverable 1).
 
-The job pipeline needs a ``file_id`` to convert. The upload reads the multipart part in bounded
-chunks and hands them to object storage, which computes the sha256 in the same pass — so no whole
-file is held in API memory beyond a chunk (the "never whole-file in API memory" rule, Part 9 §5.3),
-and the digest needs no second read. M24 adds the size enforcement the M22 stub deferred: a running
-byte total is compared against ``max_upload_bytes`` *as the bytes stream*, so an over-limit upload
-is a ``413 FILE_TOO_LARGE`` — refused mid-stream, its partial object deleted and no ``Upload`` row
-written — rather than a whole file first buffered and then measured (which would let a pathological
-size through API memory before rejecting it).
+The job pipeline needs a ``file_id`` to convert. The handler reads Starlette's spooled multipart
+part in bounded chunks and hands them to object storage, which computes the sha256 in the same pass.
+Two boundaries, stated precisely so the guarantee is not overclaimed:
+
+* **Never whole-file in API *memory*.** Starlette spools the multipart body to a
+  ``SpooledTemporaryFile`` (in memory only up to a small threshold, then on disk), and this handler
+  streams from that spool to object storage a chunk at a time — so the API process never holds the
+  whole payload resident (Part 9 §5.3), and the digest needs no second read.
+* **The size gate rejects during that copy, not during the network receive.** A running byte total
+  is compared against ``max_upload_bytes`` as each chunk is pulled, so an over-limit upload is a
+  ``413 FILE_TOO_LARGE`` with its partial object deleted and **no ``Upload`` row written** — the
+  oversized bytes never reach object storage and are never buffered whole in memory. The multipart
+  body has already been received (and spooled) by the framework before the handler runs, so this is
+  not a mid-network-stream abort; the guarantee is about storage and memory, not about refusing the
+  transfer itself. (A future front-proxy ``client_max_body_size`` is the mid-transfer cut, Part 9.)
+
+The handler is a plain ``def`` (not ``async``): every call it makes — the spool read and the
+object-store ``put`` — is blocking I/O, so FastAPI runs it in a threadpool and the event loop is
+never blocked (an ``async def`` here would stall every concurrent request during a large upload).
 
 The endpoint's *contract* (the :class:`~backend.models.UploadResponse`) is the M22 one, unchanged:
 M24 replaced the body beneath a stable surface (**P6**).
@@ -19,7 +30,7 @@ import uuid
 from collections.abc import Iterator
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, File, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 
 from backend.config import Settings
 from backend.db import Repository, utcnow
@@ -65,8 +76,7 @@ def _bounded_chunks(file: UploadFile, limit: int) -> Iterator[bytes]:
 
 
 @router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
-async def upload(
-    request: Request,
+def upload(
     file: UploadFile = File(...),
     repository: Repository = Depends(get_repository),
     object_store: ObjectStore = Depends(get_object_store),

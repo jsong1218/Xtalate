@@ -63,30 +63,6 @@ def test_job_request_json_round_trips_verbatim(repository: Repository) -> None:
     assert fetched.request == body  # no reshaping — stored and served verbatim
 
 
-def test_set_job_state_stamps_and_persists(repository: Repository) -> None:
-    job = _make_job()
-    repository.add_job(job)
-
-    err: dict[str, object] = {"code": "PARSE_ERROR", "message": "bad file"}
-    updated = repository.set_job_state(job.job_id, "failed", error=err)
-    assert updated is not None
-    assert updated.state == "failed"
-    assert updated.error == err
-
-    # Re-read from the store so state/error are proven persisted, not just set on the live object.
-    # (Timestamp *ordering* is deliberately not asserted: SQLite returns naive datetimes while the
-    # app writes tz-aware ones, so a cross-boundary comparison is the footgun M21 defers.)
-    reloaded = repository.get_job(job.job_id)
-    assert reloaded is not None
-    assert reloaded.state == "failed"
-    assert reloaded.error == err
-    assert reloaded.updated_at is not None
-
-
-def test_set_job_state_missing_returns_none(repository: Repository) -> None:
-    assert repository.set_job_state("nope", "running") is None
-
-
 def test_conversion_and_reports_round_trip(repository: Repository) -> None:
     upload = _make_upload()
     job = _make_job()

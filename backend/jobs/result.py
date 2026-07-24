@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from backend.jobs.runner import _default_output_name
+from backend.records import default_output_name
 
 if TYPE_CHECKING:
     from backend.db.models import Job, Report
@@ -50,7 +50,7 @@ def _convert_result(
         return None
 
     options = job.request.get("options") or {} if isinstance(job.request, dict) else {}
-    filename = options.get("output_filename") or _default_output_name(conversion.target_format)
+    filename = options.get("output_filename") or default_output_name(conversion.target_format)
     size_bytes: int | None = None
     if conversion.output_available and conversion.output_storage_key is not None:
         try:

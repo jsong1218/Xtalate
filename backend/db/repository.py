@@ -234,33 +234,6 @@ class Repository:
             job.updated_at = utcnow()
             return job
 
-    def set_job_state(
-        self,
-        job_id: str,
-        state: str,
-        *,
-        started_at: datetime | None = None,
-        finished_at: datetime | None = None,
-        error: dict[str, object] | None = None,
-    ) -> Job | None:
-        """Minimal state write (the *validated* transition table is M22's job — this just persists).
-
-        Always stamps ``updated_at``; sets the optional timestamps/error when given.
-        """
-        with self._session_factory.begin() as session:
-            job = session.get(Job, job_id)
-            if job is None:
-                return None
-            job.state = state
-            job.updated_at = utcnow()
-            if started_at is not None:
-                job.started_at = started_at
-            if finished_at is not None:
-                job.finished_at = finished_at
-            if error is not None:
-                job.error = error
-            return job
-
     # --- conversions ----------------------------------------------------------------------------
 
     def add_conversion(self, conversion: Conversion) -> Conversion:
