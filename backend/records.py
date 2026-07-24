@@ -15,13 +15,26 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from backend.db import as_utc, utcnow
-from backend.jobs.runner import _default_output_name
 from backend.models import DownloadInfo
 
 if TYPE_CHECKING:
     from backend.db.models import Conversion
     from backend.db.repository import Repository
     from backend.storage import ObjectStore
+
+
+def default_output_name(format_id: str) -> str:
+    """A format-conventional output filename (matches the CLI's ``_emit`` conventions, Part 4).
+
+    The one place the download name is defaulted when a conversion carried no ``output_filename`` —
+    read by both the record projection here and the job result (:mod:`backend.jobs.result`), so the
+    name a client is told to expect and the name the download stream offers are one function. It
+    lives here (the record-projection module) rather than in the worker, because both consumers are
+    about *presenting* a stored conversion, not about running one.
+    """
+    if format_id in ("poscar", "contcar"):
+        return "POSCAR" if format_id == "poscar" else "CONTCAR"
+    return f"output.{format_id}"
 
 
 def output_bytes_expired(conversion: Conversion) -> bool:
@@ -50,7 +63,7 @@ def download_filename(conversion: Conversion, repository: Repository) -> str:
     request = job.request if job is not None and isinstance(job.request, dict) else {}
     options = request.get("options") or {}
     custom = options.get("output_filename") if isinstance(options, dict) else None
-    return custom or _default_output_name(conversion.target_format)
+    return custom or default_output_name(conversion.target_format)
 
 
 def build_download_info(

@@ -91,14 +91,16 @@ async def _api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
 
 
 async def _validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    """FastAPI request-validation failures → a ``400 INVALID_REQUEST`` envelope.
+    """FastAPI request-validation failures → a ``400 MALFORMED_REQUEST`` envelope.
 
     The raw pydantic error list is surfaced under ``details.errors`` so a client sees exactly which
-    field failed and why — without the default FastAPI shape, which is *not* our envelope.
+    field failed and why — without the default FastAPI shape, which is *not* our envelope. The code
+    is ``MALFORMED_REQUEST`` — the binding name for a field-by-field request-validation failure in
+    the Part 6 §6 error table, not the ``INVALID_REQUEST`` an earlier draft used.
     """
     api = ApiError(
         status_code=status.HTTP_400_BAD_REQUEST,
-        code="INVALID_REQUEST",
+        code="MALFORMED_REQUEST",
         message="The request could not be validated.",
         details={"errors": exc.errors()},
     )
@@ -139,7 +141,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 _HTTP_STATUS_CODES: dict[int, str] = {
     status.HTTP_404_NOT_FOUND: "NOT_FOUND",
     status.HTTP_405_METHOD_NOT_ALLOWED: "METHOD_NOT_ALLOWED",
-    422: "INVALID_REQUEST",  # literal, not status.HTTP_422_* (the constant is deprecated upstream)
+    422: "MALFORMED_REQUEST",  # literal 422, not status.HTTP_422_* (deprecated upstream)
 }
 
 

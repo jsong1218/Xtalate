@@ -244,3 +244,138 @@ def test_a_nonqueued_job_is_not_rerun(
     _run(job_id, repository, object_store, registry, settings)  # must be a no-op
 
     assert repository.get_reports_for_job(job_id) == []  # no discovery report produced
+
+
+# A 3-atom structure with a lattice, uploaded as the *reference* an ``upload_reference`` recovery
+# borrows from — its atom count matches XYZ_SAMPLE (3), the compatibility guard the engine requires.
+REFERENCE_EXTXYZ = b"""3
+Lattice="6.0 0.0 0.0 0.0 6.0 0.0 0.0 0.0 6.0" Properties=species:S:1:pos:R:3
+O 0.0 0.0 0.0
+H 0.1 0.1 0.0
+H 0.2 0.1 0.0
+"""
+
+
+def test_convert_with_upload_reference_borrows_a_lattice_from_a_file_id(
+    repository: Repository,
+    object_store: ObjectStore,
+    registry: Registry,
+    settings: Settings,
+    make_upload: Callable[..., str],
+    submit_job: Callable[..., str],
+) -> None:
+    # The service half of the ``upload_reference`` contract (Part 4 §3.3): the client names a second
+    # uploaded file by ``file_id``, and the worker resolves it into the parsed CanonicalObject the
+    # Recovery Engine consumes. Before this fix the file_id string reached the engine unresolved and
+    # the choice always failed — the option was advertised but unfulfillable over HTTP.
+    ref_id = make_upload(REFERENCE_EXTXYZ, "ref.extxyz")
+    file_id = make_upload(XYZ_SAMPLE, "mol.xyz")
+    job_id = submit_job(
+        "convert",
+        {
+            "file_id": file_id,
+            "target_format_id": "poscar",
+            "options": {
+                "recovery_choices": {
+                    "missing_lattice": {
+                        "choice": "upload_reference",
+                        "parameters": {"reference": ref_id},
+                    }
+                }
+            },
+        },
+    )
+
+    _run(job_id, repository, object_store, registry, settings)
+
+    job = _get_job(repository, job_id)
+    assert job.state == "completed"
+    conv_report = next(r for r in repository.get_reports_for_job(job_id) if r.kind == "conversion")
+    assert conv_report.body["status"] == "completed"
+    assert conv_report.body["supplied"]  # the borrowed lattice is a reported supplied field
+
+
+def test_upload_reference_to_unknown_file_is_an_invalid_recovery_choice(
+    repository: Repository,
+    object_store: ObjectStore,
+    registry: Registry,
+    settings: Settings,
+    make_upload: Callable[..., str],
+    submit_job: Callable[..., str],
+) -> None:
+    # A reference naming a file that does not exist is a bad *choice* (the client pointed
+    # ``upload_reference`` at nothing), not a server fault — INVALID_RECOVERY_CHOICE, not a 500.
+    file_id = make_upload(XYZ_SAMPLE, "mol.xyz")
+    job_id = submit_job(
+        "convert",
+        {
+            "file_id": file_id,
+            "target_format_id": "poscar",
+            "options": {
+                "recovery_choices": {
+                    "missing_lattice": {
+                        "choice": "upload_reference",
+                        "parameters": {"reference": "no-such-file"},
+                    }
+                }
+            },
+        },
+    )
+
+    _run(job_id, repository, object_store, registry, settings)
+
+    job = _get_job(repository, job_id)
+    assert job.state == "failed"
+    assert job.error is not None and job.error["code"] == "INVALID_RECOVERY_CHOICE"
+
+
+def test_cancel_racing_a_running_job_discards_its_products(
+    repository: Repository,
+    object_store: ObjectStore,
+    registry: Registry,
+    settings: Settings,
+    make_upload: Callable[..., str],
+    submit_job: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A Tier 1 race: a client cancels a genuinely ``running`` job while the worker is mid-dispatch —
+    # after it has already persisted a conversion, its reports, and the output bytes. The cancel
+    # endpoint moved the row to terminal ``cancelled``; the worker must then *abandon* what it wrote
+    # (no output file, no Conversion Report — Part 6 §3.2), never crash on the illegal
+    # ``cancelled → completed`` edge and never leave the contradictory artifacts behind.
+    from backend.db import utcnow
+
+    file_id = make_upload(POSCAR_SAMPLE, "POSCAR")
+    job_id = submit_job("convert", {"file_id": file_id, "target_format_id": "xyz", "options": {}})
+
+    real_dispatch = runner._dispatch
+    captured: dict[str, str | None] = {}
+
+    def _dispatch_then_cancel(
+        job: Job,
+        upload: object,
+        repo: Repository,
+        store: ObjectStore,
+        reg: Registry,
+        sett: Settings,
+    ) -> None:
+        real_dispatch(job, upload, repo, store, reg, sett)  # persists conversion + reports + bytes
+        conv_report = next(
+            r for r in repo.get_reports_for_job(job.job_id) if r.kind == "conversion"
+        )
+        assert conv_report.conversion_id is not None
+        conversion = repo.get_conversion(conv_report.conversion_id)
+        assert conversion is not None
+        captured["key"] = conversion.output_storage_key
+        # ... and now a cancel races in, before the runner reaches its completion boundary.
+        repo.transition_job(job.job_id, "cancelled", finished_at=utcnow(), clear_recovery=True)
+
+    monkeypatch.setattr(runner, "_dispatch", _dispatch_then_cancel)
+
+    _run(job_id, repository, object_store, registry, settings)  # must not raise
+
+    job = _get_job(repository, job_id)
+    assert job.state == "cancelled"  # the cancel stands; never overwritten to completed
+    assert repository.get_reports_for_job(job_id) == []  # no Conversion Report survives
+    assert captured["key"] is not None
+    assert not object_store.exists(captured["key"])  # the output bytes were cleaned up

@@ -167,6 +167,33 @@ class Repository:
                 job.recovery = None
             return job
 
+    def discard_job_products(self, job_id: str) -> list[str]:
+        """Delete every conversion + report a job produced, returning their output storage keys.
+
+        The cleanup a worker runs when a cancel raced its own completion (Part 6 §3.2): a cancelled
+        conversion must leave **no output file and no Conversion Report**, but a Tier 1 worker may
+        have already persisted them before it noticed the cancel. Deleting the job's conversions
+        cascades to their Conversion/Validation reports; any report attached straight to the job (an
+        inspect Discovery report, a validate report) is deleted too. The output object *bytes* are
+        the caller's to remove from object storage — this returns their keys so the caller can. The
+        job row itself is untouched (it is already the terminal ``cancelled`` record). Idempotent: a
+        job with nothing persisted returns an empty list.
+        """
+        with self._session_factory.begin() as session:
+            conversions = list(
+                session.scalars(select(Conversion).where(Conversion.job_id == job_id))
+            )
+            output_keys = [
+                c.output_storage_key for c in conversions if c.output_storage_key is not None
+            ]
+            for conversion in conversions:
+                # Deleting the conversion cascades to its Conversion/Validation reports.
+                session.delete(conversion)
+            # Inspect/validate reports hang off the job, not a conversion — delete them directly.
+            for report in session.scalars(select(Report).where(Report.job_id == job_id)):
+                session.delete(report)
+            return output_keys
+
     def set_job_request(self, job_id: str, request: dict[str, object]) -> Job | None:
         """Replace a job's stored ``request`` payload without a state change (Part 6 §3.2 resume).
 
@@ -205,33 +232,6 @@ class Repository:
                 return None
             job.progress = progress
             job.updated_at = utcnow()
-            return job
-
-    def set_job_state(
-        self,
-        job_id: str,
-        state: str,
-        *,
-        started_at: datetime | None = None,
-        finished_at: datetime | None = None,
-        error: dict[str, object] | None = None,
-    ) -> Job | None:
-        """Minimal state write (the *validated* transition table is M22's job — this just persists).
-
-        Always stamps ``updated_at``; sets the optional timestamps/error when given.
-        """
-        with self._session_factory.begin() as session:
-            job = session.get(Job, job_id)
-            if job is None:
-                return None
-            job.state = state
-            job.updated_at = utcnow()
-            if started_at is not None:
-                job.started_at = started_at
-            if finished_at is not None:
-                job.finished_at = finished_at
-            if error is not None:
-                job.error = error
             return job
 
     # --- conversions ----------------------------------------------------------------------------

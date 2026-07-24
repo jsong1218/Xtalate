@@ -148,6 +148,27 @@ def execute_job(
         )
         return
 
+    # A cancel may have raced this run (Tier 1 RQ: a client cancels a genuinely ``running`` job
+    # while the worker is mid-dispatch). The cancel endpoint has already moved the row to the
+    # terminal ``cancelled`` state, so ``running → completed`` is now illegal — and, worse, this
+    # dispatch may have persisted a conversion, its reports, and output bytes, contradicting the
+    # binding rule that a cancelled conversion produces *no output and no Conversion Report* (Part 6
+    # §3.2). If the job is no longer ``running`` we abandon: discard whatever this run persisted and
+    # leave the terminal record the cancel wrote. (Under the Tier 0 inline queue this never fires —
+    # a submitted job is terminal before a client could cancel it.)
+    current = repository.get_job(job_id)
+    if current is not None and current.state != "running":
+        keys = repository.discard_job_products(job_id)
+        for key in keys:
+            object_store.delete(key)
+        log_event(
+            "job.cancel_race_abandoned",
+            job_id=job_id,
+            state=current.state,
+            request_id=request_id,
+        )
+        return
+
     repository.transition_job(job_id, "completed", finished_at=utcnow(), progress={"phase": "done"})
     log_event("job.completed", job_id=job_id, kind=job.kind, request_id=request_id)
 
@@ -290,13 +311,22 @@ def _run_convert(
     acknowledgement gate, or the preset-only default when ``allow_recovery`` is unset) is a
     completed refused job exactly as in M22 — the pause is reachable only when the client asked."""
     from backend.db.models import Conversion, Report
-    from backend.jobs.recovery import build_awaiting_block
+    from backend.jobs.recovery import build_awaiting_block, resolve_reference_choices
     from xtalate.conversion import ConversionEngine, parse_with_recovery
 
     request = job.request
     target_format_id = request["target_format_id"]
     options = request.get("options") or {}
-    recovery_choices = options.get("recovery_choices") or {}
+    # ``upload_reference`` choices name a second uploaded file by ``file_id``; the Recovery Engine
+    # needs it as a parsed CanonicalObject (the library is filesystem-free), so the worker resolves
+    # each reference before the parse/convert consume the choices — the HTTP equivalent of the CLI's
+    # ``file=PATH`` injection (Part 4 §3.3). A choice carrying no reference is passed through.
+    recovery_choices = resolve_reference_choices(
+        options.get("recovery_choices") or {},
+        repository=repository,
+        object_store=object_store,
+        registry=registry,
+    )
     allow_recovery = bool(options.get("allow_recovery", False))
     # Resume merges the user's answers into the request and marks them (M23 slice 2); the flag is
     # absent on the initial submit, so preset choices stay ``origin: "preset"``.
@@ -406,13 +436,6 @@ def _run_validate(job: Job, repository: Repository, settings: Settings) -> None:
     from backend.jobs.revalidate import run_revalidate
 
     run_revalidate(job, repository, settings)
-
-
-def _default_output_name(format_id: str) -> str:
-    """A format-conventional output filename (matches the CLI's ``_emit`` conventions, Part 4)."""
-    if format_id in ("poscar", "contcar"):
-        return "POSCAR" if format_id == "poscar" else "CONTCAR"
-    return f"output.{format_id}"
 
 
 def _awaiting_recovery_deadline(upload: Any, settings: Settings) -> datetime:

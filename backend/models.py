@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 class ErrorBody(BaseModel):
     """The inner ``error`` object of the single non-2xx envelope (Part 6 §6)."""
 
-    #: Stable machine string, e.g. ``UNKNOWN_FORMAT``, ``INVALID_REQUEST`` (never localized).
+    #: Stable machine string, e.g. ``UNKNOWN_FORMAT``, ``MALFORMED_REQUEST`` (never localized).
     code: str
     #: Human-readable, one-line explanation. Safe to log; never carries scientific file content.
     message: str
