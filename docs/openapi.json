@@ -1,0 +1,1365 @@
+{
+  "components": {
+    "schemas": {
+      "Body_upload_v1_upload_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_v1_upload_post",
+        "type": "object"
+      },
+      "ConversionRecordResponse": {
+        "description": "``GET /v1/conversions/{conversion_id}`` \u2014 the durable record, both reports verbatim (\u00a74.4).\n\nServed from persisted rows alone, so it resolves after the output (or input) bytes have expired:\nthe reports embed exactly what the library produced (no DTO reshaping), and ``download`` tells\nthe client whether the bytes are still fetchable. ``validation_report`` is ``None`` for a\nrefused conversion (no output \u21d2 no validation) or while validation is still running.",
+        "properties": {
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "string"
+          },
+          "conversion_report": {
+            "additionalProperties": true,
+            "title": "Conversion Report",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "download": {
+            "$ref": "#/components/schemas/DownloadInfo"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "target": {
+            "additionalProperties": true,
+            "title": "Target",
+            "type": "object"
+          },
+          "validation_report": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Report"
+          }
+        },
+        "required": [
+          "conversion_id",
+          "created_at",
+          "source",
+          "target",
+          "conversion_report",
+          "download"
+        ],
+        "title": "ConversionRecordResponse",
+        "type": "object"
+      },
+      "ConvertOptions": {
+        "description": "``POST /v1/convert`` ``options`` (Part 6 \u00a72.1) \u2014 names match ``04_Conversion_Engine.md``.",
+        "properties": {
+          "acknowledge_loss": {
+            "default": false,
+            "title": "Acknowledge Loss",
+            "type": "boolean"
+          },
+          "acknowledge_parse_warnings": {
+            "default": false,
+            "title": "Acknowledge Parse Warnings",
+            "type": "boolean"
+          },
+          "allow_recovery": {
+            "default": false,
+            "title": "Allow Recovery",
+            "type": "boolean"
+          },
+          "mode": {
+            "default": "permissive",
+            "title": "Mode",
+            "type": "string"
+          },
+          "output_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Filename"
+          },
+          "recovery_choices": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Recovery Choices",
+            "type": "object"
+          },
+          "tolerance_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "default": "default",
+            "title": "Tolerance Profile"
+          }
+        },
+        "title": "ConvertOptions",
+        "type": "object"
+      },
+      "ConvertRequest": {
+        "description": "``POST /v1/convert`` body (Part 6 \u00a72.1).",
+        "properties": {
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "options": {
+            "$ref": "#/components/schemas/ConvertOptions"
+          },
+          "target_format_id": {
+            "title": "Target Format Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id",
+          "target_format_id"
+        ],
+        "title": "ConvertRequest",
+        "type": "object"
+      },
+      "DownloadInfo": {
+        "description": "The ``download`` object on a conversion record (Part 6 \u00a74.4).\n\n``available`` goes false once the output bytes pass their lifecycle window \u2014 the record and its\nreports remain retrievable, so a stale link renders as \"expired\", not \"not found\" (reports-\noutlive-bytes). ``requires_ack`` mirrors the download endpoint's failed-validation gate, so a UI\ncan pre-warn before the ``409``. ``size_bytes``/``expires_at`` are ``None`` once unavailable.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "requires_ack": {
+            "title": "Requires Ack",
+            "type": "boolean"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          }
+        },
+        "required": [
+          "available",
+          "requires_ack",
+          "filename"
+        ],
+        "title": "DownloadInfo",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "description": "``GET /v1/health`` \u2014 liveness always; readiness when ``?ready=true``.\n\nLiveness (``status == \"ok\"``, ``checks`` empty) proves the process is up. Readiness runs the\nregistered dependency checks (database and object storage, registered in M21); ``status`` is\n``\"ok\"`` only when every check passed, ``\"degraded\"`` otherwise, and the endpoint returns\n``503`` on ``degraded`` so an orchestrator's probe fails correctly.",
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ReadinessCheck"
+            },
+            "title": "Checks",
+            "type": "object"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "environment",
+          "version"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "HistoryItem": {
+        "description": "One ``items[]`` entry from ``GET /v1/history`` (Part 6 \u00a74.4).\n\nA compact projection for the list view: source/target formats + filenames (the report's source\nminus hashes), the two statuses, and the ``summary_counts`` chips\n(``{preserved, removed, assumptions, warnings}``, counted from the conversion report \u2014 the\ncounts the v0.6 UI renders per ``07 \u00a74``). ``file_id`` is present only while the source upload\nis still live, which is what lets a UI offer a re-convert without a fresh upload (``07 \u00a72.6``).",
+        "properties": {
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "string"
+          },
+          "conversion_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Status"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Id"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          },
+          "summary_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Summary Counts",
+            "type": "object"
+          },
+          "target": {
+            "additionalProperties": true,
+            "title": "Target",
+            "type": "object"
+          },
+          "validation_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Status"
+          }
+        },
+        "required": [
+          "conversion_id",
+          "created_at",
+          "source",
+          "target",
+          "conversion_status",
+          "summary_counts"
+        ],
+        "title": "HistoryItem",
+        "type": "object"
+      },
+      "HistoryResponse": {
+        "description": "``GET /v1/history`` \u2014 a page of :class:`HistoryItem` plus the opaque next-page cursor.\n\n``next_cursor`` is ``None`` on the last page; otherwise it is passed back as ``?cursor=`` to\nfetch the following page. Pagination is keyset over ``(created_at, conversion_id)`` descending\n(newest first), so a record added between page fetches never shifts or duplicates an item the\nway an offset would \u2014 the cursor names a fixed point in the ordering, not a position count.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "HistoryResponse",
+        "type": "object"
+      },
+      "InspectRequest": {
+        "description": "``POST /v1/inspect`` body \u2014 run the Information Discovery Engine on an uploaded file.",
+        "properties": {
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "format_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format Override"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "title": "InspectRequest",
+        "type": "object"
+      },
+      "JobEnvelope": {
+        "description": "The full job envelope returned on submit and on every poll (Part 6 \u00a73.2).\n\n``result`` is the kind-specific completion payload (``None`` until the job completes):\n``{discovery_report}`` for inspect, ``{conversion_id, conversion_report, validation_report,\ndownload}`` for convert, ``{validation_report}`` for validate \u2014 each embedding the library's\nreport models verbatim. ``error`` is the error envelope's inner body (the same shape a non-2xx\nresponse carries) for a ``failed`` job, ``None`` otherwise. ``awaiting_recovery`` detail is an\nM23 addition to this same model \u2014 absent here, never a reshaping of what M22 established.",
+        "properties": {
+          "awaiting_recovery": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Awaiting Recovery"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/JobProgress"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "kind",
+          "state",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JobEnvelope",
+        "type": "object"
+      },
+      "JobProgress": {
+        "description": "Coarse progress for a running job (Part 6 \u00a73.2).\n\n``phase`` names the pipeline stage the worker last entered (``\"parsing\"``, ``\"converting\"``,\n``\"validating\"``, \u2026); ``frames_processed``/``frames_total`` are the v0.3 chunked engine's frame\ncounters when a streamed operation exposes them, ``None`` otherwise. M22 stamps the phase at\neach stage boundary; live frame counters attach at the same seam with no shape change (**P6**).",
+        "properties": {
+          "frames_processed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frames Processed"
+          },
+          "frames_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frames Total"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          }
+        },
+        "title": "JobProgress",
+        "type": "object"
+      },
+      "LimitsResponse": {
+        "description": "``GET /v1/limits`` \u2014 every Part 6 \u00a75 constraint, config-driven (Revisions 1.4, 1.5).\n\nA client reads the rules before hitting them. In M21 these are surfaced from configuration;\nthe surfaces that *enforce* them (upload streaming, rate limiting, the recovery pause) wire\nto the same values in M23/M24, so the advertised number and the enforced number are one thing.",
+        "properties": {
+          "awaiting_recovery_ttl_minutes": {
+            "title": "Awaiting Recovery Ttl Minutes",
+            "type": "integer"
+          },
+          "max_concurrent_jobs": {
+            "title": "Max Concurrent Jobs",
+            "type": "integer"
+          },
+          "max_frames": {
+            "title": "Max Frames",
+            "type": "integer"
+          },
+          "max_upload_bytes": {
+            "title": "Max Upload Bytes",
+            "type": "integer"
+          },
+          "output_retention_hours": {
+            "title": "Output Retention Hours",
+            "type": "integer"
+          },
+          "rate_limit_per_minute": {
+            "title": "Rate Limit Per Minute",
+            "type": "integer"
+          },
+          "report_retention_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Retention Days"
+          },
+          "upload_retention_hours": {
+            "title": "Upload Retention Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_upload_bytes",
+          "max_frames",
+          "max_concurrent_jobs",
+          "rate_limit_per_minute",
+          "upload_retention_hours",
+          "output_retention_hours",
+          "awaiting_recovery_ttl_minutes",
+          "report_retention_days"
+        ],
+        "title": "LimitsResponse",
+        "type": "object"
+      },
+      "ReadinessCheck": {
+        "description": "One dependency's readiness result, reported by ``GET /v1/health?ready=true``.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ReadinessCheck",
+        "type": "object"
+      },
+      "RecoveryResumeRequest": {
+        "description": "``POST /v1/jobs/{job_id}/recovery`` body (Part 6 \u00a72, \u00a73.2) \u2014 resume a paused convert job.\n\n``choices`` maps a scenario code to the user's decision \u2014 ``{choice, parameters}`` \u2014 the same\nshape as :attr:`ConvertOptions.recovery_choices`, but supplied *interactively* after the job\npaused rather than up front. The endpoint validates each choice against the paused job's own\n**offered** options before merging it in (an unoffered scenario or choice is\n``422 INVALID_RECOVERY_CHOICE``), so a resumed choice lands in the report as ``origin: \"user\"``.\nA resume that resolves only some scenarios pauses again for the rest (Part 6 \u00a73.2).",
+        "properties": {
+          "choices": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Choices",
+            "type": "object"
+          }
+        },
+        "title": "RecoveryResumeRequest",
+        "type": "object"
+      },
+      "RevalidateRequest": {
+        "description": "``POST /v1/validate`` body \u2014 re-threshold a stored conversion under a new profile (\u00a72, \u00a74.5).\n\nNot a re-parse: it re-evaluates the conversion's **stored** measured values against a different\ntolerance profile, so it works even after the source/output bytes have expired (reports outlive\nbytes). ``404`` if the conversion is unknown or its record has passed report retention.",
+        "properties": {
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "string"
+          },
+          "tolerance_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "default": "default",
+            "title": "Tolerance Profile"
+          }
+        },
+        "required": [
+          "conversion_id"
+        ],
+        "title": "RevalidateRequest",
+        "type": "object"
+      },
+      "UploadResponse": {
+        "description": "``POST /v1/upload`` \u2014 the stored file's handle (Part 6 \u00a72.2).\n\nM22 ships a *stub* upload (whole-body read, direct-to-storage) so the job pipeline has a\n``file_id`` to convert; M24 replaces the endpoint body with streaming + size enforcement, under\nthis same response. ``expires_at`` is the byte-lifecycle horizon (\u00a75); reports outlive it (M24).",
+        "properties": {
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_id",
+          "filename",
+          "size_bytes",
+          "sha256",
+          "expires_at"
+        ],
+        "title": "UploadResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "The trusted translation layer between computational-chemistry file formats, exposed as a REST API. Reports embed verbatim; refusals are HTTP 200 completed jobs.",
+    "summary": "Loss-aware chemistry file conversion over HTTP.",
+    "title": "Xtalate Service",
+    "version": "0.4.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/capabilities": {
+      "get": {
+        "description": "Every format's read/write capability declaration (equals ``xtalate capabilities --json``).",
+        "operationId": "capabilities_v1_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Capabilities V1 Capabilities Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Capabilities",
+        "tags": [
+          "capabilities"
+        ]
+      }
+    },
+    "/v1/capabilities/{format_id}": {
+      "get": {
+        "description": "One format's declaration as ``{format_id: {...}}`` (matches ``capabilities <id> --json``).",
+        "operationId": "capabilities_for_format_v1_capabilities__format_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "format_id",
+            "required": true,
+            "schema": {
+              "title": "Format Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Capabilities For Format V1 Capabilities  Format Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capabilities For Format",
+        "tags": [
+          "capabilities"
+        ]
+      }
+    },
+    "/v1/conversions/{conversion_id}": {
+      "get": {
+        "description": "The durable record for one conversion \u2014 both reports verbatim, byte availability computed.",
+        "operationId": "get_conversion_record_v1_conversions__conversion_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversion_id",
+            "required": true,
+            "schema": {
+              "title": "Conversion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversionRecordResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Conversion Record",
+        "tags": [
+          "conversions"
+        ]
+      }
+    },
+    "/v1/convert": {
+      "post": {
+        "description": "Submit a conversion (Part 6 \u00a72.1). A refusal is a completed job, not an error (\u00a71).",
+        "operationId": "convert_v1_convert_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConvertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convert"
+      }
+    },
+    "/v1/download/{conversion_id}": {
+      "get": {
+        "description": "Stream a conversion's output bytes, guarded by the not-found / ack / expiry gates above.",
+        "operationId": "download_v1_download__conversion_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversion_id",
+            "required": true,
+            "schema": {
+              "title": "Conversion Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Acknowledge a failed automatic validation to download the output anyway (required when the conversion's validation_status is 'failed').",
+            "in": "query",
+            "name": "acknowledge_validation_failure",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Acknowledge a failed automatic validation to download the output anyway (required when the conversion's validation_status is 'failed').",
+              "title": "Acknowledge Validation Failure",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download",
+        "tags": [
+          "conversions"
+        ]
+      }
+    },
+    "/v1/files/{file_id}": {
+      "delete": {
+        "description": "Immediately remove an uploaded file \u2014 its bytes and its row (Part 6 \u00a75, M24 deliverable 3).\n\nThe user-initiated counterpart to the storage lifecycle's timed byte sweep: a client that\nuploaded a file it did not mean to keep can delete it now rather than waiting out the retention\nwindow. The object bytes go first (idempotent \u2014 a no-op if the lifecycle rule already swept\nthem), then the row; ``ON DELETE SET NULL`` nulls any conversion's ``source_file_id``, so\nconversions produced from this file and their reports **survive** (reports-outlive-bytes). A\nsuccessful delete is ``204`` with no body; an unknown file is ``404 FILE_NOT_FOUND``.",
+        "operationId": "delete_file_v1_files__file_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete File"
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "operationId": "health_v1_health_get",
+        "parameters": [
+          {
+            "description": "Run dependency readiness probes; 503 if any fail.",
+            "in": "query",
+            "name": "ready",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Run dependency readiness probes; 503 if any fail.",
+              "title": "Ready",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/history": {
+      "get": {
+        "description": "A page of conversion summaries, newest first (Part 6 \u00a74.4).\n\nFetches one row beyond the page to decide whether a ``next_cursor`` is owed, then projects each\nconversion to a :class:`HistoryItem` \u2014 the source/target endpoints and ``summary_counts`` from\nits conversion report (fetched for the whole page in one query), and ``file_id`` only for the\nconversions whose source upload is still live (also one query).",
+        "operationId": "get_history_v1_history_get",
+        "parameters": [
+          {
+            "description": "Page size (newest first); capped at 100.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Page size (newest first); capped at 100.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Opaque next-page cursor from a previous response's next_cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque next-page cursor from a previous response's next_cursor.",
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get History",
+        "tags": [
+          "conversions"
+        ]
+      }
+    },
+    "/v1/inspect": {
+      "post": {
+        "description": "Run the Discovery Engine on an uploaded file \u2014 idempotent per (file, override, registry).",
+        "operationId": "inspect_v1_inspect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect"
+      }
+    },
+    "/v1/jobs/{job_id}": {
+      "get": {
+        "description": "Poll a job's envelope. With ``?wait=<s>`` (capped 30), hold until the job is terminal.\n\nA poll of a paused job past its TTL expires it (``awaiting_recovery \u2192 expired``, resolving to a\nrefused conversion) before projecting \u2014 the lazy sweep Tier 0 relies on, so the no-services tier\nneeds no background sweeper for the expiry-to-refusal rule to hold (Part 6 \u00a73.2).",
+        "operationId": "get_job_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Long-poll: seconds to wait for a terminal state before returning (max 30).",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "default": 0.0,
+              "description": "Long-poll: seconds to wait for a terminal state before returning (max 30).",
+              "minimum": 0.0,
+              "title": "Wait",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "description": "Cancel a job, moving it to the terminal ``cancelled`` state (Part 6 \u00a73.2, \u00a75).\n\n``404 JOB_NOT_FOUND`` for an unknown id. Cancelling an already-``cancelled`` job is an\n**idempotent** ``200`` \u2014 a retried cancel is not an error. Any *other* terminal state\n(``completed``, ``failed``, ``expired``) is a ``409 JOB_ALREADY_TERMINAL`` naming the state,\nbecause that outcome is already recorded and cancellation must not overwrite it. An already\n``expired`` pause has resolved to a *refusal*, which a cancel must never erase: the\n``expire_if_due`` below makes an overdue pause terminal *before* this check, so a cancel that\nlost the race to the deadline learns the job expired rather than silently cancelling it.\n\nA cancellable job (``queued``, ``running``, ``awaiting_recovery``) transitions straight to\n``cancelled`` with a finish timestamp and its recovery block cleared. Cancellation produces **no\noutput file and no Conversion Report** \u2014 it is an abandonment, not a refusal, so the envelope\ncarries neither a ``result`` nor an ``error`` body, only the terminal state.\n\nUnder the Tier 0 inline queue a submitted job is already terminal by the time a client could\ncall this, so the state actually cancellable here is ``awaiting_recovery`` (a paused convert).\nCooperative interruption of a genuinely mid-run job on the Tier 1 RQ worker \u2014 a checkpointed\nstop at a frame-chunk boundary \u2014 is a follow-up on this same endpoint (Part 6 \u00a75's stated cut),\nnever a change to this contract: the state machine already holds the ``running \u2192 cancelled``\nedge, so that work attaches as a *caller*, not a new edge (**P6**).",
+        "operationId": "cancel_job_v1_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/recovery": {
+      "post": {
+        "description": "Resume an ``awaiting_recovery`` convert job with the client's choices (Part 6 \u00a73.2).\n\nValidates the job is paused (``404`` unknown, ``409 JOB_NOT_AWAITING_RECOVERY`` otherwise) and\nevery choice against the paused block's *offered* options (``422 INVALID_RECOVERY_CHOICE`` with\n``offered_choices``), then merges them into the request as ``origin: \"user\"`` decisions and\nre-enqueues. The ``awaiting_recovery \u2192 running`` edge is the worker's; a resume that resolves\nonly some scenarios pauses again for the rest. The endpoint holds no scientific logic \u2014 the\nRecovery Engine still computes and applies the choice on the worker.\n\nA resume that arrives after the pause's TTL is a ``409`` naming the ``expired`` state: the job\nis expired-if-due first, so a client racing the deadline learns the pause is gone rather than\nresuming a job whose input bytes may already have expired (Part 6 \u00a73.2, \u00a75).",
+        "operationId": "resume_recovery_v1_jobs__job_id__recovery_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryResumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Recovery",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/limits": {
+      "get": {
+        "operationId": "limits_v1_limits_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Limits",
+        "tags": [
+          "limits"
+        ]
+      }
+    },
+    "/v1/upload": {
+      "post": {
+        "operationId": "upload_v1_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_v1_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload"
+      }
+    },
+    "/v1/validate": {
+      "post": {
+        "description": "Re-threshold a stored conversion under a new tolerance profile (Part 6 \u00a72, Part 5 \u00a74.5).\n\nA query over persisted reports, not a re-parse \u2014 available after byte expiry by construction.\n``404`` if the conversion record is unknown (or has passed report retention).",
+        "operationId": "validate_v1_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevalidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate"
+      }
+    }
+  }
+}
