@@ -33,7 +33,7 @@ from backend.routers import (
     limits,
     uploads,
 )
-from backend.security import RateLimiter, enforce_request_policy
+from backend.security import RateLimiter, enforce_public_rate_limit, enforce_request_policy
 from backend.storage import create_object_store
 from xtalate.registry import default_registry
 
@@ -133,15 +133,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["X-Request-ID"] = request_id
         return response
 
-    # Health is unguarded — an orchestrator's liveness/readiness probe must not need a key or be
-    # rate-limited. Every other surface carries the request-policy dependency (auth + rate limit);
-    # the concurrent-job cap rides only on the submit endpoints (added inside the jobs router). The
-    # account surface is unguarded too, so it answers NOT_ENABLED rather than challenging for a key.
+    # Three tiers of protection (Part 6 §4, §5):
+    #  * Health is fully unguarded — an orchestrator's liveness/readiness probe must not need a key
+    #    or be rate-limited. The account surface is unguarded too, so it answers NOT_ENABLED rather
+    #    than challenging for a key.
+    #  * Capabilities and limits are *public but rate-limited*: the spec makes the Capability Matrix
+    #    public and /v1/limits unauthenticated (a pipeline pre-checks them before it authenticates),
+    #    so they never require a configured static key, but they are still bucketed against abuse.
+    #  * Every data surface carries the full request policy (auth + rate limit); the concurrent-job
+    #    cap rides only on the submit endpoints (added inside the jobs router).
     guarded = [Depends(enforce_request_policy)]
+    public = [Depends(enforce_public_rate_limit)]
     app.include_router(health.router, prefix="/v1")
     app.include_router(accounts.router, prefix="/v1")
-    app.include_router(capabilities.router, prefix="/v1", dependencies=guarded)
-    app.include_router(limits.router, prefix="/v1", dependencies=guarded)
+    app.include_router(capabilities.router, prefix="/v1", dependencies=public)
+    app.include_router(limits.router, prefix="/v1", dependencies=public)
     app.include_router(uploads.router, prefix="/v1", dependencies=guarded)
     app.include_router(jobs.router, prefix="/v1", dependencies=guarded)
     app.include_router(downloads.router, prefix="/v1", dependencies=guarded)

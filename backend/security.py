@@ -127,6 +127,26 @@ def enforce_request_policy(
     return principal
 
 
+def enforce_public_rate_limit(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
+) -> str:
+    """Rate-limit an **unauthenticated public** endpoint, bucketed by client host — no key required.
+
+    The Capability Matrix (``/v1/capabilities*``) is *public* and ``/v1/limits`` is
+    *unauthenticated* by the spec (Part 6 §4, §5): a pipeline reads them *before* it authenticates,
+    so requiring a configured static key on them would defeat the pre-check they exist for. They
+    are still bucketed for rate limiting (abuse protection) — the difference from
+    :func:`enforce_request_policy` is that a missing/invalid key is never a ``401`` here. Health
+    stays fully exempt (never even rate-limited); these two are the middle tier — open, but counted.
+    """
+    caller = _client_id(request)
+    request.state.principal = caller
+    rate_limiter.check(caller, settings.rate_limit_per_minute)
+    return caller
+
+
 def enforce_active_job_limit(
     request: Request,
     settings: Settings = Depends(get_settings),

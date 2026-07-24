@@ -29,12 +29,13 @@ def test_method_not_allowed_is_envelope(client: TestClient) -> None:
     assert resp.json()["error"]["code"] == "METHOD_NOT_ALLOWED"
 
 
-def test_request_validation_failure_is_invalid_request(client: TestClient) -> None:
-    # `ready` expects a bool; a non-bool triggers FastAPI request validation → our envelope.
+def test_request_validation_failure_is_malformed_request(client: TestClient) -> None:
+    # `ready` expects a bool; a non-bool triggers FastAPI request validation → our envelope. The
+    # code is the Part 6 §6 binding name MALFORMED_REQUEST, not the earlier draft's INVALID_REQUEST.
     resp = client.get("/v1/health", params={"ready": "not-a-bool"})
     assert resp.status_code == 400
     err = resp.json()["error"]
-    assert err["code"] == "INVALID_REQUEST"
+    assert err["code"] == "MALFORMED_REQUEST"
     assert "errors" in err["details"]
 
 

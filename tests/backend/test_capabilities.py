@@ -44,11 +44,13 @@ def test_unknown_format_is_404_envelope(client: TestClient) -> None:
     resp = client.get("/v1/capabilities/not_a_format")
     assert resp.status_code == 404
     err = resp.json()["error"]
-    assert err["code"] == "UNKNOWN_FORMAT"
+    # FORMAT_NOT_FOUND — the Part 6 §2/§6 404 code for an unknown format id (distinct from the
+    # 422 UNKNOWN_FORMAT a conversion raises when a file cannot be sniffed).
+    assert err["code"] == "FORMAT_NOT_FOUND"
     assert "not_a_format" in err["message"]
     assert "known_formats" in err["details"]
     assert err["request_id"]
-    assert err["documentation_url"].endswith("#unknown_format")
+    assert err["documentation_url"].endswith("#format_not_found")
 
 
 @pytest.mark.parametrize("fmt", ["xyz", "cif", "ase_traj"])

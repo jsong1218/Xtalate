@@ -88,22 +88,36 @@ def test_concurrent_job_cap_returns_429(
 
 
 def test_anonymous_mode_needs_no_key(client: TestClient) -> None:
-    # No keys configured (the default): the guarded surface is reachable without an Authorization.
-    assert client.get("/v1/limits").status_code == 200
+    # No keys configured (the default): the guarded data surface is reachable without an
+    # Authorization header (history is guarded, unlike the public capabilities/limits).
+    assert client.get("/v1/history").status_code == 200
 
 
 def test_configured_key_is_required_and_checked(
     build_client: Callable[..., TestClient],
 ) -> None:
+    # A guarded data endpoint (history) requires the key when one is configured.
     client = build_client(api_keys="secret-key,other-key")
-    assert client.get("/v1/limits").status_code == 401  # missing
-    assert client.get("/v1/limits").json()["error"]["code"] == "UNAUTHORIZED"
+    assert client.get("/v1/history").status_code == 401  # missing
+    assert client.get("/v1/history").json()["error"]["code"] == "UNAUTHORIZED"
 
-    bad = client.get("/v1/limits", headers={"Authorization": "Bearer wrong"})
+    bad = client.get("/v1/history", headers={"Authorization": "Bearer wrong"})
     assert bad.status_code == 401
 
-    ok = client.get("/v1/limits", headers={"Authorization": "Bearer secret-key"})
+    ok = client.get("/v1/history", headers={"Authorization": "Bearer secret-key"})
     assert ok.status_code == 200
+
+
+def test_capabilities_and_limits_are_public_even_with_a_key_configured(
+    build_client: Callable[..., TestClient],
+) -> None:
+    # The Capability Matrix is public and /v1/limits is unauthenticated (Part 6 §4, §5): a pipeline
+    # pre-checks them before it authenticates, so they never require a configured static key. Health
+    # stays fully open too; only the data surface (history above) challenges for the key.
+    client = build_client(api_keys="secret-key")
+    assert client.get("/v1/capabilities").status_code == 200
+    assert client.get("/v1/limits").status_code == 200
+    assert client.get("/v1/health").status_code == 200
 
 
 # --- account surface disabled -------------------------------------------------------------------

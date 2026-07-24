@@ -57,9 +57,12 @@ def capabilities_for_format(
     """One format's declaration as ``{format_id: {...}}`` (matches ``capabilities <id> --json``)."""
     known = _known_format_ids(registry)
     if format_id not in known:
+        # FORMAT_NOT_FOUND — the 404 for an unknown ``format_id`` in the Part 6 §2 endpoint table.
+        # (Distinct from the 422 UNKNOWN_FORMAT a *conversion* raises when a file cannot be sniffed;
+        # here the caller named a format id that simply is not registered.)
         raise ApiError(
             status_code=status.HTTP_404_NOT_FOUND,
-            code="UNKNOWN_FORMAT",
+            code="FORMAT_NOT_FOUND",
             message=f"Unknown format {format_id!r}.",
             details={"known_formats": sorted(known)},
         )
