@@ -157,6 +157,36 @@ services:
     environment:
       <<: *backend-env
 
+  # The Next.js web UI (v0.6 M26; the Part 9 §1.2 row deferred from v0.5). Dev server with hot
+  # reload behind a same-origin `/v1` proxy to the backend (next.config.mjs) — so the browser never
+  # sees a cross-origin API and there is no hard-coded API host in client code. Production build and
+  # hosting are M30 (Part 9 §3); this service exists to develop against the live stack.
+  #
+  # It runs the stock Node image and installs on start (rather than a build step) so the bind-mounted
+  # source hot-reloads and the typed-client generator can read the committed OpenAPI artifact at
+  # ../docs/openapi.json (mounted read-only). node_modules is a named volume so it stays off the host
+  # tree and avoids a host/container platform mismatch.
+  frontend:
+    image: node:20-alpine
+    working_dir: /repo/frontend
+    command: ["sh", "-c", "npm install && npm run dev"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # Server-side (RSC) calls reach the backend in-cluster; the browser uses the same-origin proxy.
+      INTERNAL_API_URL: http://backend:8000
+      API_PROXY_TARGET: http://backend:8000
+      # Reliable hot reload on bind mounts across host platforms.
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ./frontend:/repo/frontend
+      - ./docs:/repo/docs:ro
+      - frontend_node_modules:/repo/frontend/node_modules
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+
 volumes:
   pgdata:
+  frontend_node_modules:
   miniodata:

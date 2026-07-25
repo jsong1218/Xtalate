@@ -59,3 +59,38 @@ jobs:
       # (Part 8 §3; v0.2 M11). A silent fixture edit or a lapsed attribution fails here.
       - name: Pytest (unit + golden + governance, with coverage gate)
         run: pytest
+
+  # Frontend lanes (v0.6 M26; Part 8 §5). Fast, fixture-first checks on the presentation layer: the
+  # typed client generates from the committed OpenAPI artifact (postinstall runs `gen:api`), then
+  # lint + type-check + the Vitest component/unit suite — which includes the plain-language
+  # mapping-coverage lint that reads docs/vocabulary.json. The Playwright e2e journeys (D92) need a
+  # running stack, so they run in the compose-integration job (main.yml), not on this per-PR gate.
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` installs from the committed lockfile and runs the postinstall hook, which generates
+      # lib/api/schema.d.ts from ../docs/openapi.json — so the typed client exists before type-check
+      # and tests. Any hand-patching of that file would mean the OpenAPI artifact is wrong: fix it
+      # there and regenerate (the M26 go/no-go checkpoint).
+      - name: Install (generates the typed API client)
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Type-check (tsc)
+        run: npm run typecheck
+
+      - name: Vitest (components + mapping-coverage lint)
+        run: npm run test

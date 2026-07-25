@@ -118,6 +118,25 @@ _ROOT: tuple[tuple[str, Callable[[CanonicalObject], Any]], ...] = (
 )
 
 
+# Public registry of the fixed canonical field paths the presence map enumerates (§3.11), in
+# declaration order. Consumers that need the vocabulary rather than a specific object's presence —
+# the v0.6 UI's plain-language mapping table and its coverage lint (Part 7 §3.3; the M26 vocabulary
+# export) — read this so a newly added field surfaces as a mapping-coverage failure, not a raw path
+# on screen. This is the same registry the presence computation walks; it cannot drift from it.
+FIXED_CANONICAL_PATHS: tuple[str, ...] = tuple(p for p, _ in _PER_FRAME) + tuple(
+    p for p, _ in _ROOT
+)
+
+# The dynamic per-key categories (§3.10): ``custom_*`` keys are enumerated per object, so a concrete
+# ``user_metadata.custom_global['k']`` row resolves to its *category* label in the mapping table
+# rather than needing a per-key entry. These are the category prefixes that must be labelled.
+CUSTOM_PATH_CATEGORIES: tuple[str, ...] = (
+    "user_metadata.custom_global",
+    "user_metadata.custom_per_atom",
+    "user_metadata.custom_per_frame",
+)
+
+
 def _classify_per_frame(frames: list[Frame], getter: Callable[[Frame], Any]) -> PathPresence:
     present_frames = [f.index for f in frames if getter(f) is not None]
     n = len(frames)
