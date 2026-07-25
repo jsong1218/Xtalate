@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "FILE_TOO_LARGE",
+    "message": "Upload exceeds the 52428800-byte limit.",
+    "details": { "max_upload_bytes": 52428800 },
+    "request_id": "req_8f3a1c9e4b2d",
+    "documentation_url": "https://xtalate.dev/docs/api/errors#file_too_large"
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "report_id": "c4a2d1e8-6f70-4a91-8b23-1d2e3f4a5b6c",
+  "conversion_report_id": "b3f1c2a4-5d6e-4f70-8a91-2c3d4e5f6a7b",
+  "created_at": "2026-07-24T14:03:12Z",
+  "status": "passed",
+  "checks": [
+    {
+      "check_id": "atom_count",
+      "status": "pass",
+      "paths": ["atoms.symbols"],
+      "measured": { "expected": 3, "found": 3, "frames_compared": 1 },
+      "tolerance_applied": null,
+      "message": "3 atoms expected, 3 found (exact check).",
+      "skip_reason": null
+    },
+    {
+      "check_id": "species_preservation",
+      "status": "pass",
+      "paths": ["atoms.symbols"],
+      "measured": { "permutation_map": "identity", "mismatches": 0 },
+      "tolerance_applied": null,
+      "message": "Species preserved; source order retained (identity permutation).",
+      "skip_reason": null
+    },
+    {
+      "check_id": "positions_rmsd",
+      "status": "pass",
+      "paths": ["atoms.positions"],
+      "measured": { "rmsd_ang": 0.0, "max_displacement_ang": 0.0, "frames_compared": 1 },
+      "tolerance_applied": {
+        "warn_ang": 1e-5,
+        "fail_ang": 0.001,
+        "representational_bound_ang": 0.0
+      },
+      "message": "RMSD 0.000e+00 Å over 1 frame(s), within representational precision.",
+      "skip_reason": null
+    },
+    {
+      "check_id": "lattice_consistency",
+      "status": "pass",
+      "paths": ["cell.lattice_vectors", "cell.pbc"],
+      "measured": {
+        "max_element_diff_ang": 0.0,
+        "pbc_expected": [true, true, true],
+        "pbc_found": [true, true, true]
+      },
+      "tolerance_applied": { "warn_ang": 1e-5, "fail_ang": 0.001 },
+      "message": "Lattice matches within 0.000e+00 Å; pbc [True, True, True] preserved exactly.",
+      "skip_reason": null
+    },
+    {
+      "check_id": "frame_count",
+      "status": "pass",
+      "paths": ["frames"],
+      "measured": { "expected": 1, "found": 1 },
+      "tolerance_applied": null,
+      "message": "1 frame(s) planned, 1 found.",
+      "skip_reason": null
+    },
+    {
+      "check_id": "numeric_field_fidelity",
+      "status": "skipped",
+      "paths": [],
+      "measured": {},
+      "tolerance_applied": null,
+      "message": "No numeric fields beyond positions and lattice in the write plan.",
+      "skip_reason": "write_plan contains no velocities, forces, energies, stress, charges, magnetic moments, masses, or time."
+    },
+    {
+      "check_id": "metadata_preservation",
+      "status": "pass",
+      "paths": [],
+      "measured": { "planned_paths": 0, "present": 0, "content_drift": 0 },
+      "tolerance_applied": null,
+      "message": "No metadata or custom-array paths in the write plan.",
+      "skip_reason": null
+    },
+    {
+      "check_id": "absence_conformance",
+      "status": "pass",
+      "paths": ["dynamics.forces", "electronic.total_energy"],
+      "measured": { "removed_paths_checked": 2, "violations": 0 },
+      "tolerance_applied": null,
+      "message": "All 2 removed path(s) verified absent in the re-parse.",
+      "skip_reason": null
+    },
+    {
+      "check_id": "report_consistency",
+      "status": "pass",
+      "paths": [],
+      "measured": {
+        "completeness_invariant": "satisfied",
+        "supplied_traced": 2,
+        "untraceable_deltas": 0,
+        "preflight_final_deltas": 2
+      },
+      "tolerance_applied": null,
+      "message": "Completeness invariant satisfied; every supplied path traces to a recorded Assumption.",
+      "skip_reason": null
+    }
+  ],
+  "tolerance_profile": {
+    "name": "default",
+    "positions_warn_ang": 1e-5,
+    "positions_fail_ang": 0.001,
+    "lattice_warn_ang": 1e-5,
+    "lattice_fail_ang": 0.001,
+    "representational_bound_floor": "enabled"
+  },
+  "reparse_issues": [],
+  "schema_version": "0.1.0"
+}
