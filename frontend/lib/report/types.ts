@@ -11,10 +11,69 @@
  *
  * These are presentation types only. The client never *computes* a report — it renders what the
  * engine produced (Part 7 §2: the faithful presentation layer). The Conversion Report and Validation
- * Report shapes live here (M27); the Discovery Report shape lands beside them in M28 as its page
- * arrives. The service-owned {@link ErrorEnvelope} lives here too — the report panels and the error
+ * Report shapes live here (M27), and the Discovery Report beside them (M28, as its page arrives).
+ * The service-owned {@link ErrorEnvelope} lives here too — the report panels and the error
  * component share one typed home for everything that crosses the `/v1` wire opaque.
  */
+
+import type { CapabilityLevel } from "@/lib/capabilities/types";
+
+// --- Discovery Report (MASTER_SPEC Part 3 §6.2) ------------------------------------------------
+//
+// Mirrors `src/xtalate/discovery/report.py` verbatim. The ✓/✗ inventory the Information Discovery
+// Engine produces for a sniffed-and-parsed file: which canonical fields it contains, each annotated
+// with the *read-side* capability of the **detected** format. `fields` is complete over the
+// canonical scientific leaf paths — every one appears exactly once, present or absent — so "not
+// shown" can never be mistaken for "not checked" (§6.3). Emitted verbatim by `/v1/inspect`.
+
+/** One canonical field's presence in the inspected file — Part 3 §6.2 `FieldPresenceEntry`. */
+export interface FieldPresenceEntry {
+  /** Canonical field path, e.g. "dynamics.velocities" (Part 2 §3). */
+  path: string;
+  /** "present" | "absent" | "mixed" — "mixed" = present in some frames only (Part 2 §3.11). */
+  status: "present" | "absent" | "mixed";
+  /** Populated only when `status === "mixed"`: the frame indices where the field is present. */
+  present_frames: number[] | null;
+  /** Read-side capability of the **detected source** format for this path (not the target's). */
+  format_capability: CapabilityLevel;
+  /** e.g. "2 frames × 3 atoms, Cartesian (Å)". */
+  detail: string | null;
+}
+
+/**
+ * The Discovery Report — Part 3 §6.2 `DiscoveryReport`, verbatim. `file`, `format`, and `structure`
+ * are format-specific dictionaries the engine assembles (typed loosely, as in Python), while
+ * `fields` is the fixed-schema leaf-path inventory the page renders row by row.
+ */
+export interface DiscoveryReport {
+  /** `{ filename, size_bytes, sha256 }`. */
+  file: { filename: string; size_bytes: number; sha256: string; [key: string]: unknown };
+  /** `{ format_id, format_name, confidence, overridden, ambiguous, sniff_evidence: [...] }`. */
+  format: {
+    format_id: string;
+    format_name: string;
+    confidence: number;
+    overridden?: boolean;
+    ambiguous?: boolean;
+    sniff_evidence?: { format_id: string; confidence: number }[];
+    [key: string]: unknown;
+  };
+  /** `{ frame_count, atom_count, species: [...] }`. */
+  structure: {
+    frame_count: number;
+    atom_count: number;
+    species: string[];
+    [key: string]: unknown;
+  };
+  /** One entry per canonical leaf path — complete, present or absent (§6.3). */
+  fields: FieldPresenceEntry[];
+  /** Carried-through custom_* / simulation.extra keys. */
+  extras: string[];
+  /** Warnings raised while parsing the file (Part 3 §5) — same shape as {@link ParseIssue}. */
+  issues: ParseIssue[];
+  /** Of the Canonical Object produced. */
+  schema_version: string;
+}
 
 /** A canonical field the target kept — Part 4 §2 `PreservedEntry`. */
 export interface PreservedEntry {

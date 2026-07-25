@@ -1,0 +1,999 @@
+{
+  "ase_traj": {
+    "read": {
+      "allows_open_boundaries": false,
+      "direction": "read",
+      "fields": {
+        "atoms.masses": {
+          "level": "partial",
+          "notes": "Only when a masses array is written (never ASE-derived)."
+        },
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.lattice_vectors": {
+          "level": "partial",
+          "notes": "Only when a non-zero cell is written."
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "ASE always persists pbc when a cell is present."
+        },
+        "dynamics.constraints": {
+          "level": "partial",
+          "notes": "ASE FixAtoms \u2192 fixed_atoms; other constraints carried."
+        },
+        "dynamics.forces": {
+          "level": "partial",
+          "notes": "Only when the calculator carried forces."
+        },
+        "dynamics.velocities": {
+          "level": "partial",
+          "notes": "Only when a momenta array is present; unit-converted."
+        },
+        "electronic.charges": {
+          "level": "partial",
+          "notes": "From initial_charges array or calculator charges."
+        },
+        "electronic.magnetic_moments": {
+          "level": "partial",
+          "notes": "From initial_magmoms array or calculator magmoms."
+        },
+        "electronic.total_energy": {
+          "level": "partial",
+          "notes": "Only when the calculator carried energy."
+        },
+        "user_metadata.custom_per_atom": {
+          "level": "full",
+          "notes": "Arbitrary per-atom arrays."
+        },
+        "user_metadata.custom_per_frame": {
+          "level": "full",
+          "notes": "atoms.info key-values; carries stress verbatim (D18)."
+        }
+      },
+      "format_id": "ase_traj",
+      "format_name": "ASE Trajectory",
+      "lossy_notes": [
+        "stress carried verbatim in user_metadata.custom_per_frame['ase_traj:stress'] rather than electronic.stress (sign convention)."
+      ],
+      "max_frames": null,
+      "native_coordinate_system": "cartesian",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    },
+    "write": {
+      "allows_open_boundaries": true,
+      "direction": "write",
+      "fields": {
+        "atoms.masses": {
+          "level": "partial",
+          "notes": "Written as a masses array."
+        },
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.lattice_vectors": {
+          "level": "partial",
+          "notes": "Written when a cell is present."
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "Written alongside the cell."
+        },
+        "dynamics.constraints": {
+          "level": "partial",
+          "notes": "Only fixed_atoms (\u2192 ASE FixAtoms); other kinds dropped."
+        },
+        "dynamics.forces": {
+          "level": "partial",
+          "notes": "Written on the calculator."
+        },
+        "dynamics.velocities": {
+          "level": "partial",
+          "notes": "Written as momenta; unit-converted."
+        },
+        "electronic.charges": {
+          "level": "partial",
+          "notes": "Written as the initial_charges array."
+        },
+        "electronic.magnetic_moments": {
+          "level": "partial",
+          "notes": "Written as the initial_magmoms array."
+        },
+        "electronic.total_energy": {
+          "level": "partial",
+          "notes": "Written on the calculator."
+        },
+        "user_metadata.custom_per_atom": {
+          "level": "none",
+          "notes": "ASE's .traj writer persists no custom per-atom array \u2014 not under a format-scoped name, not under a plain one \u2014 so a carry-through column cannot be written at all. Per-frame metadata (atoms.info) is unaffected."
+        },
+        "user_metadata.custom_per_frame": {
+          "level": "full",
+          "notes": "Written back as atoms.info key-values."
+        }
+      },
+      "format_id": "ase_traj",
+      "format_name": "ASE Trajectory",
+      "lossy_notes": [],
+      "max_frames": null,
+      "native_coordinate_system": "cartesian",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [
+        "fixed_atoms"
+      ],
+      "required_fields": [
+        "atoms.symbols",
+        "atoms.positions"
+      ],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    }
+  },
+  "cif": {
+    "read": {
+      "allows_open_boundaries": false,
+      "direction": "read",
+      "fields": {
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": "From _atom_site_type_symbol (oxidation-state suffix split off) or _atom_site_label; the raw type symbol is preserved per-atom."
+        },
+        "cell.lattice_vectors": {
+          "level": "full",
+          "notes": "Built from _cell_length_* / _cell_angle_* with a\u2248+x and b in the xy half-plane (crystallographic standard orientation)."
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "Always (T,T,T) by format definition; CIF carries no explicit PBC."
+        },
+        "cell.space_group": {
+          "level": "full",
+          "notes": "Hermann-Mauguin or Hall symbol exactly as declared; never derived."
+        },
+        "electronic.charges": {
+          "level": "partial",
+          "notes": "Only formal oxidation states, from a complete _atom_type_oxidation_number loop; labelled 'formal_oxidation_state' in simulation.extra. A partial declaration leaves the field unset."
+        },
+        "simulation.extra": {
+          "level": "full",
+          "notes": "Bibliographic and free-text block tags carried verbatim."
+        },
+        "user_metadata.custom_per_atom": {
+          "level": "full",
+          "notes": "Unmapped _atom_site columns (Wyckoff symbols, displacement parameters) carried verbatim under 'cif:' keys, plus occupancy under 'cif:occupancy'."
+        }
+      },
+      "format_id": "cif",
+      "format_name": "Crystallographic Information File",
+      "lossy_notes": [
+        "Only the first data_ block is read; further blocks are independent structures and are named in a warning, never silently skipped.",
+        "Declared symmetry operations are applied, so atoms are the full cell, not the asymmetric unit; generated coordinates are wrapped into the cell and images coinciding within 0.05 \u00c5 are merged (Part 3 \u00a73 n.13).",
+        "A non-P 1 symbol declared with no operation loop is refused, not guessed from a space-group table.",
+        "Occupancy is carried as a custom per-atom array under 'cif:occupancy', not modelled as a canonical field, and warns at parse (Part 3 \u00a73 n.11).",
+        "A type symbol's oxidation-state suffix ('Fe3+') is preserved verbatim but is not read as a charge; only a declared _atom_type_oxidation_number populates electronic.charges."
+      ],
+      "max_frames": 1,
+      "native_coordinate_system": "fractional",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    },
+    "write": {
+      "allows_open_boundaries": false,
+      "direction": "write",
+      "fields": {
+        "atoms.positions": {
+          "level": "full",
+          "notes": "Written as fractional _atom_site_fract_* against the cell."
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.lattice_vectors": {
+          "level": "full",
+          "notes": "Written as _cell_length_* / _cell_angle_* parameters; lengths and angles are orientation-independent, so the cell is preserved exactly even though its absolute orientation in the lab frame is not a CIF concept."
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "CIF describes a crystal, so periodicity is implied and never written; only fully periodic (T,T,T) is representable."
+        },
+        "cell.space_group": {
+          "level": "none",
+          "notes": "Xtalate writes the identity operation and the full explicit atom list, with no space-group symbol, because the Canonical Object holds the expanded cell; a source symbol would assert a setting the written coordinates no longer encode, and re-deriving one from coordinates is a Non-Goal."
+        },
+        "dynamics.constraints": {
+          "level": "none",
+          "notes": null
+        },
+        "dynamics.forces": {
+          "level": "none",
+          "notes": null
+        },
+        "dynamics.velocities": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.charges": {
+          "level": "none",
+          "notes": "CIF states charges per atom *type* (_atom_type_oxidation_number), not per atom; writing the canonical per-atom array back is a v0.4 cut-line item."
+        },
+        "electronic.magnetic_moments": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.stress": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.total_energy": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.extra": {
+          "level": "partial",
+          "notes": "Keys prefixed 'cif:' are written back as the block-level tags they came from; other keys have no CIF tag spelling and are dropped. Two families are held back deliberately: the declared symmetry operations, and any tag that identifies a space group \u2014 its International Tables number or a database's own symbol spelling \u2014 because the written atom list is the expanded full cell and a reader honouring either would expand it a second time. A tag naming only the crystal system is kept."
+        },
+        "user_metadata.custom_global": {
+          "level": "partial",
+          "notes": "Only the data block name (cif:data_block_name)."
+        },
+        "user_metadata.custom_per_atom": {
+          "level": "partial",
+          "notes": "Site label, raw type symbol and occupancy are written back to their _atom_site columns; other per-atom columns (Wyckoff symbols, displacement parameters) are not re-emitted in v0.4."
+        },
+        "user_metadata.custom_per_frame": {
+          "level": "none",
+          "notes": null
+        }
+      },
+      "format_id": "cif",
+      "format_name": "Crystallographic Information File",
+      "lossy_notes": [
+        "Written with the identity symmetry operation and every atom listed explicitly; no space-group symbol is emitted, and a source symbol is reported removed rather than echoed.",
+        "Cartesian positions are converted to fractional against the cell on write, so sub-ulp differences from the source Cartesian values are possible on round-trip."
+      ],
+      "max_frames": 1,
+      "native_coordinate_system": "fractional",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [
+        "atoms.symbols",
+        "atoms.positions",
+        "cell.lattice_vectors"
+      ],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {
+        "user_metadata.custom_global": [
+          "cif:data_block_name"
+        ],
+        "user_metadata.custom_per_atom": [
+          "cif:atom_site_label",
+          "cif:type_symbol",
+          "cif:occupancy"
+        ]
+      }
+    }
+  },
+  "contcar": {
+    "read": {
+      "allows_open_boundaries": false,
+      "direction": "read",
+      "fields": {
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.lattice_vectors": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "Always (T,T,T) by format definition; POSCAR carries no explicit PBC."
+        },
+        "dynamics.constraints": {
+          "level": "partial",
+          "notes": "Only per-axis fixed-atom masks (selective dynamics)."
+        },
+        "dynamics.velocities": {
+          "level": "full",
+          "notes": "CONTCAR-tail velocity block; both Cartesian and Direct conventions are read, Direct converted to Cartesian \u00c5/fs via the lattice."
+        },
+        "user_metadata.custom_global": {
+          "level": "full",
+          "notes": "Title line and CONTCAR predictor block."
+        }
+      },
+      "format_id": "contcar",
+      "format_name": "VASP CONTCAR",
+      "lossy_notes": [],
+      "max_frames": 1,
+      "native_coordinate_system": "both",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    },
+    "write": {
+      "allows_open_boundaries": false,
+      "direction": "write",
+      "fields": {
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.lattice_vectors": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "Only fully periodic (T,T,T); other PBC combinations cannot be represented."
+        },
+        "cell.space_group": {
+          "level": "none",
+          "notes": null
+        },
+        "dynamics.constraints": {
+          "level": "partial",
+          "notes": "Only per-axis fixed-atom masks (selective dynamics)."
+        },
+        "dynamics.forces": {
+          "level": "none",
+          "notes": null
+        },
+        "dynamics.velocities": {
+          "level": "full",
+          "notes": "Written as a Cartesian \u00c5/fs velocity block (canonical unit, no rescale). Direct-mode velocity export is not offered in v0.2 (M8 cut line)."
+        },
+        "electronic.charges": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.magnetic_moments": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.stress": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.total_energy": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.calculator": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.extra": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.md_ensemble": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.pseudopotentials": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.source_code": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.temperature": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.thermostat": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.xc_functional": {
+          "level": "none",
+          "notes": null
+        },
+        "user_metadata.custom_global": {
+          "level": "partial",
+          "notes": "Only the POSCAR title (poscar:comment) and CONTCAR predictor-corrector block (contcar:predictor_corrector); other custom_global keys are dropped."
+        },
+        "user_metadata.custom_per_atom": {
+          "level": "none",
+          "notes": null
+        },
+        "user_metadata.custom_per_frame": {
+          "level": "none",
+          "notes": null
+        }
+      },
+      "format_id": "contcar",
+      "format_name": "VASP CONTCAR",
+      "lossy_notes": [
+        "Positions written with full float64 precision; sub-ulp differences possible on round-trip through fixed-width VASP readers."
+      ],
+      "max_frames": 1,
+      "native_coordinate_system": "both",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [
+        "selective_dynamics"
+      ],
+      "required_fields": [
+        "atoms.symbols",
+        "atoms.positions",
+        "cell.lattice_vectors"
+      ],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {
+        "user_metadata.custom_global": [
+          "poscar:comment",
+          "contcar:predictor_corrector"
+        ]
+      }
+    }
+  },
+  "extxyz": {
+    "read": {
+      "allows_open_boundaries": false,
+      "direction": "read",
+      "fields": {
+        "atoms.masses": {
+          "level": "partial",
+          "notes": "Only when declared in Properties= columns."
+        },
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.lattice_vectors": {
+          "level": "partial",
+          "notes": "Only when Lattice= key present."
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "From pbc= key; (T,T,T) by extXYZ convention when a Lattice has no pbc= key (recorded in parse_notes)."
+        },
+        "dynamics.forces": {
+          "level": "partial",
+          "notes": "Only when a forces column is present."
+        },
+        "dynamics.velocities": {
+          "level": "partial",
+          "notes": "Only when a momenta column is present; unit-converted."
+        },
+        "electronic.charges": {
+          "level": "partial",
+          "notes": "Only when a per-atom charge column is present."
+        },
+        "electronic.magnetic_moments": {
+          "level": "partial",
+          "notes": "Only when a per-atom magmoms column is present."
+        },
+        "electronic.total_energy": {
+          "level": "partial",
+          "notes": "Only when energy= key present."
+        },
+        "user_metadata.custom_per_atom": {
+          "level": "full",
+          "notes": "Arbitrary Properties= columns."
+        },
+        "user_metadata.custom_per_frame": {
+          "level": "full",
+          "notes": "Arbitrary comment-line key-value pairs; carries stress verbatim (D18)."
+        }
+      },
+      "format_id": "extxyz",
+      "format_name": "Extended XYZ",
+      "lossy_notes": [
+        "stress/virial carried verbatim in user_metadata.custom_per_frame['extxyz:stress'] rather than electronic.stress."
+      ],
+      "max_frames": null,
+      "native_coordinate_system": "cartesian",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    },
+    "write": {
+      "allows_open_boundaries": true,
+      "direction": "write",
+      "fields": {
+        "atoms.masses": {
+          "level": "partial",
+          "notes": "Written as a masses column."
+        },
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.lattice_vectors": {
+          "level": "partial",
+          "notes": "Written as the Lattice= key when a cell is present."
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "Written as the pbc= key."
+        },
+        "dynamics.forces": {
+          "level": "partial",
+          "notes": "Written as a forces column."
+        },
+        "dynamics.velocities": {
+          "level": "partial",
+          "notes": "Written as a momenta column; unit-converted."
+        },
+        "electronic.charges": {
+          "level": "partial",
+          "notes": "Written as a per-atom charge column."
+        },
+        "electronic.magnetic_moments": {
+          "level": "partial",
+          "notes": "Written as a per-atom magmoms column."
+        },
+        "electronic.total_energy": {
+          "level": "partial",
+          "notes": "Written as the energy= key."
+        },
+        "user_metadata.custom_per_atom": {
+          "level": "partial",
+          "notes": "Written back as Properties= columns, but only under a name extXYZ can spell: the Properties= grammar separates its fields with ':', so a format-scoped key such as 'cif:occupancy' cannot be written at all, and a bare name is read back re-prefixed as 'extxyz:<name>'. Keys matching 'extxyz:<name>' round-trip exactly; the rest are dropped."
+        },
+        "user_metadata.custom_per_frame": {
+          "level": "full",
+          "notes": "Written back as comment key-values."
+        }
+      },
+      "format_id": "extxyz",
+      "format_name": "Extended XYZ",
+      "lossy_notes": [],
+      "max_frames": null,
+      "native_coordinate_system": "cartesian",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [
+        "atoms.symbols",
+        "atoms.positions"
+      ],
+      "writable_custom_key_pattern": {
+        "user_metadata.custom_per_atom": "extxyz:[^:]*"
+      },
+      "writable_custom_keys": {}
+    }
+  },
+  "poscar": {
+    "read": {
+      "allows_open_boundaries": false,
+      "direction": "read",
+      "fields": {
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.lattice_vectors": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "Always (T,T,T) by format definition; POSCAR carries no explicit PBC."
+        },
+        "dynamics.constraints": {
+          "level": "partial",
+          "notes": "Only per-axis fixed-atom masks (selective dynamics)."
+        },
+        "dynamics.velocities": {
+          "level": "full",
+          "notes": "CONTCAR-tail velocity block; both Cartesian and Direct conventions are read, Direct converted to Cartesian \u00c5/fs via the lattice."
+        },
+        "user_metadata.custom_global": {
+          "level": "full",
+          "notes": "Title line and CONTCAR predictor block."
+        }
+      },
+      "format_id": "poscar",
+      "format_name": "VASP POSCAR",
+      "lossy_notes": [],
+      "max_frames": 1,
+      "native_coordinate_system": "both",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    },
+    "write": {
+      "allows_open_boundaries": false,
+      "direction": "write",
+      "fields": {
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.lattice_vectors": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "Only fully periodic (T,T,T); other PBC combinations cannot be represented."
+        },
+        "cell.space_group": {
+          "level": "none",
+          "notes": null
+        },
+        "dynamics.constraints": {
+          "level": "partial",
+          "notes": "Only per-axis fixed-atom masks (selective dynamics)."
+        },
+        "dynamics.forces": {
+          "level": "none",
+          "notes": null
+        },
+        "dynamics.velocities": {
+          "level": "full",
+          "notes": "Written as a Cartesian \u00c5/fs velocity block (canonical unit, no rescale). Direct-mode velocity export is not offered in v0.2 (M8 cut line)."
+        },
+        "electronic.charges": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.magnetic_moments": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.stress": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.total_energy": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.calculator": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.extra": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.md_ensemble": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.pseudopotentials": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.source_code": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.temperature": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.thermostat": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.xc_functional": {
+          "level": "none",
+          "notes": null
+        },
+        "user_metadata.custom_global": {
+          "level": "partial",
+          "notes": "Only the POSCAR title (poscar:comment) and CONTCAR predictor-corrector block (contcar:predictor_corrector); other custom_global keys are dropped."
+        },
+        "user_metadata.custom_per_atom": {
+          "level": "none",
+          "notes": null
+        },
+        "user_metadata.custom_per_frame": {
+          "level": "none",
+          "notes": null
+        }
+      },
+      "format_id": "poscar",
+      "format_name": "VASP POSCAR",
+      "lossy_notes": [
+        "Positions written with full float64 precision; sub-ulp differences possible on round-trip through fixed-width VASP readers."
+      ],
+      "max_frames": 1,
+      "native_coordinate_system": "both",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [
+        "selective_dynamics"
+      ],
+      "required_fields": [
+        "atoms.symbols",
+        "atoms.positions",
+        "cell.lattice_vectors"
+      ],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {
+        "user_metadata.custom_global": [
+          "poscar:comment",
+          "contcar:predictor_corrector"
+        ]
+      }
+    }
+  },
+  "xdatcar": {
+    "read": {
+      "allows_open_boundaries": false,
+      "direction": "read",
+      "fields": {
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.lattice_vectors": {
+          "level": "full",
+          "notes": "Per-frame cells are read for the NpT form (a repeated header before each configuration); the fixed-cell form gives every frame the same lattice."
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "Always (T,T,T) by format definition; XDATCAR carries no explicit PBC."
+        },
+        "user_metadata.custom_global": {
+          "level": "full",
+          "notes": "Title line."
+        }
+      },
+      "format_id": "xdatcar",
+      "format_name": "VASP XDATCAR",
+      "lossy_notes": [],
+      "max_frames": null,
+      "native_coordinate_system": "both",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    },
+    "write": {
+      "allows_open_boundaries": false,
+      "direction": "write",
+      "fields": {
+        "atoms.masses": {
+          "level": "none",
+          "notes": null
+        },
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "cell.lattice_vectors": {
+          "level": "full",
+          "notes": "A per-frame cell is written by restating the header ahead of a configuration whose cell moved (the NpT form), so an NpT trajectory is not collapsed onto one lattice."
+        },
+        "cell.pbc": {
+          "level": "partial",
+          "notes": "Only fully periodic (T,T,T); other PBC combinations cannot be represented."
+        },
+        "cell.space_group": {
+          "level": "none",
+          "notes": null
+        },
+        "dynamics.constraints": {
+          "level": "none",
+          "notes": null
+        },
+        "dynamics.forces": {
+          "level": "none",
+          "notes": null
+        },
+        "dynamics.velocities": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.charges": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.magnetic_moments": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.stress": {
+          "level": "none",
+          "notes": null
+        },
+        "electronic.total_energy": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.calculator": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.extra": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.md_ensemble": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.pseudopotentials": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.source_code": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.temperature": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.thermostat": {
+          "level": "none",
+          "notes": null
+        },
+        "simulation.xc_functional": {
+          "level": "none",
+          "notes": null
+        },
+        "trajectory.timestep": {
+          "level": "none",
+          "notes": null
+        },
+        "user_metadata.custom_global": {
+          "level": "partial",
+          "notes": "Only the XDATCAR title (xdatcar:comment); other custom_global keys are dropped."
+        },
+        "user_metadata.custom_per_atom": {
+          "level": "none",
+          "notes": null
+        },
+        "user_metadata.custom_per_frame": {
+          "level": "none",
+          "notes": null
+        }
+      },
+      "format_id": "xdatcar",
+      "format_name": "VASP XDATCAR",
+      "lossy_notes": [
+        "Positions are written in VASP's Direct (fractional) convention, so a Cartesian source round-trips through a lattice inversion; agreement is exact to within float64 rounding, not bit-for-bit."
+      ],
+      "max_frames": null,
+      "native_coordinate_system": "fractional",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [
+        "atoms.symbols",
+        "atoms.positions",
+        "cell.lattice_vectors"
+      ],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {
+        "user_metadata.custom_global": [
+          "xdatcar:comment"
+        ]
+      }
+    }
+  },
+  "xyz": {
+    "read": {
+      "allows_open_boundaries": false,
+      "direction": "read",
+      "fields": {
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "user_metadata.custom_per_frame": {
+          "level": "full",
+          "notes": "Free-text comment line, one per frame."
+        }
+      },
+      "format_id": "xyz",
+      "format_name": "Plain XYZ",
+      "lossy_notes": [],
+      "max_frames": null,
+      "native_coordinate_system": "cartesian",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    },
+    "write": {
+      "allows_open_boundaries": false,
+      "direction": "write",
+      "fields": {
+        "atoms.positions": {
+          "level": "full",
+          "notes": null
+        },
+        "atoms.symbols": {
+          "level": "full",
+          "notes": null
+        },
+        "user_metadata.custom_per_frame": {
+          "level": "partial",
+          "notes": "Only the free-text comment line (xyz:comment), one per frame; other per-frame keys cannot be expressed by plain XYZ."
+        }
+      },
+      "format_id": "xyz",
+      "format_name": "Plain XYZ",
+      "lossy_notes": [],
+      "max_frames": null,
+      "native_coordinate_system": "cartesian",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [
+        "atoms.symbols",
+        "atoms.positions"
+      ],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {
+        "user_metadata.custom_per_frame": [
+          "xyz:comment"
+        ]
+      }
+    }
+  }
+}

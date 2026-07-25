@@ -1,0 +1,200 @@
+{
+  "file": {
+    "filename": "occupancy_cell_uncertainty.cif",
+    "size_bytes": 1373,
+    "sha256": "991483f5d0783c3957ce5404be6dd2c2f5fa2e986a48cf6b332d4978ee37ef30"
+  },
+  "format": {
+    "format_id": "cif",
+    "format_name": "Crystallographic Information File",
+    "confidence": 1.0,
+    "overridden": false,
+    "ambiguous": false,
+    "sniff_evidence": [
+      {
+        "format_id": "ase_traj",
+        "confidence": 0.0
+      },
+      {
+        "format_id": "contcar",
+        "confidence": 0.0
+      },
+      {
+        "format_id": "extxyz",
+        "confidence": 0.0
+      },
+      {
+        "format_id": "poscar",
+        "confidence": 0.0
+      },
+      {
+        "format_id": "toyfmt",
+        "confidence": 0.0
+      },
+      {
+        "format_id": "xdatcar",
+        "confidence": 0.0
+      },
+      {
+        "format_id": "xyz",
+        "confidence": 0.0
+      }
+    ]
+  },
+  "structure": {
+    "frame_count": 1,
+    "atom_count": 3,
+    "species": [
+      "Na",
+      "Cl"
+    ]
+  },
+  "fields": [
+    {
+      "path": "atoms.symbols",
+      "status": "present",
+      "present_frames": null,
+      "format_capability": "full",
+      "detail": "Na, Cl, Cl"
+    },
+    {
+      "path": "atoms.positions",
+      "status": "present",
+      "present_frames": null,
+      "format_capability": "full",
+      "detail": "1 frame(s) × 3 atoms, Cartesian (Å)"
+    },
+    {
+      "path": "atoms.masses",
+      "status": "absent",
+      "present_frames": null,
+      "format_capability": "none",
+      "detail": null
+    },
+    {
+      "path": "frame.time",
+      "status": "absent",
+      "present_frames": null,
+      "format_capability": "none",
+      "detail": null
+    },
+    {
+      "path": "cell.lattice_vectors",
+      "status": "present",
+      "present_frames": null,
+      "format_capability": "full",
+      "detail": "3×3 lattice (Å)"
+    },
+    {
+      "path": "cell.pbc",
+      "status": "present",
+      "present_frames": null,
+      "format_capability": "partial",
+      "detail": null
+    },
+    {
+      "path": "cell.space_group",
+      "status": "present",
+      "present_frames": null,
+      "format_capability": "full",
+      "detail": null
+    },
+    {
+      "path": "trajectory.timestep",
+      "status": "absent",
+      "present_frames": null,
+      "format_capability": "none",
+      "detail": null
+    },
+    {
+      "path": "dynamics.velocities",
+      "status": "absent",
+      "present_frames": null,
+      "format_capability": "none",
+      "detail": null
+    },
+    {
+      "path": "dynamics.forces",
+      "status": "absent",
+      "present_frames": null,
+      "format_capability": "none",
+      "detail": null
+    },
+    {
+      "path": "dynamics.constraints",
+      "status": "absent",
+      "present_frames": null,
+      "format_capability": "none",
+      "detail": null
+    },
+    {
+      "path": "electronic.total_energy",
+      "status": "absent",
+      "present_frames": null,
+      "format_capability": "none",
+      "detail": null
+    },
+    {
+      "path": "electronic.stress",
+      "status": "absent",
+      "present_frames": null,
+      "format_capability": "none",
+      "detail": null
+    },
+    {
+      "path": "electronic.charges",
+      "status": "absent",
+      "present_frames": null,
+      "format_capability": "partial",
+      "detail": null
+    },
+    {
+      "path": "electronic.magnetic_moments",
+      "status": "absent",
+      "present_frames": null,
+      "format_capability": "none",
+      "detail": null
+    },
+    {
+      "path": "electronic.total_spin",
+      "status": "absent",
+      "present_frames": null,
+      "format_capability": "none",
+      "detail": null
+    }
+  ],
+  "extras": [
+    "user_metadata.custom_global['cif:data_block_name']",
+    "user_metadata.custom_per_atom['cif:atom_site_label']",
+    "user_metadata.custom_per_atom['cif:type_symbol']",
+    "user_metadata.custom_per_atom['cif:occupancy']",
+    "simulation.extra['cif:chemical_name_common']",
+    "simulation.extra['cif:chemical_formula_sum']",
+    "simulation.extra['cif:space_group_it_number']",
+    "simulation.extra['cif:symmetry_operations']"
+  ],
+  "issues": [
+    {
+      "severity": "warning",
+      "code": "CIF_OCCUPANCY_NOT_MODELLED",
+      "message": "occupancy carried as a custom per-atom array: the file declares _atom_site_occupancy and the Canonical Model has no occupancy field, so the column is preserved verbatim in user_metadata.custom_per_atom['cif:occupancy'] rather than modelled (Part 3 §3 n.11). Only the CIF target can write it back.",
+      "location": "line 25",
+      "recovery_hint": null
+    },
+    {
+      "severity": "warning",
+      "code": "CIF_PARTIAL_OCCUPANCY",
+      "message": "partial site occupancy: 2 of 3 sites declare an occupancy that is not 1 (unknown values, '?' or '.', count as not-1 — silence is not a claim of fullness). The structure carries a whole atom at every such site, so its composition is the fully-occupied one and does not equal the file's own _chemical_formula_sum. CIF is the only Phase 1 target that writes the column back; converting to any other target discards the distinction.",
+      "location": "line 25",
+      "recovery_hint": null
+    },
+    {
+      "severity": "warning",
+      "code": "CIF_TAGS_CARRIED",
+      "message": "3 CIF tag(s) have no canonical field and were carried verbatim into simulation.extra under 'cif:' keys: ['_chemical_formula_sum', '_chemical_name_common', '_space_group_it_number']",
+      "location": "line 11",
+      "recovery_hint": null
+    }
+  ],
+  "schema_version": "0.1.0"
+}
