@@ -10,8 +10,10 @@
  * this file is what changes with it; nothing else in the UI re-derives report shape.
  *
  * These are presentation types only. The client never *computes* a report — it renders what the
- * engine produced (Part 7 §2: the faithful presentation layer). The Validation and Discovery report
- * shapes land beside these in M27-S2 / M28 as the panels that consume them arrive.
+ * engine produced (Part 7 §2: the faithful presentation layer). The Conversion Report and Validation
+ * Report shapes live here (M27); the Discovery Report shape lands beside them in M28 as its page
+ * arrives. The service-owned {@link ErrorEnvelope} lives here too — the report panels and the error
+ * component share one typed home for everything that crosses the `/v1` wire opaque.
  */
 
 /** A canonical field the target kept — Part 4 §2 `PreservedEntry`. */
@@ -62,11 +64,33 @@ export interface ReportWarning {
   source: "parse" | "capability" | "export";
 }
 
-/** Populated iff `status === "refused"` — Part 4 §4. */
+/**
+ * One recovery the pre-flight detected but that no supplied choice resolved — Part 4 §3, the
+ * elements of a {@link RefusalDetail.unresolved_scenarios} list. The engine serializes exactly
+ * these four fields of `recovery.UnresolvedScenario` into the refusal dict (`params` is dropped):
+ * `path` is the canonical field a *fabricative* scenario would supply and is `null` for a
+ * selective-reductive one (`frame_selection`); `options` is the honest, pair-specific list of
+ * `choice` codes offered for this concrete source→target.
+ */
+export interface UnresolvedScenario {
+  /** Machine code, e.g. "missing_lattice" — resolved to a plain label via `lib/mapping.ts`. */
+  scenario: string;
+  path: string | null;
+  detail: string | null;
+  options: string[];
+}
+
+/**
+ * Populated iff `status === "refused"` — Part 4 §4. `unresolved_scenarios` is a list of
+ * {@link UnresolvedScenario} **objects**, not bare strings: the `RECOVERY_REQUIRED` refusal carries
+ * each unresolved recovery's path/detail/options, while `UNACKNOWLEDGED_LOSS` carries `[]`. (Mirrors
+ * the untyped `refusal: dict` the engine assembles in `conversion/engine.py`.)
+ */
 export interface RefusalDetail {
+  /** Stable machine code: "RECOVERY_REQUIRED" | "UNACKNOWLEDGED_LOSS" (Part 4 §4). */
   code: string;
   message: string;
-  unresolved_scenarios: string[];
+  unresolved_scenarios: UnresolvedScenario[];
 }
 
 /** Source / target descriptors carried on the report (Part 4 §2). */
@@ -95,4 +119,80 @@ export interface ConversionReport {
   assumptions: Assumption[];
   warnings: ReportWarning[];
   refusal: RefusalDetail | null;
+}
+
+// --- Validation Report (MASTER_SPEC Part 5 §3) -------------------------------------------------
+//
+// Mirrors `src/xtalate/validation/report.py` verbatim. The Validation Report is the post-conversion
+// re-parse-and-diff: one `CheckResult` per executed *or skipped* check from the §2 catalog. A
+// skipped check is reported, never omitted (an absent result would leave a reader guessing whether
+// fidelity was verified or forgotten) — so the panel renders `skipped` rows, it does not filter
+// them. The aggregate `status` is the worst individual check outcome.
+
+/** A single fidelity check's outcome — Part 5 §3 `CheckResult`. */
+export interface CheckResult {
+  /** Stable machine code from the Part 5 §2 catalog, e.g. "positions_rmsd". */
+  check_id: string;
+  status: "pass" | "warn" | "fail" | "skipped";
+  /** Canonical field paths this check examined. */
+  paths: string[];
+  /** Check-specific measurements, e.g. `{ rmsd_ang: 3.2e-13, frames_compared: 1 }`. */
+  measured: Record<string, unknown>;
+  /** Effective thresholds used (§4); `null` for exact/discrete checks. */
+  tolerance_applied: Record<string, unknown> | null;
+  /** Human-readable outcome — specific and quantitative; rendered verbatim. */
+  message: string;
+  /** Populated iff `status === "skipped"` — shown, never hidden (Part 5 §3). */
+  skip_reason: string | null;
+}
+
+/**
+ * A parse issue raised while re-parsing the output — Part 3 §5 `ParseIssue`. An output that parses
+ * only with warnings is itself a finding, so these surface in the Validation panel.
+ */
+export interface ParseIssue {
+  severity: "warning" | "error";
+  code: string;
+  message: string;
+  location: string | null;
+  recovery_hint: string | null;
+}
+
+/** The Validation Report — Part 5 §3 `ValidationReport`, verbatim. */
+export interface ValidationReport {
+  report_id: string;
+  /** Links to the {@link ConversionReport} this validates (Part 4 §2). */
+  conversion_report_id: string;
+  created_at: string;
+  /** Worst `CheckResult` determines it (Part 5 §3). */
+  status: "passed" | "passed_with_warnings" | "failed";
+  checks: CheckResult[];
+  /** The full profile in force (§4): name + every effective threshold; self-contained. */
+  tolerance_profile: Record<string, unknown>;
+  /** Warnings raised while re-parsing the output (Part 3 §5). */
+  reparse_issues: ParseIssue[];
+  schema_version: string;
+}
+
+// --- Error envelope (MASTER_SPEC Part 6 §6) ----------------------------------------------------
+//
+// The single non-2xx body every `/v1` error path renders — a raised ApiError, a request-validation
+// failure, an unexpected exception, an unmatched route (`backend/models.py::ErrorEnvelope`). The
+// client writes exactly one error-handling branch against it. `code` is a stable machine string
+// shown verbatim (never localized, never paraphrased); `request_id` is the bridge to server logs.
+
+/** The inner `error` object — Part 6 §6 `ErrorBody`. */
+export interface ErrorBody {
+  /** Stable machine string, e.g. "UNKNOWN_FORMAT" — rendered verbatim. */
+  code: string;
+  message: string;
+  /** Structured specifics (offending field, allowed values, …); `{}` when none. */
+  details: Record<string, unknown>;
+  request_id: string;
+  documentation_url: string;
+}
+
+/** The whole non-2xx body: `{ error: { … } }` — Part 6 §6 `ErrorEnvelope`. */
+export interface ErrorEnvelope {
+  error: ErrorBody;
 }

@@ -1,0 +1,54 @@
+{
+  "report_id": "d5b3e2f9-7a81-4b02-9c34-3e4f5a6b7c8d",
+  "stage": "final",
+  "status": "refused",
+  "mode": "permissive",
+  "created_at": "2026-07-24T14:05:47Z",
+  "source": {
+    "format_id": "ase_traj",
+    "filename": "relax.traj",
+    "sha256": "9f2c1e7a5b3d4f60a8c9e1d2b3a4f5061728394a5b6c7d8e9f0a1b2c3d4e5f60",
+    "schema_version": "0.1.0"
+  },
+  "target": {
+    "format_id": "poscar",
+    "filename": "POSCAR"
+  },
+  "preserved": [
+    { "path": "atoms.symbols", "detail": null },
+    { "path": "atoms.positions", "detail": "predicted; depends on the frame chosen" }
+  ],
+  "removed": [
+    {
+      "path": "dynamics.forces",
+      "reason": "Target format 'poscar' cannot store dynamics.forces.",
+      "detail": null
+    },
+    {
+      "path": "electronic.total_energy",
+      "reason": "Target format 'poscar' cannot store electronic.total_energy.",
+      "detail": null
+    }
+  ],
+  "supplied": [],
+  "assumptions": [],
+  "warnings": [],
+  "refusal": {
+    "code": "RECOVERY_REQUIRED",
+    "message": "conversion needs recovery decisions that were not supplied; provide them as recovery_choices presets, or choose a target that does not require the missing fields",
+    "unresolved_scenarios": [
+      {
+        "scenario": "frame_selection",
+        "path": null,
+        "detail": "Source holds 10 frame(s); the target stores a single structure. Which frame survives changes the scientific meaning of the output.",
+        "options": ["first", "last", "index"]
+      },
+      {
+        "scenario": "missing_lattice",
+        "path": "cell.lattice_vectors",
+        "detail": "The target requires a simulation cell; the source expressed none.",
+        "options": ["manual_input", "upload_reference", "bounding_box"]
+      }
+    ]
+  }
+}

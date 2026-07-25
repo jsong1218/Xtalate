@@ -54,4 +54,24 @@ describe("ConversionReportPanel (Part 4 §2 / Part 7 §4.3)", () => {
     expect(screen.getByText("Chemical species (symbols)")).toBeInTheDocument();
     expect(screen.queryByText("atoms.symbols")).not.toBeInTheDocument();
   });
+
+  it("omits empty loss sections but never the affirmative summary (empty-state)", () => {
+    // A clean conversion: everything preserved, nothing removed, assumed, or warned. The loss
+    // sections are absent (a heading with zero rows would be noise), but the always-present summary
+    // chips still account for the zeros — so omission is never a silent blank.
+    const lossless: ConversionReport = {
+      ...report,
+      removed: [],
+      supplied: [],
+      assumptions: [],
+      warnings: [],
+    };
+    render(<ConversionReportPanel report={lossless} />);
+    expect(screen.getAllByTestId("preserved-row")).toHaveLength(report.preserved.length);
+    expect(screen.queryByTestId("removed-row")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("assumption-row")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("warning-row")).not.toBeInTheDocument();
+    // The affirmative zero accounting survives in the chips.
+    expect(screen.getByText("0 fields removed")).toBeInTheDocument();
+  });
 });
