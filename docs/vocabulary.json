@@ -1,0 +1,46 @@
+{
+  "canonical_paths": [
+    "atoms.atomic_numbers",
+    "atoms.masses",
+    "atoms.positions",
+    "atoms.symbols",
+    "cell.lattice_vectors",
+    "cell.pbc",
+    "cell.space_group",
+    "dynamics.constraints",
+    "dynamics.forces",
+    "dynamics.velocities",
+    "electronic.charges",
+    "electronic.magnetic_moments",
+    "electronic.stress",
+    "electronic.total_energy",
+    "electronic.total_spin",
+    "frame.time",
+    "simulation.calculator",
+    "simulation.extra",
+    "simulation.md_ensemble",
+    "simulation.pseudopotentials",
+    "simulation.source_code",
+    "simulation.temperature",
+    "simulation.thermostat",
+    "simulation.xc_functional",
+    "trajectory.timestep",
+    "user_metadata.annotations",
+    "user_metadata.tags"
+  ],
+  "custom_path_categories": [
+    "user_metadata.custom_global",
+    "user_metadata.custom_per_atom",
+    "user_metadata.custom_per_frame"
+  ],
+  "scenario_codes": [
+    "constraint_representation",
+    "frame_selection",
+    "missing_energy",
+    "missing_lattice",
+    "missing_masses",
+    "missing_species",
+    "missing_velocities",
+    "truncate_corrupt_tail"
+  ]
+}

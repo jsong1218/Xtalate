@@ -8,6 +8,23 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ## [Unreleased]
 
+### Added
+
+- **Frontend foundation (v0.6 M26).** The `frontend/` Next.js (App Router) scaffold — the faithful
+  presentation layer over `/v1` (Part 7), carrying **no scientific logic**. React 18 + TypeScript +
+  Tailwind, with the framework/tooling picks recorded as decisions (Next.js 15 pinned, D90; Vitest +
+  Testing Library, D91; Playwright, D92). A **typed API client generated from the committed
+  `docs/openapi.json`** (`npm run gen:api`, no hand-written endpoint types) with TanStack Query
+  wiring: report queries cached immutable, job polling as a `?wait=5` long-poll; server state is the
+  state (no global client store). The **loss-communication palette** (Part 7 §4) as `--cb-*` CSS
+  custom properties defined once, and an icon set (✓ ✗ ○ ◆ ⚠ ✕ –) that always pairs glyph + text
+  label — color is never the sole carrier. The **plain-language mapping table** (Part 7 §3.3) as one
+  exported constant, with a **coverage lint**: `python -m backend.vocabulary` exports the engine's
+  scenario codes and canonical field paths to a drift-guarded `docs/vocabulary.json`, and a Vitest
+  test fails if any lacks a mapping entry — a future plugin scenario surfaces as a lint failure, not
+  a raw code on screen. Compose gains a hot-reload `frontend` service behind a same-origin `/v1`
+  proxy; CI gains eslint + tsc + Vitest lanes.
+
 ## [0.5.0] — 2026-07-23
 
 v0.5 — **"Service."** The whole engine, unchanged, now speaks HTTP. A FastAPI application exposes
