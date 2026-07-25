@@ -158,6 +158,57 @@ def test_conversion_record_round_trips_reports_and_download(
     assert record["download"]["expires_at"] is not None
 
 
+def test_record_cites_the_source_digest_the_upload_returned(client: TestClient) -> None:
+    """The served report names the *bytes* it converted, not just their filename (Part 2 §3.7).
+
+    A filename is not evidence — two uploads may share one — so the digest is the field that lets a
+    reader prove which bytes a recorded conversion consumed. The worker therefore passes the sha256
+    the upload already computed and stored; it previously dropped it, leaving every report served
+    over HTTP with ``source.sha256: null`` while the CLI path recorded it.
+    """
+    resp = client.post("/v1/upload", files={"file": ("water.xyz", XYZ_SAMPLE)})
+    assert resp.status_code == 201, resp.text
+    uploaded = resp.json()
+
+    env = client.post(
+        "/v1/convert", json={"file_id": uploaded["file_id"], "target_format_id": "xyz"}
+    ).json()
+    record = client.get(f"/v1/conversions/{env['result']['conversion_id']}").json()
+
+    # The same digest the caller was handed at upload — not merely *a* digest, and not null.
+    assert record["conversion_report"]["source"]["sha256"] == uploaded["sha256"]
+
+
+def test_a_resumed_conversion_records_the_same_source_digest(client: TestClient) -> None:
+    """A recovery pause replays the request through the same worker, so the digest survives it.
+
+    Worth pinning separately: the resume path re-enters ``_run_convert`` with a merged request, and
+    a conversion that paused for a decision must be exactly as citable as one that never did.
+    """
+    resp = client.post("/v1/upload", files={"file": ("water.xyz", XYZ_SAMPLE)})
+    uploaded = resp.json()
+    env = client.post(
+        "/v1/convert",
+        json={
+            "file_id": uploaded["file_id"],
+            "target_format_id": "poscar",
+            "options": {"allow_recovery": True, "acknowledge_loss": True},
+        },
+    ).json()
+    assert env["state"] == "awaiting_recovery", env
+
+    resumed = client.post(
+        f"/v1/jobs/{env['job_id']}/recovery",
+        json={
+            "choices": {
+                "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}}
+            }
+        },
+    ).json()
+    assert resumed["state"] == "completed", resumed
+    assert resumed["result"]["conversion_report"]["source"]["sha256"] == uploaded["sha256"]
+
+
 def test_conversion_record_unknown_is_404(client: TestClient) -> None:
     resp = client.get("/v1/conversions/cnv-nope")
     assert resp.status_code == 404, resp.text

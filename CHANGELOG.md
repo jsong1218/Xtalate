@@ -25,6 +25,17 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
   a raw code on screen. Compose gains a hot-reload `frontend` service behind a same-origin `/v1`
   proxy; CI gains eslint + tsc + Vitest lanes.
 
+### Fixed
+
+- **The source digest is recorded on the HTTP convert path.** The upload endpoint computes a sha256
+  over the received bytes and stores it, but the convert worker never passed it to the engine, so
+  every Conversion Report served by the service carried `source.sha256: null` — a conversion that
+  named a *filename* rather than the bytes it consumed. Provenance is part of the Canonical Model
+  (Part 2 §3.7) and the digest is the field that makes a record citable, so a gap here was a
+  transparency gap, not a cosmetic one: the CLI path recorded it and the service did not. The worker
+  now passes the stored digest on both the final report and the pre-flight draft a paused job
+  displays, and a resumed conversion records the same value.
+
 ## [0.5.0] — 2026-07-23
 
 v0.5 — **"Service."** The whole engine, unchanged, now speaks HTTP. A FastAPI application exposes

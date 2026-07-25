@@ -343,6 +343,11 @@ def _run_convert(
         source_format_id=parsed.format_id,
         target_format_id=target_format_id,
         source_filename=upload.filename,
+        # The digest the upload computed over these exact bytes (Part 2 §3.7 Provenance). Without
+        # it the report names a *filename*, which is not evidence — two files may share one. This
+        # is the field that lets a reader prove which bytes a recorded conversion consumed, so the
+        # service passes the value it stored rather than leaving the report's `source.sha256` null.
+        source_sha256=upload.sha256,
         target_filename=options.get("output_filename"),
         mode=options.get("mode", "permissive"),
         recovery_choices=recovery_choices,
@@ -368,6 +373,9 @@ def _run_convert(
             source_format_id=parsed.format_id,
             target_format_id=target_format_id,
             source_filename=upload.filename,
+            # Carried on the draft too: the pause shows this report while it waits, and a preview
+            # that cannot say which bytes it describes is not the same document as the final one.
+            source_sha256=upload.sha256,
             target_filename=options.get("output_filename"),
             mode=options.get("mode", "permissive"),
         )
