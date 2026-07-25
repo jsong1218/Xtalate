@@ -1,5 +1,8 @@
 import { queryOptions } from "@tanstack/react-query";
-import { apiClient } from "./client";
+import { apiClient, type Schemas } from "./client";
+
+/** The job envelope, verbatim from the generated schema (Part 6 §3.2). */
+export type JobEnvelope = Schemas["JobEnvelope"];
 
 /**
  * TanStack Query wiring over the typed client (MASTER_SPEC Part 7 §5.1).
@@ -107,4 +110,71 @@ export function jobQuery(jobId: string, waitSeconds = 5) {
     // Job envelopes are live state, not immutable reports — always considered stale.
     staleTime: 0,
   });
+}
+
+/**
+ * `GET /v1/conversions/{conversion_id}` — the durable conversion record (Part 6 §4.4).
+ *
+ * The record page's single source of truth: both reports verbatim plus the `download` block. It is
+ * served from persisted rows alone, so this resolves after the bytes have expired — which is exactly
+ * why the page must render `download.available === false` as *expired*, never as *not found*.
+ *
+ * Cached under the client's `staleTime: Infinity` default: a record's reports never mutate
+ * (re-validation **appends**, Part 6 §2), so nothing here changes on its own. The one part that does
+ * age is `download` — the byte lifecycle — and a stale `available: true` resolves honestly, because
+ * the download endpoint itself re-checks and answers `410 OUTPUT_EXPIRED`, which the panel renders.
+ * Re-validating invalidates this key explicitly rather than polling for a change that has no clock.
+ */
+export function conversionQuery(conversionId: string) {
+  return queryOptions({
+    queryKey: queryKeys.conversion(conversionId),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await apiClient.GET("/v1/conversions/{conversion_id}", {
+        params: { path: { conversion_id: conversionId } },
+        signal,
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+/**
+ * `POST /v1/validate` — re-threshold a stored conversion under a different tolerance profile
+ * (Part 6 §2). This is **not** a re-parse: it re-evaluates the already-measured values, so it works
+ * long after the bytes are gone, and it *appends* a new Validation Report rather than replacing the
+ * old one. Returns the job envelope to poll, or the server's error body.
+ *
+ * The profile is the v0.7 cut line for this slice: the request always sends `"default"` here, and no
+ * picker is offered, so the caller cannot silently re-threshold under a bar it did not choose.
+ */
+export async function submitRevalidate(
+  conversionId: string,
+  toleranceProfile = "default",
+): Promise<{ ok: true; envelope: JobEnvelope } | { ok: false; error: unknown }> {
+  const { data, error } = await apiClient.POST("/v1/validate", {
+    body: { conversion_id: conversionId, tolerance_profile: toleranceProfile },
+  });
+  if (error || !data) return { ok: false, error };
+  return { ok: true, envelope: data };
+}
+
+/**
+ * `POST /v1/jobs/{job_id}/cancel` — request cancellation (Part 6 §3.2, §5).
+ *
+ * Cancellation is **best-effort and honest about it**: the server moves a `queued`,
+ * `running`, or `awaiting_recovery` job to `cancelled`, but a job that reached a terminal state
+ * first keeps that outcome (`JOB_ALREADY_TERMINAL`) — in particular an already-`expired` pause has
+ * resolved to a *refusal*, which a cancel must never erase. So this returns the server's envelope
+ * or its error body and the caller re-reads state from the poll; the UI never assumes the cancel won.
+ * A repeated cancel of an already-`cancelled` job is an idempotent 200, not an error.
+ */
+export async function cancelJob(
+  jobId: string,
+): Promise<{ ok: true; envelope: JobEnvelope } | { ok: false; error: unknown }> {
+  const { data, error } = await apiClient.POST("/v1/jobs/{job_id}/cancel", {
+    params: { path: { job_id: jobId } },
+  });
+  if (error || !data) return { ok: false, error };
+  return { ok: true, envelope: data };
 }

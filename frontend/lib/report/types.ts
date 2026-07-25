@@ -233,6 +233,86 @@ export interface ValidationReport {
   schema_version: string;
 }
 
+// --- Awaiting-recovery block (MASTER_SPEC Part 6 §3.2) -----------------------------------------
+//
+// Mirrors `backend/jobs/recovery.py::build_awaiting_block` verbatim — the block a job paused in
+// `awaiting_recovery` carries on its envelope, typed opaque (`{ [key]: unknown }`) in the generated
+// schema. Note the one shape difference from a *refusal*: there, `UnresolvedScenario.options` is a
+// flat list of choice **codes**; here each option is enriched into an object carrying that same
+// code plus the parameter names the Recovery Engine actually reads. Enrichment only — the service
+// adds and drops nothing, so the honest, pair-specific option list computed by pre-flight survives
+// intact (no `non_periodic` offered for a POSCAR target, because pre-flight never offered it).
+
+/** One choice a paused job would accept, with the parameters it consumes — Part 6 §3.2. */
+export interface RecoveryOption {
+  /** Machine choice code, e.g. "bounding_box" — the token a caller passes back. */
+  choice: string;
+  /** `{ param_name: human description }`; absent when the choice takes no parameters. */
+  parameters_schema?: Record<string, string>;
+}
+
+/** An unresolved scenario as the *pause* carries it — like {@link UnresolvedScenario}, richer options. */
+export interface AwaitingScenario {
+  scenario: string;
+  path: string | null;
+  detail: string | null;
+  options: RecoveryOption[];
+}
+
+/**
+ * The `awaiting_recovery` block. `draft_report` is the pre-flight Conversion Report
+ * (`stage: "preflight"`, `status: "awaiting_recovery"`) — the "here is what happens once you
+ * decide" preview — and `unresolved_scenarios` is what still needs deciding.
+ */
+export interface AwaitingRecoveryBlock {
+  draft_report: ConversionReport;
+  unresolved_scenarios: AwaitingScenario[];
+}
+
+// --- Conversion record (MASTER_SPEC Part 6 §4.4) -----------------------------------------------
+//
+// Mirrors `backend/models.py::ConversionRecordResponse` / `DownloadInfo`. The record is the durable
+// consolidated outcome: it is served from persisted rows alone, so it still resolves long after the
+// output bytes have been swept (reports-outlive-bytes). Note what it deliberately does *not* carry —
+// the service reduces the report's `source`/`target` to `{format_id, filename}` with the hashes
+// stripped (`routers/conversions.py::_endpoint`), so provenance detail is read off the **embedded**
+// `conversion_report.source`, which keeps them.
+
+/** Whether the output bytes are still fetchable, and on what terms — Part 6 §4.4 `DownloadInfo`. */
+export interface DownloadInfo {
+  /** False once the bytes pass their lifecycle window; the record itself survives. */
+  available: boolean;
+  /** True iff validation **failed** — the download gate answers `409 VALIDATION_ACK_REQUIRED`. */
+  requires_ack: boolean;
+  filename: string;
+  /** `null` once unavailable. */
+  size_bytes: number | null;
+  /** ISO 8601; `null` once unavailable. */
+  expires_at: string | null;
+}
+
+/** The source/target projection carried on the record — formats and filenames, no hashes. */
+export interface RecordEndpoint {
+  format_id: string | null;
+  filename: string | null;
+}
+
+/** `GET /v1/conversions/{conversion_id}` — Part 6 §4.4 `ConversionRecordResponse`, verbatim. */
+export interface ConversionRecord {
+  conversion_id: string;
+  created_at: string;
+  source: RecordEndpoint;
+  target: RecordEndpoint;
+  conversion_report: ConversionReport;
+  /**
+   * `null` for a **refused** conversion (no output ⇒ nothing to validate) or while validation is
+   * still running. Absent validation is therefore information, and the page says which it is —
+   * it never renders an empty validation panel as though the checks had passed.
+   */
+  validation_report: ValidationReport | null;
+  download: DownloadInfo;
+}
+
 // --- Error envelope (MASTER_SPEC Part 6 §6) ----------------------------------------------------
 //
 // The single non-2xx body every `/v1` error path renders — a raised ApiError, a request-validation

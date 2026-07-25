@@ -1,0 +1,18 @@
+{
+  "job_id": "1cc59925179f4695a71c55af99b946ca",
+  "kind": "convert",
+  "state": "cancelled",
+  "created_at": "2026-07-25T20:27:56.421941",
+  "updated_at": "2026-07-25T20:27:56.446156",
+  "started_at": "2026-07-25T20:27:56.433939",
+  "finished_at": "2026-07-25T20:27:56.445942",
+  "expires_at": "2026-07-25T20:57:56.437575",
+  "progress": {
+    "phase": "recovery",
+    "frames_processed": null,
+    "frames_total": null
+  },
+  "awaiting_recovery": null,
+  "result": null,
+  "error": null
+}

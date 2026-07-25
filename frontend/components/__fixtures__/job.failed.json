@@ -1,0 +1,32 @@
+{
+  "job_id": "463862c324074003b664c48120dcf33e",
+  "kind": "convert",
+  "state": "failed",
+  "created_at": "2026-07-25T20:27:56.455394",
+  "updated_at": "2026-07-25T20:27:56.458741",
+  "started_at": "2026-07-25T20:27:56.456808",
+  "finished_at": "2026-07-25T20:27:56.458476",
+  "expires_at": null,
+  "progress": {
+    "phase": "parsing",
+    "frames_processed": null,
+    "frames_total": null
+  },
+  "awaiting_recovery": null,
+  "result": null,
+  "error": {
+    "code": "UNKNOWN_FORMAT",
+    "message": "could not determine the source format; pass --format to override",
+    "details": {
+      "issues": [
+        {
+          "code": "UNKNOWN_FORMAT",
+          "severity": "error",
+          "message": "could not determine the source format; pass --format to override"
+        }
+      ]
+    },
+    "request_id": "13e1d417a1f44c4f93690a40b4b1debd",
+    "documentation_url": "https://docs.xtalate.dev/api#unknown_format"
+  }
+}

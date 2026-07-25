@@ -1,0 +1,253 @@
+{
+  "conversion_id": "cnv-d0a282e82f704e90a8bddfc4f71ea17b",
+  "created_at": "2026-07-25T22:29:06.204279",
+  "source": {
+    "format_id": "extxyz",
+    "filename": "sample.extxyz"
+  },
+  "target": {
+    "format_id": "xyz",
+    "filename": null
+  },
+  "conversion_report": {
+    "report_id": "9d25c8a5-e0ab-4535-9e20-d918d08b2b1c",
+    "stage": "final",
+    "status": "completed",
+    "mode": "permissive",
+    "created_at": "2026-07-25T22:29:06Z",
+    "source": {
+      "format_id": "extxyz",
+      "filename": "sample.extxyz",
+      "sha256": "638bbb0deb73df0167a8317e2c183b2a12258215b4a69368860278f104a8b053",
+      "schema_version": "0.1.0"
+    },
+    "target": {
+      "format_id": "xyz",
+      "filename": null
+    },
+    "preserved": [
+      {
+        "path": "atoms.symbols",
+        "detail": null
+      },
+      {
+        "path": "atoms.positions",
+        "detail": null
+      }
+    ],
+    "removed": [
+      {
+        "path": "atoms.masses",
+        "reason": "Target format 'xyz' cannot store atoms.masses.",
+        "detail": null
+      },
+      {
+        "path": "cell.lattice_vectors",
+        "reason": "Target format 'xyz' cannot store cell.lattice_vectors.",
+        "detail": null
+      },
+      {
+        "path": "cell.pbc",
+        "reason": "Target format 'xyz' cannot store cell.pbc.",
+        "detail": null
+      },
+      {
+        "path": "dynamics.forces",
+        "reason": "Target format 'xyz' cannot store dynamics.forces.",
+        "detail": null
+      },
+      {
+        "path": "electronic.total_energy",
+        "reason": "Target format 'xyz' cannot store electronic.total_energy.",
+        "detail": null
+      },
+      {
+        "path": "electronic.charges",
+        "reason": "Target format 'xyz' cannot store electronic.charges.",
+        "detail": null
+      },
+      {
+        "path": "user_metadata.custom_per_frame['extxyz:config_type']",
+        "reason": "Only the free-text comment line (xyz:comment), one per frame; other per-frame keys cannot be expressed by plain XYZ.",
+        "detail": null
+      }
+    ],
+    "supplied": [],
+    "assumptions": [],
+    "warnings": [],
+    "refusal": null
+  },
+  "validation_report": {
+    "report_id": "f6039745-8086-42c5-b20d-75057fca27d2",
+    "conversion_report_id": "9d25c8a5-e0ab-4535-9e20-d918d08b2b1c",
+    "created_at": "2026-07-25T22:29:06Z",
+    "status": "failed",
+    "checks": [
+      {
+        "check_id": "atom_count",
+        "status": "pass",
+        "paths": [
+          "atoms.symbols"
+        ],
+        "measured": {
+          "expected": 2,
+          "found": 2,
+          "frames_compared": 1
+        },
+        "tolerance_applied": null,
+        "message": "2 atoms expected, 2 found (exact check).",
+        "skip_reason": null
+      },
+      {
+        "check_id": "species_preservation",
+        "status": "pass",
+        "paths": [
+          "atoms.symbols"
+        ],
+        "measured": {
+          "permutation_map": "identity",
+          "mismatches": 0
+        },
+        "tolerance_applied": null,
+        "message": "Species preserved; source order retained (identity permutation).",
+        "skip_reason": null
+      },
+      {
+        "check_id": "positions_rmsd",
+        "status": "fail",
+        "paths": [
+          "atoms.positions"
+        ],
+        "measured": {
+          "rmsd_ang": 0.0132,
+          "max_displacement_ang": 0.0289,
+          "frames_compared": 1
+        },
+        "tolerance_applied": {
+          "warn_ang": 1e-05,
+          "fail_ang": 0.001,
+          "representational_bound_ang": 0.0
+        },
+        "message": "RMSD 1.320e-02 \u00c5 over 1 frame(s), above the fail threshold 1.000e-03 \u00c5.",
+        "skip_reason": null
+      },
+      {
+        "check_id": "lattice_consistency",
+        "status": "skipped",
+        "paths": [
+          "cell.lattice_vectors",
+          "cell.pbc"
+        ],
+        "measured": {},
+        "tolerance_applied": null,
+        "message": "No lattice in the write plan \u2014 nothing to compare.",
+        "skip_reason": "write_plan contains no cell.lattice_vectors."
+      },
+      {
+        "check_id": "frame_count",
+        "status": "pass",
+        "paths": [
+          "frames"
+        ],
+        "measured": {
+          "expected": 1,
+          "found": 1
+        },
+        "tolerance_applied": null,
+        "message": "1 frame(s) planned, 1 found.",
+        "skip_reason": null
+      },
+      {
+        "check_id": "numeric_field_fidelity",
+        "status": "skipped",
+        "paths": [],
+        "measured": {},
+        "tolerance_applied": null,
+        "message": "No numeric fields beyond positions and lattice in the write plan.",
+        "skip_reason": "write_plan contains no velocities, forces, energies, stress, charges, magnetic moments, masses, or time."
+      },
+      {
+        "check_id": "metadata_preservation",
+        "status": "pass",
+        "paths": [],
+        "measured": {
+          "planned_paths": 0,
+          "present": 0,
+          "content_drift": 0
+        },
+        "tolerance_applied": null,
+        "message": "No metadata or custom-array paths in the write plan.",
+        "skip_reason": null
+      },
+      {
+        "check_id": "absence_conformance",
+        "status": "pass",
+        "paths": [
+          "atoms.masses",
+          "cell.lattice_vectors",
+          "cell.pbc",
+          "dynamics.forces",
+          "electronic.total_energy",
+          "electronic.charges",
+          "user_metadata.custom_per_frame['extxyz:config_type']"
+        ],
+        "measured": {
+          "removed_paths_checked": 7,
+          "violations": 0
+        },
+        "tolerance_applied": null,
+        "message": "All 7 removed path(s) verified absent in the re-parse.",
+        "skip_reason": null
+      },
+      {
+        "check_id": "report_consistency",
+        "status": "pass",
+        "paths": [],
+        "measured": {
+          "completeness_invariant": "satisfied",
+          "supplied_traced": 0,
+          "untraceable_deltas": 0,
+          "preflight_final_deltas": 0
+        },
+        "tolerance_applied": null,
+        "message": "Completeness invariant satisfied; every supplied path traces to a recorded Assumption.",
+        "skip_reason": null
+      }
+    ],
+    "tolerance_profile": {
+      "name": "default",
+      "positions_warn_ang": 1e-05,
+      "positions_fail_ang": 0.001,
+      "lattice_warn_ang": 1e-05,
+      "lattice_fail_ang": 0.001,
+      "velocities_warn": 1e-06,
+      "velocities_fail": 0.0001,
+      "forces_warn": 1e-06,
+      "forces_fail": 0.0001,
+      "energy_warn": 1e-06,
+      "energy_fail": 0.0001,
+      "stress_warn": 1e-08,
+      "stress_fail": 1e-06,
+      "charges_warn": 0.0001,
+      "charges_fail": 0.01,
+      "magnetic_moments_warn": 0.0001,
+      "magnetic_moments_fail": 0.01,
+      "masses_warn": 1e-06,
+      "masses_fail": 0.0001,
+      "time_warn": 1e-06,
+      "time_fail": 0.001,
+      "k_warn": 2,
+      "k_fail": 10,
+      "representational_bound_floor": "enabled"
+    },
+    "reparse_issues": [],
+    "schema_version": "0.1.0"
+  },
+  "download": {
+    "available": true,
+    "requires_ack": true,
+    "filename": "output.xyz",
+    "size_bytes": 33,
+    "expires_at": "2026-07-26T22:29:06.204077"
+  }
+}
