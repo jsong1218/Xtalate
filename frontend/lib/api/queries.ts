@@ -17,6 +17,8 @@ export const queryKeys = {
   capabilities: ["capabilities"] as const,
   limits: ["limits"] as const,
   file: (fileId: string) => ["files", fileId] as const,
+  inspect: (fileId: string, formatOverride?: string) =>
+    ["inspect", fileId, formatOverride ?? null] as const,
   job: (jobId: string) => ["jobs", jobId] as const,
   conversion: (conversionId: string) => ["conversions", conversionId] as const,
 } as const;
@@ -41,6 +43,30 @@ export function capabilitiesQuery() {
       if (error) throw error;
       return data;
     },
+  });
+}
+
+/**
+ * `POST /v1/inspect` — submit a Discovery Engine run for an uploaded file, returning the job
+ * envelope (Part 6 §2). Modeled as a `queryOptions` factory, not a mutation, because inspect is
+ * **idempotent** per `(file, override, registry)` (the endpoint docstring): re-issuing it returns the
+ * same job, so caching by `(file_id, format_override)` fires exactly one submit per distinct target
+ * and lets refresh / back reconstruct it. The returned `job_id` feeds {@link jobQuery} for polling;
+ * `useInspection` composes the two. A `format_override` re-inspection is just a new key here.
+ */
+export function inspectSubmitQuery(fileId: string, formatOverride?: string) {
+  return queryOptions({
+    queryKey: queryKeys.inspect(fileId, formatOverride),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await apiClient.POST("/v1/inspect", {
+        body: { file_id: fileId, format_override: formatOverride ?? null },
+        signal,
+      });
+      if (error) throw error;
+      return data;
+    },
+    // The submit result (a job handle) is stable for a given (file, override) — never re-submit.
+    staleTime: Infinity,
   });
 }
 
