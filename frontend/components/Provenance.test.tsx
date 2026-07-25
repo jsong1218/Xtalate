@@ -12,45 +12,45 @@ import type { ConversionRecord } from "@/lib/report/types";
  * a reduced projection with the hashes stripped (`routers/conversions.py::_endpoint`), so the strip
  * reads the digest and schema version off the **embedded** conversion report, which keeps them.
  *
- * The captured fixtures show that today the embedded report carries `source.sha256: null` on the
- * HTTP path — the upload row stores the digest, but the convert worker never passes it to
- * `ConversionEngine.convert(source_sha256=…)`, so the service records a conversion without saying
- * which bytes it converted. That is a service-side gap, tracked separately; the UI's job is to make
- * it *visible* rather than to paper over it, which is what the "not recorded" assertion pins down.
- * When the worker starts supplying it, the digest-rendering test below is what proves it arrives.
+ * The fixtures are captured from the service, so the first test is an end-to-end assertion that the
+ * digest survives the whole path: upload → convert → record → this strip. It was not always so —
+ * the convert worker used to drop the sha256 the upload had already computed, and every served
+ * report carried `source.sha256: null` (fixed under D94, which is why these fixtures were
+ * regenerated). The null case is still covered below, because a *future* absence must read as an
+ * unknown rather than as a blank cell that a reader could mistake for "no digest was needed".
  */
 
 const happy = record as unknown as ConversionRecord;
 const refused = refusedRecord as unknown as ConversionRecord;
 
 describe("Provenance", () => {
-  it("says the source digest is not recorded when the service did not send one", () => {
-    // Both the projection and the embedded report are hash-less on the HTTP path today.
+  it("cites the digest from the embedded report, not the stripped projection", () => {
+    // The projection genuinely has no hash — this is the shape the service sends — so a strip that
+    // read `record.source.sha256` would render nothing on every real response.
     expect(happy.source).not.toHaveProperty("sha256");
-    expect(happy.conversion_report.source.sha256).toBeNull();
+    const sha256 = happy.conversion_report.source.sha256 as string;
+    expect(sha256).toMatch(/^[0-9a-f]{64}$/);
 
     render(<Provenance record={happy} />);
-    const strip = screen.getByTestId("provenance");
-    // An unknown digest must never read as "no digest was needed", and must never be blank.
-    expect(within(strip).getByText(/source sha256/i)).toBeInTheDocument();
-    expect(within(strip).getAllByText(/not recorded/i).length).toBeGreaterThan(0);
-  });
-
-  it("cites the digest from the embedded report once one is present, abbreviated but complete", () => {
-    const sha256 = "4f2a91c0d3be77105ec49b2f6d0aa31c8e5b7742f9c0a1d3e6b8074f2c9a1b3d";
-    const withHash = {
-      ...happy,
-      conversion_report: {
-        ...happy.conversion_report,
-        source: { ...happy.conversion_report.source, sha256 },
-      },
-    };
-
-    render(<Provenance record={withHash} />);
     const strip = screen.getByTestId("provenance");
     expect(within(strip).getByText(`${shortHash(sha256)}…`)).toBeInTheDocument();
     // The full digest stays available to copy, rather than being truncated away entirely.
     expect(within(strip).getByTitle(sha256)).toBeInTheDocument();
+  });
+
+  it("says an absent digest is unknown rather than leaving the cell blank", () => {
+    const withoutHash = {
+      ...happy,
+      conversion_report: {
+        ...happy.conversion_report,
+        source: { ...happy.conversion_report.source, sha256: null },
+      },
+    } as unknown as ConversionRecord;
+
+    render(<Provenance record={withoutHash} />);
+    const strip = screen.getByTestId("provenance");
+    expect(within(strip).getByText(/source sha256/i)).toBeInTheDocument();
+    expect(within(strip).getAllByText(/not recorded/i).length).toBeGreaterThan(0);
   });
 
   it("carries the citable identifiers: conversion id, both report ids, mode and profile", () => {

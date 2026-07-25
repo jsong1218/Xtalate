@@ -1,6 +1,6 @@
 {
-  "conversion_id": "cnv-5c6db5dd06fe4250a70a90da74f8fa92",
-  "created_at": "2026-07-25T21:57:56.143390",
+  "conversion_id": "cnv-d0a282e82f704e90a8bddfc4f71ea17b",
+  "created_at": "2026-07-25T22:29:06.204279",
   "source": {
     "format_id": "extxyz",
     "filename": "sample.extxyz"
@@ -10,15 +10,15 @@
     "filename": null
   },
   "conversion_report": {
-    "report_id": "2ec8b4b2-b15f-4b54-a4c7-db11c4436ab2",
+    "report_id": "9d25c8a5-e0ab-4535-9e20-d918d08b2b1c",
     "stage": "final",
     "status": "completed",
     "mode": "permissive",
-    "created_at": "2026-07-25T21:57:56Z",
+    "created_at": "2026-07-25T22:29:06Z",
     "source": {
       "format_id": "extxyz",
       "filename": "sample.extxyz",
-      "sha256": null,
+      "sha256": "638bbb0deb73df0167a8317e2c183b2a12258215b4a69368860278f104a8b053",
       "schema_version": "0.1.0"
     },
     "target": {
@@ -78,9 +78,9 @@
     "refusal": null
   },
   "validation_report": {
-    "report_id": "bd496f84-8a92-4912-8650-8e9e6a4d6e24",
-    "conversion_report_id": "2ec8b4b2-b15f-4b54-a4c7-db11c4436ab2",
-    "created_at": "2026-07-25T21:57:56Z",
+    "report_id": "f6039745-8086-42c5-b20d-75057fca27d2",
+    "conversion_report_id": "9d25c8a5-e0ab-4535-9e20-d918d08b2b1c",
+    "created_at": "2026-07-25T22:29:06Z",
     "status": "failed",
     "checks": [
       {
@@ -248,6 +248,6 @@
     "requires_ack": true,
     "filename": "output.xyz",
     "size_bytes": 33,
-    "expires_at": "2026-07-26T21:57:56.143127"
+    "expires_at": "2026-07-26T22:29:06.204077"
   }
 }

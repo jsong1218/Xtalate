@@ -1,6 +1,6 @@
 {
-  "conversion_id": "cnv-a64ebd7fea9a45d18544817065c96a61",
-  "created_at": "2026-07-25T21:57:56.169613",
+  "conversion_id": "cnv-bf9fe367acfe45b4bd6320357448971a",
+  "created_at": "2026-07-25T22:29:06.229674",
   "source": {
     "format_id": "extxyz",
     "filename": "sample.extxyz"
@@ -10,15 +10,15 @@
     "filename": null
   },
   "conversion_report": {
-    "report_id": "759941f2-3900-4efa-a42e-2eb99dd6a63a",
+    "report_id": "6439d32a-167e-4b91-9d82-1eed42e5f477",
     "stage": "final",
     "status": "completed",
     "mode": "permissive",
-    "created_at": "2026-07-25T21:57:56Z",
+    "created_at": "2026-07-25T22:29:06Z",
     "source": {
       "format_id": "extxyz",
       "filename": "sample.extxyz",
-      "sha256": null,
+      "sha256": "638bbb0deb73df0167a8317e2c183b2a12258215b4a69368860278f104a8b053",
       "schema_version": "0.1.0"
     },
     "target": {
@@ -78,9 +78,9 @@
     "refusal": null
   },
   "validation_report": {
-    "report_id": "765a5a14-8acf-41f6-93f1-6a9f8e1e4df1",
-    "conversion_report_id": "759941f2-3900-4efa-a42e-2eb99dd6a63a",
-    "created_at": "2026-07-25T21:57:56Z",
+    "report_id": "c74bee16-ed05-4ad8-b299-bfdf2f3034c7",
+    "conversion_report_id": "6439d32a-167e-4b91-9d82-1eed42e5f477",
+    "created_at": "2026-07-25T22:29:06Z",
     "status": "passed",
     "checks": [
       {
