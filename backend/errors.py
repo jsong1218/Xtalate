@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -97,12 +98,18 @@ async def _validation_error_handler(request: Request, exc: RequestValidationErro
     field failed and why — without the default FastAPI shape, which is *not* our envelope. The code
     is ``MALFORMED_REQUEST`` — the binding name for a field-by-field request-validation failure in
     the Part 6 §6 error table, not the ``INVALID_REQUEST`` an earlier draft used.
+
+    The list is passed through ``jsonable_encoder`` because it is *not* plain JSON: a failure raised
+    by a field validator carries the original exception object in ``ctx.error``, which
+    :class:`JSONResponse` cannot serialize — leaving the caller with a ``500 INTERNAL_ERROR`` for
+    what is squarely a client-side request error. Encoding here keeps every validation failure,
+    whatever raised it, inside the one envelope.
     """
     api = ApiError(
         status_code=status.HTTP_400_BAD_REQUEST,
         code="MALFORMED_REQUEST",
         message="The request could not be validated.",
-        details={"errors": exc.errors()},
+        details={"errors": jsonable_encoder(exc.errors())},
     )
     return _envelope(request, api.status_code, api)
 

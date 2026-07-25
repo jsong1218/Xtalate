@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from backend.tolerance import validate_tolerance_profile
 
 
 class ErrorBody(BaseModel):
@@ -86,6 +88,11 @@ class ConvertOptions(BaseModel):
     tolerance_profile: str | dict[str, Any] = "default"
     output_filename: str | None = None
 
+    #: An unknown profile name or a malformed custom table is a request error, caught here so it
+    #: renders as ``400 MALFORMED_REQUEST`` (Part 6 §6) with the library's own actionable message —
+    #: rather than as a job that is accepted, queued, and only then fails.
+    _check_tolerance = field_validator("tolerance_profile")(validate_tolerance_profile)
+
 
 class ConvertRequest(BaseModel):
     """``POST /v1/convert`` body (Part 6 §2.1)."""
@@ -119,6 +126,9 @@ class RevalidateRequest(BaseModel):
 
     conversion_id: str
     tolerance_profile: str | dict[str, Any] = "default"
+
+    #: Same request-time check as :class:`ConvertOptions` — one rule for one wire field.
+    _check_tolerance = field_validator("tolerance_profile")(validate_tolerance_profile)
 
 
 class LimitsResponse(BaseModel):

@@ -28,6 +28,7 @@ from backend.db import as_utc, utcnow
 from backend.jobs.logging import log_event
 from backend.jobs.recovery import RecoveryPause
 from backend.models import ErrorBody
+from backend.tolerance import resolve_tolerance_profile
 
 if TYPE_CHECKING:
     from backend.config import Settings
@@ -350,7 +351,10 @@ def _run_convert(
         parse_recovery=parsed,
         acknowledge_loss=options.get("acknowledge_loss", False),
         acknowledge_parse_warnings=options.get("acknowledge_parse_warnings", False),
-        tolerance_profile=options.get("tolerance_profile", "default"),
+        # Resolved, not passed through: the engine takes a named profile *or* a built
+        # `ToleranceProfile`, and the wire also allows a custom §4.4 table — which only this
+        # resolver turns into one (the submit endpoint has already validated it).
+        tolerance_profile=resolve_tolerance_profile(options.get("tolerance_profile", "default")),
     )
 
     # Interactive recovery (Part 6 §3.2): a needed-but-unsupplied choice pauses rather than refuses,

@@ -8,6 +8,18 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A custom tolerance table was unusable on `POST /v1/convert` (D93).** `options.tolerance_profile`
+  accepts a named profile or a whole custom tolerance table (Part 5 §4.4), but the convert worker
+  passed the value straight through to the engine, which only takes a *name* — so the table form
+  ended as a `failed` job with a bare `INTERNAL_ERROR`. Both job runners now resolve the field
+  through one shared resolver, and an unknown profile name or a malformed table is refused at submit
+  as `400 MALFORMED_REQUEST` carrying the library's own reason, before a job exists. Related: a
+  request-validation failure raised by a custom validator carries a non-JSON exception object in its
+  error list, which turned any such client mistake into a `500`; the handler now encodes the list, so
+  every validation failure leaves inside the standard envelope.
+
 ### Added
 
 - **Frontend foundation (v0.6 M26).** The `frontend/` Next.js (App Router) scaffold — the faithful
