@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { AwaitingRecovery } from "@/components/AwaitingRecovery";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
@@ -69,6 +69,8 @@ function StartOver() {
 export default function ConversionJobPage() {
   const params = useParams<{ job_id: string }>();
   const jobId = params.job_id;
+  // Handed forward by `/files/[file_id]` so the record can offer a re-convert; absent on a shared link.
+  const fileId = useSearchParams().get("file_id");
   const queryClient = useQueryClient();
 
   const [cancelError, setCancelError] = useState<ErrorEnvelopeModel | null>(null);
@@ -140,11 +142,31 @@ export default function ConversionJobPage() {
       ) : null}
 
       {state === "completed" && report ? (
-        report.status === "refused" ? (
-          <RefusalPanel report={report} />
-        ) : (
-          <ConversionReportPanel report={report} />
-        )
+        <div className="space-y-4">
+          {report.status === "refused" ? (
+            <RefusalPanel report={report} />
+          ) : (
+            <ConversionReportPanel report={report} />
+          )}
+          {/*
+            The job is transient; the record is the durable, linkable outcome — and the only place
+            the download lives, deliberately below the loss summary (M29-S2). A refusal routes there
+            too: it is a recorded outcome, not a dead end. `file_id` is handed forward because
+            neither the envelope nor the record carries it.
+          */}
+          {result?.conversion_id ? (
+            <Link
+              href={
+                fileId
+                  ? `/conversions/${result.conversion_id}?file_id=${encodeURIComponent(fileId)}`
+                  : `/conversions/${result.conversion_id}`
+              }
+              className="inline-block text-sm font-medium text-slate-800 underline"
+            >
+              View the full record{report.status === "refused" ? "" : " and download the file"}
+            </Link>
+          ) : null}
+        </div>
       ) : null}
 
       {state === "failed" ? (

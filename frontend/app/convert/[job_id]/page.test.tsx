@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import ConversionJobPage from "./page";
 import awaitingJob from "@/components/__fixtures__/job.awaiting_recovery.json";
 import cancelledJob from "@/components/__fixtures__/job.cancelled.json";
+import completedJob from "@/components/__fixtures__/job.completed.json";
 import expiredJob from "@/components/__fixtures__/job.expired.json";
 import failedJob from "@/components/__fixtures__/job.failed.json";
 
@@ -22,6 +23,8 @@ import failedJob from "@/components/__fixtures__/job.failed.json";
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ job_id: "job-under-test" }),
+  // A shared job link carries no `file_id`; the page must cope with that, so the default is empty.
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 /**
@@ -84,6 +87,14 @@ describe("ConversionJobPage terminal states", () => {
     const cancel = await screen.findByRole("button", { name: /cancel this conversion/i });
     expect(cancel).toBeInTheDocument();
     expect(screen.getByText(/best-effort/i)).toBeInTheDocument();
+  });
+
+  it("hands a completed job off to its durable record, where the download lives", async () => {
+    renderWithEnvelope(completedJob);
+    const link = await screen.findByRole("link", { name: /view the full record/i });
+    expect(link).toHaveAttribute("href", `/conversions/${completedJob.result.conversion_id}`);
+    // The job page itself offers no download — the record page puts it below the loss summary.
+    expect(screen.queryByRole("button", { name: /download/i })).not.toBeInTheDocument();
   });
 
   it("offers no Cancel once the job is terminal", async () => {

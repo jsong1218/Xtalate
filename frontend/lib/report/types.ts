@@ -269,6 +269,50 @@ export interface AwaitingRecoveryBlock {
   unresolved_scenarios: AwaitingScenario[];
 }
 
+// --- Conversion record (MASTER_SPEC Part 6 §4.4) -----------------------------------------------
+//
+// Mirrors `backend/models.py::ConversionRecordResponse` / `DownloadInfo`. The record is the durable
+// consolidated outcome: it is served from persisted rows alone, so it still resolves long after the
+// output bytes have been swept (reports-outlive-bytes). Note what it deliberately does *not* carry —
+// the service reduces the report's `source`/`target` to `{format_id, filename}` with the hashes
+// stripped (`routers/conversions.py::_endpoint`), so provenance detail is read off the **embedded**
+// `conversion_report.source`, which keeps them.
+
+/** Whether the output bytes are still fetchable, and on what terms — Part 6 §4.4 `DownloadInfo`. */
+export interface DownloadInfo {
+  /** False once the bytes pass their lifecycle window; the record itself survives. */
+  available: boolean;
+  /** True iff validation **failed** — the download gate answers `409 VALIDATION_ACK_REQUIRED`. */
+  requires_ack: boolean;
+  filename: string;
+  /** `null` once unavailable. */
+  size_bytes: number | null;
+  /** ISO 8601; `null` once unavailable. */
+  expires_at: string | null;
+}
+
+/** The source/target projection carried on the record — formats and filenames, no hashes. */
+export interface RecordEndpoint {
+  format_id: string | null;
+  filename: string | null;
+}
+
+/** `GET /v1/conversions/{conversion_id}` — Part 6 §4.4 `ConversionRecordResponse`, verbatim. */
+export interface ConversionRecord {
+  conversion_id: string;
+  created_at: string;
+  source: RecordEndpoint;
+  target: RecordEndpoint;
+  conversion_report: ConversionReport;
+  /**
+   * `null` for a **refused** conversion (no output ⇒ nothing to validate) or while validation is
+   * still running. Absent validation is therefore information, and the page says which it is —
+   * it never renders an empty validation panel as though the checks had passed.
+   */
+  validation_report: ValidationReport | null;
+  download: DownloadInfo;
+}
+
 // --- Error envelope (MASTER_SPEC Part 6 §6) ----------------------------------------------------
 //
 // The single non-2xx body every `/v1` error path renders — a raised ApiError, a request-validation

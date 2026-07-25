@@ -1,0 +1,90 @@
+{
+  "conversion_id": "cnv-4cb32e45bf354862b3540d018462a5bf",
+  "created_at": "2026-07-25T21:57:56.189940",
+  "source": {
+    "format_id": "xyz",
+    "filename": "water_traj.xyz"
+  },
+  "target": {
+    "format_id": "poscar",
+    "filename": null
+  },
+  "conversion_report": {
+    "report_id": "a34690c1-09e0-4627-857c-cae445b339ad",
+    "stage": "final",
+    "status": "refused",
+    "mode": "permissive",
+    "created_at": "2026-07-25T21:57:56Z",
+    "source": {
+      "format_id": "xyz",
+      "filename": "water_traj.xyz",
+      "sha256": null,
+      "schema_version": "0.1.0"
+    },
+    "target": {
+      "format_id": "poscar",
+      "filename": null
+    },
+    "preserved": [
+      {
+        "path": "atoms.symbols",
+        "detail": null
+      },
+      {
+        "path": "atoms.positions",
+        "detail": null
+      }
+    ],
+    "removed": [
+      {
+        "path": "user_metadata.custom_per_frame['xyz:comment']",
+        "reason": "Target format 'poscar' cannot store user_metadata.custom_per_frame.",
+        "detail": null
+      }
+    ],
+    "supplied": [],
+    "assumptions": [],
+    "warnings": [
+      {
+        "code": "FORMAT_LOSSY_NOTE",
+        "message": "Positions written with full float64 precision; sub-ulp differences possible on round-trip through fixed-width VASP readers.",
+        "source": "capability"
+      }
+    ],
+    "refusal": {
+      "code": "RECOVERY_REQUIRED",
+      "message": "conversion needs recovery decisions that were not supplied; provide them as recovery_choices presets, or choose a target that does not require the missing fields",
+      "unresolved_scenarios": [
+        {
+          "scenario": "frame_selection",
+          "path": null,
+          "detail": "2 frames \u2192 target holds at most 1",
+          "options": [
+            "first",
+            "last",
+            "index",
+            "split_all"
+          ]
+        },
+        {
+          "scenario": "missing_lattice",
+          "path": "cell.lattice_vectors",
+          "detail": "target requires cell.lattice_vectors, absent on source",
+          "options": [
+            "manual_input",
+            "upload_reference",
+            "bounding_box"
+          ]
+        }
+      ]
+    }
+  },
+  "validation_report": null,
+  "download": {
+    "available": false,
+    "requires_ack": false,
+    "filename": "POSCAR",
+    "size_bytes": null,
+    "expires_at": null
+  }
+}

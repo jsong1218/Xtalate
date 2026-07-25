@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "VALIDATION_ACK_REQUIRED",
+    "message": "Automatic validation failed for this conversion; re-request with ?acknowledge_validation_failure=true to download the unverified output.",
+    "details": {
+      "validation_status": "failed"
+    },
+    "request_id": "4fceee4545ba4e899f0b2a00127c72a7",
+    "documentation_url": "https://docs.xtalate.dev/api#validation_ack_required"
+  }
+}

@@ -140,7 +140,12 @@ export default function FilePage() {
       setSubmitError(toErrorEnvelope(error, "CONVERT_SUBMIT_FAILED", "Could not start the conversion."));
       return;
     }
-    router.push(`/convert/${data.job_id}`);
+    // `file_id` rides along in the query so the job — and, after it, the conversion record — can
+    // offer "convert again with different choices". Neither the job envelope nor the conversion
+    // record carries the source file id (Part 6 §3.2, §4.4), so the only honest way back to this
+    // page is to hand it forward; without it those pages link to a fresh upload instead of
+    // fabricating an id that would 404.
+    router.push(`/convert/${data.job_id}?file_id=${encodeURIComponent(fileId)}`);
   }
 
   return (
