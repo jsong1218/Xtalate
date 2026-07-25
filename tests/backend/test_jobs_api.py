@@ -6,6 +6,7 @@ default), so these are genuine HTTP round-trips through the real error envelope 
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import pytest
@@ -568,6 +569,112 @@ def test_convert_unknown_target_is_422_envelope(client: TestClient) -> None:
     resp = client.post("/v1/convert", json={"file_id": file_id, "target_format_id": "not_a_format"})
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "UNKNOWN_FORMAT"
+
+
+# --- tolerance_profile: the named form and the custom §4.4 table ---------------------------------
+#
+# `tolerance_profile` is `str | dict` on both `POST /v1/convert` (inside `options`) and
+# `POST /v1/validate`. Both forms must reach the same resolver: the table form once 500'd on the
+# convert path because the worker handed the mapping to `ToleranceProfile.named`, which only takes
+# a name. And an unusable profile is a *request* error — refused on submit, not accepted as a job
+# the caller has to poll to discover was doomed.
+
+#: A valid custom table (Part 5 §4.4): a name, and per-quantity warn/fail bases.
+TIGHT_TABLE = {
+    "name": "tighter-than-default",
+    "quantities": {"positions": {"warn": 1e-9, "fail": 1e-7}},
+}
+
+
+def test_convert_accepts_a_custom_tolerance_table_and_applies_it(client: TestClient) -> None:
+    file_id = _upload(client, POSCAR_SAMPLE, "POSCAR")
+    resp = client.post(
+        "/v1/convert",
+        json={
+            "file_id": file_id,
+            "target_format_id": "xyz",
+            "options": {"tolerance_profile": TIGHT_TABLE},
+        },
+    )
+    assert resp.status_code == 202, resp.text
+    env = resp.json()
+    assert env["state"] == "completed", env.get("error")
+    # The validation ran under the *submitted* table, not a silent fallback to `default` — the
+    # profile the report carries is self-contained (Part 5 §3), so it names what was actually used.
+    profile = env["result"]["validation_report"]["tolerance_profile"]
+    assert profile["name"] == "tighter-than-default"
+
+
+def test_convert_rejects_an_unknown_tolerance_profile_name_on_submit(client: TestClient) -> None:
+    file_id = _upload(client, POSCAR_SAMPLE, "POSCAR")
+    resp = client.post(
+        "/v1/convert",
+        json={
+            "file_id": file_id,
+            "target_format_id": "xyz",
+            "options": {"tolerance_profile": "defualt"},
+        },
+    )
+    # A typo'd profile name would validate under a bar the caller never asked for, so it is refused
+    # — as a request error with the field-by-field envelope, never a 500 from the worker.
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["error"]["code"] == "MALFORMED_REQUEST"
+
+
+def test_convert_rejects_a_malformed_tolerance_table_with_the_librarys_reason(
+    client: TestClient,
+) -> None:
+    file_id = _upload(client, POSCAR_SAMPLE, "POSCAR")
+    resp = client.post(
+        "/v1/convert",
+        json={
+            "file_id": file_id,
+            "target_format_id": "xyz",
+            # `atom_count` is a discrete check: it admits no tolerance at all (§4.4). A table that
+            # names it is rejected, never quietly ignored.
+            "options": {
+                "tolerance_profile": {"quantities": {"atom_count": {"warn": 1, "fail": 2}}}
+            },
+        },
+    )
+    assert resp.status_code == 400, resp.text
+    body = resp.json()
+    assert body["error"]["code"] == "MALFORMED_REQUEST"
+    # The library's own actionable message reaches the caller rather than a generic "invalid".
+    assert "atom_count" in json.dumps(body["error"]["details"])
+
+
+def test_validate_rejects_an_unknown_tolerance_profile_name_on_submit(client: TestClient) -> None:
+    file_id = _upload(client, POSCAR_SAMPLE, "POSCAR")
+    convert = client.post(
+        "/v1/convert", json={"file_id": file_id, "target_format_id": "xyz"}
+    ).json()
+    resp = client.post(
+        "/v1/validate",
+        json={"conversion_id": convert["result"]["conversion_id"], "tolerance_profile": "loosest"},
+    )
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["error"]["code"] == "MALFORMED_REQUEST"
+
+
+def test_validate_accepts_a_custom_tolerance_table(client: TestClient) -> None:
+    file_id = _upload(client, POSCAR_SAMPLE, "POSCAR")
+    convert = client.post(
+        "/v1/convert", json={"file_id": file_id, "target_format_id": "xyz"}
+    ).json()
+    resp = client.post(
+        "/v1/validate",
+        json={
+            "conversion_id": convert["result"]["conversion_id"],
+            "tolerance_profile": TIGHT_TABLE,
+        },
+    )
+    assert resp.status_code == 202, resp.text
+    env = resp.json()
+    assert env["state"] == "completed", env.get("error")
+    assert env["result"]["validation_report"]["tolerance_profile"]["name"] == (
+        "tighter-than-default"
+    )
 
 
 # --- validate (re-threshold) --------------------------------------------------------------------

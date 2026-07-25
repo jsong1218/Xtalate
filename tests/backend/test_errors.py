@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import status
 from fastapi.testclient import TestClient
 
@@ -37,6 +39,26 @@ def test_request_validation_failure_is_malformed_request(client: TestClient) -> 
     err = resp.json()["error"]
     assert err["code"] == "MALFORMED_REQUEST"
     assert "errors" in err["details"]
+
+
+def test_validation_failure_raised_by_a_field_validator_still_renders_the_envelope(
+    client: TestClient,
+) -> None:
+    """A failure from a *custom* validator carries the raised exception in ``ctx.error``.
+
+    That object is not JSON, so rendering the raw error list turned a plain client mistake into a
+    ``500 INTERNAL_ERROR``. The handler encodes the list, so every request-validation failure —
+    whatever raised it — leaves as ``400 MALFORMED_REQUEST`` with the reason intact.
+    """
+    resp = client.post(
+        "/v1/validate",
+        json={"conversion_id": "any", "tolerance_profile": "no-such-profile"},
+    )
+    assert resp.status_code == 400, resp.text
+    err = resp.json()["error"]
+    assert err["code"] == "MALFORMED_REQUEST"
+    # The validator's own message survives encoding, rather than being flattened to "invalid".
+    assert "no-such-profile" in json.dumps(err["details"])
 
 
 def test_unhandled_exception_becomes_500_envelope_without_leaking() -> None:

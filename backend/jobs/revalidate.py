@@ -14,9 +14,10 @@ a clear code, distinct from the unknown-conversion ``404`` the submit endpoint r
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from backend.jobs.runner import _new_id
+from backend.tolerance import resolve_tolerance_profile
 
 if TYPE_CHECKING:
     from backend.config import Settings
@@ -26,15 +27,6 @@ if TYPE_CHECKING:
 
 class RevalidateError(Exception):
     """A re-threshold that cannot proceed (no stored validation report) — a ``failed`` outcome."""
-
-
-def _resolve_profile(value: str | dict[str, Any]) -> Any:
-    """A named profile (``default``/``strict``/``loose``) or a custom tolerance table (§4.4)."""
-    from xtalate.validation import ToleranceProfile
-
-    if isinstance(value, str):
-        return ToleranceProfile.named(value)
-    return ToleranceProfile.from_mapping("custom", value)
 
 
 def run_revalidate(job: Job, repository: Repository, settings: Settings) -> None:
@@ -52,7 +44,7 @@ def run_revalidate(job: Job, repository: Repository, settings: Settings) -> None
             f"conversion {conversion_id!r} has no stored validation report to re-threshold"
         )
 
-    profile = _resolve_profile(job.request.get("tolerance_profile", "default"))
+    profile = resolve_tolerance_profile(job.request.get("tolerance_profile", "default"))
     rethresholded = rethreshold(ValidationReport.model_validate(stored.body), profile)
     repository.add_report(
         Report(
