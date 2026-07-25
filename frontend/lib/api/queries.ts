@@ -1,5 +1,8 @@
 import { queryOptions } from "@tanstack/react-query";
-import { apiClient } from "./client";
+import { apiClient, type Schemas } from "./client";
+
+/** The job envelope, verbatim from the generated schema (Part 6 §3.2). */
+export type JobEnvelope = Schemas["JobEnvelope"];
 
 /**
  * TanStack Query wiring over the typed client (MASTER_SPEC Part 7 §5.1).
@@ -107,4 +110,24 @@ export function jobQuery(jobId: string, waitSeconds = 5) {
     // Job envelopes are live state, not immutable reports — always considered stale.
     staleTime: 0,
   });
+}
+
+/**
+ * `POST /v1/jobs/{job_id}/cancel` — request cancellation (Part 6 §3.2, §5).
+ *
+ * Cancellation is **best-effort and honest about it**: the server moves a `queued`,
+ * `running`, or `awaiting_recovery` job to `cancelled`, but a job that reached a terminal state
+ * first keeps that outcome (`JOB_ALREADY_TERMINAL`) — in particular an already-`expired` pause has
+ * resolved to a *refusal*, which a cancel must never erase. So this returns the server's envelope
+ * or its error body and the caller re-reads state from the poll; the UI never assumes the cancel won.
+ * A repeated cancel of an already-`cancelled` job is an idempotent 200, not an error.
+ */
+export async function cancelJob(
+  jobId: string,
+): Promise<{ ok: true; envelope: JobEnvelope } | { ok: false; error: unknown }> {
+  const { data, error } = await apiClient.POST("/v1/jobs/{job_id}/cancel", {
+    params: { path: { job_id: jobId } },
+  });
+  if (error || !data) return { ok: false, error };
+  return { ok: true, envelope: data };
 }

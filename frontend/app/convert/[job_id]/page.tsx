@@ -1,0 +1,234 @@
+"use client";
+
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useState } from "react";
+import { AwaitingRecovery } from "@/components/AwaitingRecovery";
+import { ErrorEnvelope } from "@/components/ErrorEnvelope";
+import { JobPhase } from "@/components/JobPhase";
+import { ConversionReportPanel } from "@/components/report/ConversionReportPanel";
+import { RefusalPanel } from "@/components/report/RefusalPanel";
+import { cancelJob, isTerminalJobState, jobQuery, queryKeys } from "@/lib/api/queries";
+import { toErrorEnvelope } from "@/lib/api/useInspection";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  AwaitingRecoveryBlock,
+  ConversionReport,
+  ErrorEnvelope as ErrorEnvelopeModel,
+} from "@/lib/report/types";
+
+/**
+ * The live conversion job page (MASTER_SPEC Part 6 §3.2, Part 7 §2.4; slice M29-S1).
+ *
+ * Everything on this page comes from the long-polled job envelope — there is no client-side model
+ * of what "should" be happening. That is the whole design: the envelope carries the truth, the UI
+ * renders it, and every state the state machine can reach has an honest card here rather than a
+ * spinner that never resolves:
+ *
+ *  - `queued` / `running` — the phase indicator, with **no invented progress** (`JobPhase`).
+ *  - `awaiting_recovery` — the v0.6 pause placeholder, which never reads as "a default was picked".
+ *  - `completed` — the Conversion Report, or the refusal panel when the engine **declined**. A
+ *    refusal is a completed job at HTTP 200, not an error (Part 6 §1), and is rendered as the
+ *    considered outcome it is.
+ *  - `failed` — the service's own error envelope, code verbatim.
+ *  - `expired` — the pause's deadline passed: the conversion was **refused for want of a decision**.
+ *    Never worded as if a default were applied (Part 7 §2.4).
+ *  - `cancelled` — a card saying no report exists, because none does. Not an empty report shell.
+ *
+ * Cancel is offered in every non-terminal state and is described as best-effort, because it is: the
+ * server may already have finished, and a cancel that loses that race must not overwrite the
+ * recorded outcome. So the click re-reads the job rather than assuming it won.
+ */
+
+function Card({
+  title,
+  tone = "neutral",
+  children,
+}: {
+  title: string;
+  tone?: "neutral" | "fail";
+  children?: React.ReactNode;
+}) {
+  const border = tone === "fail" ? "border-cb-fail bg-cb-fail-bg" : "border-slate-200 bg-white";
+  return (
+    <section aria-label={title} className={`space-y-2 rounded-lg border p-4 ${border}`}>
+      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function StartOver() {
+  return (
+    <Link href="/convert" className="text-sm text-slate-600 underline">
+      Convert another file
+    </Link>
+  );
+}
+
+export default function ConversionJobPage() {
+  const params = useParams<{ job_id: string }>();
+  const jobId = params.job_id;
+  const queryClient = useQueryClient();
+
+  const [cancelError, setCancelError] = useState<ErrorEnvelopeModel | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  const job = useQuery(jobQuery(jobId));
+
+  async function handleCancel() {
+    setCancelError(null);
+    setCancelling(true);
+    const result = await cancelJob(jobId);
+    setCancelling(false);
+    if (!result.ok) {
+      // A cancel can legitimately fail — `JOB_ALREADY_TERMINAL` when the job finished first. That is
+      // information, not noise: show the service's code and let the refreshed envelope tell the rest.
+      setCancelError(
+        toErrorEnvelope(result.error, "CANCEL_FAILED", "Could not cancel this job."),
+      );
+    }
+    // Either way, re-read the job — the server's state is the answer, not our optimism.
+    await queryClient.invalidateQueries({ queryKey: queryKeys.job(jobId) });
+  }
+
+  if (job.isError) {
+    return (
+      <main className="space-y-4">
+        <ErrorEnvelope
+          envelope={toErrorEnvelope(job.error, "NETWORK_ERROR", "Could not reach this job.")}
+        />
+        <StartOver />
+      </main>
+    );
+  }
+
+  const envelope = job.data;
+  if (!envelope) {
+    return (
+      <main>
+        <p role="status" className="text-slate-600">
+          Loading this conversion…
+        </p>
+      </main>
+    );
+  }
+
+  const state = envelope.state;
+  const terminal = isTerminalJobState(state);
+  const result = (envelope.result ?? null) as {
+    conversion_id?: string;
+    conversion_report?: ConversionReport;
+  } | null;
+  const report = result?.conversion_report;
+
+  return (
+    <main className="space-y-6">
+      <header className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Conversion</h1>
+        <p className="font-mono text-xs text-slate-400">job {envelope.job_id}</p>
+      </header>
+
+      {state === "queued" || state === "running" ? <JobPhase envelope={envelope} /> : null}
+
+      {state === "awaiting_recovery" && envelope.awaiting_recovery ? (
+        <AwaitingRecovery
+          block={envelope.awaiting_recovery as unknown as AwaitingRecoveryBlock}
+          jobId={envelope.job_id}
+          expiresAt={envelope.expires_at}
+        />
+      ) : null}
+
+      {state === "completed" && report ? (
+        report.status === "refused" ? (
+          <RefusalPanel report={report} />
+        ) : (
+          <ConversionReportPanel report={report} />
+        )
+      ) : null}
+
+      {state === "failed" ? (
+        <div className="space-y-3">
+          <ErrorEnvelope
+            envelope={toErrorEnvelope(envelope.error, "JOB_FAILED", "This conversion failed.")}
+          />
+          <StartOver />
+        </div>
+      ) : null}
+
+      {state === "expired" ? (
+        <div className="space-y-3">
+          <Card title="Refused — no recovery choice was made" tone="fail">
+            <p className="text-sm text-slate-800">
+              This conversion needed a decision before it could be written, and the window for
+              supplying one closed. Xtalate <strong>refused the conversion</strong> rather than
+              choosing on your behalf: no default was applied, no value was invented, and no output
+              file was written.
+            </p>
+            <p className="text-sm text-slate-700">
+              The refusal itself is recorded — the reference below identifies it — so the outcome is
+              auditable rather than merely absent. Converting again lets you supply the choices up
+              front.
+            </p>
+          </Card>
+          {/* The service's own body: code `RECOVERY_REQUIRED`, and the refused conversion's id. */}
+          <ErrorEnvelope
+            envelope={toErrorEnvelope(
+              envelope.error,
+              "RECOVERY_REQUIRED",
+              "The recovery window expired and the conversion was refused.",
+            )}
+          />
+          <StartOver />
+        </div>
+      ) : null}
+
+      {state === "cancelled" ? (
+        <div className="space-y-3">
+          <Card title="Cancelled">
+            <p className="text-sm text-slate-800">
+              You cancelled this conversion, so <strong>no report exists for it</strong> — not an
+              empty one, none at all. Nothing was written and nothing was measured.
+            </p>
+          </Card>
+          <StartOver />
+        </div>
+      ) : null}
+
+      {/* A terminal state the UI does not have a card for is still named, never rendered blank. */}
+      {terminal && state !== "completed" && !["failed", "expired", "cancelled"].includes(state) ? (
+        <Card title={`Job ${state}`}>
+          <p className="text-sm text-slate-700">
+            The service reported this job as <code className="font-mono">{state}</code>.
+          </p>
+        </Card>
+      ) : null}
+
+      {state === "completed" && !report ? (
+        <Card title="Completed">
+          <p className="text-sm text-slate-700">
+            This job completed but carried no conversion report.
+          </p>
+        </Card>
+      ) : null}
+
+      {!terminal ? (
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={cancelling}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {cancelling ? "Cancelling…" : "Cancel this conversion"}
+          </button>
+          <p className="text-xs text-slate-500">
+            Cancelling is best-effort: work already underway may finish first, and a conversion that
+            has already produced its result keeps it.
+          </p>
+          {cancelError ? <ErrorEnvelope envelope={cancelError} /> : null}
+        </div>
+      ) : null}
+    </main>
+  );
+}

@@ -233,6 +233,42 @@ export interface ValidationReport {
   schema_version: string;
 }
 
+// --- Awaiting-recovery block (MASTER_SPEC Part 6 §3.2) -----------------------------------------
+//
+// Mirrors `backend/jobs/recovery.py::build_awaiting_block` verbatim — the block a job paused in
+// `awaiting_recovery` carries on its envelope, typed opaque (`{ [key]: unknown }`) in the generated
+// schema. Note the one shape difference from a *refusal*: there, `UnresolvedScenario.options` is a
+// flat list of choice **codes**; here each option is enriched into an object carrying that same
+// code plus the parameter names the Recovery Engine actually reads. Enrichment only — the service
+// adds and drops nothing, so the honest, pair-specific option list computed by pre-flight survives
+// intact (no `non_periodic` offered for a POSCAR target, because pre-flight never offered it).
+
+/** One choice a paused job would accept, with the parameters it consumes — Part 6 §3.2. */
+export interface RecoveryOption {
+  /** Machine choice code, e.g. "bounding_box" — the token a caller passes back. */
+  choice: string;
+  /** `{ param_name: human description }`; absent when the choice takes no parameters. */
+  parameters_schema?: Record<string, string>;
+}
+
+/** An unresolved scenario as the *pause* carries it — like {@link UnresolvedScenario}, richer options. */
+export interface AwaitingScenario {
+  scenario: string;
+  path: string | null;
+  detail: string | null;
+  options: RecoveryOption[];
+}
+
+/**
+ * The `awaiting_recovery` block. `draft_report` is the pre-flight Conversion Report
+ * (`stage: "preflight"`, `status: "awaiting_recovery"`) — the "here is what happens once you
+ * decide" preview — and `unresolved_scenarios` is what still needs deciding.
+ */
+export interface AwaitingRecoveryBlock {
+  draft_report: ConversionReport;
+  unresolved_scenarios: AwaitingScenario[];
+}
+
 // --- Error envelope (MASTER_SPEC Part 6 §6) ----------------------------------------------------
 //
 // The single non-2xx body every `/v1` error path renders — a raised ApiError, a request-validation

@@ -1,0 +1,26 @@
+{
+  "job_id": "5c7ba41e82ad48c2934e38074aab9ba9",
+  "kind": "convert",
+  "state": "expired",
+  "created_at": "2026-07-25T20:27:56.402136",
+  "updated_at": "2026-07-25T20:27:56.414054",
+  "started_at": "2026-07-25T20:27:56.403577",
+  "finished_at": "2026-07-25T20:27:56.410652",
+  "expires_at": "2026-07-25T20:26:56.408037",
+  "progress": {
+    "phase": "recovery",
+    "frames_processed": null,
+    "frames_total": null
+  },
+  "awaiting_recovery": null,
+  "result": null,
+  "error": {
+    "code": "RECOVERY_REQUIRED",
+    "message": "the interactive recovery window expired before the required decisions were supplied; the conversion was refused rather than applying any default",
+    "details": {
+      "conversion_id": "cnv-1c6a726ba0f14a389b455d08762bd744"
+    },
+    "request_id": "2c26371c02da4896ac9c1aede83cc225",
+    "documentation_url": "https://docs.xtalate.dev/api#recovery_required"
+  }
+}
