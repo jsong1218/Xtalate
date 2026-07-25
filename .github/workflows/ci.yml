@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
 
+# Least-privilege default for GITHUB_TOKEN: this workflow only checks out and
+# tests code, so read access to repo contents is all it needs.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
