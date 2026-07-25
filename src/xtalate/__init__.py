@@ -16,4 +16,4 @@ frame-chunked streaming core. The Service (v0.5) and Web UI (v0.6) build on this
 re-implementing any of it.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
