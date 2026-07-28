@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -50,7 +51,7 @@ def test_preview_returns_the_exact_assumptions_convert_will_record() -> None:
     reg = _registry()
     source = _parse(reg, *_FLAGSHIP)
     engine = ConversionEngine(reg)
-    choices = {
+    choices: dict[str, dict[str, Any]] = {
         "frame_selection": {"choice": "last"},
         "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}},
     }
