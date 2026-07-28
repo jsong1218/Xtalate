@@ -2,6 +2,12 @@ import Link from "next/link";
 import { apiClient } from "@/lib/api/client";
 import { LossTag } from "@/components/loss/icons";
 
+// The live figures (format count, size cap) must describe the *running* instance, never the build
+// machine: Part 9 §2 fixes only the API origin at build time — limits and capabilities are learned
+// at runtime. Without this, `next build` prerenders `/` statically and bakes build-time values
+// (nulls, in CI) into the page forever.
+export const dynamic = "force-dynamic";
+
 /**
  * Landing (`/`) — the front door (MASTER_SPEC Part 7 §2.1). It orients a first-time visitor around
  * the one idea the product turns on — **every conversion produces a report of what it kept, lost, or

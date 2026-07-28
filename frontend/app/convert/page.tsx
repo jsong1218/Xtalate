@@ -37,6 +37,8 @@ export default function ConvertPage() {
 
       <UploadDropzone
         maxUploadBytes={limits?.max_upload_bytes ?? null}
+        uploadRetentionHours={limits?.upload_retention_hours ?? null}
+        outputRetentionHours={limits?.output_retention_hours ?? null}
         status={status}
         progress={progress}
         error={error}

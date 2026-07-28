@@ -33,6 +33,8 @@ export function humanBytes(bytes: number): string {
 
 export function UploadDropzone({
   maxUploadBytes,
+  uploadRetentionHours,
+  outputRetentionHours,
   status,
   progress,
   error,
@@ -41,6 +43,9 @@ export function UploadDropzone({
 }: {
   /** From `GET /v1/limits`; `null` while unknown (the limit line is then omitted, never faked). */
   maxUploadBytes: number | null;
+  /** From `GET /v1/limits`: hours uploaded bytes / converted outputs are kept; `null` = unknown. */
+  uploadRetentionHours?: number | null;
+  outputRetentionHours?: number | null;
   status: UploadStatus;
   progress: UploadProgress | null;
   error: ErrorEnvelopeModel | null;
@@ -107,10 +112,19 @@ export function UploadDropzone({
           onChange={(e) => handleFiles(e.target.files)}
         />
 
-        {/* The limit, shown before any attempt — a reader knows the ceiling before hitting it. */}
+        {/* The limit, shown before any attempt — a reader knows the ceiling before hitting it. The
+            §2.2 rule is that *both halves* (size and retention) are visible before failure is
+            possible, so a reader knows the posture up front rather than discovering it. */}
         {maxUploadBytes !== null ? (
           <p className="mt-4 text-xs text-slate-500">
-            Files up to {humanBytes(maxUploadBytes)} on this instance.
+            Files up to {humanBytes(maxUploadBytes)} on this instance
+            {uploadRetentionHours != null
+              ? ` · uploads deleted after ${uploadRetentionHours} hours`
+              : ""}
+            {outputRetentionHours != null
+              ? ` · outputs deleted after ${outputRetentionHours} hours`
+              : ""}
+            .
           </p>
         ) : null}
       </div>

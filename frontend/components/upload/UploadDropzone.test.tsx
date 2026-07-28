@@ -21,6 +21,22 @@ describe("UploadDropzone (Part 7 §2.2)", () => {
     expect(screen.getByText(/up to 50 MB on this instance/i)).toBeInTheDocument();
   });
 
+  it("shows the retention half of the limits line before any failure (Part 7 §2.2)", () => {
+    render(
+      <UploadDropzone
+        maxUploadBytes={104857600}
+        uploadRetentionHours={24}
+        outputRetentionHours={24}
+        status="idle"
+        progress={null}
+        error={null}
+        onFile={() => {}}
+      />,
+    );
+    expect(screen.getByText(/uploads deleted after 24 hours/i)).toBeInTheDocument();
+    expect(screen.getByText(/outputs deleted after 24 hours/i)).toBeInTheDocument();
+  });
+
   it("omits the limit line rather than faking a number when limits are unknown", () => {
     render(
       <UploadDropzone
