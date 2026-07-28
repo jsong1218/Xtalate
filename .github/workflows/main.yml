@@ -9,8 +9,11 @@ name: main
 #      `main-<sha>`, so a release has an immutable artifact to promote.
 #
 # The compose job gates the image push: an image is only published from a commit whose full stack
-# actually completed a conversion. `ci.yml` (lint + type + unit/golden + backend suite) still runs on
-# the same push; this file adds only what needs the daemon and the registry.
+# actually completed a conversion. A sibling `e2e` job drives the Web UI journeys (M30-S1) through a
+# real browser against the same stack; it also gates the push, so an image is only published from a
+# commit whose UI actually completed the worked example and rendered the honest negative states.
+# `ci.yml` (lint + type + unit/golden + backend + frontend component suites) still runs on the same
+# push; this file adds only what needs the daemon, a browser, and the registry.
 on:
   push:
     branches: [main]
@@ -64,8 +67,70 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  # The Web UI end-to-end journeys (M30-S1, D92): a real browser against the full Tier 1 stack. The
+  # happy path (upload → inspect → convert → record → download) and the honest negative states
+  # (unknown format, oversized upload, the awaiting_recovery pause, a cancelled job, expired output).
+  # Runs on its own runner, so its compose stack never races the compose-integration one for ports.
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      # A small upload ceiling so the FILE_TOO_LARGE journey trips the real gate with a ~1 MB file
+      # rather than a genuine 100 MB transfer; compose interpolates it into the backend + worker env.
+      XTALATE_MAX_UPLOAD_BYTES: "1048576"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Installs from the lockfile and runs the postinstall gen:api hook (the typed client the specs
+      # compile against), then the browser binary Playwright drives.
+      - name: Install frontend deps + Playwright browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      # Bring up postgres + minio + redis + backend + worker + frontend. `--wait` blocks until every
+      # healthcheck is green — including the frontend's, which only passes once `next dev` serves — so
+      # a green `up` already means the whole stack, UI included, is ready to drive.
+      - name: Start the Tier 1 stack
+        working-directory: .
+        run: docker compose up -d --build --wait
+
+      - name: Run the e2e journeys
+        env:
+          E2E_BASE_URL: http://localhost:3000
+          E2E_API_URL: http://localhost:8000
+        run: npm run e2e
+
+      # The trace/report is the first thing a maintainer opens for a CI-only failure (retries=1 in CI
+      # captures a trace on the retry).
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+      - name: Stack logs
+        if: always()
+        working-directory: .
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        working-directory: .
+        run: docker compose down -v
+
   publish-image:
-    needs: compose-integration
+    needs: [compose-integration, e2e]
     runs-on: ubuntu-latest
     # Never publish from a fork PR or a dispatch dry-run — only from an actual push to this repo's
     # default branch, where the GHCR credentials and the `main-<sha>` contract both apply.

@@ -22,6 +22,18 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ### Added
 
+- **End-to-end journeys against the compose stack (v0.6 M30-S1).** A Playwright suite that drives
+  the Web UI in a real browser against the live Tier-1 stack (D92). The full happy path — landing →
+  upload → inspect → convert → record → download — for a deliberately lossy pair (extended XYZ →
+  plain XYZ), asserting the record's loss summary renders **above** the download control by rendered
+  geometry, not just DOM order. The honest negative states: `UNKNOWN_FORMAT` (a Word document the
+  sniffer refuses), `FILE_TOO_LARGE` (the real backend size gate, exercised with a small
+  `XTALATE_MAX_UPLOAD_BYTES` so the file stays kilobyte-scale), the `awaiting_recovery` pause and a
+  `cancelled` job (seeded over the API, since the v0.6 convert button does not ask for interactive
+  recovery yet), and expired output (the reports-outlive-bytes record). The compose `frontend`
+  service gains a readiness healthcheck so `up --wait` blocks until the UI serves, and a `main.yml`
+  `e2e` lane gates the image push alongside the compose-integration loop. Seam choices recorded as
+  D95.
 - **Frontend foundation (v0.6 M26).** The `frontend/` Next.js (App Router) scaffold — the faithful
   presentation layer over `/v1` (Part 7), carrying **no scientific logic**. React 18 + TypeScript +
   Tailwind, with the framework/tooling picks recorded as decisions (Next.js 15 pinned, D90; Vitest +

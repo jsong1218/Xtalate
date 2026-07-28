@@ -1,0 +1,4 @@
+2
+Lattice="6.0 0.0 0.0 0.0 6.0 0.0 0.0 0.0 6.0" Properties=species:S:1:pos:R:3:masses:R:1:forces:R:3:charge:R:1 pbc="T T T" energy=-14.25 config_type=diatomic
+C 1.0 1.0 1.0 12.011 0.5 0.0 0.0 0.3
+O 2.125 1.0 1.0 15.999 -0.5 0.0 0.0 -0.3
