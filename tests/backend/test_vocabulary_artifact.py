@@ -14,6 +14,7 @@ deterministic across differently-stale editable installs, exactly like the OpenA
 from __future__ import annotations
 
 from backend.vocabulary import ARTIFACT_PATH, build_vocabulary, serialize
+from xtalate.conversion.preflight import GENERIC_REQUIRED_FIELD_SCENARIO
 from xtalate.recovery.scenarios import SCENARIO_HAZARD
 from xtalate.schema.presence import FIXED_CANONICAL_PATHS
 
@@ -31,7 +32,11 @@ def test_committed_vocabulary_matches_the_engine() -> None:
 def test_vocabulary_covers_every_engine_registry() -> None:
     """A sanity floor independent of the byte diff: nothing the engine exposes is omitted."""
     document = build_vocabulary()
-    assert set(document["scenario_codes"]) == set(SCENARIO_HAZARD)
+    # The catalog scenarios plus the generic required-field fallback (P6): the code a target's
+    # required field surfaces when it has no catalog-specific mapping. It is not in SCENARIO_HAZARD
+    # (which is the interactive-recovery catalog) but the UI must still be able to label it.
+    expected_scenarios = set(SCENARIO_HAZARD) | {GENERIC_REQUIRED_FIELD_SCENARIO}
+    assert set(document["scenario_codes"]) == expected_scenarios
     assert set(document["canonical_paths"]) == set(FIXED_CANONICAL_PATHS)
     # The dynamic per-key categories are the only non-fixed paths, and must be present so the
     # mapping table can label a `custom_global['k']` row by its category (Part 7 §3.3).

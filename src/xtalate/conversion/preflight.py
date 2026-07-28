@@ -60,6 +60,12 @@ _REQUIRED_FIELD_SCENARIOS = {
     "electronic.total_energy": "missing_energy",
 }
 
+#: The generic scenario emitted for a target ``required_field`` with no catalog-specific mapping
+#: (**P6** — exactly the code a plugin format's unusual required field surfaces). Public so the
+#: vocabulary export (`backend.vocabulary`) can enrol it in the UI mapping lint: without that, the
+#: one code designed for *unforeseen* fields is the one code the lint cannot see.
+GENERIC_REQUIRED_FIELD_SCENARIO = "missing_required_field"
+
 # The container-level capability key governing per-atom constraint representation (Part 4 §3.3).
 _CONSTRAINTS = "dynamics.constraints"
 
@@ -300,7 +306,7 @@ def build_preflight_from_presence(
         # Offering it only on a fully-``absent`` field left a ``mixed`` cell to reach a lattice-
         # requiring exporter with no cell and crash (Part 4 §3.3; the M10 stage-2 test found it).
         if presence.status_of(required) != "present":
-            scenario = _REQUIRED_FIELD_SCENARIOS.get(required, "missing_required_field")
+            scenario = _REQUIRED_FIELD_SCENARIOS.get(required, GENERIC_REQUIRED_FIELD_SCENARIO)
             status = presence.status_of(required)
             diff.unresolved.append(
                 UnresolvedScenario(

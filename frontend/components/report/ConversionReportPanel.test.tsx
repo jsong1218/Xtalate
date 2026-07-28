@@ -23,6 +23,14 @@ describe("ConversionReportPanel (Part 4 §2 / Part 7 §4.3)", () => {
     expect(screen.getAllByTestId("warning-row")).toHaveLength(report.warnings.length);
   });
 
+  it("renders every supplied entry even when its assumption id matches nothing (row completeness)", () => {
+    const orphaned = structuredClone(completedReport) as unknown as ConversionReport;
+    orphaned.supplied[0].from_assumption = "A_NONEXISTENT";
+    render(<ConversionReportPanel report={orphaned} />);
+    // No entry may vanish through the assumption join — one rendered row per supplied element.
+    expect(screen.getAllByTestId("supplied-row")).toHaveLength(orphaned.supplied.length);
+  });
+
   it("shows each Removed reason verbatim, never paraphrased", () => {
     render(<ConversionReportPanel report={report} />);
     for (const entry of report.removed) {
