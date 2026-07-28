@@ -113,6 +113,12 @@ export function ConversionReportPanel({ report }: { report: ConversionReport }) 
     suppliedByAssumption.set(entry.from_assumption, list);
   }
 
+  // Row completeness is a join-proof invariant: a supplied entry whose `from_assumption` matches
+  // no assumption in this report (an engine bug, a hand-edited fixture) must still render — a
+  // silently dropped row is a silently dropped loss record.
+  const assumptionIds = new Set(report.assumptions.map((a) => a.id));
+  const orphanedSupplied = report.supplied.filter((e) => !assumptionIds.has(e.from_assumption));
+
   const source = report.source;
   const target = report.target;
 
@@ -153,7 +159,7 @@ export function ConversionReportPanel({ report }: { report: ConversionReport }) 
 
       <Section
         title="Supplied & assumptions"
-        count={report.assumptions.length}
+        count={report.assumptions.length + orphanedSupplied.length}
         tint="border-cb-assumption"
       >
         {report.assumptions.map((assumption) => (
@@ -163,12 +169,30 @@ export function ConversionReportPanel({ report }: { report: ConversionReport }) 
             supplied={suppliedByAssumption.get(assumption.id) ?? []}
           />
         ))}
+        {orphanedSupplied.length > 0 ? (
+          <Row
+            kind="assumption"
+            testId="assumption-row"
+            label="Supplied fields"
+            detail="Recorded without a matching assumption entry in this report."
+          >
+            <ul className="mt-1 space-y-0.5">
+              {orphanedSupplied.map((entry) => (
+                <li key={entry.path} data-testid="supplied-row" className="text-sm text-slate-600">
+                  <span className="text-cb-assumption">+ </span>
+                  {labelForPath(entry.path).label}
+                  {entry.detail ? <span className="text-slate-500"> — {entry.detail}</span> : null}
+                </li>
+              ))}
+            </ul>
+          </Row>
+        ) : null}
       </Section>
 
       <Section title="Warnings" count={report.warnings.length} tint="border-cb-warning">
-        {report.warnings.map((warning) => (
+        {report.warnings.map((warning, i) => (
           <Row
-            key={warning.code}
+            key={`${warning.code}-${i}`}
             kind="warning"
             testId="warning-row"
             label={

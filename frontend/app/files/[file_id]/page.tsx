@@ -124,9 +124,11 @@ export default function FilePage() {
       body: {
         file_id: fileId,
         target_format_id: targetFormatId,
-        // v0.6 has no interactive recovery yet (M29): submit with defaults so a conversion needing
-        // recovery pauses and honestly expires to a refusal, and strict loss refuses — never a
-        // silent default. Acknowledgement and recovery choices arrive with the flows that own them.
+        // v0.6 has no interactive recovery UI yet (D95): the button submits allow_recovery: false,
+        // so a conversion that needs a decision *refuses immediately* (a completed job with a
+        // refused report) rather than pausing — the awaiting_recovery pause is reachable only via
+        // the API until the v0.7 decision cards. Strict-mode loss likewise refuses; nothing is
+        // ever defaulted.
         options: {
           mode,
           acknowledge_loss: false,

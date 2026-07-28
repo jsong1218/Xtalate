@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ErrorEnvelope as ErrorEnvelopeModel } from "@/lib/report/types";
 import { UploadDropzone, humanBytes } from "./UploadDropzone";
@@ -19,6 +19,22 @@ describe("UploadDropzone (Part 7 §2.2)", () => {
       />,
     );
     expect(screen.getByText(/up to 50 MB on this instance/i)).toBeInTheDocument();
+  });
+
+  it("shows the retention half of the limits line before any failure (Part 7 §2.2)", () => {
+    render(
+      <UploadDropzone
+        maxUploadBytes={104857600}
+        uploadRetentionHours={24}
+        outputRetentionHours={24}
+        status="idle"
+        progress={null}
+        error={null}
+        onFile={() => {}}
+      />,
+    );
+    expect(screen.getByText(/uploads deleted after 24 hours/i)).toBeInTheDocument();
+    expect(screen.getByText(/outputs deleted after 24 hours/i)).toBeInTheDocument();
   });
 
   it("omits the limit line rather than faking a number when limits are unknown", () => {
@@ -81,6 +97,24 @@ describe("UploadDropzone (Part 7 §2.2)", () => {
     );
     expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(screen.getByText("FILE_TOO_LARGE")).toBeInTheDocument();
+  });
+
+  it("renders the self-hosting funnel on FILE_TOO_LARGE — a redirect, not a dead end", () => {
+    render(
+      <UploadDropzone
+        maxUploadBytes={52428800}
+        status="error"
+        progress={null}
+        error={envelope}
+        onFile={() => {}}
+      />,
+    );
+    const funnel = screen.getByTestId("size-funnel");
+    expect(funnel).toHaveTextContent(/no size limit/i);
+    expect(within(funnel).getByRole("link")).toHaveAttribute(
+      "href",
+      "https://github.com/jsong1218/Xtalate#quickstart-http-service",
+    );
   });
 });
 

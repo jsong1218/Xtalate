@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     #: the published API error reference; the per-error anchor is the stable machine ``code``.
     docs_base_url: str = "https://github.com/jsong1218/Xtalate/blob/main/docs/API.md"
 
+    #: Where the ``413 FILE_TOO_LARGE`` envelope points an over-limit caller (Revision 1.4, D31):
+    #: the funnel to the free local path — CLI install and self-hosting, where no size limit
+    #: exists. Instance-configurable so a hosted deployment can point at its own guide.
+    self_hosting_url: str = "https://github.com/jsong1218/Xtalate#quickstart-http-service"
+
     # --- limits (surfaced by GET /v1/limits now; enforced in M23/M24) ---------------------------
     #: Largest upload accepted, in bytes (enforced during streaming in M24 → ``413``).
     max_upload_bytes: int = 100 * 1024 * 1024

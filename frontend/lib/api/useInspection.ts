@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { clientErrorEnvelope } from "./upload";
-import { inspectSubmitQuery, jobQuery } from "./queries";
+import { inspectSubmitQuery, isTerminalJobState, jobQuery } from "./queries";
 import type { DiscoveryReport, ErrorBody, ErrorEnvelope } from "@/lib/report/types";
 
 /**
@@ -79,6 +79,16 @@ export function useInspection(fileId: string, formatOverride?: string): Inspecti
     };
   }
 
+  if (envelope.state === "cancelled") {
+    return {
+      status: "error",
+      error: clientErrorEnvelope(
+        "INSPECTION_CANCELLED",
+        "This inspection was cancelled before it produced a report.",
+      ),
+    };
+  }
+
   if (envelope.state === "completed") {
     const report = (envelope.result as { discovery_report?: DiscoveryReport } | null)
       ?.discovery_report;
@@ -87,6 +97,19 @@ export function useInspection(fileId: string, formatOverride?: string): Inspecti
     return {
       status: "error",
       error: clientErrorEnvelope("MALFORMED_RESPONSE", "Inspection completed without a report."),
+    };
+  }
+
+  // Any *other* terminal state without a report (a future state-machine addition, an expired
+  // pause) is named rather than spun on — polling stops at terminal states, so falling through
+  // to "loading" here would be a spinner that never resolves (Part 7 §2.4).
+  if (isTerminalJobState(envelope.state)) {
+    return {
+      status: "error",
+      error: clientErrorEnvelope(
+        "INSPECTION_NOT_COMPLETED",
+        `The inspection job ended in state "${envelope.state}" without a report.`,
+      ),
     };
   }
 

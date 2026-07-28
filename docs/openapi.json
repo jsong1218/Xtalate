@@ -714,7 +714,7 @@
     "description": "The trusted translation layer between computational-chemistry file formats, exposed as a REST API. Reports embed verbatim; refusals are HTTP 200 completed jobs.",
     "summary": "Loss-aware chemistry file conversion over HTTP.",
     "title": "Xtalate Service",
-    "version": "0.5.0"
+    "version": "0.6.0"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -33,6 +33,8 @@ export function humanBytes(bytes: number): string {
 
 export function UploadDropzone({
   maxUploadBytes,
+  uploadRetentionHours,
+  outputRetentionHours,
   status,
   progress,
   error,
@@ -41,6 +43,9 @@ export function UploadDropzone({
 }: {
   /** From `GET /v1/limits`; `null` while unknown (the limit line is then omitted, never faked). */
   maxUploadBytes: number | null;
+  /** From `GET /v1/limits`: hours uploaded bytes / converted outputs are kept; `null` = unknown. */
+  uploadRetentionHours?: number | null;
+  outputRetentionHours?: number | null;
   status: UploadStatus;
   progress: UploadProgress | null;
   error: ErrorEnvelopeModel | null;
@@ -64,6 +69,11 @@ export function UploadDropzone({
   }
 
   const pct = progress?.fraction != null ? Math.round(progress.fraction * 100) : null;
+
+  // Revision 1.4 / D31: the oversize path is a funnel to the free local path, not a dead end —
+  // the cap is this instance's posture, not the tool's (Part 7 §2.2).
+  const rawSelfHostingUrl = error?.error.details?.self_hosting_url;
+  const selfHostingUrl = typeof rawSelfHostingUrl === "string" ? rawSelfHostingUrl : null;
 
   return (
     <div className="space-y-4">
@@ -102,10 +112,19 @@ export function UploadDropzone({
           onChange={(e) => handleFiles(e.target.files)}
         />
 
-        {/* The limit, shown before any attempt — a reader knows the ceiling before hitting it. */}
+        {/* The limit, shown before any attempt — a reader knows the ceiling before hitting it. The
+            §2.2 rule is that *both halves* (size and retention) are visible before failure is
+            possible, so a reader knows the posture up front rather than discovering it. */}
         {maxUploadBytes !== null ? (
           <p className="mt-4 text-xs text-slate-500">
-            Files up to {humanBytes(maxUploadBytes)} on this instance.
+            Files up to {humanBytes(maxUploadBytes)} on this instance
+            {uploadRetentionHours != null
+              ? ` · uploads deleted after ${uploadRetentionHours} hours`
+              : ""}
+            {outputRetentionHours != null
+              ? ` · outputs deleted after ${outputRetentionHours} hours`
+              : ""}
+            .
           </p>
         ) : null}
       </div>
@@ -133,6 +152,23 @@ export function UploadDropzone({
       ) : null}
 
       {status === "error" && error ? <ErrorEnvelope envelope={error} /> : null}
+
+      {status === "error" && error?.error.code === "FILE_TOO_LARGE" ? (
+        <p className="text-sm text-slate-700" data-testid="size-funnel">
+          This cap is this instance&rsquo;s, not the tool&rsquo;s — run Xtalate locally and there is
+          no size limit at all.{" "}
+          {selfHostingUrl ? (
+            <a
+              href={selfHostingUrl}
+              className="underline underline-offset-2"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Install the CLI or self-host
+            </a>
+          ) : null}
+        </p>
+      ) : null}
     </div>
   );
 }

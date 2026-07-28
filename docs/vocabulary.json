@@ -39,6 +39,7 @@
     "missing_energy",
     "missing_lattice",
     "missing_masses",
+    "missing_required_field",
     "missing_species",
     "missing_velocities",
     "truncate_corrupt_tail"

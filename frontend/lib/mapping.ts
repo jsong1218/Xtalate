@@ -41,6 +41,10 @@ export const SCENARIO_LABELS: Record<string, Labeled> = {
     label: "Total energy",
     description: "A total energy value is missing and the target expects one.",
   },
+  missing_required_field: {
+    label: "A required field is missing",
+    description: "The target format requires a field this file does not contain.",
+  },
   frame_selection: {
     label: "Pick which snapshot to keep",
     description: "The source is a trajectory but the target holds a single structure.",

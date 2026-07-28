@@ -152,7 +152,9 @@ with open("POSCAR", "wb") as fh:
 Recovery presets are passed as `recovery_choices`, e.g.
 `recovery_choices={"missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}}}`.
 Other keyword options mirror the CLI flags: `mode`, `acknowledge_loss`,
-`acknowledge_parse_warnings`, and `tolerance_profile` (a name or a `ToleranceProfile`).
+`acknowledge_parse_warnings`, and `tolerance_profile` (a named profile — `default`/`strict`/`loose`
+— or a full custom `ToleranceProfile` / tolerance table; an unknown name or a malformed table is
+rejected, never silently ignored).
 
 ### 2.2 Inspect (Discovery)
 
@@ -285,6 +287,10 @@ curl -s "$BASE/download/$CID" -o out.POSCAR
 # The durable record serves BOTH reports back verbatim — even after the bytes expire.
 curl -s "$BASE/conversions/$CID" | jq '.conversion_report.status, .validation_report.status'
 ```
+
+The `options` object also accepts `tolerance_profile` — a named profile (`default`/`strict`/`loose`)
+or a full custom tolerance table; an unknown name or a malformed table is refused at submit as
+`400 MALFORMED_REQUEST` carrying the library's own reason, before a job exists (D93).
 
 Supplying the same `recovery_choices` in the initial `convert` request (instead of
 `allow_recovery`) skips the pause and completes in one call — the preset path and the interactive

@@ -99,3 +99,9 @@ jobs:
 
       - name: Vitest (components + mapping-coverage lint)
         run: npm run test
+
+      # The artifact the release story claims must actually build: `next build` exercises RSC
+      # prerendering and the static/dynamic route split, which neither `next dev` (the e2e stack)
+      # nor jsdom ever runs — the landing-page static-bake defect (D98) was invisible without it.
+      - name: Production build (next build)
+        run: npm run build

@@ -8,6 +8,92 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-27
+
+v0.6 — **"Humans."** The Web UI: the whole upload → inspect → convert → record → download journey
+in a browser, as a **faithful presentation layer** over the `/v1` service — no scientific logic in
+the client, every number and reason on screen the engine's own, rendered verbatim, and the loss
+report placed where it cannot be missed. The library, CLI, and service are unchanged except for two
+service defect repairs found while building against them (D93, D94).
+
+### Added
+
+- **Frontend foundation (v0.6 M26).** The `frontend/` Next.js (App Router) scaffold — the faithful
+  presentation layer over `/v1` (Part 7), carrying **no scientific logic**. React 18 + TypeScript +
+  Tailwind, with the framework/tooling picks recorded as decisions (Next.js 15 pinned, D90; Vitest +
+  Testing Library, D91; Playwright, D92). A **typed API client generated from the committed
+  `docs/openapi.json`** (`npm run gen:api`, no hand-written endpoint types) with TanStack Query
+  wiring: report queries cached immutable, job polling as a `?wait=5` long-poll; server state is the
+  state (no global client store). The **loss-communication palette** (Part 7 §4) as `--cb-*` CSS
+  custom properties defined once, and an icon set (✓ ✗ ○ ◆ ⚠ ✕ –) that always pairs glyph + text
+  label — color is never the sole carrier. The **plain-language mapping table** (Part 7 §3.3) as one
+  exported constant, with a **coverage lint**: `python -m backend.vocabulary` exports the engine's
+  scenario codes and canonical field paths to a drift-guarded `docs/vocabulary.json`, and a Vitest
+  test fails if any lacks a mapping entry — a future plugin scenario surfaces as a lint failure, not
+  a raw code on screen. Compose gains a hot-reload `frontend` service behind a same-origin `/v1`
+  proxy; CI gains eslint + tsc + Vitest lanes.
+- **Report rendering components (v0.6 M27).** The design-critical core, fixture-first against the
+  spec's own worked reports. The loss-language primitives — presence/outcome row and summary count
+  chips, with the affirmative empty state ("0 fields removed" as a green ✓ chip, never an unlabeled
+  blank). The five-section **Conversion Report panel**: Preserved; Removed with each `reason`
+  rendered **verbatim**, never paraphrased; **Supplied and Assumptions adjacent in the shared ◆
+  violet at prominence equal to Removed** (fabricated data is a third thing — not preserved, not
+  loss); Warnings with `code` badges. The **Validation Report panel**: one row per check in catalog
+  order, `skipped` shown with its `skip_reason` in plain sight, measured values and applied
+  tolerances behind per-row disclosure. **Refusal rendering**: a refusal heads the same report
+  structure as a first-class outcome, with unresolved scenarios in plain language. And the one
+  **error-envelope component** every failure renders through — `code` verbatim, `request_id`
+  always shown. Row counts are asserted against the fixture arrays, so a silently dropped row
+  fails the suite.
+- **Upload → inspect flow (v0.6 M28).** The landing page leads with the Conversion Report concept
+  and teaches the ✓/✗/◆/⚠ vocabulary before the first upload. The upload page shows the instance's
+  limits inline *before* failure is possible and reports **real** transfer progress (XHR upload
+  events — `fetch` cannot report them, and invented progress is banned). The inspection page
+  renders the Discovery Report in four regions: file header with sniff confidence and a "Not the
+  right format?" `format_override` re-inspection; structure summary; the contents inventory drawing
+  the load-bearing distinction between **absent-but-expressible** (○ "your file has none") and
+  **absent-and-inexpressible** (✗ muted, "this format cannot hold it"); parse warnings in an amber
+  band **above** the inventory. The target picker overlays a client-computed **pre-flight preview**
+  — will carry / will drop / will need recovery — as pure set intersection over two
+  server-provided structures (presence × write capability), unit-tested against capability
+  fixtures, including the undeclared-container-defaults-to-NONE case a naive intersection gets
+  wrong. The engine's draft report remains the authority.
+- **Convert → record → download flow (v0.6 M29).** The live job page renders **only** the
+  long-polled envelope: phase + elapsed time with **no fake progress bars** (the one bar shown is
+  driven by real `frames_processed / frames_total` counts), Cancel in every non-terminal state with
+  best-effort semantics stated, and honest terminal cards — `failed` (the envelope, verbatim),
+  `expired` (**refused because no recovery choice was made — never worded as if a default was
+  applied**), `cancelled` (no report exists, and the card says exactly that). The
+  `awaiting_recovery` pause renders as the v0.6-honest placeholder: unresolved scenarios in plain
+  language, the `expires_at` deadline stated as refusal-not-default, every engine-computed option
+  with its parameters, and the API/CLI route to resume today. The conversion record page is the
+  citable outcome: a quantitative, never-celebratory header; the **download panel below the loss
+  summary by layout law**; both reports side-by-side (stacked on mobile); re-validation (appends,
+  never replaces); and the provenance strip — sha256 prefix, timestamps, mode, tolerance profile,
+  report IDs.
+- **End-to-end journeys against the compose stack (v0.6 M30-S1).** A Playwright suite that drives
+  the Web UI in a real browser against the live Tier-1 stack (D92). The full happy path — landing →
+  upload → inspect → convert → record → download — for a deliberately lossy pair (extended XYZ →
+  plain XYZ), asserting the record's loss summary renders **above** the download control by rendered
+  geometry, not just DOM order. The honest negative states: `UNKNOWN_FORMAT` (a Word document the
+  sniffer refuses), `FILE_TOO_LARGE` (the real backend size gate, exercised with a small
+  `XTALATE_MAX_UPLOAD_BYTES` so the file stays kilobyte-scale), the `awaiting_recovery` pause and a
+  `cancelled` job (seeded over the API, since the v0.6 convert button does not ask for interactive
+  recovery yet), and expired output (the reports-outlive-bytes record). The compose `frontend`
+  service gains a readiness healthcheck so `up --wait` blocks until the UI serves, and a `main.yml`
+  `e2e` lane gates the image push alongside the compose-integration loop. Seam choices recorded as
+  D95.
+- **Accessibility, responsive pass, and the release story (v0.6 M30-S2).** The spec's own stopping
+  bar (Part 7 §4–§5), executed: automated **WCAG 2.1 A/AA** checks via an axe-core scan (no new
+  dependency) of the landing and record pages in a real browser; a **keyboard-traversal** e2e proving
+  the conversion is reachable and startable without a mouse; a **responsive** e2e pinning the report
+  panels stacked on a phone and side by side on desktop, with no page scrolling sideways (inventory
+  table included); and a dependency-free token-**contrast** unit test. The README gains the Web UI
+  story with a worked-example record screenshot and a scope statement naming every v0.6 interim (the
+  recovery placeholder, the raw ack-gate envelope, and the absent formats/history/docs pages — all
+  v0.7). Icons always pair a glyph with a text label, verified per kind; color is never the sole
+  carrier.
+
 ### Fixed
 
 - **Loss-palette contrast and a harmful dark-mode override (v0.6 M30-S2, D96).** The M30
@@ -27,56 +113,67 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
   request-validation failure raised by a custom validator carries a non-JSON exception object in its
   error list, which turned any such client mistake into a `500`; the handler now encodes the list, so
   every validation failure leaves inside the standard envelope.
-
-### Added
-
-- **Accessibility, responsive pass, and the release story (v0.6 M30-S2).** The spec's own stopping
-  bar (Part 7 §4–§5), executed: automated **WCAG 2.1 A/AA** checks via an axe-core scan (no new
-  dependency) of the landing and record pages in a real browser; a **keyboard-traversal** e2e proving
-  the conversion is reachable and startable without a mouse; a **responsive** e2e pinning the report
-  panels stacked on a phone and side by side on desktop, with no page scrolling sideways (inventory
-  table included); and a dependency-free token-**contrast** unit test. The README gains the Web UI
-  story with a worked-example record screenshot and a scope statement naming every v0.6 interim (the
-  recovery placeholder, the raw ack-gate envelope, and the absent formats/history/docs pages — all
-  v0.7). Icons always pair a glyph with a text label, verified per kind; color is never the sole
-  carrier.
-- **End-to-end journeys against the compose stack (v0.6 M30-S1).** A Playwright suite that drives
-  the Web UI in a real browser against the live Tier-1 stack (D92). The full happy path — landing →
-  upload → inspect → convert → record → download — for a deliberately lossy pair (extended XYZ →
-  plain XYZ), asserting the record's loss summary renders **above** the download control by rendered
-  geometry, not just DOM order. The honest negative states: `UNKNOWN_FORMAT` (a Word document the
-  sniffer refuses), `FILE_TOO_LARGE` (the real backend size gate, exercised with a small
-  `XTALATE_MAX_UPLOAD_BYTES` so the file stays kilobyte-scale), the `awaiting_recovery` pause and a
-  `cancelled` job (seeded over the API, since the v0.6 convert button does not ask for interactive
-  recovery yet), and expired output (the reports-outlive-bytes record). The compose `frontend`
-  service gains a readiness healthcheck so `up --wait` blocks until the UI serves, and a `main.yml`
-  `e2e` lane gates the image push alongside the compose-integration loop. Seam choices recorded as
-  D95.
-- **Frontend foundation (v0.6 M26).** The `frontend/` Next.js (App Router) scaffold — the faithful
-  presentation layer over `/v1` (Part 7), carrying **no scientific logic**. React 18 + TypeScript +
-  Tailwind, with the framework/tooling picks recorded as decisions (Next.js 15 pinned, D90; Vitest +
-  Testing Library, D91; Playwright, D92). A **typed API client generated from the committed
-  `docs/openapi.json`** (`npm run gen:api`, no hand-written endpoint types) with TanStack Query
-  wiring: report queries cached immutable, job polling as a `?wait=5` long-poll; server state is the
-  state (no global client store). The **loss-communication palette** (Part 7 §4) as `--cb-*` CSS
-  custom properties defined once, and an icon set (✓ ✗ ○ ◆ ⚠ ✕ –) that always pairs glyph + text
-  label — color is never the sole carrier. The **plain-language mapping table** (Part 7 §3.3) as one
-  exported constant, with a **coverage lint**: `python -m backend.vocabulary` exports the engine's
-  scenario codes and canonical field paths to a drift-guarded `docs/vocabulary.json`, and a Vitest
-  test fails if any lacks a mapping entry — a future plugin scenario surfaces as a lint failure, not
-  a raw code on screen. Compose gains a hot-reload `frontend` service behind a same-origin `/v1`
-  proxy; CI gains eslint + tsc + Vitest lanes.
-
-### Fixed
-
-- **The source digest is recorded on the HTTP convert path.** The upload endpoint computes a sha256
-  over the received bytes and stores it, but the convert worker never passed it to the engine, so
-  every Conversion Report served by the service carried `source.sha256: null` — a conversion that
+- **The source digest is recorded on the HTTP convert path (D94).** The upload endpoint computes a
+  sha256 over the received bytes and stores it, but the convert worker never passed it to the engine,
+  so every Conversion Report served by the service carried `source.sha256: null` — a conversion that
   named a *filename* rather than the bytes it consumed. Provenance is part of the Canonical Model
   (Part 2 §3.7) and the digest is the field that makes a record citable, so a gap here was a
   transparency gap, not a cosmetic one: the CLI path recorded it and the service did not. The worker
   now passes the stored digest on both the final report and the pre-flight draft a paused job
   displays, and a resumed conversion records the same value.
+
+### Fixed — the v0.6 architectural review
+
+Folded into 0.6.0 before the tag (the review-inside-the-version rule, `docs/private/DECISIONS.md`
+D64); see D97–D99 and MASTER_SPEC Revisions 1.24–1.25.
+
+- **`413 FILE_TOO_LARGE` keeps its contract and its promise (D97).** The envelope's details now
+  carry the documented `limit_bytes` (was a drifted `max_upload_bytes`) plus `self_hosting_url`,
+  and the upload page renders the funnel: the cap is the instance's posture, not the tool's, with a
+  link to the CLI/self-hosting path where no limit exists. `received_bytes` was withdrawn from the
+  spec's table — the stream is aborted at the gate, so the server never learns the total, and
+  reporting one would be an invention.
+- **The landing page describes the running instance, not the build machine (D98).** `/` was
+  statically prerendered, freezing the build-time capability/limit fetch (nulls, in CI) into the
+  page; it is now rendered per-request, per the rule that only the API origin is fixed at build
+  time.
+- **A cancelled inspection is an honest error, not an eternal spinner (D98).** The inspect flow
+  handled `completed`/`failed` and spun forever on any other terminal state; `cancelled` (and any
+  future terminal state) now renders a named client-side envelope.
+- **The limits line shows both halves (D98).** The drop zone stated the size ceiling but not the
+  retention windows the spec's own example line includes; uploads/outputs retention now renders
+  inline before any failure is possible.
+- **The one scenario code built for the unforeseen joined the vocabulary (D98).** The engine's
+  generic `missing_required_field` fallback — precisely what a plugin format's unusual required
+  field surfaces — was invisible to the mapping-coverage lint and unlabeled in the UI; it is now
+  exported in `docs/vocabulary.json` and mapped to plain language.
+- **A supplied row cannot vanish through the assumption join (D98).** The Conversion Report panel
+  grouped supplied fields under their authorizing assumption; an entry whose `from_assumption`
+  matched nothing was silently dropped — the exact class of omission the panel exists to prevent.
+  Orphans now render under an explicit "recorded without a matching assumption" row, and warning
+  rows no longer share React keys.
+- **CI proves the production build (D99).** No lane ran `next build` (the e2e stack drives the dev
+  server), so prerender-only failures — including the landing-page static bake above — could ship
+  unseen. The frontend lane now builds for production on every PR.
+- **The record caught up (D99).** v0.6 had shipped without its MASTER_SPEC revision entry
+  (backfilled as Revision 1.24, the same class of miss as the v0.5 review's D88/D89 backfill);
+  `CITATION.cff` had been stale at 0.4.0 through two releases and now carries 0.6.0 with a release
+  date; the 0.5.0 notes' claim that *accounts* arrive in v0.6 is corrected (no ladder version
+  ships accounts — they remain hosted-instance work behind `404 NOT_ENABLED`); and the changelog's
+  own link references now include 0.5.0 and 0.6.0.
+
+### Notes
+
+- The v0.6 interims are named, not hidden: interactive recovery renders as an honest placeholder
+  (decision cards are v0.7); a failed-validation download surfaces the raw
+  `409 VALIDATION_ACK_REQUIRED` envelope before the acknowledged retry; there are no
+  formats-explorer, history, or docs pages yet (all v0.7). The UI ships as the compose `frontend`
+  service (dev server behind a same-origin proxy); the static/edge production deployment of Part 9
+  is hosted-instance work, with `next build` now proven in CI.
+- The canonical schema version is unchanged at `0.1.0`; the `/v1` REST contract is **not** frozen
+  until v1.0.
+- Publishing (the git tag, the PyPI upload, and the GHCR release images) remains the maintainer's
+  manual release step.
 
 ## [0.5.0] — 2026-07-23
 
@@ -168,8 +265,8 @@ D64); see D85–D89 and MASTER_SPEC Revision 1.23.
 
 - The v0.5 service runs in **anonymous mode** only — optional static API keys, no user accounts.
   Authorization is instance-level, never resource-level: a resource is reachable by anyone holding
-  its unguessable id, and the account endpoints answer `404 NOT_ENABLED`. Accounts and the Web UI are
-  v0.6.
+  its unguessable id, and the account endpoints answer `404 NOT_ENABLED`. The Web UI is v0.6;
+  accounts remain hosted-instance work behind `404 NOT_ENABLED`.
 - The canonical schema version is unchanged at `0.1.0`; the `/v1` REST contract is **not** frozen
   until v1.0 (pre-1.0 minors may break).
 - Publishing (the git tag, the PyPI upload, and the GHCR release images) remains the maintainer's
@@ -930,7 +1027,9 @@ byte of scientific information kept, dropped, or fabricated.
 - Recovery is preset-only; tolerance profiles are the three named ones (custom tables are later
   seams).
 
-[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/jsong1218/Xtalate/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/jsong1218/Xtalate/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jsong1218/Xtalate/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jsong1218/Xtalate/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jsong1218/Xtalate/compare/v0.1.0...v0.2.0

@@ -2,7 +2,10 @@
   "error": {
     "code": "FILE_TOO_LARGE",
     "message": "Upload exceeds the 52428800-byte limit.",
-    "details": { "max_upload_bytes": 52428800 },
+    "details": {
+      "limit_bytes": 52428800,
+      "self_hosting_url": "https://github.com/jsong1218/Xtalate#quickstart-http-service"
+    },
     "request_id": "req_8f3a1c9e4b2d",
     "documentation_url": "https://xtalate.dev/docs/api/errors#file_too_large"
   }

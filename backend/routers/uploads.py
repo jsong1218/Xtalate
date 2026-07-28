@@ -95,7 +95,13 @@ def upload(
             status_code=413,  # literal, not status.HTTP_413_* (the constant is deprecated upstream)
             code="FILE_TOO_LARGE",
             message=f"Upload exceeds the {exc.limit}-byte limit.",
-            details={"max_upload_bytes": exc.limit},
+            details={
+                # The §6 contract keys (D97). ``received_bytes`` is deliberately absent: the
+                # stream is aborted *at* the gate, so the true total was never read and any
+                # number here would be an invention — the spec row is reconciled to match.
+                "limit_bytes": exc.limit,
+                "self_hosting_url": settings.self_hosting_url,
+            },
         ) from exc
 
     expires_at = utcnow() + timedelta(hours=settings.upload_retention_hours)

@@ -26,7 +26,7 @@ describe("normalizeUploadOutcome (Part 6 §2.2 / §6)", () => {
     if (!outcome.ok) {
       // The server's stable machine code and its structured details survive unchanged.
       expect(outcome.error.error.code).toBe("FILE_TOO_LARGE");
-      expect(outcome.error.error.details.max_upload_bytes).toBe(52428800);
+      expect(outcome.error.error.details.limit_bytes).toBe(52428800);
       expect(outcome.error.error.request_id).toBe(tooLarge.error.request_id);
     }
   });

@@ -28,6 +28,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from xtalate.conversion.preflight import GENERIC_REQUIRED_FIELD_SCENARIO
 from xtalate.recovery.scenarios import SCENARIO_HAZARD
 from xtalate.schema.presence import CUSTOM_PATH_CATEGORIES, FIXED_CANONICAL_PATHS
 
@@ -40,7 +41,7 @@ def build_vocabulary() -> dict[str, Any]:
     """Return the UI vocabulary as a plain dict: the scenario codes, the fixed canonical paths, and
     the dynamic ``custom_*`` category prefixes the mapping table must each label."""
     return {
-        "scenario_codes": sorted(SCENARIO_HAZARD),
+        "scenario_codes": sorted({*SCENARIO_HAZARD, GENERIC_REQUIRED_FIELD_SCENARIO}),
         "canonical_paths": sorted(FIXED_CANONICAL_PATHS),
         "custom_path_categories": sorted(CUSTOM_PATH_CATEGORIES),
     }
