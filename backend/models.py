@@ -116,6 +116,35 @@ class RecoveryResumeRequest(BaseModel):
     choices: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
+class AssumptionPreview(BaseModel):
+    """One Assumption a paused job *would* record for a previewed choice (Part 6 §3.2 preview).
+
+    The ``description`` is the engine's own sentence, verbatim — byte-identical to what the resume
+    will record — so the UI shows a user the exact provenance they are creating before they confirm
+    it (P4). ``scenario``/``choice``/``parameters`` echo the decision the sentence describes.
+    """
+
+    scenario: str
+    choice: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    description: str
+
+
+class RecoveryPreviewResponse(BaseModel):
+    """``POST /v1/jobs/{job_id}/recovery/preview`` body — the byte-exact Assumption preview.
+
+    Additive to the Part 6 §3.2 recovery surface (a new endpoint ⇒ non-breaking): the client sends
+    the same ``choices`` shape as a resume, and gets back the Assumptions the resume *would*
+    record — without advancing the job or writing any output. Recovery is all-or-nothing, so an
+    incomplete choice set yields no ``previews`` and instead names the scenarios still
+    ``unresolved`` — the UI renders each card's exact provenance only once its decisions are made.
+    """
+
+    previews: list[AssumptionPreview] = Field(default_factory=list)
+    #: Scenario codes still owed a decision; non-empty iff ``previews`` is empty (all-or-nothing).
+    unresolved: list[str] = Field(default_factory=list)
+
+
 class RevalidateRequest(BaseModel):
     """``POST /v1/validate`` body — re-threshold a stored conversion under a new profile (§2, §4.5).
 

@@ -13,6 +13,7 @@ from xtalate.conversion.engine import (
     CompletenessInvariantError,
     ConversionEngine,
     ConversionResult,
+    RecoveryPreview,
     build_expected_object,
 )
 from xtalate.conversion.parse_recovery import ParseRecovery, parse_with_recovery
@@ -40,6 +41,7 @@ __all__ = [
     "ParseRecovery",
     "PreflightDiff",
     "PreservedEntry",
+    "RecoveryPreview",
     "RemovedEntry",
     "ReportWarning",
     "SuppliedEntry",

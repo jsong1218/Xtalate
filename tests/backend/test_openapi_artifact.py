@@ -39,6 +39,7 @@ def test_openapi_covers_the_whole_v1_surface(settings: Settings) -> None:
         "/v1/validate",
         "/v1/jobs/{job_id}",
         "/v1/jobs/{job_id}/recovery",
+        "/v1/jobs/{job_id}/recovery/preview",
         "/v1/jobs/{job_id}/cancel",
         "/v1/conversions/{conversion_id}",
         "/v1/download/{conversion_id}",

@@ -1,6 +1,35 @@
 {
   "components": {
     "schemas": {
+      "AssumptionPreview": {
+        "description": "One Assumption a paused job *would* record for a previewed choice (Part 6 \u00a73.2 preview).\n\nThe ``description`` is the engine's own sentence, verbatim \u2014 byte-identical to what the resume\nwill record \u2014 so the UI shows a user the exact provenance they are creating before they confirm\nit (P4). ``scenario``/``choice``/``parameters`` echo the decision the sentence describes.",
+        "properties": {
+          "choice": {
+            "title": "Choice",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "scenario": {
+            "title": "Scenario",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario",
+          "choice",
+          "description"
+        ],
+        "title": "AssumptionPreview",
+        "type": "object"
+      },
       "Body_upload_v1_upload_post": {
         "properties": {
           "file": {
@@ -590,6 +619,27 @@
           "ok"
         ],
         "title": "ReadinessCheck",
+        "type": "object"
+      },
+      "RecoveryPreviewResponse": {
+        "description": "``POST /v1/jobs/{job_id}/recovery/preview`` body \u2014 the byte-exact Assumption preview.\n\nAdditive to the Part 6 \u00a73.2 recovery surface (a new endpoint \u21d2 non-breaking): the client sends\nthe same ``choices`` shape as a resume, and gets back the Assumptions the resume *would*\nrecord \u2014 without advancing the job or writing any output. Recovery is all-or-nothing, so an\nincomplete choice set yields no ``previews`` and instead names the scenarios still\n``unresolved`` \u2014 the UI renders each card's exact provenance only once its decisions are made.",
+        "properties": {
+          "previews": {
+            "items": {
+              "$ref": "#/components/schemas/AssumptionPreview"
+            },
+            "title": "Previews",
+            "type": "array"
+          },
+          "unresolved": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unresolved",
+            "type": "array"
+          }
+        },
+        "title": "RecoveryPreviewResponse",
         "type": "object"
       },
       "RecoveryResumeRequest": {
@@ -1258,6 +1308,59 @@
           }
         },
         "summary": "Resume Recovery",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/recovery/preview": {
+      "post": {
+        "description": "Preview the Assumptions a resume with ``choices`` *would* record \u2014 without advancing the job.\n\nThe Recovery Workflow UI shows a user the exact provenance a choice creates before they confirm\nit: consent and provenance are the same artifact (P4). The description sentence is generated\ninside the Recovery Engine at apply-time from the user's parameters plus runtime values, so the\nbrowser cannot reproduce it without re-implementing the engine (P2). This endpoint runs the\nengine's real apply path (:meth:`ConversionEngine.preview_recovery`) against the paused job's\nreconstructed source and returns the resulting descriptions **verbatim**, then discards\neverything \u2014 it writes no request, enqueues no work, and leaves the job paused and answerable.\n\nSame guards as the resume it previews (``404`` unknown, ``409 JOB_NOT_AWAITING_RECOVERY``,\n``422 INVALID_RECOVERY_CHOICE`` for an unoffered choice). Recovery is all-or-nothing: an\nincomplete choice set returns no ``previews`` and names the ``unresolved`` scenarios instead.\nAdditive to the Part 6 \u00a73.2 recovery surface \u2014 a new endpoint, so non-breaking.",
+        "operationId": "preview_recovery_v1_jobs__job_id__recovery_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryResumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Recovery",
         "tags": [
           "jobs"
         ]
