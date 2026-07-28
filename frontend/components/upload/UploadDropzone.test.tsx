@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ErrorEnvelope as ErrorEnvelopeModel } from "@/lib/report/types";
 import { UploadDropzone, humanBytes } from "./UploadDropzone";
@@ -81,6 +81,24 @@ describe("UploadDropzone (Part 7 §2.2)", () => {
     );
     expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(screen.getByText("FILE_TOO_LARGE")).toBeInTheDocument();
+  });
+
+  it("renders the self-hosting funnel on FILE_TOO_LARGE — a redirect, not a dead end", () => {
+    render(
+      <UploadDropzone
+        maxUploadBytes={52428800}
+        status="error"
+        progress={null}
+        error={envelope}
+        onFile={() => {}}
+      />,
+    );
+    const funnel = screen.getByTestId("size-funnel");
+    expect(funnel).toHaveTextContent(/no size limit/i);
+    expect(within(funnel).getByRole("link")).toHaveAttribute(
+      "href",
+      "https://github.com/jsong1218/Xtalate#quickstart-http-service",
+    );
   });
 });
 

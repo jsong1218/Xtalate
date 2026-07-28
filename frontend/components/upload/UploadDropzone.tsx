@@ -65,6 +65,11 @@ export function UploadDropzone({
 
   const pct = progress?.fraction != null ? Math.round(progress.fraction * 100) : null;
 
+  // Revision 1.4 / D31: the oversize path is a funnel to the free local path, not a dead end —
+  // the cap is this instance's posture, not the tool's (Part 7 §2.2).
+  const rawSelfHostingUrl = error?.error.details?.self_hosting_url;
+  const selfHostingUrl = typeof rawSelfHostingUrl === "string" ? rawSelfHostingUrl : null;
+
   return (
     <div className="space-y-4">
       <div
@@ -133,6 +138,23 @@ export function UploadDropzone({
       ) : null}
 
       {status === "error" && error ? <ErrorEnvelope envelope={error} /> : null}
+
+      {status === "error" && error?.error.code === "FILE_TOO_LARGE" ? (
+        <p className="text-sm text-slate-700" data-testid="size-funnel">
+          This cap is this instance&rsquo;s, not the tool&rsquo;s — run Xtalate locally and there is
+          no size limit at all.{" "}
+          {selfHostingUrl ? (
+            <a
+              href={selfHostingUrl}
+              className="underline underline-offset-2"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Install the CLI or self-host
+            </a>
+          ) : null}
+        </p>
+      ) : null}
     </div>
   );
 }

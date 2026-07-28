@@ -35,7 +35,12 @@ def test_upload_over_the_limit_is_413(
     assert resp.status_code == 413, resp.text
     error = resp.json()["error"]
     assert error["code"] == "FILE_TOO_LARGE"
-    assert error["details"]["max_upload_bytes"] == settings.max_upload_bytes
+    details = error["details"]
+    # The binding Part 6 §6 keys (D97): the ceiling under its contract name, and the D31 funnel —
+    # the oversize path points at the free local path rather than dead-ending.
+    assert details["limit_bytes"] == settings.max_upload_bytes
+    assert details["self_hosting_url"].startswith("https://")
+    assert "max_upload_bytes" not in details
     # The store holds no orphaned bytes for the refused upload.
     object_store = client.app.state.object_store  # type: ignore[attr-defined]
     assert not any(True for _ in _uploaded_keys(object_store))

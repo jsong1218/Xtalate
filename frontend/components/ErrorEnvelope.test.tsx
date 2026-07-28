@@ -20,7 +20,7 @@ describe("ErrorEnvelope (Part 6 §6)", () => {
 
   it("renders structured details when present", () => {
     render(<ErrorEnvelope envelope={envelope} />);
-    expect(screen.getByText("max_upload_bytes")).toBeInTheDocument();
+    expect(screen.getByText("limit_bytes")).toBeInTheDocument();
     expect(screen.getByText("52428800")).toBeInTheDocument();
   });
 

@@ -27,4 +27,7 @@ test("an over-limit upload surfaces the verbatim FILE_TOO_LARGE envelope", async
   });
 
   await expect(page.getByText("FILE_TOO_LARGE", { exact: true })).toBeVisible({ timeout: 30_000 });
+
+  // Revision 1.4 / D31: the oversize path is a funnel to the free local path, not a dead end.
+  await expect(page.getByTestId("size-funnel")).toBeVisible();
 });
