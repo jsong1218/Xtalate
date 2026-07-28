@@ -28,6 +28,10 @@ x-backend-env: &backend-env
   XTALATE_REDIS_URL: redis://queue:6379/0
   # Tier 1 uses the RQ queue: the backend enqueues, the worker executes (M22).
   XTALATE_QUEUE_BACKEND: rq
+  # Defaults to the application's own 100 MB ceiling, so a plain `docker compose up` is unchanged.
+  # The M30 e2e lane exports a small value here so the oversized-upload journey trips the real
+  # `413 FILE_TOO_LARGE` gate with a kilobyte-scale file instead of a genuine 100 MB transfer.
+  XTALATE_MAX_UPLOAD_BYTES: ${XTALATE_MAX_UPLOAD_BYTES:-104857600}
 
 services:
   postgres:
@@ -185,6 +189,15 @@ services:
       - frontend_node_modules:/repo/frontend/node_modules
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
+    # Serving — not merely started — so `docker compose up --wait` (and the M30 e2e lane) block until
+    # the dev server actually answers, past the on-start `npm install` and the first Next compile.
+    # busybox `wget` ships in the node:20-alpine image; a long start_period covers the cold install.
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:3000"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 60s
 
 volumes:
   pgdata:

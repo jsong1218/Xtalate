@@ -8,6 +8,31 @@
 
 Every conversion produces a structured **Conversion Report** (what was preserved, dropped, or fabricated, and the reason for each) and an automatic **Validation Report** (the output re-parsed and diffed against the source to prove the report told the truth). The guiding rule is simple: *never silently lose scientific information.* If you diffed the input and output by hand, nothing should surprise you that Xtalate didn't already tell you about.
 
+## The Web UI (v0.6)
+
+**v0.6 adds a faithful web front end over the `/v1` service — the whole workflow in a browser, with the loss report as the thing you cannot miss.**
+
+The record page below is the worked example — an extended-XYZ file converted to plain XYZ, which can hold none of its lattice, forces, charges, or energy:
+
+![The Xtalate conversion record page: a header reading "Converted — 7 fields removed", a summary of what was preserved and removed, a Download panel placed below that summary, and the full Conversion and Validation reports side by side with a provenance strip listing the source sha256, timestamps, and report IDs.](docs/images/record-page.png)
+
+The UI is a **presentation layer only** — it carries no scientific logic (Part 7). Every number, code, and reason on screen is the engine's own, rendered **verbatim**; the client never computes a report, it renders one. The wizard is four steps:
+
+- **Upload & inspect** — drop a file and see a ✓/✗ inventory of what it actually contains, each field annotated with the detected format's capability.
+- **Preview the loss** — pick a target and see, *before* converting, what that format will carry, drop, or need to recover — the Capability Matrix's prediction (P5).
+- **Convert** — a live job page that renders whatever the state machine reaches: a phase indicator with **no invented progress**, the honest `awaiting_recovery` pause, the Conversion Report, or a refusal — a refusal being a completed outcome, not an error.
+- **Record & download** — the consolidated, linkable record above. Two things are load-bearing: the outcome header is **quantitative and never celebratory** ("Converted — 7 fields removed", not "Done!"), and the **download control sits *below* the loss summary by layout law** — you cannot reach the button without passing what the conversion cost.
+
+Run it with the Tier 1 stack — `docker compose up` serves the UI at <http://localhost:3000> against the real API, worker, PostgreSQL, MinIO, and Redis. The whole journey (upload → inspect → convert → record → download) and the honest negative states are covered end to end by a Playwright suite that drives a real browser against that stack, and the loss palette is checked for WCAG AA contrast both by an automated axe scan and by a dependency-free token-contrast unit test.
+
+### What the v0.6 UI does *not* do (yet)
+
+The engine paused jobs and gated downloads long before the UI existed; v0.6 renders those states **honestly rather than fully**, and names the seams where the richer flows attach in v0.7:
+
+- **Interactive recovery is an honest placeholder, not yet a form.** When a conversion needs a decision the file lacks (a lattice, a single frame), the job page shows the `awaiting_recovery` pause **named**, with the deadline stated as a *refusal-not-a-default* and every option the engine computed, alongside the API/CLI way to supply it now. The in-browser decision cards are v0.7.
+- **A validation-failed download shows the service's raw acknowledgement envelope.** Taking an output whose validation *failed* surfaces the `409 VALIDATION_ACK_REQUIRED` envelope verbatim, with the failing checks listed above it, and then offers the acknowledged retry — a considered, unpolished gate rather than the smoother ack UX planned for v0.7.
+- **No formats explorer, conversion history, or docs pages.** The wizard is the whole surface; a format-capability browser, a per-session history, and an in-app docs site are all v0.7.
+
 ## What v0.5 does
 
 **The whole engine, now over HTTP — and Phase 1 stays complete: all seven formats read *and* write.**
