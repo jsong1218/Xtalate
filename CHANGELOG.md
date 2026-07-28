@@ -10,6 +10,14 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ### Fixed
 
+- **Loss-palette contrast and a harmful dark-mode override (v0.6 M30-S2, D96).** The M30
+  accessibility pass found `--cb-fail` text on its own tint at 4.41:1 — just under WCAG AA — and
+  darkened it to `#d42020` (clears AA on every surface it renders on). It also **removed the
+  `prefers-color-scheme: dark` token block**: the v0.6 UI renders a single light surface (the body is
+  `bg-white`, no component carries `dark:` variants), so lightening the foregrounds while the panels
+  stayed white *lowered* contrast to ~1.7–2.8:1 rather than raising it. A dependency-free
+  `globals.contrast.test.ts` now guards every foreground/tint pair, so a palette edit that drops any
+  below AA fails CI. A real dark theme is deferred.
 - **A custom tolerance table was unusable on `POST /v1/convert` (D93).** `options.tolerance_profile`
   accepts a named profile or a whole custom tolerance table (Part 5 §4.4), but the convert worker
   passed the value straight through to the engine, which only takes a *name* — so the table form
@@ -22,6 +30,16 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ### Added
 
+- **Accessibility, responsive pass, and the release story (v0.6 M30-S2).** The spec's own stopping
+  bar (Part 7 §4–§5), executed: automated **WCAG 2.1 A/AA** checks via an axe-core scan (no new
+  dependency) of the landing and record pages in a real browser; a **keyboard-traversal** e2e proving
+  the conversion is reachable and startable without a mouse; a **responsive** e2e pinning the report
+  panels stacked on a phone and side by side on desktop, with no page scrolling sideways (inventory
+  table included); and a dependency-free token-**contrast** unit test. The README gains the Web UI
+  story with a worked-example record screenshot and a scope statement naming every v0.6 interim (the
+  recovery placeholder, the raw ack-gate envelope, and the absent formats/history/docs pages — all
+  v0.7). Icons always pair a glyph with a text label, verified per kind; color is never the sole
+  carrier.
 - **End-to-end journeys against the compose stack (v0.6 M30-S1).** A Playwright suite that drives
   the Web UI in a real browser against the live Tier-1 stack (D92). The full happy path — landing →
   upload → inspect → convert → record → download — for a deliberately lossy pair (extended XYZ →

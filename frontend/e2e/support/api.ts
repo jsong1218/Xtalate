@@ -98,6 +98,23 @@ export async function pollJob(
 }
 
 /**
+ * Cancel a job over the API, best-effort. A seeded `awaiting_recovery` pause is a **non-terminal**
+ * job, so it holds one of the instance's `max_concurrent_jobs` slots until something ends it. The
+ * specs that seed a pause call this in an `afterEach` so the slot is freed whether the test passed
+ * or failed — otherwise repeated runs against a persistent stack accumulate parked jobs until the
+ * cap is saturated and every later job is refused `429 TOO_MANY_ACTIVE_JOBS`. Cancelling a job that
+ * is already terminal is a no-op here (the backend answers `JOB_ALREADY_TERMINAL`, which is fine to
+ * ignore) — cleanup must never itself fail a test.
+ */
+export async function cancelJob(request: APIRequestContext, jobId: string): Promise<void> {
+  try {
+    await request.post(`${API_URL}/v1/jobs/${jobId}/cancel`);
+  } catch {
+    // Best-effort teardown; a failed cancel is not a test failure.
+  }
+}
+
+/**
  * Seed a paused conversion: upload the relaxation trajectory and ask to convert it to POSCAR *with
  * interactive recovery*, so the engine pauses on the frame-selection decision (a 3-frame trajectory
  * → a single-frame POSCAR) rather than refusing. Returns the paused job's id.

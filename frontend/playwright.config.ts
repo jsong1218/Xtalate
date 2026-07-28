@@ -17,7 +17,18 @@ const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: true,
+  // One worker, deliberately. The suite shares a single backend that enforces the real product
+  // limit of `max_concurrent_jobs = 4` (Part 6 §5), and one journey seeds an `awaiting_recovery`
+  // pause that stays non-terminal for the rest of the run — permanently holding one of those four
+  // slots. Running fully parallel let several browsers' in-flight jobs plus that lingering seed
+  // exceed four at once, so an unrelated inspect was refused `429 TOO_MANY_ACTIVE_JOBS` — the
+  // harness fighting a real limit no journey asserts. Serial keeps instantaneous active jobs at the
+  // seed (1) plus the current test's own (≤2), always under the cap, and it also removes any
+  // thundering herd on the lazy `next dev` route compiler (which `globalSetup` warms up front
+  // regardless). Reliability over a few seconds of wall-clock on a suite this small.
+  fullyParallel: false,
+  globalSetup: "./e2e/global-setup.ts",
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   // In CI: GitHub annotations on the PR/commit, plus a self-contained HTML report the `e2e` job

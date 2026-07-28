@@ -7,19 +7,26 @@
  * Tailwind aliases these variables into its color scale (tailwind.config.ts); nothing else in the
  * app hard-codes a loss color. Color is never the sole carrier of meaning — every use pairs a
  * token with an icon and a text label (see components/loss/icons.tsx) — but each foreground token
- * is chosen to clear WCAG AA contrast (>= 4.5:1) against its surface anyway, and the palette is
+ * clears WCAG AA contrast (>= 4.5:1) against every surface it renders on anyway, and the palette is
  * kept distinguishable under common color-vision deficiencies (green/red separated by the ✓ vs ✗
- * glyph and by lightness, not hue alone). The M30 accessibility pass verifies these bounds.
+ * glyph and by lightness, not hue alone). The M30 accessibility pass verified these bounds and
+ * `globals.contrast.test.ts` guards them: a token edit that drops any pair below AA fails CI.
+ *
+ * The v0.6 UI renders a **single light surface** — the body is `bg-white text-slate-900` and no
+ * component carries `dark:` variants (D96). So there is intentionally no `prefers-color-scheme:
+ * dark` override here: lightening the foregrounds while the panels stayed white (they are hard-coded
+ * `bg-white`) would *lower* contrast to ~1.7–2.8:1, the opposite of an accessibility gain. A real
+ * dark theme — dark surfaces plus surface-aware tokens — is deferred to a later version.
  */
 :root {
-  /* Foreground / icon colors, one per §4 meaning (on a light surface). */
+  /* Foreground / icon colors, one per §4 meaning (on the light surface). */
   --cb-preserve: #15803d; /* green  — present / preserved / check passed        */
   --cb-absent-format: #6b7280; /* gray   — absent, format cannot express (calm) */
   --cb-absent-file: #475569; /* slate  — absent, file simply lacks it           */
   --cb-removed: #b91c1c; /* red    — removed by conversion                      */
   --cb-assumption: #6d28d9; /* violet — assumption / supplied (third thing)     */
   --cb-warning: #b45309; /* amber  — warning                                    */
-  --cb-fail: #dc2626; /* red, filled — validation fail / refusal                */
+  --cb-fail: #d42020; /* red, filled — validation fail / refusal (AA on fail-bg) */
   --cb-skipped: #6b7280; /* gray with label — validation skipped                */
 
   /* Subtle row tints for the report panels (M27), AA-legible with the foregrounds above. */
@@ -28,28 +35,4 @@
   --cb-assumption-bg: #f5f3ff;
   --cb-warning-bg: #fffbeb;
   --cb-fail-bg: #fef2f2;
-}
-
-/*
- * Dark surface variants. Foregrounds lighten to hold AA contrast against a dark background; the
- * hue/lightness ordering that separates the meanings is preserved. (Dark mode is opt-in via the
- * OS setting; the M30 a11y pass checks both surfaces.)
- */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --cb-preserve: #4ade80;
-    --cb-absent-format: #9ca3af;
-    --cb-absent-file: #94a3b8;
-    --cb-removed: #f87171;
-    --cb-assumption: #a78bfa;
-    --cb-warning: #fbbf24;
-    --cb-fail: #f87171;
-    --cb-skipped: #9ca3af;
-
-    --cb-preserve-bg: #052e16;
-    --cb-removed-bg: #450a0a;
-    --cb-assumption-bg: #2e1065;
-    --cb-warning-bg: #451a03;
-    --cb-fail-bg: #450a0a;
-  }
 }

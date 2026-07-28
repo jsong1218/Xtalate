@@ -1,5 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { seedAwaitingRecoveryJob } from "./support/api";
+import { cancelJob, seedAwaitingRecoveryJob } from "./support/api";
+
+// The seeded pause is a non-terminal job holding a concurrency slot; free it after the assertions so
+// repeated runs against a persistent stack don't saturate `max_concurrent_jobs` (see `cancelJob`).
+let seededJobId: string | undefined;
+test.afterEach(async ({ request }) => {
+  if (seededJobId) {
+    await cancelJob(request, seededJobId);
+    seededJobId = undefined;
+  }
+});
 
 /**
  * Negative journey — the `awaiting_recovery` pause (MASTER_SPEC Part 6 §3.2, Part 7 §2.4; slice
@@ -15,6 +25,7 @@ test("the awaiting_recovery pause is rendered honestly, never as a silent defaul
   request,
 }) => {
   const jobId = await seedAwaitingRecoveryJob(request);
+  seededJobId = jobId;
 
   await page.goto(`/convert/${jobId}`);
 

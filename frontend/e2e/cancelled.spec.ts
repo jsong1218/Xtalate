@@ -1,5 +1,16 @@
 import { expect, test } from "@playwright/test";
-import { seedAwaitingRecoveryJob } from "./support/api";
+import { cancelJob, seedAwaitingRecoveryJob } from "./support/api";
+
+// This test cancels its seeded pause through the UI, but a failure before that click would leave the
+// non-terminal job holding a concurrency slot — so free it unconditionally too (a no-op once the UI
+// has already cancelled it; see `cancelJob`).
+let seededJobId: string | undefined;
+test.afterEach(async ({ request }) => {
+  if (seededJobId) {
+    await cancelJob(request, seededJobId);
+    seededJobId = undefined;
+  }
+});
 
 /**
  * Negative journey — a cancelled job (MASTER_SPEC Part 6 §3.2, Part 7 §2.4; slice M30-S1). A paused
@@ -14,6 +25,7 @@ test("cancelling a paused job shows that no report exists, not an empty one", as
   request,
 }) => {
   const jobId = await seedAwaitingRecoveryJob(request);
+  seededJobId = jobId;
 
   await page.goto(`/convert/${jobId}`);
 
