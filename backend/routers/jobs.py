@@ -40,8 +40,10 @@ from backend.jobs.queue import JobQueue
 from backend.jobs.result import build_job_result
 from backend.jobs.state_machine import is_terminal
 from backend.models import (
+    AssumptionPreview,
     ConvertRequest,
     InspectRequest,
+    RecoveryPreviewResponse,
     RecoveryResumeRequest,
     RevalidateRequest,
 )
@@ -291,6 +293,113 @@ def resume_recovery(
     repository.set_job_request(job_id, merged)
     job_queue.enqueue(job_id)
     return _job_envelope(_reload(repository, job_id), repository, object_store)
+
+
+@router.post(
+    "/jobs/{job_id}/recovery/preview",
+    response_model=RecoveryPreviewResponse,
+    tags=["jobs"],
+)
+def preview_recovery(
+    job_id: str,
+    body: RecoveryResumeRequest,
+    repository: Repository = Depends(get_repository),
+    object_store: ObjectStore = Depends(get_object_store),
+    registry: Registry = Depends(get_registry),
+    settings: Settings = Depends(get_settings),
+) -> RecoveryPreviewResponse:
+    """Preview the Assumptions a resume with ``choices`` *would* record — without advancing the job.
+
+    The Recovery Workflow UI shows a user the exact provenance a choice creates before they confirm
+    it: consent and provenance are the same artifact (P4). The description sentence is generated
+    inside the Recovery Engine at apply-time from the user's parameters plus runtime values, so the
+    browser cannot reproduce it without re-implementing the engine (P2). This endpoint runs the
+    engine's real apply path (:meth:`ConversionEngine.preview_recovery`) against the paused job's
+    reconstructed source and returns the resulting descriptions **verbatim**, then discards
+    everything — it writes no request, enqueues no work, and leaves the job paused and answerable.
+
+    Same guards as the resume it previews (``404`` unknown, ``409 JOB_NOT_AWAITING_RECOVERY``,
+    ``422 INVALID_RECOVERY_CHOICE`` for an unoffered choice). Recovery is all-or-nothing: an
+    incomplete choice set returns no ``previews`` and names the ``unresolved`` scenarios instead.
+    Additive to the Part 6 §3.2 recovery surface — a new endpoint, so non-breaking.
+    """
+    from backend.jobs.recovery import resolve_reference_choices
+    from xtalate.conversion import ConversionEngine, parse_with_recovery
+    from xtalate.recovery import RecoveryError
+
+    job = repository.get_job(job_id)
+    if job is None:
+        raise ApiError(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="JOB_NOT_FOUND",
+            message=f"No job {job_id!r}.",
+        )
+    job = expire_if_due(job, repository, settings)
+    if job.state != "awaiting_recovery":
+        raise ApiError(
+            status_code=status.HTTP_409_CONFLICT,
+            code="JOB_NOT_AWAITING_RECOVERY",
+            message=f"Job {job_id!r} is {job.state!r}, not awaiting recovery.",
+            details={"state": job.state},
+        )
+
+    # Reject an unoffered scenario/choice before doing any work — the same 422 the resume gives, so
+    # a preview and a resume of the same bad choice fail identically (Part 6 §6).
+    _validate_recovery_choices(job.recovery, body.choices)
+
+    # The effective choice set is the job's presets plus the interactive choices being previewed —
+    # exactly what a resume would run — with any ``upload_reference`` file_id resolved to a parsed
+    # object the engine can read (the library is filesystem-free; Part 4 §3.3).
+    options = dict(job.request.get("options") or {})
+    effective = {**(options.get("recovery_choices") or {}), **body.choices}
+    file_id = job.request.get("file_id")
+    upload = repository.get_upload(file_id) if isinstance(file_id, str) else None
+    if upload is None:
+        raise ApiError(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="FILE_NOT_FOUND",
+            message="The uploaded file for this job no longer exists.",
+        )
+
+    try:
+        resolved = resolve_reference_choices(
+            effective, repository=repository, object_store=object_store, registry=registry
+        )
+        with object_store.open(upload.storage_key) as chunks:
+            data = b"".join(chunks)
+        parsed = parse_with_recovery(
+            registry, data, filename=upload.filename, recovery_choices=resolved
+        )
+        preview = ConversionEngine(registry).preview_recovery(
+            parsed.canonical,
+            source_format_id=parsed.format_id,
+            target_format_id=job.request["target_format_id"],
+            mode=options.get("mode", "permissive"),
+            recovery_choices=resolved,
+            parse_recovery=parsed,
+        )
+    except RecoveryError as exc:
+        # A choice offered but ill-parameterized (a non-integer Maxwell–Boltzmann seed, an
+        # unparseable reference file) — a caller error, not a server fault (Part 6 §6).
+        raise ApiError(
+            status_code=422,
+            code="INVALID_RECOVERY_CHOICE",
+            message=str(exc),
+            details={},
+        ) from exc
+
+    return RecoveryPreviewResponse(
+        previews=[
+            AssumptionPreview(
+                scenario=a.scenario,
+                choice=a.choice,
+                parameters=a.parameters,
+                description=a.description,
+            )
+            for a in preview.assumptions
+        ],
+        unresolved=[s.scenario for s in preview.unresolved],
+    )
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobEnvelope, tags=["jobs"])

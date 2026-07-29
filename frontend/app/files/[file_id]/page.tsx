@@ -124,16 +124,17 @@ export default function FilePage() {
       body: {
         file_id: fileId,
         target_format_id: targetFormatId,
-        // v0.6 has no interactive recovery UI yet (D95): the button submits allow_recovery: false,
-        // so a conversion that needs a decision *refuses immediately* (a completed job with a
-        // refused report) rather than pausing — the awaiting_recovery pause is reachable only via
-        // the API until the v0.7 decision cards. Strict-mode loss likewise refuses; nothing is
-        // ever defaulted.
+        // v0.7 has the interactive recovery cards (M31), so the button now submits
+        // allow_recovery: true: a conversion that needs a decision **pauses** (awaiting_recovery)
+        // and the job page renders the decision cards, rather than refusing outright as v0.6 did
+        // (D95, now lifted). Pausing to ask is the explicit-recovery path (P4); nothing is ever
+        // defaulted, and an unanswered pause still expires to a refusal. Strict-mode loss likewise
+        // refuses — recovery is about missing-required data, a separate axis from loss.
         options: {
           mode,
           acknowledge_loss: false,
           acknowledge_parse_warnings: false,
-          allow_recovery: false,
+          allow_recovery: true,
           tolerance_profile: "default",
         },
       },

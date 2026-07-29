@@ -306,6 +306,90 @@ def test_resume_unknown_scenario_is_422(client: TestClient) -> None:
     assert body["details"]["offered_choices"] == []
 
 
+def test_preview_returns_the_exact_description_the_resume_will_record(client: TestClient) -> None:
+    # The Recovery Workflow UI previews the provenance a choice will record *before* the user
+    # confirms it (Part 6 §3.2, P4). A single-frame XYZ → POSCAR pause needs only the lattice; a
+    # bounding_box preview returns one assumption whose `description` is byte-identical to the one
+    # the resume then records — a preview that paraphrased the record would not be the record.
+    job_id = _pause_xyz_to_poscar(client)
+    choice = {"missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}}}
+
+    preview = client.post(f"/v1/jobs/{job_id}/recovery/preview", json={"choices": choice})
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["unresolved"] == []
+    assert [p["scenario"] for p in body["previews"]] == ["missing_lattice"]
+    assert body["previews"][0]["choice"] == "bounding_box"
+    previewed_description = body["previews"][0]["description"]
+    assert previewed_description  # non-empty prose
+
+    # The preview must not have advanced the job — it is still paused and answerable.
+    assert client.get(f"/v1/jobs/{job_id}").json()["state"] == "awaiting_recovery"
+
+    resumed = client.post(f"/v1/jobs/{job_id}/recovery", json={"choices": choice}).json()
+    recorded = [
+        a["description"]
+        for a in resumed["result"]["conversion_report"]["assumptions"]
+        if a["scenario"] == "missing_lattice"
+    ]
+    assert recorded == [previewed_description]
+
+
+def test_preview_reports_unresolved_when_choices_are_incomplete(client: TestClient) -> None:
+    # A two-scenario pause (frame_selection + missing_lattice): previewing only the lattice cannot
+    # produce a complete record (recovery is all-or-nothing), so the preview invents no assumptions
+    # and names what is still owed instead.
+    file_id = _upload(client, MULTIFRAME_XYZ_SAMPLE, "traj.xyz")
+    job_id = client.post(
+        "/v1/convert",
+        json={
+            "file_id": file_id,
+            "target_format_id": "poscar",
+            "options": {"allow_recovery": True},
+        },
+    ).json()["job_id"]
+
+    preview = client.post(
+        f"/v1/jobs/{job_id}/recovery/preview",
+        json={
+            "choices": {
+                "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}}
+            }
+        },
+    )
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["previews"] == []
+    assert "frame_selection" in body["unresolved"]
+
+
+def test_preview_unoffered_choice_is_422_with_offered_choices(client: TestClient) -> None:
+    job_id = _pause_xyz_to_poscar(client)
+    resp = client.post(
+        f"/v1/jobs/{job_id}/recovery/preview",
+        json={"choices": {"missing_lattice": {"choice": "non_periodic"}}},
+    )
+    assert resp.status_code == 422
+    body = resp.json()["error"]
+    assert body["code"] == "INVALID_RECOVERY_CHOICE"
+    assert body["details"]["scenario"] == "missing_lattice"
+    assert "bounding_box" in body["details"]["offered_choices"]
+
+
+def test_preview_unknown_job_is_404(client: TestClient) -> None:
+    resp = client.post("/v1/jobs/nope/recovery/preview", json={"choices": {}})
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "JOB_NOT_FOUND"
+
+
+def test_preview_non_awaiting_job_is_409(client: TestClient) -> None:
+    file_id = _upload(client, XYZ_SAMPLE, "mol.xyz")
+    job_id = client.post("/v1/inspect", json={"file_id": file_id}).json()["job_id"]
+    resp = client.post(f"/v1/jobs/{job_id}/recovery/preview", json={"choices": {}})
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "JOB_NOT_AWAITING_RECOVERY"
+
+
 def test_resume_with_valid_choice_completes_as_user_origin(client: TestClient) -> None:
     # The happy path: pause, answer the one open scenario, the job resumes and completes — and the
     # applied Assumption is recorded origin="user" (interactive), not "preset" (Part 4 §2).

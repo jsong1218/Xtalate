@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { AwaitingRecovery } from "@/components/AwaitingRecovery";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { JobPhase } from "@/components/JobPhase";
+import { RecoveryStep } from "@/components/recovery/RecoveryStep";
 import { ConversionReportPanel } from "@/components/report/ConversionReportPanel";
 import { RefusalPanel } from "@/components/report/RefusalPanel";
 import { cancelJob, isTerminalJobState, jobQuery, queryKeys } from "@/lib/api/queries";
@@ -26,7 +26,9 @@ import type {
  * spinner that never resolves:
  *
  *  - `queued` / `running` — the phase indicator, with **no invented progress** (`JobPhase`).
- *  - `awaiting_recovery` — the v0.6 pause placeholder, which never reads as "a default was picked".
+ *  - `awaiting_recovery` — the interactive recovery step (`RecoveryStep`, M31): the decision cards,
+ *    the visible deadline stated as a refusal, and a first-class decline. It replaces v0.6's
+ *    read-only placeholder and still never reads as "a default was picked".
  *  - `completed` — the Conversion Report, or the refusal panel when the engine **declined**. A
  *    refusal is a completed job at HTTP 200, not an error (Part 6 §1), and is rendered as the
  *    considered outcome it is.
@@ -94,6 +96,13 @@ export default function ConversionJobPage() {
     await queryClient.invalidateQueries({ queryKey: queryKeys.job(jobId) });
   }
 
+  // A recovery resume returns the server's next envelope (re-paused for the rest, or completed). We
+  // do not trust that shape directly: invalidate the poll so the page re-renders from a fresh GET,
+  // the same "server state is the answer" rule as cancel.
+  async function handleResumed() {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.job(jobId) });
+  }
+
   if (job.isError) {
     return (
       <main className="space-y-4">
@@ -134,10 +143,14 @@ export default function ConversionJobPage() {
       {state === "queued" || state === "running" ? <JobPhase envelope={envelope} /> : null}
 
       {state === "awaiting_recovery" && envelope.awaiting_recovery ? (
-        <AwaitingRecovery
+        <RecoveryStep
           block={envelope.awaiting_recovery as unknown as AwaitingRecoveryBlock}
           jobId={envelope.job_id}
           expiresAt={envelope.expires_at}
+          onResumed={handleResumed}
+          onDecline={handleCancel}
+          declining={cancelling}
+          declineError={cancelError}
         />
       ) : null}
 
@@ -234,7 +247,12 @@ export default function ConversionJobPage() {
         </Card>
       ) : null}
 
-      {!terminal ? (
+      {/*
+        The footer cancel serves the states with no other exit (`queued`, `running`). A paused job
+        has a first-class decline *inside* the recovery step, so it is suppressed here — one decline,
+        in the decision surface, rather than two identical buttons.
+      */}
+      {!terminal && state !== "awaiting_recovery" ? (
         <div className="space-y-2">
           <button
             type="button"

@@ -53,6 +53,7 @@ from xtalate.conversion.report import (
 from xtalate.recovery import (
     AppliedAssumption,
     RecoveryEngine,
+    UnresolvedScenario,
     frame_selection_stream_index,
     frame_selection_stream_records,
 )
@@ -97,6 +98,22 @@ class CompletenessInvariantError(AssertionError):
     """The final/refused report failed the completeness invariant (Part 4 §2) — a source-present
     path unaccounted for (silent loss, P1) or a supplied path that was present on the source
     (silent fabrication, P4). Never legitimate: raised always, in dev and in production."""
+
+
+@dataclass
+class RecoveryPreview:
+    """The Assumptions a convert with a given choice set *would* record — Part 6 §3.2 preview.
+
+    Returned by :meth:`ConversionEngine.preview_recovery` so the Recovery Workflow UI can show a
+    user the exact provenance they are about to create before they confirm it (P4). ``assumptions``
+    are the report ``Assumption`` objects verbatim — same ``description`` text the final report will
+    carry, because the preview runs the real recovery apply path. ``unresolved`` is non-empty when
+    the choice set is incomplete: recovery is all-or-nothing, so a partial set produces *no*
+    assumptions and instead names the scenarios still owed a decision (never a partial preview
+    presented as complete)."""
+
+    assumptions: list[Assumption]
+    unresolved: list[UnresolvedScenario]
 
 
 @dataclass
@@ -426,6 +443,59 @@ class ConversionEngine:
         return ConversionResult(
             report=report, output=output, canonical_out=canonical_out, validation=validation
         )
+
+    def preview_recovery(
+        self,
+        source: CanonicalObject,
+        *,
+        source_format_id: str,
+        target_format_id: str,
+        mode: str = "permissive",
+        recovery_choices: dict[str, dict[str, Any]] | None = None,
+        recovery_origin: str = "user",
+        parse_recovery: ParseRecovery | None = None,
+    ) -> RecoveryPreview:
+        """Preview the Assumptions a :meth:`convert` with ``recovery_choices`` would record, without
+        exporting or validating (Part 6 §3.2; slice M31-S1).
+
+        This reproduces exactly the recovery *prefix* of :meth:`convert` — merge parse-time
+        recovery, build the pre-flight diff, add on-demand fabricative scenarios, then run the
+        Recovery Engine — and maps the result onto the report ``Assumption`` via the same
+        ``_map_assumptions`` the final report uses. The ``description`` strings are therefore
+        **byte-identical** to what the conversion will record (P4), which a client cannot reproduce
+        without re-implementing the engine (P2). It stops before ``write_plan`` export and
+        validation, so it is cheap enough to drive a live UI preview.
+
+        Recovery is all-or-nothing: an incomplete choice set produces no assumptions and returns the
+        still-unresolved scenarios instead (never a partial preview shown as complete). An *offered*
+        choice with bad parameters, or an unoffered choice, raises the Recovery Engine's
+        ``RecoveryError`` unchanged — the caller maps it to ``INVALID_RECOVERY_CHOICE`` exactly as
+        the resume path does (Part 6 §6)."""
+        recovery_choices = recovery_choices or {}
+        matrix = self._registry.capability_matrix()
+        diff = build_preflight(source, matrix, target_format_id)
+        on_demand = on_demand_fabricative_scenarios(
+            source, matrix, target_format_id, recovery_choices, mode=mode
+        )
+        all_scenarios = [*diff.unresolved, *on_demand]
+
+        parse_applied = list(parse_recovery.assumptions) if parse_recovery else []
+        recovery_applied: list[AppliedAssumption] = []
+        if all_scenarios:
+            outcome = self._recovery.resolve(
+                source, all_scenarios, recovery_choices, origin=recovery_origin
+            )
+            if outcome.canonical is None:
+                return RecoveryPreview(assumptions=[], unresolved=list(outcome.unresolved))
+            recovery_applied = outcome.assumptions
+
+        # Same merge + A1.. numbering as `convert`, so a previewed assumption's identity matches the
+        # one the final report records (Part 4 §5).
+        all_applied = [*parse_applied, *recovery_applied]
+        for n, applied in enumerate(all_applied, 1):
+            applied.id = f"A{n}"
+        assumptions, *_ = _map_assumptions(all_applied)
+        return RecoveryPreview(assumptions=assumptions, unresolved=[])
 
     def streaming_eligible(self, source_format_id: str, target_format_id: str) -> bool:
         """Whether a ``(source, target)`` pair can take the streaming path (M12).
