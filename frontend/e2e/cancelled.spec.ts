@@ -13,12 +13,17 @@ test.afterEach(async ({ request }) => {
 });
 
 /**
- * Negative journey — a cancelled job (MASTER_SPEC Part 6 §3.2, Part 7 §2.4; slice M30-S1). A paused
- * conversion is a non-terminal job, so the page offers to cancel it; cancelling produces **no
- * report** — not an empty one, none at all — because nothing was written and nothing was measured.
- * The honest state is a card that says exactly that, not a blank report shell. Seeding the pause
- * over the API gives a deterministic non-terminal job to cancel (a fast xyz→xyz job would finish
- * before a click could land).
+ * Negative journey — a cancelled job (MASTER_SPEC Part 6 §3.2, Part 7 §2.4; slices M30-S1, M31-S2).
+ * A paused conversion is a non-terminal job, so the page offers to cancel it; cancelling produces
+ * **no report** — not an empty one, none at all — because nothing was written and nothing was
+ * measured. The honest state is a card that says exactly that, not a blank report shell. Seeding the
+ * pause over the API gives a deterministic non-terminal job to cancel (a fast xyz→xyz job would
+ * finish before a click could land).
+ *
+ * As of M31 the paused job's cancel is the recovery step's **first-class decline** — "Cancel
+ * conversion", inside the decision surface — not the footer "Cancel this conversion" button, which
+ * M31 suppresses while `awaiting_recovery` so there are not two identical controls (see the job
+ * page). This spec drives that decline; declining still lands on the same cancelled outcome.
  */
 test("cancelling a paused job shows that no report exists, not an empty one", async ({
   page,
@@ -29,7 +34,7 @@ test("cancelling a paused job shows that no report exists, not an empty one", as
 
   await page.goto(`/convert/${jobId}`);
 
-  const cancelButton = page.getByRole("button", { name: /Cancel this conversion/i });
+  const cancelButton = page.getByRole("button", { name: /Cancel conversion/i });
   await expect(cancelButton).toBeVisible({ timeout: 30_000 });
   await cancelButton.click();
 
