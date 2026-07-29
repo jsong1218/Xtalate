@@ -76,17 +76,20 @@ describe("ConversionJobPage terminal states", () => {
     expect(await screen.findByText("UNKNOWN_FORMAT")).toBeInTheDocument();
   });
 
-  it("renders a paused job's placeholder with both unresolved scenarios", async () => {
+  it("renders a paused job as the interactive recovery step, one card per scenario", async () => {
     renderWithEnvelope(awaitingJob);
-    expect(await screen.findByTestId("awaiting-recovery")).toBeInTheDocument();
-    expect(screen.getAllByTestId("awaiting-scenario")).toHaveLength(2);
+    expect(await screen.findByTestId("recovery-step")).toBeInTheDocument();
+    expect(screen.getAllByTestId("decision-card")).toHaveLength(2);
+    // The v0.6 read-only placeholder is gone — decisions are made here, not pointed at the API.
+    expect(screen.queryByTestId("awaiting-recovery")).not.toBeInTheDocument();
   });
 
-  it("offers Cancel while paused (a non-terminal state) and calls it best-effort", async () => {
+  it("offers a first-class decline within the step, not only the page footer", async () => {
     renderWithEnvelope(awaitingJob);
-    const cancel = await screen.findByRole("button", { name: /cancel this conversion/i });
-    expect(cancel).toBeInTheDocument();
-    expect(screen.getByText(/best-effort/i)).toBeInTheDocument();
+    const decline = await screen.findByRole("button", { name: /cancel conversion/i });
+    expect(decline).toBeInTheDocument();
+    // The paused step supersedes the footer cancel — one decline, inside the decision surface.
+    expect(screen.queryByRole("button", { name: /cancel this conversion/i })).not.toBeInTheDocument();
   });
 
   it("hands a completed job off to its durable record, where the download lives", async () => {
