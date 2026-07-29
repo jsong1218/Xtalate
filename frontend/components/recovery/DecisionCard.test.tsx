@@ -127,4 +127,28 @@ describe("DecisionCard", () => {
     renderCard(lattice, { decision: { choice: "bounding_box", parameters: {} } });
     expect(screen.queryByTestId("assumption-preview")).not.toBeInTheDocument();
   });
+
+  it("carries the 'why does this matter?' disclosure for the scenario, collapsed", () => {
+    renderCard(lattice);
+    const why = screen.getByTestId("why-this-matters") as HTMLDetailsElement;
+    // The stakes are one click away — present as a decision aid, never blocking the three options.
+    expect(why.open).toBe(false);
+    expect(within(why).getByText(/why does this matter\?/i)).toBeInTheDocument();
+  });
+
+  it("shows no advisory by default — the aggregation seam is empty on a 1.0 instance", () => {
+    renderCard(lattice);
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("surfaces a supplied advisory on its option without preselecting it (the post-1.0 seam)", () => {
+    renderCard(lattice, {
+      advisories: { bounding_box: { note: "Most conversions like this used a bounding box." } },
+    });
+    expect(screen.getByRole("note")).toHaveTextContent("Most conversions like this used a bounding box.");
+    // Advisory, not default: every radio is still unchecked.
+    for (const radio of screen.getAllByRole("radio")) {
+      expect(radio).not.toBeChecked();
+    }
+  });
 });

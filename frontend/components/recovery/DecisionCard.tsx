@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { LossIcon } from "@/components/loss/icons";
+import { AdvisoryNote, type Advisory } from "./AdvisoryNote";
 import { AssumptionPreview } from "./AssumptionPreview";
 import { ParameterFields } from "./ParameterFields";
+import { WhyThisMatters } from "./WhyThisMatters";
 import { labelForPath, labelForScenario } from "@/lib/mapping";
 import type { RecoveryDecision } from "@/lib/api/queries";
 import type { AwaitingScenario } from "@/lib/report/types";
@@ -28,6 +30,7 @@ export function DecisionCard({
   scenario,
   decision,
   preview,
+  advisories,
   onChange,
 }: {
   scenario: AwaitingScenario;
@@ -35,6 +38,12 @@ export function DecisionCard({
   decision?: RecoveryDecision;
   /** The engine's exact Assumption sentence for the current choice, or null/absent until previewed. */
   preview?: string | null;
+  /**
+   * Per-choice advisories, keyed by choice code — the post-1.0 usage-aggregation seam (deliverable 8).
+   * Empty on a 1.0 instance, so no note renders; a future slice populates it from the aggregation
+   * query. Advisory only: never a default, never a preselection.
+   */
+  advisories?: Record<string, Advisory>;
   onChange: (decision: RecoveryDecision) => void;
 }) {
   const [choice, setChoice] = useState<string | null>(decision?.choice ?? null);
@@ -76,6 +85,10 @@ export function DecisionCard({
       ) : null}
       {scenario.detail ? <p className="text-sm text-slate-500">{scenario.detail}</p> : null}
 
+      {/* The scientific stakes, behind a disclosure — a non-expert acts on the options without it,
+          and opens it when they want to know what the missing thing is and which choice is safe. */}
+      <WhyThisMatters scenario={scenario.scenario} />
+
       <div role="radiogroup" aria-label={`Options for ${scenarioLabel.label}`} className="space-y-2">
         {scenario.options.map((option) => {
           const params = Object.keys(option.parameters_schema ?? {});
@@ -101,6 +114,7 @@ export function DecisionCard({
                   </span>
                 ) : null}
               </div>
+              <AdvisoryNote advisory={advisories?.[option.choice]} />
               {active && selectedOption ? (
                 <div className="mt-2 pl-6">
                   <ParameterFields
