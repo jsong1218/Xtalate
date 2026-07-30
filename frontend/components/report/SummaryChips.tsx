@@ -39,27 +39,42 @@ function Chip({ count, singular, plural, kind }: ChipModel) {
   );
 }
 
-export function SummaryChips({ report }: { report: ConversionReport }) {
+/** The four `summary_counts` a `GET /v1/history` row carries (Part 6 §4.4). Keys may be sparse. */
+export interface SummaryCounts {
+  preserved?: number;
+  removed?: number;
+  assumptions?: number;
+  warnings?: number;
+}
+
+/**
+ * The counts-driven core shared by the report panel and the history table (slice M33-S2). The
+ * history endpoint sends `summary_counts` (four integers), not the full report arrays, so the row
+ * renders the *same* four chips from counts alone — reusing the design language rather than drawing
+ * a second one. A missing key counts as zero (P3: the row renders what the envelope carries, and a
+ * sparse map is still four honest, labeled chips, never a crash).
+ */
+export function SummaryCountChips({ counts }: { counts: SummaryCounts }) {
   const chips: ChipModel[] = [
     {
-      count: report.preserved.length,
+      count: counts.preserved ?? 0,
       singular: "field preserved",
       plural: "fields preserved",
       kind: "preserved",
     },
     {
-      count: report.removed.length,
+      count: counts.removed ?? 0,
       singular: "field removed",
       plural: "fields removed",
       kind: "removed",
     },
     {
-      count: report.assumptions.length,
+      count: counts.assumptions ?? 0,
       singular: "assumption",
       plural: "assumptions",
       kind: "assumption",
     },
-    { count: report.warnings.length, singular: "warning", plural: "warnings", kind: "warning" },
+    { count: counts.warnings ?? 0, singular: "warning", plural: "warnings", kind: "warning" },
   ];
   return (
     <div className="flex flex-wrap gap-2" aria-label="Conversion summary">
@@ -67,5 +82,19 @@ export function SummaryChips({ report }: { report: ConversionReport }) {
         <Chip key={chip.singular} {...chip} />
       ))}
     </div>
+  );
+}
+
+/** The report-panel entry point: count the report arrays, then render through the shared core. */
+export function SummaryChips({ report }: { report: ConversionReport }) {
+  return (
+    <SummaryCountChips
+      counts={{
+        preserved: report.preserved.length,
+        removed: report.removed.length,
+        assumptions: report.assumptions.length,
+        warnings: report.warnings.length,
+      }}
+    />
   );
 }

@@ -1,4 +1,4 @@
-import { queryOptions } from "@tanstack/react-query";
+import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { apiClient, type Schemas } from "./client";
 
 /** The job envelope, verbatim from the generated schema (Part 6 §3.2). */
@@ -38,6 +38,7 @@ export const queryKeys = {
     ["inspect", fileId, formatOverride ?? null] as const,
   job: (jobId: string) => ["jobs", jobId] as const,
   conversion: (conversionId: string) => ["conversions", conversionId] as const,
+  history: ["history"] as const,
 } as const;
 
 /**
@@ -265,4 +266,51 @@ export async function cancelJob(
   });
   if (error || !data) return { ok: false, error };
   return { ok: true, envelope: data };
+}
+
+/**
+ * `GET /v1/history` — the durable list of past conversions, newest first (Part 6 §4.4; slice
+ * M33-S2). Pagination is **keyset over the server's opaque `next_cursor`**, never a client-side
+ * offset: each page hands its `next_cursor` back as `?cursor=` for the following page, and the last
+ * page omits it (`getNextPageParam` returns `undefined`, which stops `useInfiniteQuery`). Because the
+ * cursor names a fixed point in the `(created_at, conversion_id)` ordering, a conversion added
+ * between fetches never shifts or duplicates a row the way an offset would.
+ *
+ * Unlike the report queries, history is **live** state — a new conversion appears, and deleting a
+ * source file removes that row's `file_id` (re-convert/delete fall away while the report stays) — so
+ * this overrides the client's immutable `staleTime` default to refetch on focus and after a delete.
+ */
+export function historyInfiniteQuery(pageSize = 25) {
+  return infiniteQueryOptions({
+    queryKey: queryKeys.history,
+    queryFn: async ({ pageParam, signal }) => {
+      const { data, error } = await apiClient.GET("/v1/history", {
+        params: { query: { limit: pageSize, cursor: pageParam } },
+        signal,
+      });
+      if (error) throw error;
+      return data;
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    staleTime: 0,
+  });
+}
+
+/**
+ * `DELETE /v1/files/{file_id}` — delete an uploaded source file now, rather than waiting out its
+ * retention window (Part 6 §4.3; slice M33-S2). The conversion **record and its report survive** —
+ * only the source bytes go — which is the reports-outlive-bytes guarantee made a user action: after
+ * this, the history row loses its `file_id` (no more re-convert), but "open record" still resolves.
+ * A `204` carries no body; the caller re-reads history (invalidates {@link queryKeys.history})
+ * rather than mutating the cache, so the list reflects the server, not an optimistic guess.
+ */
+export async function deleteFile(
+  fileId: string,
+): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  const { error } = await apiClient.DELETE("/v1/files/{file_id}", {
+    params: { path: { file_id: fileId } },
+  });
+  if (error) return { ok: false, error };
+  return { ok: true };
 }

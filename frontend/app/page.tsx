@@ -58,6 +58,9 @@ export default async function LandingPage() {
           <Link href="/formats" className="text-slate-600 underline">
             Explore formats
           </Link>
+          <Link href="/history" className="text-slate-600 underline">
+            History
+          </Link>
         </div>
         {formatCount !== null ? (
           <p className="text-sm text-slate-500">
