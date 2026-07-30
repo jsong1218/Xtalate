@@ -6,6 +6,7 @@ import { useState } from "react";
 import { DownloadPanel } from "@/components/DownloadPanel";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { Provenance } from "@/components/Provenance";
+import { ResolveAndRetry } from "@/components/ResolveAndRetry";
 import { ConversionReportPanel } from "@/components/report/ConversionReportPanel";
 import { RefusalPanel } from "@/components/report/RefusalPanel";
 import { SummaryChips } from "@/components/report/SummaryChips";
@@ -43,8 +44,11 @@ import type {
  *
  * Re-validation is offered because a stored conversion can be re-thresholded long after its bytes
  * are gone (Part 6 §2) — and it **appends** a report rather than replacing one, which the page says
- * out loud. Choosing the profile is this slice's declared cut line (v0.7): the request always sends
- * `default`, so no bar is ever changed without the user having asked for it.
+ * out loud. The reader chooses the tolerance profile (v0.7 M32-S2 lands the picker v0.6 cut): the
+ * §4.4 named profiles `default`/`strict`/`loose`, so no bar is ever changed without the user asking.
+ *
+ * A **refused** conversion is not a dead-end: its record is immutable history, but the same source
+ * and target can be re-submitted through the interactive recovery cards (`ResolveAndRetry`, M32-S2).
  */
 
 function outcomeHeadline(record: ConversionRecord): string {
@@ -98,13 +102,14 @@ export default function ConversionRecordPage() {
 
   const [revalidateError, setRevalidateError] = useState<ErrorEnvelopeModel | null>(null);
   const [revalidating, setRevalidating] = useState(false);
+  const [profile, setProfile] = useState("default");
 
   const query = useQuery(conversionQuery(conversionId));
 
   async function handleRevalidate() {
     setRevalidateError(null);
     setRevalidating(true);
-    const result = await submitRevalidate(conversionId);
+    const result = await submitRevalidate(conversionId, profile);
     setRevalidating(false);
     if (!result.ok) {
       setRevalidateError(
@@ -167,7 +172,13 @@ export default function ConversionRecordPage() {
       )}
 
       {/* A refusal is a considered outcome with a record; it renders here, not as an error. */}
-      {refused ? <RefusalPanel report={report} /> : null}
+      {refused ? (
+        <div className="space-y-4">
+          <RefusalPanel report={report} />
+          {/* Not a dead-end: re-enter the cards with the same source and target (M32-S2). */}
+          <ResolveAndRetry record={record} fileId={fileId} />
+        </div>
+      ) : null}
 
       {/* 3. Download — structurally below the summary a reader has just passed. */}
       <DownloadPanel record={record} />
@@ -192,17 +203,33 @@ export default function ConversionRecordPage() {
         )}
       </div>
 
-      {/* Re-validate: appends, never replaces (Part 6 §2), and works after the bytes are gone. */}
+      {/* Re-validate: appends, never replaces (Part 6 §2), and works after the bytes are gone. The
+          reader chooses the tolerance profile (M32-S2) — the bar is never changed without asking. */}
       {record.validation_report ? (
         <section aria-label="Re-validate" className="space-y-2">
-          <button
-            type="button"
-            onClick={handleRevalidate}
-            disabled={revalidating}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            {revalidating ? "Re-validating…" : "Re-validate (default tolerances)"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <span>Tolerance profile</span>
+              <select
+                value={profile}
+                onChange={(e) => setProfile(e.target.value)}
+                disabled={revalidating}
+                className="rounded-md border border-slate-300 px-2 py-1 disabled:opacity-60"
+              >
+                <option value="default">default</option>
+                <option value="strict">strict (100× tighter)</option>
+                <option value="loose">loose (100× looser)</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={handleRevalidate}
+              disabled={revalidating}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              {revalidating ? "Re-validating…" : "Re-validate"}
+            </button>
+          </div>
           <p className="text-xs text-slate-500">
             Re-validation re-thresholds the measurements already recorded — it does not re-read the
             file, and it <strong>adds</strong> a report rather than replacing this one.
