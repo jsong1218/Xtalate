@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { AckGate } from "@/components/AckGate";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
-import { LossIcon } from "@/components/loss/icons";
 import { downloadOutput, saveBlob } from "@/lib/api/download";
 import type { ConversionRecord, ErrorEnvelope as ErrorEnvelopeModel } from "@/lib/report/types";
 
@@ -18,11 +18,12 @@ import type { ConversionRecord, ErrorEnvelope as ErrorEnvelopeModel } from "@/li
  *
  *  - **available** — filename, size, and the byte-lifecycle expiry, so "download later" is an
  *    informed choice rather than a broken link later.
- *  - **requires_ack** — validation *failed*. The failing checks are listed here in the engine's own
- *    words, and the first click deliberately requests **without** acknowledgement so the service's
- *    `409 VALIDATION_ACK_REQUIRED` is rendered verbatim. Only then is the acknowledged retry offered.
- *    The unverified file is reachable — Xtalate does not hide a user's own output — but never by
- *    accident and never without the service having said, in its own words, why.
+ *  - **requires_ack** — validation *failed*. The plain download button is **replaced** by the
+ *    {@link AckGate}: it names the failing checks in the engine's own words, states what taking the
+ *    file would mean, and gates the download behind an explicit, unticked acknowledgment that
+ *    re-requests with `acknowledge_validation_failure=true`. The unverified file is reachable —
+ *    Xtalate does not hide a user's own output — but never by accident and never without the record
+ *    having said, in its own words, why (slice M32-S1, retiring the v0.6 click-then-`409` interim).
  *  - **expired** — the bytes passed their lifecycle window. The record and both reports survive
  *    (reports-outlive-bytes), so this reads as *expired*, not *not found*, and says the reports remain.
  *  - **refused** — there is no output because the engine declined to write one. Not an empty
@@ -75,21 +76,19 @@ export function DownloadPanel({ record }: { record: ConversionRecord }) {
 
   const [error, setError] = useState<ErrorEnvelopeModel | null>(null);
   const [busy, setBusy] = useState(false);
-  // Set once the service has answered 409: the acknowledged retry is offered only *after* the user
-  // has been shown the refusal, never as a pre-ticked shortcut past it.
-  const [ackOffered, setAckOffered] = useState(false);
 
-  async function handleDownload(acknowledgeValidationFailure: boolean) {
+  // The plain, verified download. A failed-validation output never reaches this path — it is gated
+  // by the AckGate below — so this request is always unacknowledged, and legitimately so.
+  async function handleDownload() {
     setError(null);
     setBusy(true);
     const result = await downloadOutput(record.conversion_id, {
-      acknowledgeValidationFailure,
+      acknowledgeValidationFailure: false,
       fallbackFilename: download.filename,
     });
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
-      if (result.error.error.code === "VALIDATION_ACK_REQUIRED") setAckOffered(true);
       return;
     }
     saveBlob(result.blob, result.filename);
@@ -124,36 +123,8 @@ export function DownloadPanel({ record }: { record: ConversionRecord }) {
     );
   }
 
-  const failedChecks = (record.validation_report?.checks ?? []).filter(
-    (check) => check.status === "fail",
-  );
-
   return (
     <Panel tone={download.requires_ack ? "warning" : "neutral"}>
-      {download.requires_ack ? (
-        <div className="space-y-2">
-          <p className="flex items-start gap-2 text-sm text-slate-900">
-            <LossIcon kind="fail" />
-            <span>
-              <strong>Validation failed for this output.</strong> Xtalate re-parsed the file it wrote
-              and the result does not match the source within tolerance. The file exists and you can
-              take it, but it is <strong>unverified</strong>.
-            </span>
-          </p>
-          {failedChecks.length > 0 ? (
-            <ul data-testid="failed-checks" className="space-y-1 pl-6 text-sm text-slate-800">
-              {failedChecks.map((check) => (
-                <li key={check.check_id}>
-                  <span className="font-mono text-xs text-slate-600">{check.check_id}</span>{" "}
-                  {/* The engine's own sentence, verbatim — quantitative, never paraphrased. */}
-                  {check.message}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
-
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
         <dt className="text-slate-500">File</dt>
         <dd className="font-mono text-slate-800">{download.filename}</dd>
@@ -173,32 +144,22 @@ export function DownloadPanel({ record }: { record: ConversionRecord }) {
         ) : null}
       </dl>
 
-      <button
-        type="button"
-        onClick={() => handleDownload(false)}
-        disabled={busy}
-        className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-60"
-      >
-        {busy ? "Preparing…" : `Download ${download.filename}`}
-      </button>
-
-      {error ? <ErrorEnvelope envelope={error} /> : null}
-
-      {ackOffered ? (
-        <div className="space-y-2 border-t border-slate-200 pt-3">
-          <p className="text-sm text-slate-800">
-            To take the file anyway, acknowledge that its fidelity was <em>not</em> verified:
-          </p>
+      {download.requires_ack ? (
+        // Validation failed: the plain button is replaced by the gate (slice M32-S1).
+        <AckGate record={record} />
+      ) : (
+        <>
           <button
             type="button"
-            onClick={() => handleDownload(true)}
+            onClick={handleDownload}
             disabled={busy}
-            className="rounded-md border border-cb-fail px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-white disabled:opacity-60"
+            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-60"
           >
-            Download the unverified output
+            {busy ? "Preparing…" : `Download ${download.filename}`}
           </button>
-        </div>
-      ) : null}
+          {error ? <ErrorEnvelope envelope={error} /> : null}
+        </>
+      )}
     </Panel>
   );
 }

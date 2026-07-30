@@ -136,3 +136,82 @@ export async function seedAwaitingRecoveryJob(request: APIRequestContext): Promi
   );
   return jobId;
 }
+
+/**
+ * Seed a **completed conversion whose validation failed**, and return its `conversion_id` so a spec
+ * can drive the browser to `/conversions/{id}` and exercise the acknowledgment gate (slice M32-S1).
+ *
+ * The failure is forced the way the plan requires — through a legitimate, deliberately **tight
+ * custom tolerance profile**, with no test hooks and no doctored output. The worked example is
+ * cartesian extXYZ; converting it to POSCAR writes *Direct* (fractional) coordinates, so the
+ * re-parse runs cartesian → fractional → cartesian through a lattice-matrix inversion whose
+ * round-trip is exact only for coordinates that land on representable fractions (`2.125 / 6` does
+ * not). That leaves a real ~1e-15 Å position residual — far below any physical concern, but a
+ * tolerance table demanding agreement to 1e-20 Å legitimately fails on it, and the service records
+ * `download.requires_ack`. Every exporter today declares full write precision (representational
+ * bound 0.0), so this tight table is applied verbatim rather than floored (Part 5 §4.2).
+ *
+ * The conversion itself still **completes** — POSCAR can hold the cell, species and positions the
+ * worked example carries — so this is exactly the state the gate exists for: a real file that the
+ * service could not verify.
+ */
+export async function seedFailedValidationConversion(request: APIRequestContext): Promise<string> {
+  const fileId = await uploadFixture(request, FIXTURES.workedExample);
+  const resp = await request.post(`${API_URL}/v1/convert`, {
+    data: {
+      file_id: fileId,
+      target_format_id: "poscar",
+      options: {
+        // §4.4 custom table: only `name`/`quantities` are configurable. A sub-femtometre fail bound
+        // that no lossless conversion could meet, so validation fails on the representational
+        // residual alone — legitimately, not by sabotaging the bytes.
+        tolerance_profile: {
+          name: "e2e-tight",
+          quantities: { positions: { warn: 1e-30, fail: 1e-20 } },
+        },
+      },
+    },
+  });
+  expect([200, 201, 202]).toContain(resp.status());
+  const jobId = String((await resp.json()).job_id);
+  const done = await pollJob(request, jobId, ["completed"]);
+  expect(done.state, "expected the tightly-toleranced conversion to complete").toBe("completed");
+  const result = done.result as { conversion_id: string; download: { requires_ack: boolean } };
+  expect(
+    result.download.requires_ack,
+    "expected the tight tolerance to force a failed validation (requires_ack)",
+  ).toBe(true);
+  return result.conversion_id;
+}
+
+/**
+ * Seed a **refused** conversion and return its durable record id plus the still-valid source
+ * `file_id`. The same trajectory→POSCAR conversion, but submitted **without** interactive recovery
+ * (`allow_recovery: false`), so the unresolved frame + lattice decisions make it *refuse* rather than
+ * pause — a completed job at HTTP 200 whose report status is `refused` (Part 6 §1). The refusal is
+ * persisted as an immutable record, and the upload is still in hand, which is exactly the state
+ * "resolve and retry" acts on (M32-S2): the browser opens the record with `?file_id=` and re-enters
+ * the cards. Seeding over the API is the honest way here — the UI now always submits
+ * `allow_recovery: true`, so a refusal is no longer reachable by clicking (it would pause instead).
+ */
+export async function seedRefusedConversion(
+  request: APIRequestContext,
+): Promise<{ conversionId: string; fileId: string }> {
+  const fileId = await uploadFixture(request, FIXTURES.relaxTraj);
+  const resp = await request.post(`${API_URL}/v1/convert`, {
+    data: {
+      file_id: fileId,
+      target_format_id: "poscar",
+      options: { allow_recovery: false },
+    },
+  });
+  expect([200, 201, 202]).toContain(resp.status());
+  const jobId = String((await resp.json()).job_id);
+  const done = await pollJob(request, jobId, ["completed"]);
+  expect(done.state, "expected the no-recovery conversion to complete as a refusal").toBe("completed");
+  const result = done.result as { conversion_id?: string; conversion_report?: { status?: string } };
+  expect(result?.conversion_report?.status, "expected a refused conversion report").toBe("refused");
+  const conversionId = String(result.conversion_id);
+  expect(conversionId, "a refused conversion is persisted as a record").toBeTruthy();
+  return { conversionId, fileId };
+}

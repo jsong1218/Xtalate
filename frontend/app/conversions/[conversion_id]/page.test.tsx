@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import ConversionRecordPage from "./page";
 import expiredRecord from "@/components/__fixtures__/conversion.record.expired.json";
 import lossyRecord from "@/components/__fixtures__/conversion.record.json";
@@ -19,13 +19,15 @@ import refusedRecord from "@/components/__fixtures__/conversion.record.refused.j
 vi.mock("next/navigation", () => ({
   useParams: () => ({ conversion_id: "cnv-under-test" }),
   useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 const apiGet = vi.fn();
+const apiPost = vi.fn();
 vi.mock("@/lib/api/client", () => ({
   apiClient: {
     GET: (...args: unknown[]) => apiGet(...args),
-    POST: vi.fn(async () => ({ data: undefined, error: undefined })),
+    POST: (...args: unknown[]) => apiPost(...args),
   },
 }));
 
@@ -38,6 +40,11 @@ function renderWithRecord(body: unknown) {
     </QueryClientProvider>,
   );
 }
+
+beforeEach(() => {
+  apiPost.mockReset();
+  apiPost.mockResolvedValue({ data: { job_id: "job-x" }, error: undefined });
+});
 
 describe("ConversionRecordPage", () => {
   it("puts the download panel below the loss summary in the document", async () => {
@@ -99,5 +106,36 @@ describe("ConversionRecordPage", () => {
     renderWithRecord(lossyRecord);
     const link = await screen.findByRole("link", { name: /convert another file/i });
     expect(link).toHaveAttribute("href", "/");
+  });
+
+  it("re-validates under the tolerance profile the reader chose, not always the default", async () => {
+    renderWithRecord(lossyRecord);
+    // The picker offers the §4.4 named profiles; the reader picks a stricter bar deliberately.
+    const picker = await screen.findByRole("combobox", { name: /tolerance profile/i });
+    fireEvent.change(picker, { target: { value: "strict" } });
+    fireEvent.click(screen.getByRole("button", { name: /re-validate/i }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    const [path, options] = apiPost.mock.calls.at(-1)! as [string, { body: Record<string, unknown> }];
+    expect(path).toBe("/v1/validate");
+    // The chosen profile rides the request — no silent re-threshold under a bar the user didn't pick.
+    expect(options.body).toMatchObject({ tolerance_profile: "strict" });
+  });
+
+  it("turns a refused record into an entry point for a fresh, resolvable conversion", async () => {
+    renderWithRecord(refusedRecord);
+    // With no file_id in hand (empty search params here), the honest path is a fresh upload — but
+    // the resolve-and-retry region is present, so the refusal is no longer a dead-end.
+    expect(await screen.findByRole("region", { name: /resolve and retry/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /upload the file again/i })).toHaveAttribute(
+      "href",
+      "/convert",
+    );
+  });
+
+  it("does not offer resolve-and-retry on a conversion that was not refused", async () => {
+    renderWithRecord(lossyRecord);
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByRole("region", { name: /resolve and retry/i })).not.toBeInTheDocument();
   });
 });
