@@ -1,0 +1,91 @@
+{
+  "extxyz": {
+    "read": {
+      "allows_open_boundaries": false,
+      "direction": "read",
+      "fields": {
+        "atoms.positions": { "level": "full", "notes": null },
+        "atoms.symbols": { "level": "full", "notes": null },
+        "cell.lattice_vectors": {
+          "level": "partial",
+          "notes": "Only when Lattice= key present."
+        }
+      },
+      "format_id": "extxyz",
+      "format_name": "Extended XYZ",
+      "lossy_notes": [],
+      "max_frames": null,
+      "native_coordinate_system": "cartesian",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    },
+    "write": {
+      "allows_open_boundaries": true,
+      "direction": "write",
+      "fields": {
+        "atoms.positions": { "level": "full", "notes": null },
+        "atoms.symbols": { "level": "full", "notes": null },
+        "cell.lattice_vectors": {
+          "level": "partial",
+          "notes": "Written as the Lattice= key when a cell is present."
+        }
+      },
+      "format_id": "extxyz",
+      "format_name": "Extended XYZ",
+      "lossy_notes": [],
+      "max_frames": null,
+      "native_coordinate_system": "cartesian",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": ["atoms.symbols", "atoms.positions"],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    }
+  },
+  "toyfmt": {
+    "read": {
+      "allows_open_boundaries": true,
+      "direction": "read",
+      "fields": {
+        "atoms.positions": { "level": "full", "notes": null },
+        "atoms.symbols": { "level": "full", "notes": null },
+        "electronic.stress": {
+          "level": "full",
+          "notes": "The toy format's one party trick: it carries the full stress tensor."
+        }
+      },
+      "format_id": "toyfmt",
+      "format_name": "Toy Format",
+      "lossy_notes": [],
+      "max_frames": null,
+      "native_coordinate_system": "cartesian",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": [],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    },
+    "write": {
+      "allows_open_boundaries": true,
+      "direction": "write",
+      "fields": {
+        "atoms.positions": { "level": "full", "notes": null },
+        "atoms.symbols": { "level": "full", "notes": null },
+        "electronic.stress": { "level": "full", "notes": null }
+      },
+      "format_id": "toyfmt",
+      "format_name": "Toy Format",
+      "lossy_notes": ["A deliberately fictional plugin format used to prove the grid is generated."],
+      "max_frames": null,
+      "native_coordinate_system": "cartesian",
+      "numeric_precision": {},
+      "representable_constraint_kinds": [],
+      "required_fields": ["atoms.symbols", "atoms.positions"],
+      "writable_custom_key_pattern": {},
+      "writable_custom_keys": {}
+    }
+  }
+}
