@@ -34,6 +34,12 @@ export const FIXTURES = {
   workedExample: { file: "worked-example.extxyz", mimeType: "chemical/x-xyz" },
   /** A 3-frame ASE relaxation trajectory: → POSCAR needs a frame choice, so the job pauses. */
   relaxTraj: { file: "relax.traj", mimeType: "application/octet-stream" },
+  /**
+   * A single structure in a 6 Å cubic cell **rotated 45° in the xy-plane** — the lattice matrix is
+   * not in a standard orientation (a is not along x). Converting it to CIF genuinely fails
+   * validation: see `seedFailedValidationConversion`.
+   */
+  rotatedLattice: { file: "rotated-lattice.extxyz", mimeType: "chemical/x-xyz" },
   /** A Word document's byte signature — the sniffer must answer UNKNOWN_FORMAT for it. */
   notAStructure: { file: "not-a-structure.docx", mimeType: "application/octet-stream" },
 } as const;
@@ -141,45 +147,43 @@ export async function seedAwaitingRecoveryJob(request: APIRequestContext): Promi
  * Seed a **completed conversion whose validation failed**, and return its `conversion_id` so a spec
  * can drive the browser to `/conversions/{id}` and exercise the acknowledgment gate (slice M32-S1).
  *
- * The failure is forced the way the plan requires — through a legitimate, deliberately **tight
- * custom tolerance profile**, with no test hooks and no doctored output. The worked example is
- * cartesian extXYZ; converting it to POSCAR writes *Direct* (fractional) coordinates, so the
- * re-parse runs cartesian → fractional → cartesian through a lattice-matrix inversion whose
- * round-trip is exact only for coordinates that land on representable fractions (`2.125 / 6` does
- * not). That leaves a real ~1e-15 Å position residual — far below any physical concern, but a
- * tolerance table demanding agreement to 1e-20 Å legitimately fails on it, and the service records
- * `download.requires_ack`. Every exporter today declares full write precision (representational
- * bound 0.0), so this tight table is applied verbatim rather than floored (Part 5 §4.2).
+ * The failure is **real**, not mocked, and it is produced by a genuine representational limit of the
+ * target format — no test hooks, no doctored bytes, no exotic tolerance. The source is a cubic cell
+ * rotated 45° in the xy-plane (`FIXTURES.rotatedLattice`): its lattice matrix is not in a standard
+ * orientation. CIF stores a cell as **lengths + angles** (`_cell_length_*` / `_cell_angle_*`), which
+ * cannot express lattice *orientation* — so the re-parse reconstructs the cell in CIF's canonical
+ * orientation (a along x) and the atoms, carried as fractional coordinates, come back **rotated** in
+ * Cartesian space. That is a large, deterministic ~2.4 Å position residual — orders of magnitude
+ * above the default `positions_rmsd` fail bound (1e-3 Å) — so validation fails under **default**
+ * tolerances, on the same worker and validator that serve every user.
  *
- * The conversion itself still **completes** — POSCAR can hold the cell, species and positions the
- * worked example carries — so this is exactly the state the gate exists for: a real file that the
- * service could not verify.
+ * (This replaces the slice's original attempt to force the failure with a sub-femtometre tolerance
+ * on an extXYZ→POSCAR conversion: POSCAR writes **Cartesian** coordinates at full `repr` precision,
+ * so its `positions_rmsd` is always *exactly* 0.0 and no tolerance can ever fail it. The rotation
+ * loss is a genuine format limit rather than a floating-point residual, so it is deterministic
+ * across platforms instead of flaking on BLAS-dependent ulp noise.)
+ *
+ * The conversion itself still **completes** — CIF holds the species, cell parameters and (rotated)
+ * positions — so this is exactly the state the gate exists for: a real file the service could not
+ * verify faithfully.
  */
 export async function seedFailedValidationConversion(request: APIRequestContext): Promise<string> {
-  const fileId = await uploadFixture(request, FIXTURES.workedExample);
+  const fileId = await uploadFixture(request, FIXTURES.rotatedLattice);
   const resp = await request.post(`${API_URL}/v1/convert`, {
     data: {
       file_id: fileId,
-      target_format_id: "poscar",
-      options: {
-        // §4.4 custom table: only `name`/`quantities` are configurable. A sub-femtometre fail bound
-        // that no lossless conversion could meet, so validation fails on the representational
-        // residual alone — legitimately, not by sabotaging the bytes.
-        tolerance_profile: {
-          name: "e2e-tight",
-          quantities: { positions: { warn: 1e-30, fail: 1e-20 } },
-        },
-      },
+      target_format_id: "cif",
+      options: {},
     },
   });
   expect([200, 201, 202]).toContain(resp.status());
   const jobId = String((await resp.json()).job_id);
   const done = await pollJob(request, jobId, ["completed"]);
-  expect(done.state, "expected the tightly-toleranced conversion to complete").toBe("completed");
+  expect(done.state, "expected the rotated-cell → CIF conversion to complete").toBe("completed");
   const result = done.result as { conversion_id: string; download: { requires_ack: boolean } };
   expect(
     result.download.requires_ack,
-    "expected the tight tolerance to force a failed validation (requires_ack)",
+    "expected CIF's loss of lattice orientation to fail validation (requires_ack)",
   ).toBe(true);
   return result.conversion_id;
 }
