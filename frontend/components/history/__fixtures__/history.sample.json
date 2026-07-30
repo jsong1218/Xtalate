@@ -1,0 +1,55 @@
+{
+  "items": [
+    {
+      "conversion_id": "conv-completed-pass",
+      "created_at": "2026-07-28T14:03:00+00:00",
+      "source": { "format_id": "extxyz", "filename": "relaxed.extxyz" },
+      "target": { "format_id": "cif", "filename": "relaxed.cif" },
+      "conversion_status": "completed",
+      "validation_status": "passed",
+      "summary_counts": { "preserved": 12, "removed": 2, "assumptions": 1, "warnings": 0 },
+      "file_id": "file-1"
+    },
+    {
+      "conversion_id": "conv-completed-fail",
+      "created_at": "2026-07-28T11:47:00+00:00",
+      "source": { "format_id": "cif", "filename": "quartz.cif" },
+      "target": { "format_id": "poscar", "filename": "POSCAR" },
+      "conversion_status": "completed",
+      "validation_status": "failed",
+      "summary_counts": { "preserved": 8, "removed": 5, "assumptions": 0, "warnings": 1 },
+      "file_id": "file-2"
+    },
+    {
+      "conversion_id": "conv-refused",
+      "created_at": "2026-07-27T09:15:00+00:00",
+      "source": { "format_id": "xyz", "filename": "molecule.xyz" },
+      "target": { "format_id": "cif", "filename": "molecule.cif" },
+      "conversion_status": "refused",
+      "validation_status": null,
+      "summary_counts": { "preserved": 3, "removed": 0, "assumptions": 0, "warnings": 0 },
+      "file_id": "file-3"
+    },
+    {
+      "conversion_id": "conv-refused-expired",
+      "created_at": "2026-07-25T18:30:00+00:00",
+      "source": { "format_id": "xyz", "filename": "cluster.xyz" },
+      "target": { "format_id": "poscar", "filename": "POSCAR" },
+      "conversion_status": "refused",
+      "validation_status": null,
+      "summary_counts": { "preserved": 1, "removed": 0, "assumptions": 0, "warnings": 0 },
+      "file_id": null
+    },
+    {
+      "conversion_id": "conv-expired",
+      "created_at": "2026-07-24T08:00:00+00:00",
+      "source": { "format_id": "poscar", "filename": "POSCAR" },
+      "target": { "format_id": "xyz", "filename": "POSCAR.xyz" },
+      "conversion_status": "completed",
+      "validation_status": "passed",
+      "summary_counts": { "preserved": 20, "removed": 0, "assumptions": 0, "warnings": 0 },
+      "file_id": null
+    }
+  ],
+  "next_cursor": "cursor-page-2"
+}

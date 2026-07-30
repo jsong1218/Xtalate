@@ -189,6 +189,38 @@ export async function seedFailedValidationConversion(request: APIRequestContext)
 }
 
 /**
+ * Seed a **completed, validation-passing** conversion and return its record id plus the still-live
+ * source `file_id` (slice M33-S2). The worked-example extXYZ → plain XYZ conversion is lossy (XYZ
+ * cannot hold the lattice, forces, charge, or masses) but it **completes**, and XYZ round-trips its
+ * Cartesian positions exactly, so validation passes. That is the ordinary history row the delete
+ * journey needs: an open record, a live upload to re-convert, and a source file to delete — after
+ * which the report must stay readable (reports-outlive-bytes, the milestone's "Done means").
+ */
+export async function seedCompletedConversion(
+  request: APIRequestContext,
+): Promise<{ conversionId: string; fileId: string }> {
+  const fileId = await uploadFixture(request, FIXTURES.workedExample);
+  const resp = await request.post(`${API_URL}/v1/convert`, {
+    data: {
+      file_id: fileId,
+      target_format_id: "xyz",
+      options: {},
+    },
+  });
+  expect([200, 201, 202]).toContain(resp.status());
+  const jobId = String((await resp.json()).job_id);
+  const done = await pollJob(request, jobId, ["completed"]);
+  expect(done.state, "expected the extXYZ → XYZ conversion to complete").toBe("completed");
+  const result = done.result as { conversion_id?: string; conversion_report?: { status?: string } };
+  expect(result?.conversion_report?.status, "expected a completed conversion report").toBe(
+    "completed",
+  );
+  const conversionId = String(result.conversion_id);
+  expect(conversionId, "a completed conversion is persisted as a record").toBeTruthy();
+  return { conversionId, fileId };
+}
+
+/**
  * Seed a **refused** conversion and return its durable record id plus the still-valid source
  * `file_id`. The same trajectory→POSCAR conversion, but submitted **without** interactive recovery
  * (`allow_recovery: false`), so the unresolved frame + lattice decisions make it *refuse* rather than
