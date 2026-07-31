@@ -56,20 +56,46 @@ describe("ResolveAndRetry", () => {
     expect(screen.getByRole("button", { name: /resolve and retry/i })).toBeEnabled();
   });
 
-  it("re-submits the same file and target with recovery, then routes to the new job carrying the file_id", async () => {
+  it("re-submits the same file, target, and rules with recovery, then routes to the new job carrying the file_id", async () => {
     submitConvert.mockResolvedValue({ ok: true, envelope: { job_id: "job-new" } });
     render(<ResolveAndRetry record={refused} fileId="file-123" />);
 
     fireEvent.click(screen.getByRole("button", { name: /resolve and retry/i }));
 
     await waitFor(() => expect(submitConvert).toHaveBeenCalled());
-    // Same file and same target — never the refused record's own id (that row is immutable).
-    expect(submitConvert).toHaveBeenCalledWith("file-123", "poscar");
+    // Same file, same target, and the record's own semantics (F6) — never the refused record's own
+    // id (that row is immutable). The fixture ran permissive with no validation, so the profile is
+    // undefined and the retry uses `default`, exactly as this record's never-run validation would.
+    expect(submitConvert).toHaveBeenCalledWith("file-123", "poscar", {
+      mode: "permissive",
+      toleranceProfile: undefined,
+    });
     expect(submitConvert.mock.calls[0]).not.toContain(refused.conversion_id);
     // The new job carries the file_id forward so its record can offer this action again.
     await waitFor(() =>
       expect(push).toHaveBeenCalledWith("/convert/job-new?file_id=file-123"),
     );
+  });
+
+  it("carries a strict-mode record's own mode forward, rather than silently retrying permissive (F6)", async () => {
+    // A strict-mode refusal is fully reachable through the API the UI renders. Retrying it under the
+    // file page's permissive default would silently re-threshold the very conversion on screen.
+    const strictRefused = {
+      ...refused,
+      conversion_report: { ...refused.conversion_report, mode: "strict" },
+    } as unknown as ConversionRecord;
+    submitConvert.mockResolvedValue({ ok: true, envelope: { job_id: "job-strict" } });
+    render(<ResolveAndRetry record={strictRefused} fileId="file-123" />);
+
+    // The mode is stated in the copy so the sameness is visible, not just true.
+    expect(screen.getByText("strict")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /resolve and retry/i }));
+    await waitFor(() => expect(submitConvert).toHaveBeenCalled());
+    expect(submitConvert).toHaveBeenCalledWith("file-123", "poscar", {
+      mode: "strict",
+      toleranceProfile: undefined,
+    });
   });
 
   it("falls back to a fresh upload when the source upload is not in hand", () => {

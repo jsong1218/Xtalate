@@ -14,7 +14,7 @@ test("deletes a source file from history and keeps its report readable", async (
   page,
   request,
 }) => {
-  const { conversionId } = await seedCompletedConversion(request);
+  const { conversionId, fileId } = await seedCompletedConversion(request);
 
   await page.goto("/history");
   await expect(page.getByRole("heading", { level: 1, name: "History" })).toBeVisible();
@@ -27,8 +27,12 @@ test("deletes a source file from history and keeps its report readable", async (
   await expect(row.getByText(/fields removed/)).toBeVisible();
 
   // The record (report) is reachable, and while the upload is live so are re-convert and delete.
+  // Open record threads the live file_id forward (F7) so resolve-and-retry keeps the upload in hand.
   const openRecord = row.getByRole("link", { name: /open record/i });
-  await expect(openRecord).toHaveAttribute("href", `/conversions/${conversionId}`);
+  await expect(openRecord).toHaveAttribute(
+    "href",
+    `/conversions/${conversionId}?file_id=${encodeURIComponent(fileId)}`,
+  );
   await expect(row.getByRole("link", { name: /re-?convert/i })).toBeVisible();
 
   // Delete the source file, behind a confirmation that names the retention policy.

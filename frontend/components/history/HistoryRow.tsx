@@ -15,6 +15,11 @@ import { DeleteFileControl, type RetentionPolicy } from "./DeleteFileControl";
  * the single gate on the two actions that need those bytes: re-convert and delete. When it is gone,
  * the row does not show a dead button or a link that would 404 — it states the reason ("source file
  * expired") and keeps the report reachable. That is reports-outlive-bytes, visible in a row.
+ *
+ * When the upload *is* still live, "Open record" threads that `file_id` forward as `?file_id=`
+ * (v0.7 review F7): the record page reads it (`useSearchParams`) because the record carries none of
+ * its own, and it is what lets a refused record's "resolve and retry" re-submit the same upload
+ * instead of degrading to a fresh-upload prompt for bytes that are demonstrably still here.
  */
 function endpointLabel(endpoint: { format_id?: unknown; filename?: unknown }): {
   formatId: string;
@@ -66,7 +71,11 @@ export function HistoryRow({
       <td className="px-3 py-3">
         <div className="flex flex-col items-start gap-2">
           <Link
-            href={`/conversions/${item.conversion_id}`}
+            href={
+              item.file_id
+                ? `/conversions/${item.conversion_id}?file_id=${encodeURIComponent(item.file_id)}`
+                : `/conversions/${item.conversion_id}`
+            }
             className="text-sm text-slate-700 underline underline-offset-2 hover:text-slate-900"
           >
             Open record

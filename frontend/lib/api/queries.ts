@@ -155,31 +155,48 @@ export function conversionQuery(conversionId: string) {
 }
 
 /**
+ * The conversion semantics a retry must carry forward from the record it retries (Part 6 §2.1;
+ * v0.7 review F6). Both default to the file page's values, so an ordinary convert passes nothing —
+ * only "resolve and retry" fills them, from the record's *own* fields, so it re-runs under the same
+ * rules the user is looking at rather than silently re-thresholding to the file-page defaults.
+ */
+export interface RetryConvertOptions {
+  /** The conversion mode the record ran under (`conversion_report.mode`); defaults to `permissive`. */
+  mode?: "strict" | "permissive";
+  /** The record's tolerance profile name (from its Validation Report); defaults to `default`. */
+  toleranceProfile?: string;
+}
+
+/**
  * `POST /v1/convert` — start a conversion of an uploaded file into a target format (Part 6 §3.1).
  *
  * The interactive-recovery submission the v0.7 UI makes: `allow_recovery: true`, so a conversion that
  * needs a decision **pauses** (`awaiting_recovery`) and the job page renders the M31 decision cards,
- * rather than refusing outright (D95, lifted). Permissive mode is the default the file page uses;
- * recovery is about missing-required data, a separate axis from loss-acknowledgement.
+ * rather than refusing outright (D95, lifted). Recovery is about missing-required data, a separate
+ * axis from loss-acknowledgement.
  *
- * Used for "resolve and retry" from a refused record: the refused row is immutable history, so this
- * creates a **fresh** job for the same `file_id` + `target_format_id` rather than editing it. Returns
- * the new job envelope to route to, or the server's error body (e.g. an expired upload).
+ * `options` carries the record's own `mode`/`tolerance_profile` on a resolve-and-retry so the retry
+ * runs under the same rules as the record (v0.7 review F6); the file page omits it and gets the
+ * permissive / `default` defaults it always used. Used for "resolve and retry" from a refused
+ * record: the refused row is immutable history, so this creates a **fresh** job for the same
+ * `file_id` + `target_format_id` rather than editing it. Returns the new job envelope to route to,
+ * or the server's error body (e.g. an expired upload).
  */
 export async function submitConvert(
   fileId: string,
   targetFormatId: string,
+  options: RetryConvertOptions = {},
 ): Promise<{ ok: true; envelope: JobEnvelope } | { ok: false; error: unknown }> {
   const { data, error } = await apiClient.POST("/v1/convert", {
     body: {
       file_id: fileId,
       target_format_id: targetFormatId,
       options: {
-        mode: "permissive",
+        mode: options.mode ?? "permissive",
         acknowledge_loss: false,
         acknowledge_parse_warnings: false,
         allow_recovery: true,
-        tolerance_profile: "default",
+        tolerance_profile: options.toleranceProfile ?? "default",
       },
     },
   });
@@ -193,8 +210,9 @@ export async function submitConvert(
  * long after the bytes are gone, and it *appends* a new Validation Report rather than replacing the
  * old one. Returns the job envelope to poll, or the server's error body.
  *
- * The profile is the v0.7 cut line for this slice: the request always sends `"default"` here, and no
- * picker is offered, so the caller cannot silently re-threshold under a bar it did not choose.
+ * The caller passes the profile it chose from the record page's picker (M32-S2): the request sends
+ * that name (defaulting to `"default"`), so the re-thresholding is always under a bar the user
+ * explicitly selected, never a silent one.
  */
 export async function submitRevalidate(
   conversionId: string,

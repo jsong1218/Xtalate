@@ -21,10 +21,16 @@ import type { ConversionRecord, ErrorEnvelope as ErrorEnvelopeModel } from "@/li
  *  1. It creates **new history** — a fresh `POST /v1/convert` for the same `file_id` +
  *     `target_format_id`, never a mutation of the refused row (standing rule 1: the bright line
  *     reaches the pixels). The refused record's own id is never sent.
- *  2. The retry needs the **source upload still in hand**. The record carries no `file_id` of its own
+ *  2. "Same file and target" extends to **same rules**: the retry re-runs under the record's own
+ *     `mode` and tolerance profile (v0.7 review F6), read off the very fields the provenance strip
+ *     renders — `conversion_report.mode` and the Validation Report's profile name — never the file
+ *     page's permissive/`default` defaults. Retrying a refused *strict-mode* record under permissive
+ *     would silently re-threshold what the user is looking at; instead the copy states the mode so
+ *     the sameness is visible, not just true.
+ *  3. The retry needs the **source upload still in hand**. The record carries no `file_id` of its own
  *     (Part 6 §4.4), so it is threaded forward from the page that linked here; absent it, the honest
  *     path is a fresh upload, not a link that would 404.
- *  3. A refusal with **no unresolved scenarios** (e.g. `UNACKNOWLEDGED_LOSS`) has no cards to
+ *  4. A refusal with **no unresolved scenarios** (e.g. `UNACKNOWLEDGED_LOSS`) has no cards to
  *     re-enter, so no retry is offered — this component renders nothing.
  */
 export function ResolveAndRetry({
@@ -43,6 +49,16 @@ export function ResolveAndRetry({
   const refusal = report.refusal;
   const targetFormatId = record.target.format_id;
 
+  // Carry the record's own semantics forward, from the same fields the provenance strip renders
+  // (never re-derived): the mode is on the Conversion Report; the tolerance profile name is on the
+  // Validation Report, which a refused conversion has none of — so it stays undefined and the retry
+  // uses the `default` profile, exactly as this record's (never-run) validation would have.
+  const mode = report.mode;
+  const profileName =
+    typeof record.validation_report?.tolerance_profile?.name === "string"
+      ? record.validation_report.tolerance_profile.name
+      : undefined;
+
   // Only a recovery refusal has decisions to re-enter; without unresolved scenarios (or a target to
   // aim at) there is nothing the cards could resolve, so this offers nothing rather than a false path.
   if (
@@ -57,7 +73,10 @@ export function ResolveAndRetry({
   async function handleRetry() {
     setError(null);
     setBusy(true);
-    const result = await submitConvert(fileId as string, targetFormatId as string);
+    const result = await submitConvert(fileId as string, targetFormatId as string, {
+      mode,
+      toleranceProfile: profileName,
+    });
     if (!result.ok) {
       setBusy(false);
       setError(
@@ -74,7 +93,16 @@ export function ResolveAndRetry({
     <section aria-label="Resolve and retry" className="space-y-2">
       <p className="text-sm text-slate-700">
         This refusal is preserved as-is. To get a converted file, re-run the conversion of the same
-        source into <span className="font-mono text-slate-800">{targetFormatId}</span> and make the{" "}
+        source into <span className="font-mono text-slate-800">{targetFormatId}</span> in{" "}
+        <span className="font-medium text-slate-800">{mode}</span> mode
+        {profileName ? (
+          <>
+            {" "}
+            under the <span className="font-mono text-slate-800">{profileName}</span> tolerance
+            profile
+          </>
+        ) : null}{" "}
+        — the same rules as this record — and make the{" "}
         {refusal.unresolved_scenarios.length === 1 ? "decision" : "decisions"} it needs — a fresh
         conversion, not a change to this record.
       </p>
