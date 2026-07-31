@@ -1,0 +1,129 @@
+{
+  "codes": [
+    {
+      "code": "CONVERSION_NOT_FOUND",
+      "http_status": 404,
+      "summary": "No conversion record has this `conversion_id` on this instance (it never existed, or it passed report retention)."
+    },
+    {
+      "code": "FILE_EXPIRED",
+      "http_status": 410,
+      "summary": "The uploaded file existed but its retention window has passed and its bytes were deleted. Re-upload to convert again; any conversion report it produced remains readable."
+    },
+    {
+      "code": "FILE_NOT_FOUND",
+      "http_status": 404,
+      "summary": "No uploaded file has this `file_id` on this instance."
+    },
+    {
+      "code": "FILE_TOO_LARGE",
+      "http_status": 413,
+      "summary": "The upload exceeds this instance's size limit. There is no size limit on the CLI or a self-hosted instance \u2014 see the self-hosting guide."
+    },
+    {
+      "code": "FORMAT_NOT_FOUND",
+      "http_status": 404,
+      "summary": "No format with this id is registered on this instance. See the capabilities endpoint for the supported set."
+    },
+    {
+      "code": "HTTP_ERROR",
+      "http_status": null,
+      "summary": "A framework-level HTTP error with no more specific code. The `request_id` links to the server log with the detail."
+    },
+    {
+      "code": "INTERNAL_ERROR",
+      "http_status": 500,
+      "summary": "An unexpected server error. The message is deliberately generic; quote the `request_id` when reporting it so the server-side detail can be found."
+    },
+    {
+      "code": "INVALID_CURSOR",
+      "http_status": 422,
+      "summary": "The `cursor` passed to a paginated listing is not one this service issued. Start from the first page and follow `next_cursor` values only."
+    },
+    {
+      "code": "INVALID_RECOVERY_CHOICE",
+      "http_status": 422,
+      "summary": "A supplied recovery choice does not match the paused conversion's offered scenario or its allowed values."
+    },
+    {
+      "code": "JOB_ALREADY_TERMINAL",
+      "http_status": 409,
+      "summary": "The job is already `completed`, `failed`, `cancelled`, or `expired`, so the requested transition (e.g. cancel) no longer applies."
+    },
+    {
+      "code": "JOB_NOT_AWAITING_RECOVERY",
+      "http_status": 409,
+      "summary": "A recovery resolution was posted to a job that is not paused at `awaiting_recovery`."
+    },
+    {
+      "code": "JOB_NOT_FOUND",
+      "http_status": 404,
+      "summary": "No job has this `job_id` on this instance."
+    },
+    {
+      "code": "MALFORMED_REQUEST",
+      "http_status": 400,
+      "summary": "The request body or parameters failed validation (a missing field, a wrong type, an unparseable body). `details.errors` lists each field-level failure."
+    },
+    {
+      "code": "METHOD_NOT_ALLOWED",
+      "http_status": 405,
+      "summary": "The path exists but does not accept this HTTP method."
+    },
+    {
+      "code": "NOT_ENABLED",
+      "http_status": 404,
+      "summary": "The requested feature (e.g. accounts) is not enabled on this instance. It answers 404 so a disabled feature is indistinguishable from an absent one."
+    },
+    {
+      "code": "NOT_FOUND",
+      "http_status": 404,
+      "summary": "No route matches the requested path and method. Check the URL against the API reference."
+    },
+    {
+      "code": "OUTPUT_EXPIRED",
+      "http_status": 410,
+      "summary": "The converted output's bytes have passed their retention window and were deleted. The conversion report remains readable; re-run the conversion to regenerate the file."
+    },
+    {
+      "code": "PARSE_ERROR",
+      "http_status": null,
+      "summary": "The format was identified but the file could not be parsed; recorded on the failed job, with the parse issues in `details.issues`."
+    },
+    {
+      "code": "RATE_LIMITED",
+      "http_status": 429,
+      "summary": "Too many requests in the current window. The `Retry-After` header says when to try again."
+    },
+    {
+      "code": "RECOVERY_REQUIRED",
+      "http_status": null,
+      "summary": "A conversion paused for a recovery decision was not resolved before its window expired, so it resolved to a refusal \u2014 never a silently applied default."
+    },
+    {
+      "code": "TOO_MANY_ACTIVE_JOBS",
+      "http_status": 429,
+      "summary": "This caller already has the maximum number of jobs in flight. Wait for one to finish before submitting another."
+    },
+    {
+      "code": "UNAUTHORIZED",
+      "http_status": 401,
+      "summary": "This instance requires an API key and the request did not supply a valid one."
+    },
+    {
+      "code": "UNKNOWN_FORMAT",
+      "http_status": 422,
+      "summary": "The file's format could not be identified with enough confidence to parse it. Pass an explicit format if you know it."
+    },
+    {
+      "code": "VALIDATION_ACK_REQUIRED",
+      "http_status": 409,
+      "summary": "The download is gated because post-conversion validation failed; acknowledge the named failures to proceed. The record keeps showing the failure afterward."
+    },
+    {
+      "code": "VALIDATION_UNAVAILABLE",
+      "http_status": null,
+      "summary": "Validation could not be run or re-run for this conversion; recorded on the job."
+    }
+  ]
+}

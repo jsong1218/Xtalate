@@ -1,0 +1,109 @@
+# Xtalate — production service stack (MASTER_SPEC Part 9 §4–§5; slice M34-S2).
+#
+# Self-hosting is the primary supported deployment (§5.4). This file runs the DURABLE service — the
+# API and the worker (the one image's two entrypoints, §2), plus the Redis that carries the job
+# queue. The two stateful-CRITICAL dependencies are deliberately EXTERNAL: PostgreSQL (the only
+# component that must never lose data — reports and provenance, §6.2) and S3-compatible object
+# storage (private, lifecycle-expiring uploads/outputs, §5.2). You point this stack at endpoints you
+# control — managed Postgres/S3 or your own — via the environment. See docs/self-hosting.md.
+#
+# Hardened relative to the dev stack (compose.yaml): NO source bind mounts, NO live-reload frontend,
+# NO weak default credentials (every secret is a REQUIRED `${VAR:?...}` reference — compose refuses
+# to start if it is unset), restart policies, and the Redis port is NOT published to the host. TLS
+# termination and routing the browser's same-origin `/v1` to this API are the operator's reverse
+# proxy (next.config.mjs); the Web UI and the static docs site are built and served at that edge,
+# not here (no production frontend image ships in v0.7 — docs/self-hosting.md gives the build).
+#
+# NEVER commit a secret to this file (CLAUDE.md "Never commit secrets"): real values live only in an
+# untracked `.env` that `docker compose` loads, referenced here by name. Run
+# `docker compose -f docker-compose.prod.yml config` to have compose fail loudly, listing every
+# required value you have not yet set.
+
+# One image, two entrypoints (§2), so the API and worker can never carry different code. Pin
+# XTALATE_IMAGE to a published release tag in production; the build context makes `up --build` work
+# turnkey from a clone before the image is published.
+x-service-image: &service-image
+  image: ${XTALATE_IMAGE:-xtalate/service:0.7.0}
+  build:
+    context: .
+    dockerfile: Dockerfile
+
+# One environment for both processes, so they never drift on which database/store/queue they use
+# (§2, one artifact, no skew). Credentials are REQUIRED references — no baked-in defaults, ever.
+x-backend-env: &backend-env
+  XTALATE_ENVIRONMENT: production
+  # External PostgreSQL — the durable component that must never lose data (§6.2). Point at your
+  # managed or self-run instance; the placeholder is a shape, not a credential.
+  XTALATE_DATABASE_URL: ${XTALATE_DATABASE_URL:?set to your PostgreSQL URL, e.g. postgresql+psycopg://<user>:<password>@<host>:5432/xtalate}
+  # External S3-compatible object storage — private always, lifecycle-expiring (§5.2, §5.3).
+  XTALATE_OBJECT_STORE_BACKEND: s3
+  XTALATE_OBJECT_STORE_ENDPOINT: ${XTALATE_OBJECT_STORE_ENDPOINT:?set to your S3-compatible endpoint URL}
+  XTALATE_OBJECT_STORE_BUCKET: ${XTALATE_OBJECT_STORE_BUCKET:-xtalate}
+  XTALATE_OBJECT_STORE_REGION: ${XTALATE_OBJECT_STORE_REGION:-us-east-1}
+  XTALATE_OBJECT_STORE_ACCESS_KEY: ${XTALATE_OBJECT_STORE_ACCESS_KEY:?set to your object-storage access key}
+  XTALATE_OBJECT_STORE_SECRET_KEY: ${XTALATE_OBJECT_STORE_SECRET_KEY:?set to your object-storage secret key}
+  # The RQ queue: the API enqueues, the worker executes (§3). Redis is in-stack and ephemeral —
+  # losing it loses only in-flight jobs, which are resubmittable; the durable record is in Postgres.
+  XTALATE_QUEUE_BACKEND: rq
+  XTALATE_REDIS_URL: redis://queue:6379/0
+  # Static API key(s), comma-separated. EMPTY = anonymous mode — acceptable only on a trusted private
+  # network. A PUBLIC instance MUST set at least one key (in your untracked .env); see the guide.
+  XTALATE_API_KEYS: ${XTALATE_API_KEYS:-}
+  # The docs origin the error-envelope `documentation_url` and the FILE_TOO_LARGE funnel resolve
+  # against — set both to this instance's own docs so the links the UI renders land on your site.
+  XTALATE_DOCS_BASE_URL: ${XTALATE_DOCS_BASE_URL:-https://github.com/jsong1218/Xtalate/blob/main/docs/errors.md}
+  XTALATE_SELF_HOSTING_URL: ${XTALATE_SELF_HOSTING_URL:-https://github.com/jsong1218/Xtalate/blob/main/docs/self-hosting.md}
+  # Public-instance limits (§ Part 6 §5). Uncomment/override in your .env as your policy requires;
+  # the code defaults (backend/config.py) apply when unset.
+  XTALATE_MAX_UPLOAD_BYTES: ${XTALATE_MAX_UPLOAD_BYTES:-104857600}
+
+services:
+  # The job queue. Ephemeral by design (§6.2: object storage and the queue are not backed up; only
+  # Postgres is). Reachable only inside the compose network — no host port is published.
+  queue:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # The API. Owns migrations (its CMD runs `alembic upgrade head`, §2) and serves `/v1`. Publishes
+  # only the API port; put TLS and the same-origin `/v1` route on your reverse proxy.
+  backend:
+    <<: *service-image
+    restart: unless-stopped
+    depends_on:
+      queue:
+        condition: service_healthy
+    environment:
+      <<: *backend-env
+    ports:
+      - "${XTALATE_PORT:-8000}:8000"
+    # Ready — not merely alive — so the worker waits until migrations have run and the external
+    # Postgres + object store answer. The slim image ships no curl/wget, so the probe is stdlib.
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/v1/health?ready=true').status==200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # The RQ worker: the same image, the second entrypoint (§2). It executes the jobs the API
+  # enqueues. Waits for the backend to be healthy so it never races the schema the backend migrates.
+  worker:
+    <<: *service-image
+    restart: unless-stopped
+    command: ["python", "-m", "backend.worker"]
+    depends_on:
+      queue:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      <<: *backend-env
