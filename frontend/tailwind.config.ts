@@ -1,3 +1,4 @@
+import typography from "@tailwindcss/typography";
 import type { Config } from "tailwindcss";
 
 /**
@@ -39,7 +40,10 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  // The docs site (M34-S1) renders the committed `docs/` Markdown corpus; the typography plugin's
+  // `prose` classes style headings, tables, and code blocks without hand-classing each element. Loss
+  // colors stay the `--cb-*` variables above — typography only touches long-form doc prose.
+  plugins: [typography],
 };
 
 export default config;
