@@ -86,7 +86,8 @@ terminal state (`completed`, `failed`, `cancelled`, or `expired`) before submitt
 
 **HTTP 413.** The upload exceeds this instance's configured size limit (`/v1/limits` reports the
 ceiling). There is **no** size limit on the command-line tool or on a self-hosted instance — see the
-[quickstart](./quickstart) for the local path.
+[quickstart](./quickstart) for the local path, or the [self-hosting guide](./self-hosting) to run
+your own instance with no cap.
 
 ### FILE_NOT_FOUND
 

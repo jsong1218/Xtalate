@@ -43,6 +43,12 @@ export const DOC_PAGES: readonly DocPage[] = [
     description: "Every error-envelope code, what it means, and what to do about it.",
   },
   {
+    slug: "self-hosting",
+    title: "Self-hosting",
+    file: "self-hosting.md",
+    description: "Run your own instance: production compose, configuration, backups, and observability.",
+  },
+  {
     slug: "api",
     title: "API",
     file: "API.md",

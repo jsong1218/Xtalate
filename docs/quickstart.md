@@ -73,5 +73,6 @@ A conversion the engine declines is **not** an HTTP error — it is a completed 
 `status: "refused"` (HTTP 200). Genuine transport failures use the one error envelope documented in
 the [error reference](./errors).
 
-Self-hosting is the primary supported deployment; a production self-hosting guide accompanies the
-release.
+Self-hosting is the primary supported deployment. To run your own instance in production — the
+hardened `docker-compose.prod.yml`, configuration, backups, and observability — see the
+[self-hosting guide](./self-hosting).

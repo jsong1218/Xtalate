@@ -42,3 +42,15 @@ test("the docs index links into the rendered corpus", async ({ page }) => {
   await expect(page).toHaveURL(/\/docs\/quickstart$/);
   await expect(page.getByRole("heading", { level: 1, name: "Quickstart" })).toBeVisible();
 });
+
+test("the self-hosting guide renders with its auditable zero-SaaS walk", async ({ page }) => {
+  // The M34-S2 deliverable: self-hosting is the primary supported deployment, and its zero-SaaS
+  // review (Part 9 §5.4) is a walked checklist, not an assertion — so it must actually render.
+  await page.goto("/docs/self-hosting");
+  await expect(page.getByRole("heading", { level: 1, name: "Self-hosting Xtalate" })).toBeVisible();
+
+  // The `## Zero-SaaS review` section anchors at its slug (rehype-slug), the same rendering chain
+  // the error reference relies on, and carries the checklist the criterion is judged against.
+  await expect(page.locator("#zero-saas-review")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Zero-SaaS review" })).toBeVisible();
+});
