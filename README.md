@@ -8,9 +8,9 @@
 
 Every conversion produces a structured **Conversion Report** (what was preserved, dropped, or fabricated, and the reason for each) and an automatic **Validation Report** (the output re-parsed and diffed against the source to prove the report told the truth). The guiding rule is simple: *never silently lose scientific information.* If you diffed the input and output by hand, nothing should surprise you that Xtalate didn't already tell you about.
 
-## The Web UI (v0.6)
+## The Web UI (v0.7)
 
-**v0.6 adds a faithful web front end over the `/v1` service — the whole workflow in a browser, with the loss report as the thing you cannot miss.**
+**A faithful web front end over the `/v1` service — the whole workflow in a browser, with the loss report as the thing you cannot miss. v0.7 completes it: recovery is decided in the browser, a failed-validation download is gated by an honest acknowledgment, and the engine's own knowledge is browsable through a formats explorer, a conversion history, and a rendered docs site.**
 
 The record page below is the worked example — an extended-XYZ file converted to plain XYZ, which can hold none of its lattice, forces, charges, or energy:
 
@@ -20,18 +20,19 @@ The UI is a **presentation layer only** — it carries no scientific logic (Part
 
 - **Upload & inspect** — drop a file and see a ✓/✗ inventory of what it actually contains, each field annotated with the detected format's capability.
 - **Preview the loss** — pick a target and see, *before* converting, what that format will carry, drop, or need to recover — the Capability Matrix's prediction (P5).
-- **Convert** — a live job page that renders whatever the state machine reaches: a phase indicator with **no invented progress**, the honest `awaiting_recovery` pause, the Conversion Report, or a refusal — a refusal being a completed outcome, not an error.
-- **Record & download** — the consolidated, linkable record above. Two things are load-bearing: the outcome header is **quantitative and never celebratory** ("Converted — 7 fields removed", not "Done!"), and the **download control sits *below* the loss summary by layout law** — you cannot reach the button without passing what the conversion cost.
+- **Convert & recover** — a live job page that renders whatever the state machine reaches: a phase indicator with **no invented progress**, the Conversion Report, or a refusal (a completed outcome, not an error). When a conversion pauses for a decision the file can't answer — a missing lattice, a single frame — it renders one **decision card per unresolved scenario in the engine's own dependency order**, drawn from the paused job's envelope. No option is ever preselected, each card shows the **exact Assumption that will be recorded** *before* you confirm it (computed by the engine, not the client), and declining cancels the conversion rather than inventing a default.
+- **Record & download** — the consolidated, linkable record above. Three things are load-bearing: the outcome header is **quantitative and never celebratory** ("Converted — 7 fields removed", not "Done!"); the **download control sits *below* the loss summary by layout law** — you cannot reach the button without passing what the conversion cost; and if the output **failed validation**, the download is gated behind an acknowledgment that **names the failed checks** (pulled from the Validation panel's own rows), with the record still showing the failure after you accept. A refused record is not a dead end — **"Resolve and retry"** re-enters the recovery wizard with the same file and target as a fresh conversion.
 
-Run it with the Tier 1 stack — `docker compose up` serves the UI at <http://localhost:3000> against the real API, worker, PostgreSQL, MinIO, and Redis. The whole journey (upload → inspect → convert → record → download) and the honest negative states are covered end to end by a Playwright suite that drives a real browser against that stack, and the loss palette is checked for WCAG AA contrast both by an automated axe scan and by a dependency-free token-contrast unit test.
+Two read-only pages make the engine's own knowledge browsable: **`/formats`** renders the Capability Matrix as a grid **generated from `GET /v1/capabilities`**, so it can never drift from the running instance — and an installed plugin format appears with **zero UI changes**; **`/history`** lists past conversions with per-row loss visible even at table density and the honest **expired** state (an expired upload's report stays readable, download honestly unavailable — *reports outlive bytes*). The whole `docs/` corpus renders as an in-app **docs site** with a per-code error reference every `documentation_url` resolves to.
 
-### What the v0.6 UI does *not* do (yet)
+Run it with the Tier 1 stack — `docker compose up` serves the UI at <http://localhost:3000> against the real API, worker, PostgreSQL, MinIO, and Redis. The whole journey (upload → inspect → convert → recover → record → download) and the honest negative states are covered end to end by a Playwright suite that drives a real browser against that stack, and the loss palette is checked for WCAG AA contrast both by an automated axe scan and by a dependency-free token-contrast unit test. To run your own instance in production, see the **[self-hosting guide](docs/self-hosting.md)** — self-hosting is the primary supported deployment, with a hardened [`docker-compose.prod.yml`](docker-compose.prod.yml), an honest backup posture, and a walked zero-SaaS review.
 
-The engine paused jobs and gated downloads long before the UI existed; v0.6 renders those states **honestly rather than fully**, and names the seams where the richer flows attach in v0.7:
+### Scope: feature-complete against Parts 6–7 — and what is deliberately not in it
 
-- **Interactive recovery is an honest placeholder, not yet a form.** When a conversion needs a decision the file lacks (a lattice, a single frame), the job page shows the `awaiting_recovery` pause **named**, with the deadline stated as a *refusal-not-a-default* and every option the engine computed, alongside the API/CLI way to supply it now. The in-browser decision cards are v0.7.
-- **A validation-failed download shows the service's raw acknowledgement envelope.** Taking an output whose validation *failed* surfaces the `409 VALIDATION_ACK_REQUIRED` envelope verbatim, with the failing checks listed above it, and then offers the acknowledged retry — a considered, unpolished gate rather than the smoother ack UX planned for v0.7.
-- **No formats explorer, conversion history, or docs pages.** The wizard is the whole surface; a format-capability browser, a per-session history, and an in-app docs site are all v0.7.
+v0.7 closes the product surface the specification's Parts 6–7 describe: the engine, the CLI, the `/v1` service, and the Web UI — upload, inspect, convert, interactive recovery, the acknowledgment gate, the record, formats, and history — plus the rendered docs site and a first-class self-hosting deployment. Two boundaries are stated rather than hidden:
+
+- **Advisory surfacing is a named, deliberate cut (post-1.0).** The recovery-feedback aggregation ships in the service as a read-only, metadata-only statistic; the seam to surface it in the UI is in place, but the aggregation-fed rendering is deferred. This costs no honesty by construction: **no default ever changes because of those statistics** (P4), so a recovery decision is never quietly steered by what other users chose.
+- **This release is not the v1.0 freeze.** The plugin SDK and the `/v1` REST contract are **not frozen until v1.0** — a pre-1.0 minor may still break them (risk R12) — and the canonical schema is unchanged at `0.1.0`. v0.7 finishes the product surface; v1.0 is the discipline pass. **Pin a version if you depend on the SDK or the REST contract.**
 
 ## What v0.5 does
 
@@ -197,7 +198,7 @@ The **Canonical Object** is the only thing that crosses the parser/exporter boun
 
 That spine is what makes **adding a format O(1) in the number of formats already present** — a claim now paid three times over. XDATCAR, ASE `.traj`, and CIF each arrived as one parser and one exporter against the Canonical Object plus a row in the Capability Matrix, and each joined sniffing, Discovery, conversion, validation, and the full n×n round-trip matrix without a single edit to any other format. CIF is the strongest evidence, because it is the least like the others: it is the only format whose native coordinates are fractional, the only one carrying symmetry, and the only one that needed a whole expansion stage — and it still cost no format-to-format code, because there is none to write.
 
-Architectural decisions (D1–D71) and MASTER_SPEC are maintained privately. Public commits may
+Architectural decisions (D1–D99) and MASTER_SPEC are maintained privately. Public commits may
 reference decision IDs. If you need the rationale for a particular decision, feel free to open an
 issue or contact me.
 
