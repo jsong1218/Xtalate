@@ -12,8 +12,12 @@ through the symmetry operations the file declares to be physically right. A file
 space group but declares no operations is refused rather than read as a partial structure, and
 site occupancy is carried under a namespaced key rather than modelled, since the Canonical Model
 has no occupancy field. Pipeline memory remains sub-linear in frames through the v0.3
-frame-chunked streaming core. The Service (v0.5) and Web UI (v0.6) build on this core without
-re-implementing any of it.
+frame-chunked streaming core. The Service (v0.5) exposes this core over HTTP under ``/v1``, and
+the Web UI (v0.6–v0.7) presents the whole upload → inspect → convert → recover → record → download
+journey as a faithful, loss-first presentation layer — neither re-implementing any of it. v0.7
+declares Parts 6–7 feature-complete (interactive recovery, the acknowledgment gate, the formats
+explorer and history, the rendered docs site, and a first-class self-hosting deployment); the
+plugin SDK and the ``/v1`` contract remain unfrozen until v1.0.
 """
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"

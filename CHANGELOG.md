@@ -8,6 +8,102 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-30
+
+v0.7 — **"Feature-complete."** The version that finishes the product surface of Parts 6–7 and cuts
+the release that declares them done — **without** v1.0's freeze. The Web UI grows from v0.6's honest
+placeholders into the full workflow: interactive recovery decides a paused conversion **in the
+browser**, a failed-validation download is gated by an honest acknowledgment rather than a raw
+envelope, and the engine's own knowledge becomes browsable through a formats explorer and a history
+page. The whole `docs/` corpus renders as a static site with a per-code error reference every
+`documentation_url` resolves to, and **self-hosting becomes the primary supported deployment** — a
+hardened production compose file, an honest backup posture, and a walked zero-SaaS review. The
+library, CLI, and `/v1` service are unchanged; the plugin SDK and the REST contract stay **unfrozen
+until v1.0** (risk R12), and the canonical schema stays `0.1.0`.
+
+### Added
+
+- **Interactive recovery in the browser (v0.7 M31).** The wizard step of Part 7 §3, where the
+  project's philosophy meets a human — **consent and provenance as the same artifact** (P4). A paused
+  `awaiting_recovery` job renders one **decision card per unresolved scenario, in the engine's own
+  dependency order**, built from the envelope's `awaiting_recovery` block — never an option the engine
+  would reject, and **never a preselected default** (a component invariant with its own test). Each
+  card carries the catalog's parameter widgets (with a generic `parameters_schema`-driven fallback for
+  a plugin scenario) and an **Assumption preview**: the exact `description` string that will be
+  recorded, computed by the engine itself through a new `ConversionEngine.preview_recovery` and
+  `POST /v1/jobs/{job_id}/recovery/preview`, so the preview cannot drift from the record it previews.
+  Resume is `POST /v1/jobs/{job_id}/recovery`; an unoffered choice is `422 INVALID_RECOVERY_CHOICE`
+  carrying `details.offered_choices`. **Declining is first-class** — "Cancel conversion" is always
+  present, and a decline cancels the paused job rather than inventing a default. A "Why does this
+  matter?" progressive disclosure explains each scenario in plain language, its copy held in one
+  coverage-linted constants file so a new scenario without an explanation fails CI. The flagship
+  end-to-end journey drives the whole path — upload a lattice-less trajectory, convert to POSCAR,
+  resolve the lattice and frame decisions in-browser, reach the record — in a real browser against the
+  live stack.
+- **The failed-validation acknowledgment gate, and resolve-and-retry (v0.7 M32).** Both are
+  **access-as-honesty**. When a completed conversion's record carries `download.requires_ack`, the
+  download control is **replaced** by a gate that **names the failed checks** — pulled from the
+  Validation panel's own rows, not re-derived — and states plainly that acknowledging means taking a
+  file that failed verification, with the record continuing to show the failure afterward. Confirming
+  re-requests the download with `?acknowledge_validation_failure=true`; the UI never teaches the URL
+  workaround (standing rule 1). And a **refused** record is no longer a dead end: "Resolve and retry"
+  re-enters the M31 wizard with the **same file and target** as a fresh `POST /v1/convert`
+  (`allow_recovery: true`) — the refused record stays immutable history, the retry is a new
+  conversion. The re-validate profile picker lands here, so a record can be re-thresholded against a
+  different named tolerance profile.
+- **The formats explorer and conversion history (v0.7 M33).** Two read-only pages that put two
+  principles **on screen**. `/formats` (Part 7 §2.7) renders the Capability Matrix as a browsable grid
+  **generated from `GET /v1/capabilities`**, never hand-authored — so it **cannot drift** from the
+  running instance's registry, and an installed **plugin format appears with zero UI changes** (the P6
+  payoff, visible). A detail view shows read/write declarations, `required_fields` framed as
+  *"converting into this format requires…"*, `max_frames`, and `lossy_notes`. `/history` (Part 7 §2.6)
+  is a cursor-paginated table from `GET /v1/history` with per-row loss visible at one-line density and
+  the honest **expired-bytes** state: an expired upload's **report stays readable and listed** with
+  download honestly unavailable — *reports outlive bytes, now visible in the UI* — while a record past
+  the 30-day report-retention window leaves history outright rather than lingering as an empty husk.
+- **The rendered docs site and a per-code error reference (v0.7 M34).** The committed `docs/` Markdown
+  builds the `/docs/*` static site — **one source, two renderings, no second corpus** — adding a
+  quickstart, the CLI reference (Appendix A), and an **error-code reference with a resolvable section
+  per code**, the source of truth for *which* codes exist being the code itself
+  (`backend/error_codes.py` → a drift-guarded, completeness-scanned `docs/error_codes.json`), not a
+  hand-list that can drift. Every `documentation_url` the error envelope has emitted since v0.5 now
+  **resolves on the built site**, enforced from this version forward by a coverage lint (a new code
+  without a page fails CI) and an end-to-end journey that follows a real error's anchor to its rendered
+  section.
+- **Production self-hosting as the primary supported deployment (v0.7 M34).** A hardened
+  `docker-compose.prod.yml` — the service image's two entrypoints (API + worker) plus an ephemeral
+  Redis, with **external** PostgreSQL and S3-compatible object storage, **no dev bind mounts**, and
+  **no weak default credentials** (every secret is a required environment reference; the compose fails
+  loudly if one is unset). Two CI guards ride with it: one binds `.env.example` to the real config
+  surface so it neither omits nor invents a knob, and one proves the compose file commits no secret and
+  keeps its production shape. A **self-hosting guide** on the docs site states the deployment, the
+  reverse-proxy edge, and the **backup posture honestly** — nightly `pg_dump`, an RPO of ≤ 24 h stated
+  plainly (near-zero where WAL archiving is available), object storage deliberately not backed up — and
+  documents the structured-logging that ships alongside the specified-but-not-yet-implemented
+  Prometheus `/metrics` endpoint and its alerts. The **zero-SaaS review** (Part 9 §5.4) — every feature
+  works self-hosted with no external service dependency — is walked as an auditable checklist on the
+  guide, not merely asserted.
+
+### Notes
+
+- **Feature-complete against Parts 6–7 — and what is deliberately not in it.** v0.7 closes the product
+  surface: the engine, the CLI, the `/v1` service, and the Web UI (upload → inspect → convert →
+  recover → record → download, plus formats and history), rendered docs, and a first-class
+  self-hosting deployment. **Advisory surfacing is the named cut** (carried from M31-S3): the recovery
+  feedback aggregation shipped in v0.5 as a read-only, metadata-only Python aggregation, and the seam
+  to surface it in the UI is in place, but the aggregation-fed rendering is **deferred to post-1.0** —
+  no default ever changes because of those statistics (P4 is untouchable by construction), so shipping
+  the seam without the surfacing costs no honesty. Nothing from v1.0 is anticipated here.
+- **This release is not the freeze.** The plugin SDK and the `/v1` REST contract are **not** frozen
+  until v1.0 (a pre-1.0 minor may still break them, risk R12); the canonical schema is unchanged at
+  `0.1.0`. v0.7 finishes the product surface; v1.0 is the discipline pass.
+- **`CITATION.cff` now can't drift silently.** A new guard binds the citation file's version to the
+  package version, closing the class of miss that let it sit at `0.4.0` through two releases (D99); the
+  three version declarations (`pyproject.toml`, `xtalate.__version__`, `CITATION.cff`) now fail CI
+  unless they agree.
+- Publishing (the git tag, the PyPI upload, and the GHCR release images) remains the maintainer's
+  manual release step.
+
 ## [0.6.0] — 2026-07-27
 
 v0.6 — **"Humans."** The Web UI: the whole upload → inspect → convert → record → download journey
@@ -1027,7 +1123,8 @@ byte of scientific information kept, dropped, or fabricated.
 - Recovery is preset-only; tolerance profiles are the three named ones (custom tables are later
   seams).
 
-[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/jsong1218/Xtalate/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jsong1218/Xtalate/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jsong1218/Xtalate/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jsong1218/Xtalate/compare/v0.3.0...v0.4.0
