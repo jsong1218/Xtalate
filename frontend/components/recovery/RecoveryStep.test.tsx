@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { RecoveryStep } from "./RecoveryStep";
+import { formatUtc } from "@/lib/format/datetime";
 import type { JobEnvelope } from "@/lib/api/queries";
 import type { AwaitingRecoveryBlock } from "@/lib/report/types";
 import awaitingJob from "@/components/__fixtures__/job.awaiting_recovery.json";
@@ -22,6 +23,34 @@ const oneScenarioBlock: AwaitingRecoveryBlock = {
 
 function okSubmit() {
   return vi.fn(async () => ({ ok: true as const, envelope }));
+}
+function okPreview() {
+  return vi.fn(async (_jobId: string, choices: Record<string, { choice: string }>) => ({
+    ok: true as const,
+    preview: {
+      previews: Object.entries(choices).map(([scenario, decision]) => ({
+        scenario,
+        choice: decision.choice,
+        parameters: {},
+        description: `preview for ${scenario}`,
+      })),
+      unresolved: [],
+    },
+  }));
+}
+function failingPreview() {
+  return vi.fn(async () => ({
+    ok: false as const,
+    error: {
+      error: {
+        code: "PREVIEW_UNAVAILABLE",
+        message: "unavailable",
+        details: {},
+        request_id: "req_p",
+        documentation_url: "",
+      },
+    },
+  }));
 }
 
 function renderStep(props: Partial<React.ComponentProps<typeof RecoveryStep>> = {}) {
@@ -64,7 +93,10 @@ describe("RecoveryStep", () => {
   it("states the deadline as a refusal for want of a decision, never a default", () => {
     renderStep();
     const deadline = screen.getByTestId("recovery-deadline");
-    expect(deadline).toHaveTextContent(envelope.expires_at!);
+    // The exact ISO instant stays machine-readable in the <time> attribute; the visible text is the
+    // deterministic UTC rendering (v0.7 review, R1 cosmetic).
+    const when = within(deadline).getByText(formatUtc(envelope.expires_at!));
+    expect(when).toHaveAttribute("dateTime", envelope.expires_at);
     expect(deadline).toHaveTextContent(/refused/i);
     expect(deadline).toHaveTextContent(/no default is applied/i);
     expect(deadline).toHaveTextContent(/no value is invented/i);
@@ -108,12 +140,28 @@ describe("RecoveryStep", () => {
 
   it("resumes through the hosted wizard — a completed submit calls onResumed with the envelope", async () => {
     const onResumed = vi.fn();
-    renderStep({ onResumed, submit: okSubmit() });
-    fireEvent.click(screen.getByRole("radio", { name: /^last$/ }));
-    fireEvent.click(screen.getByRole("radio", { name: /bounding_box/ }));
+    renderStep({ onResumed, submit: okSubmit(), preview: okPreview() });
+    fireEvent.click(screen.getByRole("radio", { name: /Keep the last frame/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Build a box around the atoms/ }));
     fireEvent.change(screen.getByLabelText(/padding_ang/), { target: { value: "5" } });
-    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    const confirm = screen.getByRole("button", { name: /confirm/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
 
     await waitFor(() => expect(onResumed).toHaveBeenCalledWith(envelope));
+  });
+
+  it("keeps the first-class decline reachable even when the preview fails (no trap)", async () => {
+    const onDecline = vi.fn();
+    renderStep({ onDecline, preview: failingPreview() });
+    fireEvent.click(screen.getByRole("radio", { name: /Keep the last frame/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Build a box around the atoms/ }));
+    fireEvent.change(screen.getByLabelText(/padding_ang/), { target: { value: "5" } });
+
+    // The preview failed, so Confirm is blocked — but Cancel conversion still works.
+    await screen.findByTestId("preview-error");
+    expect(screen.getByRole("button", { name: /confirm/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /cancel conversion/i }));
+    expect(onDecline).toHaveBeenCalledTimes(1);
   });
 });

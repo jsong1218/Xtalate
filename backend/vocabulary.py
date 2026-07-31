@@ -24,12 +24,15 @@ catalog or the canonical schema's field set changes on purpose.
 
 from __future__ import annotations
 
+import itertools
 import json
 from pathlib import Path
 from typing import Any
 
+from xtalate.conversion.parse_recovery import PARSE_TIME_SCENARIOS
 from xtalate.conversion.preflight import GENERIC_REQUIRED_FIELD_SCENARIO
-from xtalate.recovery.scenarios import SCENARIO_HAZARD
+from xtalate.recovery.engine import _DEP_ORDER
+from xtalate.recovery.scenarios import SCENARIO_HAZARD, available_options
 from xtalate.schema.presence import CUSTOM_PATH_CATEGORIES, FIXED_CANONICAL_PATHS
 
 #: The committed vocabulary the frontend mapping-coverage lint reads. Kept beside the human docs and
@@ -37,11 +40,42 @@ from xtalate.schema.presence import CUSTOM_PATH_CATEGORIES, FIXED_CANONICAL_PATH
 ARTIFACT_PATH = Path(__file__).resolve().parent.parent / "docs" / "vocabulary.json"
 
 
+def _all_choice_codes(scenario: str) -> list[str]:
+    """Every ``choice`` code the engine could ever offer for ``scenario`` (Part 4 §3.3).
+
+    ``available_options`` is *pair-specific* — it hides a choice not coherent for a given
+    source/target (no ``non_periodic`` for a periodic-only target, no ``split_all`` for a
+    single-file target, no ``omit`` for a required field). The coverage lint needs the *whole*
+    offerable set so a plain-language label exists for every choice the UI could render, so we union
+    the option list across all flag combinations. The catalog itself is the ground truth (v0.7
+    review, F3): a choice added to ``available_options`` surfaces here, then as a lint failure until
+    the frontend labels it — never as a raw code on a card."""
+    codes: set[str] = set()
+    for nonperiodic, multifile, optional, permissive in itertools.product((False, True), repeat=4):
+        codes.update(
+            available_options(
+                scenario,
+                target_can_be_nonperiodic=nonperiodic,
+                target_supports_multifile=multifile,
+                target_field_optional=optional,
+                permissive_mode=permissive,
+            )
+        )
+    return sorted(codes)
+
+
 def build_vocabulary() -> dict[str, Any]:
-    """Return the UI vocabulary as a plain dict: the scenario codes, the fixed canonical paths, and
-    the dynamic ``custom_*`` category prefixes the mapping table must each label."""
+    """Return the UI vocabulary as a plain dict: the scenario codes, every choice code each scenario
+    can offer, the engine's recovery resolution order, the fixed canonical paths, and the dynamic
+    ``custom_*`` category prefixes the mapping table must each label."""
     return {
         "scenario_codes": sorted({*SCENARIO_HAZARD, GENERIC_REQUIRED_FIELD_SCENARIO}),
+        "choice_codes": {code: _all_choice_codes(code) for code in sorted(SCENARIO_HAZARD)},
+        # The order the engine resolves recovery scenarios in (Part 4 §3.3): the parse-time stage
+        # first (it precedes parsing), then the conversion-time dependency order. Read straight from
+        # the engine constants — never re-typed — so the Web UI can render decision cards in true
+        # resolution order without hand-copying the sequence (v0.7 review, F4).
+        "scenario_resolution_order": [*PARSE_TIME_SCENARIOS, *_DEP_ORDER],
         "canonical_paths": sorted(FIXED_CANONICAL_PATHS),
         "custom_path_categories": sorted(CUSTOM_PATH_CATEGORIES),
     }

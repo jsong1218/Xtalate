@@ -2,9 +2,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  CHOICE_LABELS,
   CUSTOM_CATEGORY_LABELS,
   PATH_LABELS,
   SCENARIO_LABELS,
+  labelForChoice,
   labelForPath,
 } from "./mapping";
 
@@ -23,9 +25,16 @@ import {
 const vocabularyPath = resolve(process.cwd(), "..", "docs", "vocabulary.json");
 const vocabulary = JSON.parse(readFileSync(vocabularyPath, "utf-8")) as {
   scenario_codes: string[];
+  choice_codes: Record<string, string[]>;
+  scenario_resolution_order: string[];
   canonical_paths: string[];
   custom_path_categories: string[];
 };
+
+/** Every `[scenario, choice]` the engine can offer, flattened for the per-choice coverage lint. */
+const choicePairs: [string, string][] = Object.entries(vocabulary.choice_codes).flatMap(
+  ([scenario, choices]) => choices.map((choice): [string, string] => [scenario, choice]),
+);
 
 describe("plain-language mapping coverage", () => {
   it("has a sanity floor of vocabulary to check", () => {
@@ -36,6 +45,15 @@ describe("plain-language mapping coverage", () => {
 
   it.each(vocabulary.scenario_codes)("scenario code %s has a plain-language label", (code) => {
     expect(SCENARIO_LABELS, `add "${code}" to SCENARIO_LABELS in mapping.ts`).toHaveProperty(code);
+  });
+
+  it.each(choicePairs)("choice %s / %s has a plain-language label", (scenario, choice) => {
+    expect(
+      CHOICE_LABELS[scenario],
+      `add the "${scenario}" scenario to CHOICE_LABELS in mapping.ts`,
+    ).toHaveProperty(choice);
+    // The resolver never reaches its raw-code fallback for a known choice — it returns the label.
+    expect(labelForChoice(scenario, choice).label).not.toBe(choice);
   });
 
   it.each(vocabulary.canonical_paths)("canonical path %s has a plain-language label", (path) => {

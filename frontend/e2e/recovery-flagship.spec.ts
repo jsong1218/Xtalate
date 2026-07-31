@@ -59,8 +59,8 @@ test("upload → convert → pause → decide → preview → record, the trajec
   // 5. Decide both. Which frame survives: the last (the converged geometry of a relaxation). What
   //    lattice to write: an axis-aligned bounding box with 5 Å of padding. No option was preselected,
   //    so each of these is a deliberate act.
-  await page.getByRole("radio", { name: /^last$/ }).check();
-  await page.getByRole("radio", { name: /bounding_box/ }).check();
+  await page.getByRole("radio", { name: /Keep the last frame/ }).check();
+  await page.getByRole("radio", { name: /Build a box around the atoms/ }).check();
   await page.getByLabel(/padding_ang/).fill("5");
 
   // 6. With every decision made, the wizard fetches the engine's **exact** Assumption sentences and

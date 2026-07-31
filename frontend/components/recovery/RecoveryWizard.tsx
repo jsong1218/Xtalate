@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DecisionCard } from "./DecisionCard";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { buildRecoveryBody, isWizardComplete, type WizardState } from "@/lib/recovery/choices";
+import { orderedScenarios } from "@/lib/recovery/order";
+import { labelForScenario } from "@/lib/mapping";
 import {
   previewRecovery as defaultPreview,
   submitRecovery as defaultSubmit,
@@ -13,52 +15,37 @@ import {
 import { toErrorEnvelope } from "@/lib/api/useInspection";
 import type {
   AwaitingRecoveryBlock,
-  AwaitingScenario,
   ErrorEnvelope as ErrorEnvelopeModel,
 } from "@/lib/report/types";
 
 /**
- * The Recovery Workflow wizard (MASTER_SPEC Part 7 §3; slice M31-S1).
+ * The Recovery Workflow wizard (MASTER_SPEC Part 7 §3; slice M31-S1; v0.7 review R1).
  *
  * A paused job's `awaiting_recovery` block carries one unresolved scenario per decision the
- * conversion still owes. The wizard renders a {@link DecisionCard} for each — **in engine dependency
- * order**, so a downstream decision (the box computed on a chosen frame) reads below the one it
- * depends on — collects the user's `{choice, parameters}` decisions, and turns them into the exact
- * `POST …/recovery` body the engine validated in v0.5. It never invents an option and never
+ * conversion still owes. The wizard renders a {@link DecisionCard} for each — **in engine resolution
+ * order** (`lib/recovery/order.ts`, kept in lockstep with the engine's own published order, so a
+ * downstream decision reads below the one it depends on and a parse-time scenario sorts ahead of a
+ * conversion-time one), collects the user's `{choice, parameters}` decisions, and turns them into the
+ * exact `POST …/recovery` body the engine validated in v0.5. It never invents an option and never
  * preselects one; those invariants live in the card and are proven there.
  *
  * Two engine round-trips, both injectable for tests:
  *  - **preview** (`POST …/recovery/preview`): once every decision is complete (recovery is
  *    all-or-nothing), the wizard fetches the *exact* Assumption sentences the resume would record and
  *    hands each card its own, so the user confirms the real provenance, not a paraphrase (P4).
+ *    Confirm is gated on that preview arriving for the *current* choices: consent and provenance are
+ *    the same artifact, so a failed or missing preview blocks confirmation and says so — it never
+ *    lets the user commit to a record they were never shown.
  *  - **submit** (`POST …/recovery`): on confirm, resumes the job. The result is the server's next
  *    envelope (re-paused or completed) or its error body — an `INVALID_RECOVERY_CHOICE` renders with
  *    its `offered_choices` through the one error component, never coerced.
  *
- * This slice renders the cards, the preview, and the confirm submit; the page framing (the deadline,
- * the pre-flight chips) and the first-class "Cancel conversion" decline are the M31-S2 wrapper.
+ * The framing (the deadline, the pre-flight chips) and the first-class "Cancel conversion" decline
+ * live in the {@link RecoveryStep} wrapper, so the user is never trapped even when a preview fails.
  */
 
-//: Engine recovery dependency order (`xtalate.recovery.engine._DEP_ORDER`). A scenario the engine
-//: does not list (a future plugin's) sorts after the known ones, keeping its block order.
-const DEP_ORDER = [
-  "frame_selection",
-  "constraint_representation",
-  "missing_lattice",
-  "missing_masses",
-  "missing_velocities",
-];
-
-function orderedScenarios(scenarios: AwaitingScenario[]): AwaitingScenario[] {
-  const rank = (scenario: AwaitingScenario, index: number) => {
-    const known = DEP_ORDER.indexOf(scenario.scenario);
-    return known === -1 ? DEP_ORDER.length + index : known;
-  };
-  return scenarios
-    .map((scenario, index) => ({ scenario, key: rank(scenario, index) }))
-    .sort((a, b) => a.key - b.key)
-    .map((entry) => entry.scenario);
-}
+/** The preview lifecycle for the current complete choice set — the gate on Confirm (P4). */
+type PreviewState = "idle" | "loading" | "ready" | "error";
 
 export function RecoveryWizard({
   block,
@@ -84,6 +71,10 @@ export function RecoveryWizard({
 
   const [state, setState] = useState<WizardState>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [previewState, setPreviewState] = useState<PreviewState>("idle");
+  const [previewError, setPreviewError] = useState<ErrorEnvelopeModel | null>(null);
+  const [previewUnresolved, setPreviewUnresolved] = useState<string[]>([]);
+  const [previewNonce, setPreviewNonce] = useState(0);
   const [submitError, setSubmitError] = useState<ErrorEnvelopeModel | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -96,26 +87,52 @@ export function RecoveryWizard({
   useEffect(() => {
     if (bodyKey === null) {
       setPreviews({});
+      setPreviewState("idle");
+      setPreviewError(null);
+      setPreviewUnresolved([]);
       return;
     }
-    // Debounced so a live parameter edit does not re-parse the source on every keystroke.
     let cancelled = false;
+    setPreviewState("loading");
+    setPreviewError(null);
+    setPreviewUnresolved([]);
+    // Debounced so a live parameter edit does not re-parse the source on every keystroke.
     const handle = setTimeout(async () => {
       const result = await preview(jobId, buildRecoveryBody(stateRef.current));
       if (cancelled) return;
       if (result.ok) {
+        // Recovery is all-or-nothing: a complete body should preview every scenario. If the engine
+        // still names any `unresolved`, the record is not fully in view — block confirm and say so
+        // rather than presenting a partial preview as the whole (P4).
+        const unresolved = result.preview.unresolved ?? [];
+        if (unresolved.length > 0) {
+          setPreviewUnresolved(unresolved);
+          setPreviewState("error");
+          return;
+        }
         const mapped: Record<string, string> = {};
         for (const entry of result.preview.previews ?? []) {
           if (entry.description) mapped[entry.scenario] = entry.description;
         }
         setPreviews(mapped);
+        setPreviewState("ready");
+      } else {
+        setPreviews({});
+        setPreviewError(
+          toErrorEnvelope(
+            result.error,
+            "RECOVERY_PREVIEW_FAILED",
+            "The exact Assumption text could not be fetched.",
+          ),
+        );
+        setPreviewState("error");
       }
     }, 250);
     return () => {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [bodyKey, jobId, preview]);
+  }, [bodyKey, previewNonce, jobId, preview]);
 
   const setDecision = (scenario: string, decision: RecoveryDecision) => {
     setState((prev) => ({ ...prev, [scenario]: decision }));
@@ -135,6 +152,8 @@ export function RecoveryWizard({
     }
   };
 
+  const canConfirm = complete && previewState === "ready" && !submitting;
+
   return (
     <div className="space-y-4" data-testid="recovery-wizard">
       <div className="space-y-3">
@@ -149,12 +168,47 @@ export function RecoveryWizard({
         ))}
       </div>
 
+      {/* The record must be in view before consent (P4). While it loads, Confirm waits; if it cannot
+          be fetched, we say so — nothing has been recorded — and offer a retry, never a silent commit. */}
+      {complete && previewState === "loading" ? (
+        <p className="text-sm text-slate-600" data-testid="preview-loading">
+          Checking the exact wording that will be recorded…
+        </p>
+      ) : null}
+
+      {complete && previewState === "error" ? (
+        <div
+          role="status"
+          data-testid="preview-error"
+          className="space-y-2 rounded-md border border-cb-assumption bg-cb-assumption-bg p-3"
+        >
+          <p className="text-sm font-medium text-slate-900">
+            The exact Assumption text could not be fetched — nothing has been recorded, and the
+            conversion has not resumed.
+          </p>
+          {previewUnresolved.length > 0 ? (
+            <p className="text-sm text-slate-700">
+              The engine still needs a decision for:{" "}
+              {previewUnresolved.map((code) => labelForScenario(code).label).join(", ")}.
+            </p>
+          ) : null}
+          {previewError ? <ErrorEnvelope envelope={previewError} /> : null}
+          <button
+            type="button"
+            onClick={() => setPreviewNonce((n) => n + 1)}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Try previewing again
+          </button>
+        </div>
+      ) : null}
+
       {submitError ? <ErrorEnvelope envelope={submitError} /> : null}
 
       <button
         type="button"
         onClick={handleConfirm}
-        disabled={!complete || submitting}
+        disabled={!canConfirm}
         className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
       >
         {submitting ? "Resuming…" : "Confirm and convert"}

@@ -64,6 +64,19 @@ describe("DecisionCard", () => {
     expect(screen.queryByRole("radio", { name: /non_periodic/ })).not.toBeInTheDocument();
   });
 
+  it("labels each option in plain language with its machine code beside it (§3.2/§3.3)", () => {
+    renderCard(lattice);
+    // The §3.2 card template wording, not the raw code, is what the user reads…
+    expect(screen.getByText("Build a box around the atoms")).toBeInTheDocument();
+    expect(screen.getByText("Enter lattice vectors manually")).toBeInTheDocument();
+    // …and the machine code stays one glance away so the report/API remain correlatable (§3.3).
+    expect(screen.getByText("bounding_box")).toBeInTheDocument();
+    // The radio's accessible name carries both, so a code-based query still resolves the control.
+    expect(
+      screen.getByRole("radio", { name: /Build a box around the atoms/ }),
+    ).toBeInTheDocument();
+  });
+
   it("preselects NO option — every radio starts unchecked", () => {
     renderCard(lattice);
     for (const radio of screen.getAllByRole("radio")) {

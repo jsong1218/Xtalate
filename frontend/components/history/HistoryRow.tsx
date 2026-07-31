@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LossTag } from "@/components/loss/icons";
 import { SummaryCountChips } from "@/components/report/SummaryChips";
+import { formatUtc } from "@/lib/format/datetime";
 import { historyStatus, type HistoryItem } from "@/lib/history/status";
 import { DeleteFileControl, type RetentionPolicy } from "./DeleteFileControl";
 
@@ -24,17 +25,6 @@ function endpointLabel(endpoint: { format_id?: unknown; filename?: unknown }): {
   return { formatId, filename };
 }
 
-function formatWhen(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  // UTC + explicit locale so the rendered date is deterministic, not the viewer's timezone.
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(date);
-}
-
 export function HistoryRow({
   item,
   retention,
@@ -51,7 +41,7 @@ export function HistoryRow({
   return (
     <tr data-testid={`history-row-${item.conversion_id}`} className="border-t border-slate-200 align-top">
       <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-600">
-        <time dateTime={item.created_at}>{formatWhen(item.created_at)}</time>
+        <time dateTime={item.created_at}>{formatUtc(item.created_at)}</time>
       </td>
 
       <td className="px-3 py-3 text-sm">

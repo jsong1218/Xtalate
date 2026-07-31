@@ -59,6 +59,53 @@ export const SCENARIO_LABELS: Record<string, Labeled> = {
   },
 };
 
+/**
+ * Recovery *choice* codes → plain labels, scenario-scoped (Part 7 §3.2). The engine offers each
+ * scenario a set of machine choice codes (`bounding_box`, `maxwell_boltzmann`, …); §3.2's binding
+ * card template says the radio reads in plain language ("Build a box around the atoms") with the
+ * machine code one disclosure away (§3.3), so wording that needs the scenario's context lives here
+ * keyed by `[scenario][choice]`. Its coverage is lint-enforced against `docs/vocabulary.json`'s
+ * `choice_codes` (`mapping.coverage.test.ts`), so a new engine choice fails CI here rather than
+ * showing a raw code on a decision card.
+ */
+export const CHOICE_LABELS: Record<string, Record<string, Labeled>> = {
+  missing_lattice: {
+    manual_input: { label: "Enter lattice vectors manually" },
+    upload_reference: { label: "Take the cell from another file" },
+    bounding_box: { label: "Build a box around the atoms" },
+    non_periodic: { label: "Mark the structure as non-periodic" },
+  },
+  missing_species: {
+    species_map: { label: "Provide the atom symbols in order" },
+    upload_reference: { label: "Take the symbols from another file" },
+  },
+  missing_velocities: {
+    zero_init: { label: "Set all velocities to zero (at rest)" },
+    maxwell_boltzmann: { label: "Sample velocities at a temperature" },
+    upload_reference: { label: "Take velocities from another file" },
+    omit: { label: "Leave velocities out" },
+  },
+  missing_masses: {
+    standard_masses: { label: "Use standard atomic weights" },
+    manual_input: { label: "Enter masses manually" },
+  },
+  missing_energy: {},
+  frame_selection: {
+    first: { label: "Keep the first frame" },
+    last: { label: "Keep the last frame" },
+    index: { label: "Keep a specific frame" },
+    split_all: { label: "Write every frame to its own file" },
+  },
+  truncate_corrupt_tail: {
+    truncate: { label: "Keep the readable frames, drop the corrupt tail" },
+    abort: { label: "Stop — do not convert" },
+  },
+  constraint_representation: {
+    project: { label: "Keep the constraints the target can express" },
+    drop_all: { label: "Drop all constraints" },
+  },
+};
+
 /** Fixed canonical field paths (`FIXED_CANONICAL_PATHS`) → plain labels (Part 2 §3). */
 export const PATH_LABELS: Record<string, Labeled> = {
   "frame.time": { label: "Frame time" },
@@ -111,6 +158,15 @@ const CUSTOM_PATH_RE = /^(user_metadata\.custom_(?:global|per_atom|per_frame))\[
  */
 export function labelForScenario(code: string): Labeled {
   return SCENARIO_LABELS[code] ?? { label: code };
+}
+
+/**
+ * Plain label for a recovery *choice* within a scenario. Falls back to the raw choice code — a plugin
+ * scenario's option the built-in table does not name still renders (functional, never blank, P6), and
+ * the coverage lint keeps every known `(scenario, choice)` from reaching this fallback.
+ */
+export function labelForChoice(scenario: string, choice: string): Labeled {
+  return CHOICE_LABELS[scenario]?.[choice] ?? { label: choice };
 }
 
 /**

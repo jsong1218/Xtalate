@@ -45,6 +45,15 @@ _HINT_TO_SCENARIO = {
     "truncate_at_last_valid_frame": "truncate_corrupt_tail",
 }
 
+#: The parse-time recovery scenarios, in resolution-stage order (Part 4 §3.3). These resolve *ahead*
+#: of any conversion-time scenario, since they fire while the source is still parsed — so a pause
+#: mixing a parse-time scenario with a conversion-time one must render the parse-time card first.
+#: Derived from ``_HINT_TO_SCENARIO`` (single source, deduplicated, insertion-ordered) so the names
+#: are never re-typed; ``backend.vocabulary`` prepends this to the engine's conversion-time
+#: ``_DEP_ORDER`` to publish one resolution order the Web UI consumes (v0.7 review, F4). Only one
+#: parse-time hint fires per parse, so the intra-stage order is nominal but fixed for determinism.
+PARSE_TIME_SCENARIOS: tuple[str, ...] = tuple(dict.fromkeys(_HINT_TO_SCENARIO.values()))
+
 
 @dataclass
 class ParseRecovery:

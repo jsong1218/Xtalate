@@ -6,7 +6,7 @@ import { AdvisoryNote, type Advisory } from "./AdvisoryNote";
 import { AssumptionPreview } from "./AssumptionPreview";
 import { ParameterFields } from "./ParameterFields";
 import { WhyThisMatters } from "./WhyThisMatters";
-import { labelForPath, labelForScenario } from "@/lib/mapping";
+import { labelForChoice, labelForPath, labelForScenario } from "@/lib/mapping";
 import type { RecoveryDecision } from "@/lib/api/queries";
 import type { AwaitingScenario } from "@/lib/report/types";
 
@@ -96,8 +96,9 @@ export function DecisionCard({
           return (
             <div key={option.choice} className="rounded-md border border-slate-200 p-2">
               <div className="flex items-center gap-2">
-                {/* The radio's accessible name is only the choice code — the parameter hint sits
-                    outside the label so it never bleeds into the control's name. */}
+                {/* §3.2's card template: the radio reads in plain language, with the machine code kept
+                    beside it (§3.3, always correlatable) inside the label so both name the control.
+                    The parameter hint sits outside the label so it never bleeds into that name. */}
                 <label className="flex items-center gap-2">
                   <input
                     type="radio"
@@ -106,7 +107,12 @@ export function DecisionCard({
                     checked={active}
                     onChange={() => selectChoice(option.choice)}
                   />
-                  <code className="font-mono text-sm text-slate-800">{option.choice}</code>
+                  <span className="text-sm text-slate-800">
+                    {labelForChoice(scenario.scenario, option.choice).label}
+                  </span>
+                  <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-600">
+                    {option.choice}
+                  </code>
                 </label>
                 {params.length > 0 ? (
                   <span aria-hidden className="text-xs text-slate-500">
