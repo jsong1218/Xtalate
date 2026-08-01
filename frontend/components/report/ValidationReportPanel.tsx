@@ -148,8 +148,12 @@ export function ValidationReportPanel({ report }: { report: ValidationReport }) 
 
       <section aria-label="Checks">
         <ul className="divide-y divide-slate-100">
-          {report.checks.map((check) => (
-            <CheckRow key={check.check_id} check={check} />
+          {report.checks.map((check, i) => (
+            // `check_id`-plus-index, like `reparse_issues` below: a `check_id` alone is not
+            // guaranteed unique (a trajectory can run the same catalog check per frame), and a
+            // duplicate React key silently drops rows — a reported check must never be lost to a
+            // key collision (the v0.7 review). Rows are still in stable catalog order.
+            <CheckRow key={`${check.check_id}-${i}`} check={check} />
           ))}
         </ul>
       </section>

@@ -91,6 +91,14 @@ production your reverse proxy owns that prefix: route `/v1/*` to the API service
 to the Web UI. Terminate TLS at the proxy. The API's versioned path prefix plus permanent redirects
 keep clients insulated if the origin ever moves.
 
+> **Raise the proxy's body-size limit to match your upload ceiling.** Uploads pass *through* the
+> proxy, and most proxies cap request bodies well below Xtalate's `XTALATE_MAX_UPLOAD_BYTES` — nginx
+> defaults to **1 MB** (`client_max_body_size`), and several managed edges cap around 10 MB. If that
+> cap is lower than your upload ceiling, uploads fail at the proxy *before* they reach the API, so a
+> reader sees a transport error instead of the app's own `413 FILE_TOO_LARGE`. Set the proxy limit
+> to at least `XTALATE_MAX_UPLOAD_BYTES` (nginx: `client_max_body_size 100m;`; Caddy has no default
+> limit). Nothing inside Xtalate imposes a sub-100 MB cap — if uploads fail small, this is the knob.
+
 The Web UI and the static docs site are built and served at this edge — there is no production
 frontend image in v0.7. Build them from the `frontend/` project (`npm ci && npm run build && npm run
 start`, or a static export) and serve behind the same proxy so the whole surface shares one origin.

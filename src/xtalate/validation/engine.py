@@ -30,7 +30,7 @@ import numpy as np
 from xtalate._time import utc_now
 from xtalate.capabilities import Registry
 from xtalate.schema import CanonicalObject
-from xtalate.sdk import ParseError, ParseIssue
+from xtalate.sdk import ParseError, ParseIssue, collapse_frame_issues
 from xtalate.validation._shared import AGGREGATE as _AGGREGATE
 from xtalate.validation._shared import NUMERIC_FIELDS as _NUMERIC_FIELDS
 from xtalate.validation._shared import RANK as _RANK
@@ -155,7 +155,9 @@ class ValidationEngine:
             status=_AGGREGATE[worst],
             checks=checks,
             tolerance_profile=tolerance.as_dict(),  # type: ignore[arg-type]
-            reparse_issues=reparse_issues,
+            # A re-parse of a long trajectory output re-raises any per-frame warning once per frame;
+            # collapse those to one naming the range, as the Discovery/Conversion reports do (F9).
+            reparse_issues=collapse_frame_issues(reparse_issues),
             schema_version=schema_version,
         )
 

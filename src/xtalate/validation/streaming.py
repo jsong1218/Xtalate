@@ -26,7 +26,7 @@ import numpy as np
 
 from xtalate._time import utc_now
 from xtalate.schema import Frame, PresenceAccumulator
-from xtalate.sdk import ParseError, StreamFrame, StreamHeader, stream_of
+from xtalate.sdk import ParseError, StreamFrame, StreamHeader, collapse_frame_issues, stream_of
 from xtalate.validation._shared import AGGREGATE as _AGGREGATE
 from xtalate.validation._shared import NUMERIC_FIELDS as _NUMERIC_FIELDS
 from xtalate.validation._shared import RANK as _RANK
@@ -233,7 +233,7 @@ class StreamingValidator:
             status=_AGGREGATE[worst],
             checks=checks,
             tolerance_profile=self._tol.as_dict(),  # type: ignore[arg-type]
-            reparse_issues=reparse_issues,
+            reparse_issues=collapse_frame_issues(reparse_issues),
             schema_version=schema_version,
         )
 
@@ -593,7 +593,7 @@ def _reparse_fail_report(
             )
         ],
         tolerance_profile=tolerance.as_dict(),  # type: ignore[arg-type]
-        reparse_issues=exc.issues,
+        reparse_issues=collapse_frame_issues(exc.issues),
         schema_version=schema_version,
     )
 
