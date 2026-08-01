@@ -64,9 +64,12 @@ describe("HistoryTableView (Part 7 §2.6, generated from /v1/history)", () => {
   it("offers open-record, re-convert, and delete on a row whose upload is still live", () => {
     renderView();
     const r = row("conv-completed-pass");
+    // Open record threads the live `file_id` forward (F7), so a refused record reached from here can
+    // resolve-and-retry the upload that is demonstrably still alive rather than degrading to a fresh
+    // upload prompt.
     expect(within(r).getByRole("link", { name: /open record/i })).toHaveAttribute(
       "href",
-      "/conversions/conv-completed-pass",
+      "/conversions/conv-completed-pass?file_id=file-1",
     );
     expect(within(r).getByRole("link", { name: /re-?convert/i })).toHaveAttribute(
       "href",
@@ -78,7 +81,7 @@ describe("HistoryTableView (Part 7 §2.6, generated from /v1/history)", () => {
   it("keeps the report readable on an expired row while honestly dropping re-convert and delete", () => {
     renderView();
     const r = row("conv-expired");
-    // The report survives the bytes: open-record still resolves.
+    // The report survives the bytes: open-record still resolves — bare, with no `file_id` to thread.
     expect(within(r).getByRole("link", { name: /open record/i })).toHaveAttribute(
       "href",
       "/conversions/conv-expired",

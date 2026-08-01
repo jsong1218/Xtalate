@@ -288,6 +288,18 @@ curl -s "$BASE/download/$CID" -o out.POSCAR
 curl -s "$BASE/conversions/$CID" | jq '.conversion_report.status, .validation_report.status'
 ```
 
+Before you resume, you can **preview the exact Assumptions your choices would record** — without
+advancing the job — by POSTing the same `{ choices }` body to
+`/v1/jobs/{job_id}/recovery/preview`. It returns `{ previews: [{ scenario, choice, parameters,
+description }…], unresolved: [<scenario>…] }`, where each `description` is byte-identical to the
+Assumption the resume will write, because the preview runs the engine's real apply path and returns
+its sentence verbatim (the browser cannot reproduce it — that is the point). Recovery is
+all-or-nothing: an incomplete choice set returns no `previews` and names the scenarios still
+`unresolved` instead. The preview writes nothing, enqueues nothing, and leaves the job paused and
+answerable; it shares the resume's guards (`404`, `409 JOB_NOT_AWAITING_RECOVERY`,
+`422 INVALID_RECOVERY_CHOICE`). This is how the Web UI shows the record you are about to create
+before you confirm it — consent and provenance are the same artifact.
+
 The `options` object also accepts `tolerance_profile` — a named profile (`default`/`strict`/`loose`)
 or a full custom tolerance table; an unknown name or a malformed table is refused at submit as
 `400 MALFORMED_REQUEST` carrying the library's own reason, before a job exists (D93).

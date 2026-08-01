@@ -79,6 +79,7 @@ from xtalate.sdk import (
     ParseIssue,
     StreamFrame,
     StreamHeader,
+    collapse_frame_issues,
 )
 from xtalate.validation import ToleranceProfile, ValidationEngine, ValidationReport
 
@@ -1143,9 +1144,13 @@ def _dedupe_removed(entries: list[RemovedEntry]) -> list[RemovedEntry]:
 def _parse_warnings(issues: list[ParseIssue]) -> list[Any]:
     from xtalate.conversion.report import ReportWarning
 
+    # Aggregate per-frame issues before flattening to warnings: a carried-verbatim result on a
+    # 1000-frame trajectory is one warning naming the frame range, not 1000 identical lines
+    # (Part 3 §5; the v0.7 review, F9). The range rides in the message because ReportWarning has
+    # no location field — collapse_frame_issues already folded it there.
     return [
         ReportWarning(code=i.code, message=i.message, source="parse")
-        for i in issues
+        for i in collapse_frame_issues(issues)
         if i.severity == "warning"
     ]
 

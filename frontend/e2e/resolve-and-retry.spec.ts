@@ -53,8 +53,8 @@ test("a refused record resolves and retries through the cards to a completed con
   await expect(page.getByTestId("decision-card")).toHaveCount(2);
 
   // 4. Decide both, exactly as the flagship does: the last frame, an axis-aligned bounding box + 5 Å.
-  await page.getByRole("radio", { name: /^last$/ }).check();
-  await page.getByRole("radio", { name: /bounding_box/ }).check();
+  await page.getByRole("radio", { name: /Keep the last frame/ }).check();
+  await page.getByRole("radio", { name: /Build a box around the atoms/ }).check();
   await page.getByLabel(/padding_ang/).fill("5");
 
   // 5. Confirm → the job resumes and completes; the durable record is one link away.

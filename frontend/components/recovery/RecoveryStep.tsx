@@ -3,6 +3,7 @@
 import { LossIcon } from "@/components/loss/icons";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { SummaryChips } from "@/components/report/SummaryChips";
+import { formatUtc } from "@/lib/format/datetime";
 import { RecoveryWizard } from "./RecoveryWizard";
 import {
   previewRecovery as defaultPreview,
@@ -91,7 +92,7 @@ export function RecoveryStep({
             <>
               This pause is held until{" "}
               <time dateTime={expiresAt} className="font-medium text-slate-900">
-                {expiresAt}
+                {formatUtc(expiresAt)}
               </time>
               .{" "}
             </>

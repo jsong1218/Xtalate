@@ -41,10 +41,26 @@ function okPreview(descriptions: Record<string, string>) {
     },
   }));
 }
+/** A preview call that always fails — the transient outage the confirm gate must not ignore (F5). */
+function failingPreview() {
+  return vi.fn(async () => ({
+    ok: false as const,
+    error: {
+      error: {
+        code: "PREVIEW_UNAVAILABLE",
+        message: "The preview service is unavailable.",
+        details: {},
+        request_id: "req_p",
+        documentation_url: "",
+      },
+    },
+  }));
+}
 
+// The card radios read in plain language now (§3.2), so match by the visible label, not the code.
 function fillFlagship() {
-  fireEvent.click(screen.getByRole("radio", { name: /^last$/ }));
-  fireEvent.click(screen.getByRole("radio", { name: /bounding_box/ }));
+  fireEvent.click(screen.getByRole("radio", { name: /Keep the last frame/ }));
+  fireEvent.click(screen.getByRole("radio", { name: /Build a box around the atoms/ }));
   fireEvent.change(screen.getByLabelText(/padding_ang/), { target: { value: "5" } });
 }
 
@@ -69,12 +85,21 @@ describe("RecoveryWizard", () => {
     for (const radio of screen.getAllByRole("radio")) expect(radio).not.toBeChecked();
   });
 
-  it("disables Confirm until every decision is complete", () => {
-    render(<RecoveryWizard block={block} jobId={envelope.job_id} submit={okSubmit()} />);
+  it("disables Confirm until every decision is complete and previewed", async () => {
+    render(
+      <RecoveryWizard
+        block={block}
+        jobId={envelope.job_id}
+        submit={okSubmit()}
+        preview={okPreview({})}
+      />,
+    );
     const confirm = screen.getByRole("button", { name: /confirm/i });
     expect(confirm).toBeDisabled();
     fillFlagship();
-    expect(confirm).toBeEnabled();
+    // Still disabled until the preview for the current choices arrives — consent needs the record.
+    expect(confirm).toBeDisabled();
+    await waitFor(() => expect(confirm).toBeEnabled());
   });
 
   it("submits exactly the {scenario:{choice,parameters}} body the engine validates", async () => {
@@ -85,11 +110,14 @@ describe("RecoveryWizard", () => {
         block={block}
         jobId={envelope.job_id}
         submit={submit}
+        preview={okPreview({})}
         onResumed={onResumed}
       />,
     );
     fillFlagship();
-    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    const confirm = screen.getByRole("button", { name: /confirm/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
 
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
     expect(submit).toHaveBeenCalledWith(envelope.job_id, {
@@ -97,6 +125,63 @@ describe("RecoveryWizard", () => {
       missing_lattice: { choice: "bounding_box", parameters: { padding_ang: 5 } },
     });
     await waitFor(() => expect(onResumed).toHaveBeenCalledWith(envelope));
+  });
+
+  it("blocks Confirm and names the failure when the preview cannot be fetched (F5)", async () => {
+    render(
+      <RecoveryWizard
+        block={block}
+        jobId={envelope.job_id}
+        submit={okSubmit()}
+        preview={failingPreview()}
+      />,
+    );
+    fillFlagship();
+    const notice = await screen.findByTestId("preview-error");
+    expect(notice).toHaveTextContent(/nothing has been recorded/i);
+    expect(within(notice).getByText("PREVIEW_UNAVAILABLE")).toBeInTheDocument();
+    // The record is not in view, so the user cannot commit to it.
+    expect(screen.getByRole("button", { name: /confirm/i })).toBeDisabled();
+  });
+
+  it("recovers when the preview retry succeeds — Confirm then enables (F5)", async () => {
+    const preview = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false as const,
+        error: { error: { code: "PREVIEW_UNAVAILABLE", message: "down", details: {}, request_id: "r", documentation_url: "" } },
+      })
+      .mockResolvedValue({
+        ok: true as const,
+        preview: { previews: [], unresolved: [] },
+      });
+    render(
+      <RecoveryWizard
+        block={block}
+        jobId={envelope.job_id}
+        submit={okSubmit()}
+        preview={preview}
+      />,
+    );
+    fillFlagship();
+    const notice = await screen.findByTestId("preview-error");
+    fireEvent.click(within(notice).getByRole("button", { name: /try previewing again/i }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /confirm/i })).toBeEnabled());
+  });
+
+  it("blocks Confirm when the engine still reports an unresolved scenario", async () => {
+    const preview = vi.fn(async () => ({
+      ok: true as const,
+      preview: { previews: [], unresolved: ["missing_lattice"] },
+    }));
+    render(
+      <RecoveryWizard block={block} jobId={envelope.job_id} submit={okSubmit()} preview={preview} />,
+    );
+    fillFlagship();
+    const notice = await screen.findByTestId("preview-error");
+    // Named in plain language, not as a raw code.
+    expect(notice).toHaveTextContent(/No simulation cell/);
+    expect(screen.getByRole("button", { name: /confirm/i })).toBeDisabled();
   });
 
   it("previews the exact Assumption sentences once the decisions are complete", async () => {
@@ -134,9 +219,18 @@ describe("RecoveryWizard", () => {
         },
       },
     }));
-    render(<RecoveryWizard block={block} jobId={envelope.job_id} submit={submit} />);
+    render(
+      <RecoveryWizard
+        block={block}
+        jobId={envelope.job_id}
+        submit={submit}
+        preview={okPreview({})}
+      />,
+    );
     fillFlagship();
-    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    const confirm = screen.getByRole("button", { name: /confirm/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
 
     const alert = await screen.findByRole("alert");
     expect(within(alert).getByText("INVALID_RECOVERY_CHOICE")).toBeInTheDocument();

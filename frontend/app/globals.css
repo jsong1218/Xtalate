@@ -21,7 +21,11 @@
 :root {
   /* Foreground / icon colors, one per §4 meaning (on the light surface). */
   --cb-preserve: #15803d; /* green  — present / preserved / check passed        */
-  --cb-absent-format: #6b7280; /* gray   — absent, format cannot express (calm) */
+  /* Slate, not gray: on the capabilities grid (Part 7 §2.7) a ✓/✗ column of green vs pale gray was
+     too low-contrast to scan (the v0.7 review). Darkened to slate so ✗ reads clearly against ✓ —
+     still visually *calm* (not red: "the format cannot express this" is neutral, not a loss; red
+     stays reserved for `removed`/`fail`). Green is already at the brightest that clears WCAG AA. */
+  --cb-absent-format: #334155; /* slate  — absent, format cannot express (calm) */
   --cb-absent-file: #475569; /* slate  — absent, file simply lacks it           */
   --cb-removed: #b91c1c; /* red    — removed by conversion                      */
   --cb-assumption: #6d28d9; /* violet — assumption / supplied (third thing)     */

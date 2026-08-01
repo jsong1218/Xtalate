@@ -18,6 +18,16 @@ describe("ValidationReportPanel (Part 5 §3 / Part 7 §4.4)", () => {
     expect(screen.getAllByTestId("check-row")).toHaveLength(report.checks.length);
   });
 
+  it("renders every check even when two share a check_id — no row lost to a key collision", () => {
+    // Rows are keyed by check_id + index (the v0.7 review): a check_id alone is not guaranteed
+    // unique across a list, and a duplicate React key silently drops a sibling. Duplicating a
+    // check_id must still render both rows — a reported check is never dropped by the key.
+    const dup = report.checks[0];
+    const withDupes: ValidationReport = { ...report, checks: [...report.checks, dup] };
+    render(<ValidationReportPanel report={withDupes} />);
+    expect(screen.getAllByTestId("check-row")).toHaveLength(report.checks.length + 1);
+  });
+
   it("shows each check message verbatim, never paraphrased", () => {
     render(<ValidationReportPanel report={report} />);
     for (const check of report.checks) {

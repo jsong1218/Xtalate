@@ -22,7 +22,7 @@ from xtalate.capabilities import Registry
 from xtalate.discovery.report import DiscoveryReport, FieldPresenceEntry
 from xtalate.discovery.sniffer import Sniffer, SniffResult
 from xtalate.schema import CanonicalObject
-from xtalate.sdk import CapabilityLevel, ParseError, ParseIssue
+from xtalate.sdk import CapabilityLevel, ParseError, ParseIssue, collapse_frame_issues
 
 # The canonical scientific leaf paths the Discovery Report is complete over (Part 3 §6.2, §6.3):
 # Part 2 §3.3–§3.7 plus frame.time and trajectory.timestep, in the §6.3 worked-example order.
@@ -99,7 +99,10 @@ class DiscoveryEngine:
             structure=_structure(canonical),
             fields=self._fields(canonical, format_id),
             extras=_extras(canonical),
-            issues=list(result.issues),
+            # A per-frame condition (a carried calculator result) yields one issue per frame; on a
+            # long trajectory that is thousands of identical lines. Collapse them to one naming the
+            # frame range so the loss is reported once and in full (Part 3 §5; the v0.7 review, F9).
+            issues=collapse_frame_issues(list(result.issues)),
             schema_version=canonical.schema_version,
         )
 

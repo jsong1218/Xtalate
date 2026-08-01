@@ -8,7 +8,7 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ## [Unreleased]
 
-## [0.7.0] — 2026-07-30
+## [0.7.0] — 2026-07-31
 
 v0.7 — **"Feature-complete."** The version that finishes the product surface of Parts 6–7 and cuts
 the release that declares them done — **without** v1.0's freeze. The Web UI grows from v0.6's honest
@@ -83,6 +83,49 @@ until v1.0** (risk R12), and the canonical schema stays `0.1.0`.
   Prometheus `/metrics` endpoint and its alerts. The **zero-SaaS review** (Part 9 §5.4) — every feature
   works self-hosted with no external service dependency — is walked as an auditable checklist on the
   guide, not merely asserted.
+
+### Fixed — the v0.7 architectural review
+
+Folded into 0.7.0 before the tag (the review-inside-the-version rule, `docs/private/DECISIONS.md`
+D64); see D100–D111 and MASTER_SPEC Revisions 1.26–1.28.
+
+- **The recovery wizard speaks the Part 7 §3.2 design language (D106).** Decision-card options show
+  the plain-language labels ("Build a box around the atoms") with the machine code beside them, from a
+  coverage-linted table; card order is now the engine's own resolution order, **exported** through
+  `docs/vocabulary.json` and consumed from it rather than a hand-copied array — which also fixed a
+  live bug where a `missing_species` pause rendered *last* instead of first. A failed Assumption
+  preview is an explicit rendered state, and "Confirm and convert" is gated on a successful preview of
+  the current choices, so consent is never taken without the record in view.
+- **Resolve-and-retry keeps the refused record's own semantics (D107).** "Resolve and retry" now
+  threads the refused record's **own** `mode` and tolerance profile — read from the fields the
+  provenance strip renders — so a strict-mode refusal re-runs strict, not silently re-thresholded to
+  the permissive default; and history's "Open record" threads the live `file_id` forward so a refused
+  record reached from history can retry the upload still in hand instead of degrading to a fresh
+  upload.
+- **The per-frame warning flood is one line, not a thousand (D108).** A trajectory carrying a
+  calculator result with no canonical home (`ASE_TRAJ_UNMAPPED_RESULT_CARRIED`) emitted one identical
+  warning **per frame** — 1000 frames, 1000 lines — on the CLI's `inspect`, the Conversion Report's
+  `warnings`, and the Web UI. A new `sdk.collapse_frame_issues`, applied at the discovery, conversion,
+  and validation report-assembly seams, collapses them to a single line naming the frame range
+  (`… (frames 0-999)`): the loss reported once and in full (P1), never a thousand times.
+- **The capabilities grid's ✓/✗ columns are legible (D109).** The "format cannot express this" glyph
+  darkened from pale gray to slate for a clear contrast against the green "full" glyph — still
+  visually calm, with red kept reserved for `removed`/`fail` loss (the §4 vocabulary is unchanged; the
+  green is already at the brightest that clears the automated WCAG-AA gate).
+- **A validation check row can't be lost to a React key collision (D110).** `ValidationReportPanel`
+  and `AckGate` keyed rows by `check_id` alone; a duplicate key silently drops a sibling. Rows are now
+  keyed by `check_id` + index (as the same files already do for `reparse_issues`), with a regression
+  test — a reported fidelity check can never vanish from the panel that exists to show it.
+- **The upload cap is documented as the operator's proxy, not miscoded (D111).** A reported sub-10 MB
+  upload failure is a reverse proxy's `client_max_body_size` (nginx defaults to 1 MB), not Xtalate —
+  which caps at 100 MB and imposes nothing smaller. The self-hosting guide now tells operators to
+  raise the proxy limit to `XTALATE_MAX_UPLOAD_BYTES`.
+- **The version's record ships with the code (F1/F2; D100–D105, Revisions 1.26–1.27).** v0.7 (M31–M34)
+  had shipped with no D-log entries and no spec revisions, and the live `recovery/preview` endpoint
+  existed only in `docs/openapi.json`; the record is backfilled and the endpoint documented into the
+  spec (Part 6 §2, §3.2) and `docs/API.md`. A new standing rule closes the thrice-observed gap: a
+  milestone merge includes its D-log entry and, for a Part 6/7/9 surface, its spec revision, in the
+  same change.
 
 ### Notes
 

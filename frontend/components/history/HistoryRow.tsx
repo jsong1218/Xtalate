@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LossTag } from "@/components/loss/icons";
 import { SummaryCountChips } from "@/components/report/SummaryChips";
+import { formatUtc } from "@/lib/format/datetime";
 import { historyStatus, type HistoryItem } from "@/lib/history/status";
 import { DeleteFileControl, type RetentionPolicy } from "./DeleteFileControl";
 
@@ -14,6 +15,11 @@ import { DeleteFileControl, type RetentionPolicy } from "./DeleteFileControl";
  * the single gate on the two actions that need those bytes: re-convert and delete. When it is gone,
  * the row does not show a dead button or a link that would 404 — it states the reason ("source file
  * expired") and keeps the report reachable. That is reports-outlive-bytes, visible in a row.
+ *
+ * When the upload *is* still live, "Open record" threads that `file_id` forward as `?file_id=`
+ * (v0.7 review F7): the record page reads it (`useSearchParams`) because the record carries none of
+ * its own, and it is what lets a refused record's "resolve and retry" re-submit the same upload
+ * instead of degrading to a fresh-upload prompt for bytes that are demonstrably still here.
  */
 function endpointLabel(endpoint: { format_id?: unknown; filename?: unknown }): {
   formatId: string;
@@ -22,17 +28,6 @@ function endpointLabel(endpoint: { format_id?: unknown; filename?: unknown }): {
   const formatId = typeof endpoint.format_id === "string" ? endpoint.format_id : "unknown";
   const filename = typeof endpoint.filename === "string" ? endpoint.filename : null;
   return { formatId, filename };
-}
-
-function formatWhen(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  // UTC + explicit locale so the rendered date is deterministic, not the viewer's timezone.
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(date);
 }
 
 export function HistoryRow({
@@ -51,7 +46,7 @@ export function HistoryRow({
   return (
     <tr data-testid={`history-row-${item.conversion_id}`} className="border-t border-slate-200 align-top">
       <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-600">
-        <time dateTime={item.created_at}>{formatWhen(item.created_at)}</time>
+        <time dateTime={item.created_at}>{formatUtc(item.created_at)}</time>
       </td>
 
       <td className="px-3 py-3 text-sm">
@@ -76,7 +71,11 @@ export function HistoryRow({
       <td className="px-3 py-3">
         <div className="flex flex-col items-start gap-2">
           <Link
-            href={`/conversions/${item.conversion_id}`}
+            href={
+              item.file_id
+                ? `/conversions/${item.conversion_id}?file_id=${encodeURIComponent(item.file_id)}`
+                : `/conversions/${item.conversion_id}`
+            }
             className="text-sm text-slate-700 underline underline-offset-2 hover:text-slate-900"
           >
             Open record

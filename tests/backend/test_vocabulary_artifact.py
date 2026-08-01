@@ -14,8 +14,10 @@ deterministic across differently-stale editable installs, exactly like the OpenA
 from __future__ import annotations
 
 from backend.vocabulary import ARTIFACT_PATH, build_vocabulary, serialize
+from xtalate.conversion.parse_recovery import PARSE_TIME_SCENARIOS
 from xtalate.conversion.preflight import GENERIC_REQUIRED_FIELD_SCENARIO
-from xtalate.recovery.scenarios import SCENARIO_HAZARD
+from xtalate.recovery.engine import _DEP_ORDER
+from xtalate.recovery.scenarios import SCENARIO_HAZARD, available_options
 from xtalate.schema.presence import FIXED_CANONICAL_PATHS
 
 
@@ -41,3 +43,30 @@ def test_vocabulary_covers_every_engine_registry() -> None:
     # The dynamic per-key categories are the only non-fixed paths, and must be present so the
     # mapping table can label a `custom_global['k']` row by its category (Part 7 §3.3).
     assert document["custom_path_categories"], "custom_* categories must be exported for the lint"
+
+
+def test_choice_codes_cover_every_catalog_scenario() -> None:
+    """Every catalog scenario has a choice-code list including the choices the engine offers for the
+    concrete pair — the ground truth the frontend choice-label lint checks."""
+    document = build_vocabulary()
+    codes = document["choice_codes"]
+    assert set(codes) == set(SCENARIO_HAZARD)
+    # A directly-computed option is a subset of the exported union (unioned across flag combos), so
+    # the union can never omit a choice a real pause could show.
+    assert set(available_options("missing_lattice")) <= set(codes["missing_lattice"])
+    # The flag-gated choices only the union exposes are present: `non_periodic` (non-periodic
+    # target), `split_all` (multi-file target), `omit` (optional field, permissive mode).
+    assert "non_periodic" in codes["missing_lattice"]
+    assert "split_all" in codes["frame_selection"]
+    assert "omit" in codes["missing_velocities"]
+
+
+def test_resolution_order_is_parse_time_then_dependency_order() -> None:
+    """The exported order is the engine's own: the parse-time stage first (it precedes parsing),
+    then the conversion-time dependency order — from the engine constants, never re-typed here."""
+    document = build_vocabulary()
+    assert document["scenario_resolution_order"] == [*PARSE_TIME_SCENARIOS, *_DEP_ORDER]
+    # The parse-time scenarios sort ahead of every conversion-time one (the F4 correctness point).
+    order = document["scenario_resolution_order"]
+    assert order.index("missing_species") < order.index("frame_selection")
+    assert order.index("missing_species") < order.index("missing_lattice")

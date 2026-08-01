@@ -65,8 +65,11 @@ export function AckGate({ record }: { record: ConversionRecord }) {
 
       {failedChecks.length > 0 ? (
         <ul data-testid="failed-checks" className="space-y-1 pl-6 text-sm text-slate-800">
-          {failedChecks.map((check) => (
-            <li key={check.check_id}>
+          {failedChecks.map((check, i) => (
+            // Index-suffixed like the report panels: check_id alone is not a guaranteed-unique key
+            // (a trajectory can carry the same catalog check per frame), and a duplicate React key
+            // silently drops rows — never lose a reported check to a key collision (the v0.7 review).
+            <li key={`${check.check_id}-${i}`}>
               <span className="font-mono text-xs text-slate-600">{check.check_id}</span>{" "}
               {/* The engine's own sentence, verbatim — quantitative, never paraphrased. */}
               {check.message}

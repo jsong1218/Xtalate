@@ -28,6 +28,43 @@
     "user_metadata.annotations",
     "user_metadata.tags"
   ],
+  "choice_codes": {
+    "constraint_representation": [
+      "drop_all",
+      "project"
+    ],
+    "frame_selection": [
+      "first",
+      "index",
+      "last",
+      "split_all"
+    ],
+    "missing_energy": [],
+    "missing_lattice": [
+      "bounding_box",
+      "manual_input",
+      "non_periodic",
+      "upload_reference"
+    ],
+    "missing_masses": [
+      "manual_input",
+      "standard_masses"
+    ],
+    "missing_species": [
+      "species_map",
+      "upload_reference"
+    ],
+    "missing_velocities": [
+      "maxwell_boltzmann",
+      "omit",
+      "upload_reference",
+      "zero_init"
+    ],
+    "truncate_corrupt_tail": [
+      "abort",
+      "truncate"
+    ]
+  },
   "custom_path_categories": [
     "user_metadata.custom_global",
     "user_metadata.custom_per_atom",
@@ -43,5 +80,14 @@
     "missing_species",
     "missing_velocities",
     "truncate_corrupt_tail"
+  ],
+  "scenario_resolution_order": [
+    "missing_species",
+    "truncate_corrupt_tail",
+    "frame_selection",
+    "constraint_representation",
+    "missing_lattice",
+    "missing_masses",
+    "missing_velocities"
   ]
 }
