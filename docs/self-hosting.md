@@ -147,8 +147,9 @@ ask for. Wire whichever your platform supports:
 5. **Retention-sweep lag > 5 minutes** — the byte-expiry privacy promise is application-enforced;
    this alert is its tripwire.
 
-> **Note on the count.** The v0.7 plan text says "four alerts"; the constitution (Part 9 §6.1)
-> enumerates **five**, listed above. The spec is authoritative, so all five are documented.
+> **Note on the count.** There are **five**, per Part 9 §6.1 — retention-sweep lag (5) is easy to
+> forget precisely because it guards the least-visible promise (byte expiry), so it is called out
+> here explicitly.
 
 ## Zero-SaaS review
 
