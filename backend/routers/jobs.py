@@ -377,6 +377,10 @@ def preview_recovery(
             mode=options.get("mode", "permissive"),
             recovery_choices=resolved,
             parse_recovery=parsed,
+            # The service serves a single download, so the preview offers exactly the option set the
+            # eventual convert will honour — no `split_all` (matches the runner's convert). See
+            # `ConversionEngine.convert`'s `output_multifile` (Part 4 §3.3).
+            output_multifile=False,
         )
     except RecoveryError as exc:
         # A choice offered but ill-parameterized (a non-integer Maxwell–Boltzmann seed, an

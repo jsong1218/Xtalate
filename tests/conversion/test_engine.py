@@ -283,8 +283,34 @@ def test_split_all_writes_one_output_per_frame_and_validates_each() -> None:
     ]
     assert result.validation is not None
     assert result.validation.status in ("passed", "passed_with_warnings")
-    # Merged validation tags each check with the file it came from.
-    assert {c.measured.get("split_file_index") for c in result.validation.checks} == set(range(n))
+    # Merged validation collapses to one row per check kind (not one per file): no duplicate
+    # check_ids, and each row carries the file span so a failure stays locatable.
+    check_ids = [c.check_id for c in result.validation.checks]
+    assert len(check_ids) == len(set(check_ids)), "split validation must not repeat a check_id"
+    for c in result.validation.checks:
+        assert c.measured.get("split_files") == n
+        assert c.measured.get("worst_split_file_index") in range(n)
+
+
+def test_split_all_refused_when_output_sink_is_single_file() -> None:
+    # A single-file caller (the HTTP service, `output_multifile=False`) does not offer `split_all`,
+    # so a directly-supplied `split_all` choice fails the Recovery Engine's offered-set check — a
+    # caller error, never a completed conversion whose per-frame outputs the sink would drop.
+    from xtalate.recovery import RecoveryError
+
+    reg = _registry()
+    source = _parse(reg, "xyz", GOLDEN / "xyz" / "water-traj" / "water_traj.xyz")
+    with pytest.raises(RecoveryError, match="split_all"):
+        ConversionEngine(reg).convert(
+            source,
+            source_format_id="xyz",
+            target_format_id="poscar",
+            output_multifile=False,
+            recovery_choices={
+                "frame_selection": {"choice": "split_all"},
+                "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 2.0}},
+            },
+        )
 
 
 def test_upload_reference_lattice_end_to_end() -> None:

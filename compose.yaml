@@ -181,6 +181,11 @@ services:
       # Server-side (RSC) calls reach the backend in-cluster; the browser uses the same-origin proxy.
       INTERNAL_API_URL: http://backend:8000
       API_PROXY_TARGET: http://backend:8000
+      # The same upload ceiling the backend enforces: next.config.mjs sizes the rewrite proxy's
+      # body-clone limit above this, so an upload the backend would accept is never truncated at the
+      # proxy (Next's 10 MB default otherwise 500s any larger upload). The e2e lane exports a small
+      # value here just as it does for the backend, so both stay in agreement.
+      XTALATE_MAX_UPLOAD_BYTES: ${XTALATE_MAX_UPLOAD_BYTES:-104857600}
       # Reliable hot reload on bind mounts across host platforms.
       WATCHPACK_POLLING: "true"
     volumes:

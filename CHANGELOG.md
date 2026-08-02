@@ -8,7 +8,7 @@ tracked separately from the package version and reaches `1.0.0` only in the v1.0
 
 ## [Unreleased]
 
-## [0.7.0] — 2026-07-31
+## [0.7.0] — 2026-08-02
 
 v0.7 — **"Feature-complete."** The version that finishes the product surface of Parts 6–7 and cuts
 the release that declares them done — **without** v1.0's freeze. The Web UI grows from v0.6's honest
@@ -87,7 +87,7 @@ until v1.0** (risk R12), and the canonical schema stays `0.1.0`.
 ### Fixed — the v0.7 architectural review
 
 Folded into 0.7.0 before the tag (the review-inside-the-version rule, `docs/private/DECISIONS.md`
-D64); see D100–D111 and MASTER_SPEC Revisions 1.26–1.28.
+D64); see D100–D113 and MASTER_SPEC Revisions 1.26–1.29.
 
 - **The recovery wizard speaks the Part 7 §3.2 design language (D106).** Decision-card options show
   the plain-language labels ("Build a box around the atoms") with the machine code beside them, from a
@@ -116,10 +116,30 @@ D64); see D100–D111 and MASTER_SPEC Revisions 1.26–1.28.
   and `AckGate` keyed rows by `check_id` alone; a duplicate key silently drops a sibling. Rows are now
   keyed by `check_id` + index (as the same files already do for `reparse_issues`), with a regression
   test — a reported fidelity check can never vanish from the panel that exists to show it.
-- **The upload cap is documented as the operator's proxy, not miscoded (D111).** A reported sub-10 MB
-  upload failure is a reverse proxy's `client_max_body_size` (nginx defaults to 1 MB), not Xtalate —
-  which caps at 100 MB and imposes nothing smaller. The self-hosting guide now tells operators to
-  raise the proxy limit to `XTALATE_MAX_UPLOAD_BYTES`.
+- **The reverse proxy's body-size limit is documented (D111).** A self-hosted reverse proxy caps
+  request bodies (nginx defaults to 1 MB, `client_max_body_size`); the self-hosting guide tells
+  operators to raise it to `XTALATE_MAX_UPLOAD_BYTES`. _(D111's original claim — that "nothing inside
+  Xtalate imposes a sub-100 MB cap" — was mistaken and is corrected by D112 below: the Web UI's own
+  proxy did.)_
+- **Uploads over 10 MB no longer fail with an opaque 500 (D112).** Next.js caps a proxied request
+  body at **10 MB** by default (`middlewareClientMaxBodySize`); a larger upload was silently truncated,
+  the multipart stream to the API broke (`ECONNRESET`), and the browser saw a bare `500` — never the
+  app's own `413`. `next.config.mjs` now raises the proxy body ceiling above the backend's upload limit
+  (read from `XTALATE_MAX_UPLOAD_BYTES`, passed to the frontend in compose), so the **backend is the
+  sole gate**: an over-limit upload is refused with an honest `413 FILE_TOO_LARGE`, and an in-limit one
+  is never truncated (P1). This corrects the prior review's misdiagnosis (D111), which had blamed only
+  the operator's reverse proxy; the self-hosting guide now documents **both** limits.
+- **`split_all` is declined over HTTP instead of silently dropping every file (D113).** Splitting a
+  trajectory into one file per frame (`frame_selection=split_all`) was offered in the Web UI but the
+  single-download service had no multi-file delivery — the runner stored only `result.output` and
+  dropped the per-frame `result.outputs`, so the conversion "completed" with **nothing to download**,
+  and the merged validation carried every file's checks (1000 frames → 9000 rows, the "validation
+  printed a thousand times" flood). The engine now takes an `output_multifile` flag (Part 4 §3.3,
+  "offered when the job's output mode permits multiple files"): the CLI writes a directory and keeps
+  `split_all`; the HTTP service declares a single-file sink, so `split_all` is neither offered in the
+  recovery pause nor accepted if posted directly (it refuses as `INVALID_RECOVERY_CHOICE`, never a
+  dropped output). `_merge_split_validations` now collapses to one row per check (worst across files,
+  file span retained), fixing the CLI split report flood and the true root of D110's key collision.
 - **The version's record ships with the code (F1/F2; D100–D105, Revisions 1.26–1.27).** v0.7 (M31–M34)
   had shipped with no D-log entries and no spec revisions, and the live `recovery/preview` endpoint
   existed only in `docs/openapi.json`; the record is backfilled and the endpoint documented into the
