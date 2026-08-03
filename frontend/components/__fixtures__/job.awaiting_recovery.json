@@ -74,9 +74,6 @@
             "parameters_schema": {
               "frame_index": "integer, 0-based (0..frame_count-1)"
             }
-          },
-          {
-            "choice": "split_all"
           }
         ]
       },

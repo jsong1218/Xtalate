@@ -81,7 +81,7 @@ from xtalate.sdk import (
     StreamHeader,
     collapse_frame_issues,
 )
-from xtalate.validation import ToleranceProfile, ValidationEngine, ValidationReport
+from xtalate.validation import CheckResult, ToleranceProfile, ValidationEngine, ValidationReport
 
 _SIMULATION_FIELDS = (
     "source_code",
@@ -152,10 +152,15 @@ class ConversionEngine:
         source_sha256: str | None = None,
         target_filename: str | None = None,
         mode: str = "permissive",
+        output_multifile: bool = True,
     ) -> ConversionReport:
-        """The draft Conversion Report shown before conversion runs (Part 3 §4.3)."""
+        """The draft Conversion Report shown before conversion runs (Part 3 §4.3).
+
+        ``output_multifile`` gates the ``split_all`` option the draft advertises (Part 4 §3.3):
+        ``True`` for a directory-writing caller (CLI), ``False`` for the single-download HTTP
+        service, so the pause the service shows never offers a choice it cannot fulfil."""
         matrix = self._registry.capability_matrix()
-        diff = build_preflight(source, matrix, target_format_id)
+        diff = build_preflight(source, matrix, target_format_id, output_multifile=output_multifile)
         status = "awaiting_recovery" if diff.unresolved else "completed"
         report = self._assemble(
             stage="preflight",
@@ -193,8 +198,15 @@ class ConversionEngine:
         acknowledge_loss: bool = False,
         acknowledge_parse_warnings: bool = False,
         tolerance_profile: str | ToleranceProfile = "default",
+        output_multifile: bool = True,
     ) -> ConversionResult:
         """Run the conversion end to end and produce the final report (Part 4 §1).
+
+        ``output_multifile`` gates the ``split_all`` recovery option (Part 4 §3.3). It defaults
+        ``True`` (the CLI writes one file per frame into a directory). The HTTP service passes
+        ``False``: it serves a single download, so ``split_all`` is neither offered nor accepted —
+        a directly-supplied ``split_all`` choice fails the Recovery Engine's offered-set check and
+        the conversion refuses, rather than completing with output the service would silently drop.
 
         ``parse_recovery`` carries any *parse-time* recovery (``missing_species``,
         ``truncate_corrupt_tail``) the caller already applied via ``parse_with_recovery`` — its
@@ -211,7 +223,7 @@ class ConversionEngine:
             # report like any parse warning (Part 3 §5 rule 5), so the recovery is never silent.
             parse_issues = [*parse_issues, *parse_recovery.issues]
         matrix = self._registry.capability_matrix()
-        diff = build_preflight(source, matrix, target_format_id)
+        diff = build_preflight(source, matrix, target_format_id, output_multifile=output_multifile)
         # Opt-in fabricative scenarios (velocity/mass emission) the user requested via
         # `recovery_choices` — not auto-detected by the diff, since the target does not *require*
         # these fields (Part 4 §3.3, D46). Merged with the diff's scenarios before recovery.
@@ -455,9 +467,14 @@ class ConversionEngine:
         recovery_choices: dict[str, dict[str, Any]] | None = None,
         recovery_origin: str = "user",
         parse_recovery: ParseRecovery | None = None,
+        output_multifile: bool = True,
     ) -> RecoveryPreview:
         """Preview the Assumptions a :meth:`convert` with ``recovery_choices`` would record, without
         exporting or validating (Part 6 §3.2; slice M31-S1).
+
+        ``output_multifile`` must match the eventual :meth:`convert` call (the HTTP service passes
+        ``False``) so the preview offers exactly the ``split_all``-gated option set the conversion
+        will honour — a preview that advertised a choice the conversion then refused would mislead.
 
         This reproduces exactly the recovery *prefix* of :meth:`convert` — merge parse-time
         recovery, build the pre-flight diff, add on-demand fabricative scenarios, then run the
@@ -474,7 +491,7 @@ class ConversionEngine:
         the resume path does (Part 6 §6)."""
         recovery_choices = recovery_choices or {}
         matrix = self._registry.capability_matrix()
-        diff = build_preflight(source, matrix, target_format_id)
+        diff = build_preflight(source, matrix, target_format_id, output_multifile=output_multifile)
         on_demand = on_demand_fabricative_scenarios(
             source, matrix, target_format_id, recovery_choices, mode=mode
         )
@@ -1195,15 +1212,42 @@ def _is_split_all(assumptions: list[Assumption]) -> bool:
 
 def _merge_split_validations(validations: list[ValidationReport]) -> ValidationReport:
     """Merge the per-file Validation Reports of a ``split_all`` conversion into one (Part 5 §3: one
-    report per completed conversion). The aggregate ``status`` is the worst across files; each
-    file's checks are carried through, tagged with ``split_file_index`` so a failure is located."""
-    rank = {"passed": 0, "passed_with_warnings": 1, "failed": 2}
-    status = max((v.status for v in validations), key=lambda s: rank[s])
-    checks = [
-        c.model_copy(update={"measured": {**c.measured, "split_file_index": i}})
-        for i, v in enumerate(validations)
-        for c in v.checks
-    ]
+    report per completed conversion). The aggregate ``status`` is the worst across files, and each
+    *check kind* collapses to a single representative row — the worst outcome for that ``check_id``
+    across all files, annotated with the file count and the worst file's index. A 1000-file split
+    therefore yields one row per check (~9), not 9000: carrying every file's checks verbatim made a
+    report that flooded the CLI (and, before the service declined ``split_all`` over HTTP, the
+    API/UI) yet said nothing a per-check worst-case does not. A failure is still locatable via
+    ``worst_split_file_index``. Re-parse issues are de-duplicated for the same reason."""
+    report_rank = {"passed": 0, "passed_with_warnings": 1, "failed": 2}
+    status = max((v.status for v in validations), key=lambda s: report_rank[s])
+    n = len(validations)
+
+    # Collapse per ``check_id``: keep the worst-status file's CheckResult for each kind, preserving
+    # the order checks first appear (file 0's §2 catalog order). ``skipped`` ranks with ``pass``.
+    check_rank = {"pass": 0, "skipped": 0, "warn": 1, "fail": 2}
+    worst: dict[str, tuple[int, CheckResult]] = {}
+    order: list[str] = []
+    for i, v in enumerate(validations):
+        for c in v.checks:
+            if c.check_id not in worst:
+                order.append(c.check_id)
+                worst[c.check_id] = (i, c)
+            elif check_rank[c.status] > check_rank[worst[c.check_id][1].status]:
+                worst[c.check_id] = (i, c)
+    checks = [_annotate_split_check(worst[cid][1], worst[cid][0], n) for cid in order]
+
+    # De-duplicate re-parse issues: each single-frame file's re-parse tends to repeat the same
+    # warning, so a naive concatenation is another N-fold flood. Order-preserving on first sight.
+    seen: set[tuple[str, str, str, str | None]] = set()
+    reparse: list[ParseIssue] = []
+    for v in validations:
+        for issue in v.reparse_issues:
+            key = (issue.severity, issue.code, issue.message, issue.location)
+            if key not in seen:
+                seen.add(key)
+                reparse.append(issue)
+
     return ValidationReport(
         report_id=str(uuid.uuid4()),
         conversion_report_id=validations[0].conversion_report_id,
@@ -1211,8 +1255,27 @@ def _merge_split_validations(validations: list[ValidationReport]) -> ValidationR
         status=status,
         checks=checks,
         tolerance_profile=validations[0].tolerance_profile,
-        reparse_issues=[issue for v in validations for issue in v.reparse_issues],
+        reparse_issues=reparse,
         schema_version=validations[0].schema_version,
+    )
+
+
+def _annotate_split_check(check: CheckResult, worst_index: int, n_files: int) -> CheckResult:
+    """One representative row for a ``check_id`` across a ``split_all`` conversion's ``n_files``
+    per-frame files: the worst file's result, tagged (``split_files``, ``worst_split_file_index``)
+    so a reader can still locate a failure without the collapsed per-file rows."""
+    return check.model_copy(
+        update={
+            "measured": {
+                **check.measured,
+                "split_files": n_files,
+                "worst_split_file_index": worst_index,
+            },
+            "message": (
+                f"{check.message} · merged from {n_files} per-frame files "
+                f"(worst: file {worst_index})"
+            ),
+        }
     )
 
 

@@ -94,6 +94,29 @@ def test_xyz_multiframe_to_poscar_detects_both_recovery_triggers() -> None:
     assert lattice.path == "cell.lattice_vectors"
 
 
+def test_output_multifile_gates_split_all_in_preflight() -> None:
+    # `split_all` is offered only when the caller's output sink accepts multiple files (Part 4
+    # §3.3). The default (CLI, directory output) offers it; a single-file sink (the HTTP service)
+    # does not — so the wizard it drives never shows a choice the service cannot deliver.
+    reg = _registry()
+    source = _parse(reg, "xyz", GOLDEN / "xyz" / "water-traj" / "water_traj.xyz")
+
+    default_fs = next(
+        s
+        for s in build_preflight(source, _matrix(reg), "poscar").unresolved
+        if s.scenario == "frame_selection"
+    )
+    assert "split_all" in default_fs.options
+
+    single_file_fs = next(
+        s
+        for s in build_preflight(source, _matrix(reg), "poscar", output_multifile=False).unresolved
+        if s.scenario == "frame_selection"
+    )
+    assert single_file_fs.options == ["first", "last", "index"]
+    assert "split_all" not in single_file_fs.options
+
+
 def test_derived_atomic_numbers_excluded_from_diff() -> None:
     # atoms.atomic_numbers is a derived mirror of symbols, never an independent loss.
     reg = _registry()

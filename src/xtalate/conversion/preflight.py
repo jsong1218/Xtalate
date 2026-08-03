@@ -138,9 +138,18 @@ def partial_occupancy_count(custom_per_atom: Mapping[str, Any]) -> int:
 
 
 def build_preflight(
-    source: CanonicalObject, matrix: CapabilityMatrix, target_format_id: str
+    source: CanonicalObject,
+    matrix: CapabilityMatrix,
+    target_format_id: str,
+    *,
+    output_multifile: bool = True,
 ) -> PreflightDiff:
-    """Compute the pre-flight diff of ``source`` against the target's write capabilities."""
+    """Compute the pre-flight diff of ``source`` against the target's write capabilities.
+
+    ``output_multifile`` declares whether the caller's output sink accepts multiple files, gating
+    the ``split_all`` recovery option (Part 4 §3.3): ``True`` for the CLI (writes a directory),
+    ``False`` for the single-download HTTP service. Defaults ``True`` so the library/CLI behaviour
+    is unchanged."""
     return build_preflight_from_presence(
         source.field_presence(),
         frame_count=source.frame_count,
@@ -148,6 +157,7 @@ def build_preflight(
         partial_occupancy=partial_occupancy_count(source.user_metadata.custom_per_atom),
         matrix=matrix,
         target_format_id=target_format_id,
+        output_multifile=output_multifile,
     )
 
 
@@ -159,6 +169,7 @@ def build_preflight_from_presence(
     partial_occupancy: int,
     matrix: CapabilityMatrix,
     target_format_id: str,
+    output_multifile: bool = True,
 ) -> PreflightDiff:
     """The presence-driven core of the pre-flight diff (M12).
 
@@ -294,7 +305,9 @@ def build_preflight_from_presence(
             UnresolvedScenario(
                 scenario="frame_selection",
                 detail=f"{frame_count} frames → target holds at most {caps.max_frames}",
-                options=_scenario_options("frame_selection", caps),
+                options=_scenario_options(
+                    "frame_selection", caps, output_multifile=output_multifile
+                ),
             )
         )
     for required in caps.required_fields:
@@ -333,17 +346,24 @@ def build_preflight_from_presence(
     return diff
 
 
-def _scenario_options(scenario: str, caps: FormatCapabilities) -> list[str]:
+def _scenario_options(
+    scenario: str, caps: FormatCapabilities, *, output_multifile: bool = True
+) -> list[str]:
     """The honest, pair-specific option list for ``scenario`` given the target's capabilities
     (Part 4 §3.3). ``non_periodic`` only when the target can express an open cell; ``split_all``
-    only when multi-file output is supported — which the Slice-2 ``ConversionResult.outputs`` path
-    now provides for every single-structure target, so it is always available where
-    ``frame_selection`` triggers (only single-structure targets, whose ``max_frames`` a trajectory
-    exceeds)."""
+    only when the *caller's output sink* accepts multiple files.
+
+    The engine's Slice-2 ``ConversionResult.outputs`` path can produce one file per frame for every
+    single-structure target, so the *format* never blocks ``split_all`` — but the sink can. The
+    catalog's own rule is that ``split_all`` is "offered when the job's output mode permits multiple
+    files" (Part 4 §3.3): the CLI writes a directory and passes ``output_multifile=True`` (the
+    default), while the HTTP service serves a single download and passes ``False`` — so the wizard
+    never offers a choice the service cannot deliver, and a directly-posted ``split_all`` fails the
+    Recovery Engine's offered-set check (a refusal, never a silently dropped output)."""
     return available_options(
         scenario,
         target_can_be_nonperiodic=caps.allows_open_boundaries,
-        target_supports_multifile=True,
+        target_supports_multifile=output_multifile,
     )
 
 

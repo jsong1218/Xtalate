@@ -360,6 +360,13 @@ def _run_convert(
         # `ToleranceProfile`, and the wire also allows a custom §4.4 table — which only this
         # resolver turns into one (the submit endpoint has already validated it).
         tolerance_profile=resolve_tolerance_profile(options.get("tolerance_profile", "default")),
+        # The service serves a *single* download per conversion (Part 6 §4.4), so it declares a
+        # single-file output sink: `split_all` (one file per frame) is neither offered in the
+        # recovery pause nor accepted if posted directly — it fails the offered-set check and the
+        # conversion refuses, rather than completing with per-frame outputs the service cannot
+        # deliver (Part 4 §3.3, "offered when the job's output mode permits multiple files"). Per-
+        # frame splitting stays a CLI capability, which writes the files into a directory.
+        output_multifile=False,
     )
 
     # Interactive recovery (Part 6 §3.2): a needed-but-unsupplied choice pauses rather than refuses,
@@ -382,6 +389,9 @@ def _run_convert(
             source_sha256=upload.sha256,
             target_filename=options.get("output_filename"),
             mode=options.get("mode", "permissive"),
+            # Same single-file sink as the trial convert above, so the pause offers exactly the
+            # option set the resume will honour (no `split_all`).
+            output_multifile=False,
         )
         raise RecoveryPause(
             build_awaiting_block(
@@ -398,6 +408,17 @@ def _run_convert(
     # past ``output_expires_at`` is a ``410 OUTPUT_EXPIRED`` while the reports stay retrievable
     # (reports-outlive-bytes). The horizon matches the storage lifecycle window
     # (``output_retention_hours``) so the record's own clock agrees with the platform's sweep.
+    #
+    # Defence in depth: this stores the single ``result.output`` only. A ``split_all`` conversion
+    # instead populates ``result.outputs`` (one file per frame) and leaves ``output`` ``None`` —
+    # which this path would silently drop, completing a conversion with no downloadable bytes. The
+    # service forbids that upstream (it converts with ``output_multifile=False``, so ``split_all``
+    # is never offered or accepted), and this assertion pins the invariant: if a future change let
+    # a multi-file result reach here, fail loudly rather than lose the outputs (P1, no silent loss).
+    assert result.outputs is None, (
+        "multi-file (split_all) output reached the single-download service runner; "
+        "the HTTP path must convert with output_multifile=False"
+    )
     output_key: str | None = None
     output_available = False
     output_expires_at: datetime | None = None
