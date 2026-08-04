@@ -25,7 +25,8 @@
             2.82
           ]
         ],
-        "masses": null
+        "masses": null,
+        "occupancies": null
       },
       "cell": {
         "lattice_vectors": [
@@ -77,9 +78,9 @@
     },
     "original_coordinate_system": "fractional",
     "parse_notes": [
-      "Direct coordinates converted to Cartesian using lattice matrix (\u00a74).",
+      "Direct coordinates converted to Cartesian using lattice matrix (§4).",
       "pbc set to (true,true,true) per POSCAR format definition (format-defined, not assumed).",
-      "scaling factor folded into lattice vectors (\u00a74); source value: 1.0"
+      "scaling factor folded into lattice vectors (§4); source value: 1.0"
     ],
     "history": [
       {

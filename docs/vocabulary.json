@@ -2,6 +2,7 @@
   "canonical_paths": [
     "atoms.atomic_numbers",
     "atoms.masses",
+    "atoms.occupancies",
     "atoms.positions",
     "atoms.symbols",
     "cell.lattice_vectors",

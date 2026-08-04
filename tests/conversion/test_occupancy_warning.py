@@ -1,16 +1,16 @@
-"""Partial occupancy must be *warned about*, not merely dropped (M19, Part 3 §3 n.11).
+"""Partial occupancy must be *warned about*, not merely dropped (Part 3 §3 n.11; M35).
 
-Occupancy is the Canonical Model's one named gap. The CIF parser carries the column verbatim
-under ``user_metadata.custom_per_atom['cif:occupancy']`` and warns at parse time (M19 slice 1),
-but a parse warning is about the *file we read*. This is the other half: a warning about the
-*file we write*. No Phase 1 target can express fractional occupancy, and a site written without
-one reads as fully occupied — so the output asserts a structure the source never described. The
-ordinary ``removed`` entry for ``user_metadata.custom_per_atom`` says an annotation was not
-carried; it does not say the physical claim changed. This warning does (**P4**, **P5**).
+Occupancy is a first-class canonical field now — ``atoms.occupancies`` (M35). The CIF parser reads
+it and warns at parse time when a site is partial, but a parse warning is about the *file we read*.
+This is the other half: a warning about the *file we write*. No Phase 1 target but CIF can express
+fractional occupancy, and a site written without one reads as fully occupied — so the output
+asserts a structure the source never described. The ordinary ``removed`` entry for
+``atoms.occupancies`` says the field was not carried; it does not say the physical claim changed.
+This warning does (**P4**, **P5**).
 
 The gate is a capability declaration, never a format list, so a format that *represents* occupancy
-silences the warning by naming the key (**P6**). Merely being able to carry the numbers is not
-enough — see ``test_verbatim_carriage_is_not_representation``.
+silences the warning by declaring a writable ``atoms.occupancies`` capability (**P6**) — see
+``test_declaring_the_field_writable_suppresses_the_warning``.
 """
 
 from __future__ import annotations
@@ -26,13 +26,13 @@ from xtalate.exporters import builtin_exporters
 from xtalate.parsers import builtin_parsers
 from xtalate.registry import default_registry
 from xtalate.schema import CanonicalObject
-from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
 from xtalate.sdk import CapabilityLevel, ExporterPlugin, FieldCapability, FormatCapabilities
 
 _REGISTRY = default_registry()
 _WARNING_CODE = "PARTIAL_OCCUPANCY_NOT_REPRESENTED"
+_OCCUPANCY_PATH = "atoms.occupancies"
 
-# Every Phase 1 target. None of them can express occupancy, so every one must warn.
+# Every Phase 1 target other than CIF. None of them can express occupancy, so every one must warn.
 _TARGETS = ["xyz", "extxyz", "poscar", "contcar", "xdatcar", "ase_traj"]
 
 _CIF_TEMPLATE = """data_occupancy_case
@@ -95,38 +95,28 @@ def _warning_codes(source: CanonicalObject, target: str) -> list[str]:
 
 
 # --------------------------------------------------------------------------------------------
-# partial_occupancy_count: the scalar both conversion paths derive
+# partial_occupancy_count: the scalar the materialized path derives from atoms.occupancies
 # --------------------------------------------------------------------------------------------
 
 
 def test_count_is_zero_when_no_occupancy_is_declared() -> None:
-    # Absence of the column is not a claim of partial occupancy (P3) — and not a claim of full
+    # Absence of the field is not a claim of partial occupancy (P3) — and not a claim of full
     # occupancy either; there is simply nothing here that a target would fail to represent.
-    assert partial_occupancy_count({}) == 0
+    assert partial_occupancy_count(None) == 0
 
 
 def test_count_is_zero_when_every_site_is_fully_occupied() -> None:
-    assert partial_occupancy_count({OCCUPANCY_CUSTOM_KEY: [1.0, 1.0]}) == 0
+    assert partial_occupancy_count([1.0, 1.0]) == 0
 
 
 def test_count_reports_how_many_sites_are_partial() -> None:
-    assert partial_occupancy_count({OCCUPANCY_CUSTOM_KEY: [1.0, 0.5, 0.25]}) == 2
+    assert partial_occupancy_count([1.0, 0.5, 0.25]) == 2
 
 
 def test_unknown_occupancy_counts_as_partial() -> None:
     # '?' / '.' arrives as None. It is not a statement of full occupancy, so writing the site out
     # bare would turn the source's silence into an assertion (P4) — exactly what the warning is for.
-    assert partial_occupancy_count({OCCUPANCY_CUSTOM_KEY: [1.0, None]}) == 1
-
-
-def test_non_numeric_occupancy_counts_as_partial() -> None:
-    # A column that is not wholly numeric stays as source strings; '1.0' still reads as full,
-    # anything unparseable is not a statement we can accept as full.
-    assert partial_occupancy_count({OCCUPANCY_CUSTOM_KEY: ["1.0", "half"]}) == 1
-
-
-def test_count_ignores_other_custom_per_atom_keys() -> None:
-    assert partial_occupancy_count({"cif:wyckoff_symbol": ["a", "b"]}) == 0
+    assert partial_occupancy_count([1.0, None]) == 1
 
 
 # --------------------------------------------------------------------------------------------
@@ -135,16 +125,16 @@ def test_count_ignores_other_custom_per_atom_keys() -> None:
 
 
 @pytest.mark.parametrize("target", _TARGETS)
-def test_partial_occupancy_warns_for_every_phase_1_target(target: str) -> None:
-    # The M19 go/no-go checkpoint: "structures with occupancy != 1.0 additionally surface a
-    # Conversion Report warning for every target".
+def test_partial_occupancy_warns_for_every_non_cif_target(target: str) -> None:
+    # Structures with occupancy != 1.0 surface a Conversion Report warning for every target that
+    # cannot represent the first-class occupancy field.
     source = _occupancies("0.5", "1.0")
     assert _WARNING_CODE in _warning_codes(source, target)
 
 
 @pytest.mark.parametrize("target", _TARGETS)
 def test_full_occupancy_does_not_warn(target: str) -> None:
-    # A file that says every site is fully occupied loses nothing physical when the column is
+    # A file that says every site is fully occupied loses nothing physical when the field is
     # dropped: the output asserts what the source asserted. Warning here would be noise.
     source = _occupancies("1.0", "1.0")
     assert _WARNING_CODE not in _warning_codes(source, target)
@@ -171,45 +161,42 @@ def test_warning_names_the_count_and_the_target() -> None:
 
 def test_warning_is_capability_sourced() -> None:
     # It is a statement about what the *target* cannot hold, not about what the source file said —
-    # the parse-side occupancy warning (M19 slice 1) is the `parse`-sourced one.
+    # the parse-side CIF_PARTIAL_OCCUPANCY is the `parse`-sourced one.
     source = _occupancies("0.5", "1.0")
     diff = build_preflight(source, _REGISTRY.capability_matrix(), "poscar")
     assert next(w.source for w in diff.warnings if w.code == _WARNING_CODE) == "capability"
 
 
 def test_warning_accompanies_rather_than_replaces_the_removed_entry() -> None:
-    # Both, always: `removed` is the accounting (the container was not carried), the warning is the
+    # Both, always: `removed` is the accounting (the field was not carried), the warning is the
     # consequence (the structure written differs). Neither alone tells the whole truth (P5).
     source = _occupancies("0.5", "1.0")
     diff = build_preflight(source, _REGISTRY.capability_matrix(), "poscar")
-    removed = {e.path for e in diff.removed}
-    assert any(p.startswith("user_metadata.custom_per_atom") for p in removed)
+    assert _OCCUPANCY_PATH in {e.path for e in diff.removed}
     assert _WARNING_CODE in [w.code for w in diff.warnings]
 
 
 # --------------------------------------------------------------------------------------------
-# The warning in the Conversion Report
+# The P6 gate: a target that *represents* occupancy silences the warning
 # --------------------------------------------------------------------------------------------
 
 
-def _stub_exporter(format_id: str, *, names_the_key: bool = False) -> ExporterPlugin:
-    """A POSCAR-derived stand-in that *can* hold a custom per-atom column, optionally declaring
-    that it stores occupancy specifically. The pair of stubs is the whole point of the gate: both
-    carry the numbers, only the one that names the key represents the quantity."""
+def _stub_exporter(format_id: str, *, represents_occupancy: bool = False) -> ExporterPlugin:
+    """A POSCAR-derived stand-in, optionally declaring that it writes the occupancy field. Merely
+    carrying arbitrary per-atom numbers is not enough — only a declared ``atoms.occupancies``
+    capability says the format represents the quantity."""
     poscar_cls = type(_REGISTRY.get_exporter("poscar"))
 
     class StubExporter(poscar_cls):  # type: ignore[misc, valid-type]
         def capabilities(self) -> FormatCapabilities:
             base: FormatCapabilities = super().capabilities()
-            fields = dict(base.fields)
-            fields["user_metadata.custom_per_atom"] = FieldCapability(
-                level=CapabilityLevel.FULL, notes="Stub target that stores a per-atom column."
-            )
-            update: dict[str, object] = {"format_id": self.format_id, "fields": fields}
-            if names_the_key:
-                update["writable_custom_keys"] = {
-                    "user_metadata.custom_per_atom": [OCCUPANCY_CUSTOM_KEY]
-                }
+            update: dict[str, object] = {"format_id": self.format_id}
+            if represents_occupancy:
+                fields = dict(base.fields)
+                fields[_OCCUPANCY_PATH] = FieldCapability(
+                    level=CapabilityLevel.FULL, notes="Stub target that represents occupancy."
+                )
+                update["fields"] = fields
             return base.model_copy(update=update)
 
     return StubExporter(format_id=format_id)
@@ -225,47 +212,30 @@ def _registry_with(exporter: ExporterPlugin) -> Registry:
     return reg
 
 
-def test_verbatim_carriage_is_not_representation() -> None:
-    # A target that carries the occupancy numbers through untouched must warn anyway. An unlabelled
-    # extra column is not occupancy: no reader of the output treats those numbers as site
-    # occupancies, so the structure the file describes is still fully occupied. Carrying the bytes
-    # is not the same as representing the quantity — which is why the gate is the *named* key.
-    #
-    # Stated against a stub rather than extXYZ, which used to be the live example. D69 established
-    # that extXYZ cannot in fact write `cif:occupancy` at all (the Properties= grammar separates
-    # its fields with ':'), so it now removes the key and no builtin target carries it verbatim.
-    # The claim this test makes is about the *gate*, not about extXYZ, so it needs a target that
-    # really does carry the numbers — and after D69 that has to be constructed.
-    reg = _registry_with(_stub_exporter("verbatim_stub"))
+def test_a_target_that_does_not_declare_the_field_warns() -> None:
+    # The default: a format that says nothing about atoms.occupancies cannot represent it (the
+    # capability defaults to NONE), so a partial site is dropped and the warning fires.
+    reg = _registry_with(_stub_exporter("plain_stub"))
     source = _occupancies("0.5", "1.0")
-    diff = build_preflight(source, reg.capability_matrix(), "verbatim_stub")
+    diff = build_preflight(source, reg.capability_matrix(), "plain_stub")
 
-    preserved = {e.path for e in diff.preserved}
-    assert f"user_metadata.custom_per_atom[{OCCUPANCY_CUSTOM_KEY!r}]" in preserved
+    assert _OCCUPANCY_PATH in {e.path for e in diff.removed}
     assert _WARNING_CODE in [w.code for w in diff.warnings]
 
 
-def test_extxyz_cannot_even_carry_the_occupancy_column() -> None:
-    # The correction D69 made, pinned so it cannot regress: extXYZ was declaring it would write
-    # this key and then emitting a file that did not parse. It now reports the key `removed` —
-    # alongside the occupancy warning, which was firing correctly all along and still does.
-    source = _occupancies("0.5", "1.0")
-    diff = build_preflight(source, _REGISTRY.capability_matrix(), "extxyz")
-
-    key = f"user_metadata.custom_per_atom[{OCCUPANCY_CUSTOM_KEY!r}]"
-    assert key in {e.path for e in diff.removed}
-    assert key not in {e.path for e in diff.preserved}
-    assert _WARNING_CODE in [w.code for w in diff.warnings]
-
-
-def test_naming_the_key_suppresses_the_warning() -> None:
-    # The P6 escape hatch, exercised against the same stand-in with one declaration changed: a
-    # format that says it handles 'cif:occupancy' specifically silences this with no edit to the
-    # pre-flight diff. The real CIF exporter (M19 slice 3) now uses exactly this mechanism.
-    reg = _registry_with(_stub_exporter("occupancy_aware_stub", names_the_key=True))
+def test_declaring_the_field_writable_suppresses_the_warning() -> None:
+    # The P6 escape hatch: a format that declares a writable atoms.occupancies capability
+    # *represents* occupancy and silences this with no edit to the pre-flight diff. The real CIF
+    # exporter uses exactly this mechanism.
+    reg = _registry_with(_stub_exporter("occupancy_aware_stub", represents_occupancy=True))
     source = _occupancies("0.5", "1.0")
     diff = build_preflight(source, reg.capability_matrix(), "occupancy_aware_stub")
     assert _WARNING_CODE not in [w.code for w in diff.warnings]
+
+
+# --------------------------------------------------------------------------------------------
+# The warning in the Conversion Report
+# --------------------------------------------------------------------------------------------
 
 
 def test_warning_reaches_the_conversion_report() -> None:

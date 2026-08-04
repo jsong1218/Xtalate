@@ -32,7 +32,8 @@
             -0.26
           ]
         ],
-        "masses": null
+        "masses": null,
+        "occupancies": null
       },
       "cell": null,
       "dynamics": {

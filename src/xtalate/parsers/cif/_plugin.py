@@ -113,6 +113,12 @@ class CifParser(ParserPlugin):
                     "_atom_site_label; the raw type symbol is preserved per-atom.",
                 ),
                 "atoms.positions": full,
+                "atoms.occupancies": FieldCapability(
+                    level=CapabilityLevel.FULL,
+                    notes="From _atom_site_occupancy; a per-site '?'/'.' is read as an unknown "
+                    "occupancy (None), not fabricated to 1.0 (P4). A parenthesized standard "
+                    "uncertainty is read as its value.",
+                ),
                 "cell.lattice_vectors": FieldCapability(
                     level=CapabilityLevel.FULL,
                     notes="Built from _cell_length_* / _cell_angle_* with a≈+x and b in the "
@@ -135,8 +141,8 @@ class CifParser(ParserPlugin):
                 "user_metadata.custom_per_atom": FieldCapability(
                     level=CapabilityLevel.FULL,
                     notes="Unmapped _atom_site columns (Wyckoff symbols, displacement "
-                    "parameters) carried verbatim under 'cif:' keys, plus occupancy under "
-                    "'cif:occupancy'.",
+                    "parameters) carried verbatim under 'cif:' keys. Occupancy is read into "
+                    "the first-class atoms.occupancies field, not carried here.",
                 ),
                 "simulation.extra": FieldCapability(
                     level=CapabilityLevel.FULL,
@@ -154,8 +160,9 @@ class CifParser(ParserPlugin):
                 "coinciding within 0.05 Å are merged (Part 3 §3 n.13).",
                 "A non-P 1 symbol declared with no operation loop is refused, not guessed from "
                 "a space-group table.",
-                "Occupancy is carried as a custom per-atom array under 'cif:occupancy', not "
-                "modelled as a canonical field, and warns at parse (Part 3 §3 n.11).",
+                "Occupancy is read into the canonical atoms.occupancies field; a partial or "
+                "unknown site additionally warns at parse, since the expanded structure carries a "
+                "whole atom at each and no other Phase 1 target can write the column back.",
                 "A type symbol's oxidation-state suffix ('Fe3+') is preserved verbatim but is "
                 "not read as a charge; only a declared _atom_type_oxidation_number populates "
                 "electronic.charges.",

@@ -113,6 +113,7 @@ export const PATH_LABELS: Record<string, Labeled> = {
   "atoms.atomic_numbers": { label: "Atomic numbers" },
   "atoms.positions": { label: "Atom positions" },
   "atoms.masses": { label: "Atom masses" },
+  "atoms.occupancies": { label: "Site occupancy" },
   "cell.lattice_vectors": { label: "Simulation cell (lattice vectors)" },
   "cell.pbc": { label: "Periodic boundary conditions" },
   "cell.space_group": { label: "Space group" },

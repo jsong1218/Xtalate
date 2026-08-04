@@ -308,9 +308,15 @@ def test_per_site_columns_are_replicated_onto_generated_atoms() -> None:
         b"loop_\n_space_group_symop_operation_xyz\n'x, y, z'\n'-x, -y, -z'\n"
         b"loop_\n_atom_site_label",
     )
-    per_atom = _parse(data).canonical.user_metadata.custom_per_atom
-    assert list(per_atom["cif:occupancy"]) == pytest.approx([1.0, 0.5, 0.5])
-    assert list(per_atom["cif:atom_site_label"]) == ["Na1", "Cl1", "Cl1"]
+    canonical = _parse(data).canonical
+    occupancies = canonical.frames[0].atoms.occupancies
+    assert occupancies is not None
+    assert list(occupancies) == pytest.approx([1.0, 0.5, 0.5])
+    assert list(canonical.user_metadata.custom_per_atom["cif:atom_site_label"]) == [
+        "Na1",
+        "Cl1",
+        "Cl1",
+    ]
 
 
 def test_declared_operations_are_carried_verbatim() -> None:
@@ -439,11 +445,14 @@ def test_raw_type_symbol_is_preserved_per_atom() -> None:
 def test_unmapped_atom_site_columns_are_carried_verbatim() -> None:
     result = _parse((GOLDEN / "zno_hexagonal.cif").read_bytes())
     carried = result.canonical.user_metadata.custom_per_atom
-    # A wholly-numeric column lands as a float array, a textual one as strings — the schema's
-    # custom_per_atom union decides, and either way the source value is preserved.
-    np.testing.assert_allclose(np.asarray(carried["cif:occupancy"]), [1.0, 1.0])
+    # Columns with no canonical field are carried verbatim into custom_per_atom (label, raw type
+    # symbol). Occupancy is *mapped* to atoms.occupancies, not carried here.
     assert carried["cif:atom_site_label"] == ["Zn1", "O1"]
     assert carried["cif:type_symbol"] == ["Zn", "O"]
+    assert "cif:occupancy" not in carried
+    occupancies = result.canonical.frames[0].atoms.occupancies
+    assert occupancies is not None
+    np.testing.assert_allclose(np.asarray(occupancies, dtype=float), [1.0, 1.0])
 
 
 def test_bibliographic_tags_are_carried_into_simulation_extra() -> None:
@@ -648,7 +657,7 @@ def test_sniff_rejects_other_formats() -> None:
     assert parser.sniff(b"2\ncomment\nH 0 0 0\nH 0 0 1\n", "water.xyz") == 0.0
 
 
-# --- occupancy: the flagged schema gap (M19, Part 3 §3 n.11) --------------------------------
+# --- occupancy: the first-class atoms.occupancies field (M35) --------------------------------
 
 
 def _with_occupancy(*values: str) -> bytes:
@@ -662,49 +671,54 @@ def _with_occupancy(*values: str) -> bytes:
     )
 
 
-def test_occupancy_lands_under_the_spec_named_key_not_the_tag_spelling() -> None:
-    """The one _atom_site column whose custom key is not its tag: occupancy is a *named*
-    limitation with a documented promotion path (Part 2 §6 rule 4), so the key it will be
-    promoted from is pinned rather than left to the generic carry-through."""
-    per_atom = _parse(_with_occupancy("1.0", "0.5")).canonical.user_metadata.custom_per_atom
-    assert list(per_atom["cif:occupancy"]) == pytest.approx([1.0, 0.5])
-    # And it arrives under exactly one name, never two.
+def test_occupancy_lands_in_the_first_class_field_not_custom_per_atom() -> None:
+    """Occupancy is a first-class canonical field now (M35), read into atoms.occupancies and no
+    longer carried as a custom per-atom column under any spelling."""
+    canonical = _parse(_with_occupancy("1.0", "0.5")).canonical
+    occupancies = canonical.frames[0].atoms.occupancies
+    assert occupancies is not None
+    assert occupancies == pytest.approx([1.0, 0.5])
+    per_atom = canonical.user_metadata.custom_per_atom
+    assert "cif:occupancy" not in per_atom
     assert "cif:atom_site_occupancy" not in per_atom
 
 
-def test_occupancy_warns_that_it_is_carried_rather_than_modelled() -> None:
+def test_modelled_occupancy_does_not_warn_that_it_is_unmodelled() -> None:
+    """The retired CIF_OCCUPANCY_NOT_MODELLED: once occupancy is a canonical field, its mere
+    presence is no longer a gap and earns no warning — only genuinely partial occupancy does."""
     result = _parse(_with_occupancy("1.0", "0.5"))
-    issue = next(i for i in result.issues if i.code == "CIF_OCCUPANCY_NOT_MODELLED")
+    assert not any(i.code == "CIF_OCCUPANCY_NOT_MODELLED" for i in result.issues)
+
+
+def test_partial_occupancy_warns() -> None:
+    """A site occupancy other than 1 is real disorder: the expanded structure carries a whole atom
+    at each such site, so its composition is the fully-occupied one — a fact the reader is told."""
+    result = _parse(_with_occupancy("1.0", "0.5"))
+    issue = next(i for i in result.issues if i.code == "CIF_PARTIAL_OCCUPANCY")
     assert issue.severity == "warning"
-    assert "cif:occupancy" in issue.message
-    # The same statement survives into the object itself, so a consumer reading only the
-    # Canonical Object — not the ParseResult — still learns the field is unmodelled.
-    assert any(
-        "occupancy carried as a custom" in n for n in result.canonical.provenance.parse_notes
+    assert any("partial site occupancy" in n for n in result.canonical.provenance.parse_notes)
+
+
+def test_full_occupancy_does_not_warn() -> None:
+    """Every site fully occupied is not disorder: nothing partial to report."""
+    assert not any(
+        i.code == "CIF_PARTIAL_OCCUPANCY" for i in _parse(_with_occupancy("1.0", "1.0")).issues
     )
 
 
-def test_full_occupancy_still_warns() -> None:
-    """The warning is about the *model*, not about the values: a file stating occupancy 1.0
-    everywhere has still had a column carried rather than modelled, and a reader who is told
-    nothing cannot tell that from a file that stated no occupancy at all."""
-    assert any(
-        i.code == "CIF_OCCUPANCY_NOT_MODELLED" for i in _parse(_with_occupancy("1.0", "1.0")).issues
-    )
+def test_a_file_without_occupancy_leaves_the_field_absent() -> None:
+    result = _parse(CUBIC)
+    assert result.canonical.frames[0].atoms.occupancies is None
+    assert not any(i.code == "CIF_PARTIAL_OCCUPANCY" for i in result.issues)
 
 
-def test_a_file_without_occupancy_does_not_warn_about_it() -> None:
-    assert not any(i.code == "CIF_OCCUPANCY_NOT_MODELLED" for i in _parse(CUBIC).issues)
-
-
-def test_unknown_occupancy_is_carried_as_absence_not_as_one() -> None:
+def test_unknown_occupancy_is_read_as_absence_not_as_one() -> None:
     """'?' is absence (P3). CIF's *default* occupancy is 1.0, but a default is a convention the
-    file did not state, and filling it here would put an invented number in a preserved column."""
-    per_atom = _parse(_with_occupancy("1.0", "?")).canonical.user_metadata.custom_per_atom
-    # A column that is not wholly numeric cannot be a float array, so the schema's custom_per_atom
-    # union keeps it as the source spelled it — the absent row stays absent rather than becoming
-    # a number, which is the property under test.
-    assert list(per_atom["cif:occupancy"]) == ["1.0", None]
+    file did not state, and filling it here would put an invented number in a preserved field.
+    A per-site unknown counts as partial: silence is not a claim of fullness (P4)."""
+    result = _parse(_with_occupancy("1.0", "?"))
+    assert result.canonical.frames[0].atoms.occupancies == [1.0, None]
+    assert any(i.code == "CIF_PARTIAL_OCCUPANCY" for i in result.issues)
 
 
 # --- formal charges (M19 deliverable 2) ----------------------------------------------------
