@@ -45,7 +45,7 @@ def _obj(frames: list[Frame] | None = None) -> CanonicalObject:
 
 def test_minimal_object_constructs() -> None:
     obj = _obj()
-    assert obj.schema_version == SCHEMA_VERSION == "0.1.0"
+    assert obj.schema_version == SCHEMA_VERSION == "1.0.0"
     assert obj.frame_count == 1
     assert obj.frames[0].cell is None  # absence, not identity lattice
 

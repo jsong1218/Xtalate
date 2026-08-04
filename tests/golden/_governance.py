@@ -44,6 +44,7 @@ silently rot or lose an attribution:
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,7 +52,7 @@ from typing import Any
 
 import yaml
 
-from xtalate.schema import SCHEMA_VERSION, CanonicalObject
+from xtalate.schema import SCHEMA_VERSION, CanonicalObject, load_canonical
 
 GOLDEN_ROOT = Path(__file__).parent
 # The real-world corpus (v0.4 M20, DECISIONS.md D70) lives in its own root and carries a
@@ -313,26 +314,28 @@ def _major(version: str) -> int:
 def load_expected_through_migration_chain(case: GoldenCase) -> CanonicalObject:
     """Load ``expected.canonical.json`` as the current schema would (Part 8 §3.3).
 
-    The schema is a single pre-1.0 version (``0.1.0``), so the *migration chain* is the
-    identity today: pydantic validation against the current models. This function is the
-    seam Part 8 §3.3 names — when real migrations land (schema §5), they are threaded here,
-    so the whole corpus exercises the migration path on every run and a minor (additive)
-    bump needs zero fixture edits. It deliberately owns the load so that "load through the
-    migration chain" has exactly one implementation for the whole corpus.
+    Threads the real migration chain (``schema.migrations``): the expectation is read at the version
+    it was *authored* against, then carried forward to the current ``SCHEMA_VERSION`` and validated.
+    Since the v1.0 freeze (M35), an expectation authored at ``0.1.0`` is migrated to ``1.0.0`` here
+    and gains its ``migrate`` provenance record — so every load in the whole corpus exercises the
+    migration path, and a within-major (additive) bump needs zero fixture edits. This function
+    deliberately owns the load so that "load through the migration chain" has exactly one
+    implementation for the corpus.
     """
 
-    obj = CanonicalObject.model_validate_json(case.expected_path.read_text(encoding="utf-8"))
+    raw = json.loads(case.expected_path.read_text(encoding="utf-8"))
 
-    # The embedded schema_version and the manifest's declared authoring version must agree —
-    # a mismatch means the manifest or the expectation was edited without the other.
-    embedded = obj.schema_version
+    # The embedded (authored) schema_version and the manifest's declared authoring version must
+    # agree — a mismatch means the manifest or the expectation was edited without the other. This is
+    # checked *before* migration, on the version the file was written at, not the migrated result.
+    embedded = raw.get("schema_version")
     declared = str(case.data["canonical_schema_version"])
     if embedded != declared:
         raise ManifestError(
             f"{case.rel_manifest}: expectation schema_version {embedded!r} != manifest "
             f"canonical_schema_version {declared!r}"
         )
-    return obj
+    return load_canonical(raw)
 
 
 def check_schema_version_lag(case: GoldenCase) -> None:

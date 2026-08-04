@@ -32,9 +32,12 @@ from xtalate.schema.arrays import (
 )
 from xtalate.schema.elements import atomic_number, is_valid_symbol
 
-# The schema version shipped with product v0.1. Pre-1.0 schema is a 0.x.y series
-# (§5): reaching "1.0.0" is itself a v1.0 deliverable, so no v0.1 object may claim it.
-SCHEMA_VERSION = "0.1.0"
+# The Canonical Model schema version (§5), frozen at the v1.0 contract-freeze milestone (M35).
+# The predecessor 0.x series is carried forward by the real 0.1.0 -> 1.0.0 migration in
+# ``schema.migrations`` (D114); a stored 0.1.0 object loaded through ``load_canonical`` becomes a
+# 1.0.0 object with a ``migrate`` provenance record. This is the *schema* version — the product
+# package version moves under separate rules (Part 10 §4.2) and is not this string.
+SCHEMA_VERSION = "1.0.0"
 
 
 class _Model(BaseModel):

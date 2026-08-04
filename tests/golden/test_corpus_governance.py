@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from tests.golden import _governance as gov
+from xtalate.schema import SCHEMA_VERSION
 
 
 def _cases() -> list[gov.GoldenCase]:
@@ -79,6 +80,22 @@ def test_every_corpus_data_file_is_claimed_by_a_manifest(root: Path) -> None:
 def test_expectation_loads_through_migration_chain(case: gov.GoldenCase) -> None:
     obj = gov.load_expected_through_migration_chain(case)
     assert obj.frame_count >= 1
+
+    # The chain lands the object at the *current* schema, whatever version it was authored at — the
+    # whole point of loading through it rather than validating raw (Part 8 §3.3).
+    assert obj.schema_version == SCHEMA_VERSION
+
+    # And a real forward migration is recorded, never silent (§3.9, D114): an expectation authored
+    # behind current carries exactly one migrate record naming the transition; a same-version one
+    # carries none. Every golden lags at 0.1.0 today, so the corpus-wide run proves the 0.1.0 ->
+    # 1.0.0 migration on every case, not just a hand-written fixture.
+    authored = str(case.data["canonical_schema_version"])
+    migrate_records = [rec for rec in obj.provenance.history if rec.operation == "migrate"]
+    if authored == SCHEMA_VERSION:
+        assert migrate_records == []
+    else:
+        assert len(migrate_records) == 1
+        assert f"{authored} → {SCHEMA_VERSION}" in migrate_records[0].assumptions[0]
 
 
 @pytest.mark.parametrize("case", _golden_cases(), ids=lambda c: c.rel_manifest)

@@ -28,7 +28,7 @@ from typing import Any
 
 from hypothesis import strategies as st
 
-from xtalate.schema import CanonicalObject
+from xtalate.schema import SCHEMA_VERSION, CanonicalObject
 
 # A small, valid element alphabet — enough for variety, small enough that shrinking stays legible.
 _ELEMENTS = ["H", "C", "N", "O", "Na", "Cl", "Fe"]
@@ -156,7 +156,7 @@ def canonical_objects(draw: st.DrawFn) -> CanonicalObject:
     frames = [draw(_frame(i, symbols, n)) for i in range(f)]
 
     data: dict[str, Any] = {
-        "schema_version": "0.1.0",
+        "schema_version": SCHEMA_VERSION,
         "frames": frames,
         "trajectory": ({"timestep": draw(_pos_floats)} if draw(st.booleans()) else None),
         "simulation": draw(_simulation()),

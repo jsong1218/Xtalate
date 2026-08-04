@@ -4,6 +4,7 @@ Depends on nothing else in the package (lowest layer of the P2 dependency graph,
 §5.1). Implemented in M1.
 """
 
+from xtalate.schema.migrations import MigrationError, load_canonical, migrate
 from xtalate.schema.models import (
     SCHEMA_VERSION,
     AtomsBlock,
@@ -31,6 +32,7 @@ __all__ = [
     "Dynamics",
     "Electronic",
     "Frame",
+    "MigrationError",
     "PathPresence",
     "PresenceAccumulator",
     "PresenceMap",
@@ -38,4 +40,6 @@ __all__ = [
     "SimulationMetadata",
     "TrajectoryMetadata",
     "UserMetadata",
+    "load_canonical",
+    "migrate",
 ]
