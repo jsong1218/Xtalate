@@ -16,7 +16,13 @@ Global:
 xtalate --version     Print the version and exit.
 ```
 
-Every command exits non-zero on failure and can emit machine-readable JSON with `--json`.
+Every command signals its outcome through the exit code (see [Exit codes](#exit-codes)) and can emit
+machine-readable JSON with `--json`.
+
+As of the v1.0 contract freeze, the CLI surface documented here — the four subcommands, their flags,
+the `--json` convention, and the exit-code ladder below — is **frozen for the 1.x series**. Within
+1.x it evolves additively only: new flags and new formats may appear, but a documented flag is not
+removed, renamed, or given a new meaning, and the exit codes keep the meanings tabled here.
 
 ## inspect
 
@@ -97,3 +103,17 @@ xtalate capabilities [FORMAT_ID] [--json]
 |---|---|
 | `FORMAT_ID` | Limit output to a single format. |
 | `--json` | Print the matrix as JSON. |
+
+## Exit codes
+
+The CLI is CI-native: it signals the outcome through the process exit code, so a script never has to
+parse stdout. These six codes are the frozen 1.x contract.
+
+| Code | Meaning |
+|---|---|
+| `0` | OK. |
+| `1` | Usage or internal error (a bad flag, an unreadable file, a broken installed plugin, an invalid `--recover` preset or tolerance profile). |
+| `2` | Refused — a first-class outcome, not a crash: the conversion declined rather than guess at data the source lacks. |
+| `3` | Validation failed. |
+| `4` | Parse error. |
+| `5` | Passed with warnings under `--mode strict`. |
