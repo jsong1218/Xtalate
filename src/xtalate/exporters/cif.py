@@ -26,7 +26,6 @@ import numpy as np
 
 from xtalate.schema import CanonicalObject
 from xtalate.schema.cell import cell_parameters, to_fractional
-from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
 from xtalate.sdk import (
     CapabilityLevel,
     ExporterPlugin,
@@ -40,13 +39,13 @@ FORMAT_ID = "cif"
 _BLOCK_NAME_KEY = "cif:data_block_name"
 _DEFAULT_BLOCK_NAME = "xtalate"
 
-#: The per-atom keys this exporter writes back, each to the ``_atom_site`` column it came from.
-#: Naming them in ``writable_custom_keys`` is what tells the pre-flight diff that CIF genuinely
-#: *represents* occupancy — the P6 hook M19 slice 2 built — rather than merely carrying the
-#: numbers as an unlabelled column, which is what every other Phase 1 target does.
+#: The custom per-atom keys this exporter writes back, each to the ``_atom_site`` column it came
+#: from. Occupancy is no longer among them — it is the first-class ``atoms.occupancies`` field
+#: (M35), whose write capability the pre-flight diff reads directly to know CIF *represents*
+#: occupancy rather than merely carrying the numbers as an unlabelled column.
 _LABEL_KEY = "cif:atom_site_label"
 _TYPE_SYMBOL_KEY = "cif:type_symbol"
-_WRITABLE_PER_ATOM = [_LABEL_KEY, _TYPE_SYMBOL_KEY, OCCUPANCY_CUSTOM_KEY]
+_WRITABLE_PER_ATOM = [_LABEL_KEY, _TYPE_SYMBOL_KEY]
 
 #: ``simulation.extra`` keys that must **not** be written back as CIF tags, though every other
 #: ``cif:``-prefixed key is. ``cif:symmetry_operations`` is the source's declared operation list,
@@ -313,7 +312,9 @@ class CifExporter(ExporterPlugin):
         # so a source that spelled one gets it back; otherwise the element symbol is the type.
         source_types = _column(per_atom, _TYPE_SYMBOL_KEY, n)
         types = [_or_else(source_types, i, symbols[i]) for i in range(n)]
-        occupancies = _column(per_atom, OCCUPANCY_CUSTOM_KEY, n)
+        # Occupancy is a first-class field now (M35): read straight from atoms.occupancies, where a
+        # per-site None is the source's unknown ('?'/'.') that _site_value writes back as '?'.
+        occupancies = canonical.frames[0].atoms.occupancies
 
         tags = [
             "_atom_site_label",
@@ -349,6 +350,12 @@ class CifExporter(ExporterPlugin):
                 "atoms.positions": FieldCapability(
                     level=CapabilityLevel.FULL,
                     notes="Written as fractional _atom_site_fract_* against the cell.",
+                ),
+                "atoms.occupancies": FieldCapability(
+                    level=CapabilityLevel.FULL,
+                    notes="Written as the _atom_site_occupancy column; a per-site unknown (None) "
+                    "is written back as '?'. CIF is the only Phase 1 target that represents "
+                    "occupancy, so converting to any other target drops it with a warning.",
                 ),
                 "cell.lattice_vectors": FieldCapability(
                     level=CapabilityLevel.FULL,
@@ -396,16 +403,12 @@ class CifExporter(ExporterPlugin):
                 ),
                 "user_metadata.custom_per_atom": FieldCapability(
                     level=CapabilityLevel.PARTIAL,
-                    notes="Site label, raw type symbol and occupancy are written back to their "
-                    "_atom_site columns; other per-atom columns (Wyckoff symbols, displacement "
-                    "parameters) are not re-emitted in v0.4.",
+                    notes="Site label and raw type symbol are written back to their _atom_site "
+                    "columns; other per-atom columns (Wyckoff symbols, displacement parameters) "
+                    "are not re-emitted. Occupancy is the first-class atoms.occupancies field.",
                 ),
                 "user_metadata.custom_per_frame": none,
             },
-            # Naming 'cif:occupancy' here is a positive claim that this format *represents* site
-            # occupancy — the pre-flight diff reads exactly this to decide whether a partial
-            # occupancy needs its warning (M19 slice 2), and CIF is the first target that earns
-            # the suppression rather than merely carrying the numbers somewhere.
             writable_custom_keys={
                 "user_metadata.custom_per_atom": _WRITABLE_PER_ATOM,
                 "user_metadata.custom_global": [_BLOCK_NAME_KEY],

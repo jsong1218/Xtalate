@@ -85,6 +85,7 @@ _PER_FRAME: tuple[tuple[str, Callable[[Frame], Any]], ...] = (
     ("atoms.atomic_numbers", lambda f: f.atoms.atomic_numbers),
     ("atoms.positions", lambda f: f.atoms.positions),
     ("atoms.masses", lambda f: f.atoms.masses),
+    ("atoms.occupancies", lambda f: f.atoms.occupancies),
     ("cell.lattice_vectors", lambda f: f.cell.lattice_vectors if f.cell else None),
     ("cell.pbc", lambda f: f.cell.pbc if f.cell else None),
     ("cell.space_group", lambda f: f.cell.space_group if f.cell else None),

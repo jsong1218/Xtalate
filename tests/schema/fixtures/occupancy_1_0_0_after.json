@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.1.0",
+  "schema_version": "1.0.0",
   "frames": [
     {
       "index": 0,
@@ -7,10 +7,12 @@
       "atoms": {
         "symbols": [
           "Na",
+          "Cl",
           "Cl"
         ],
         "atomic_numbers": [
           11,
+          17,
           17
         ],
         "positions": [
@@ -20,30 +22,39 @@
             0.0
           ],
           [
-            2.82,
-            2.82,
-            2.82
+            2.0,
+            2.5,
+            3.0
+          ],
+          [
+            2.0,
+            0.0,
+            0.0
           ]
         ],
         "masses": null,
-        "occupancies": null
+        "occupancies": [
+          1.0,
+          0.5,
+          null
+        ]
       },
       "cell": {
         "lattice_vectors": [
           [
-            5.64,
+            4.0,
             0.0,
             0.0
           ],
           [
             0.0,
-            5.64,
+            5.0,
             0.0
           ],
           [
             0.0,
             0.0,
-            5.64
+            6.0
           ]
         ],
         "pbc": [
@@ -51,7 +62,7 @@
           true,
           true
         ],
-        "space_group": null
+        "space_group": "P 1"
       },
       "dynamics": {
         "velocities": null,
@@ -70,27 +81,37 @@
   "trajectory": null,
   "simulation": null,
   "provenance": {
-    "source_filename": "POSCAR",
-    "source_format": "poscar",
+    "source_filename": "occupancy_cell_uncertainty.cif",
+    "source_format": "cif",
     "source_units": {
       "positions": "fractional",
       "lattice_vectors": "angstrom"
     },
     "original_coordinate_system": "fractional",
     "parse_notes": [
-      "Direct coordinates converted to Cartesian using lattice matrix (§4).",
-      "pbc set to (true,true,true) per POSCAR format definition (format-defined, not assumed).",
-      "scaling factor folded into lattice vectors (§4); source value: 1.0"
+      "partial site occupancy carried in the pre-1.0 custom_per_atom['cif:occupancy'] column."
     ],
     "history": [
       {
-        "timestamp": "2026-07-04T10:05:00Z",
+        "timestamp": "2026-07-21T16:10:10Z",
         "operation": "parse",
-        "source_format": "poscar",
+        "source_format": "cif",
         "target_format": null,
-        "tool_version": "0.1.0",
-        "parser_version": "poscar-parser 0.1.0",
+        "tool_version": "0.3.0",
+        "parser_version": "cif-parser 0.4.0",
         "assumptions": []
+      },
+      {
+        "timestamp": "<migrated>",
+        "operation": "migrate",
+        "source_format": null,
+        "target_format": null,
+        "tool_version": "<migrated>",
+        "parser_version": null,
+        "assumptions": [
+          "Migrated canonical schema 0.1.0 \u2192 1.0.0.",
+          "Promoted user_metadata.custom_per_atom['cif:occupancy'] to atoms.occupancies for 3 atom(s)."
+        ]
       }
     ]
   },
@@ -98,9 +119,20 @@
     "tags": [],
     "annotations": {},
     "custom_global": {
-      "poscar:comment": "NaCl primitive test"
+      "cif:data_block_name": "occupancy_cell_uncertainty"
     },
-    "custom_per_atom": {},
+    "custom_per_atom": {
+      "cif:atom_site_label": [
+        "Na1",
+        "Cl1",
+        "Cl2"
+      ],
+      "cif:type_symbol": [
+        "Na",
+        "Cl",
+        "Cl"
+      ]
+    },
     "custom_per_frame": {}
   }
 }

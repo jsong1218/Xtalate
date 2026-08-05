@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from xtalate.schema import (
+    SCHEMA_VERSION,
     AtomsBlock,
     CanonicalObject,
     Cell,
@@ -40,7 +41,7 @@ def test_plain_xyz_presence_matches_discovery_example() -> None:
         user_metadata=UserMetadata(custom_per_frame={"xyz:comment": np.array([0.0, 1.0])}),
     )
     pm = obj.field_presence()
-    assert pm.schema_version == "0.1.0"
+    assert pm.schema_version == SCHEMA_VERSION
     assert pm.status_of("atoms.symbols") == "present"
     assert pm.status_of("atoms.positions") == "present"
     assert pm.status_of("cell.lattice_vectors") == "absent"

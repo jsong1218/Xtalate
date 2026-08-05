@@ -207,6 +207,8 @@ deleting the first two stages and re-exposing the same calls, leaving the valida
 error contract and the builder untouched. CIF is priced at more than the other six formats
 combined, which is what makes that reversibility worth its cost.
 
-The FastAPI **Service** layer and Next.js **Web UI** described as future destinations do not exist
-yet; they attach to this same core without re-implementing it. Pre-1.0, a minor version may break:
-the Plugin SDK is not frozen and the canonical schema version is still `0.x`.
+The FastAPI **Service** layer and Next.js **Web UI** attach to this same core without
+re-implementing it. The Plugin SDK is the **frozen 1.x contract** as of the v1.0 contract freeze:
+the ABCs a plugin builds against evolve additively only within 1.x, so a plugin built against 1.0
+keeps working across the series; a breaking change waits for 2.0. (See
+[CONTRIBUTING.md](../CONTRIBUTING.md) for the promise and its scope.)

@@ -9,7 +9,6 @@ origin:
   license: "CC0-1.0"
 expectation:
   issue_codes:
-    - CIF_OCCUPANCY_NOT_MODELLED
     - CIF_TAGS_CARRIED
   stoichiometry: checked
 notes: >-

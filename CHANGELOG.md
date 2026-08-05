@@ -2,11 +2,20 @@
 
 All notable changes to Xtalate are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html). The canonical schema version is
-tracked separately from the package version and reaches `1.0.0` only in the v1.0 release
-(`docs/private/MASTER_SPEC.md` Part 2 §5); v0.1 objects carry `schema_version = "0.1.0"`.
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+The canonical **schema version** is tracked separately from the package version and moves under its
+own rules (see [Versioning and stability](README.md#versioning-and-stability)). It is `1.0.0` in code
+as of the v1.0 contract freeze; the *package* version reaches `1.0.0` only at the v1.0 release, and
+objects written by earlier releases carry `schema_version = "0.1.0"` (loaded forward through a real
+migration). Every release entry — and the `[Unreleased]` section that accrues the next one — carries
+a required **`Schema version:`** line stating the canonical `schema_version` it ships; a guard
+(`tests/test_changelog_schema_version.py`) fails CI if that line drifts from
+`xtalate.schema.SCHEMA_VERSION`.
 
 ## [Unreleased]
+
+Schema version: 1.0.0
 
 ## [0.7.0] — 2026-08-02
 

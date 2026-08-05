@@ -36,7 +36,6 @@ from xtalate.schema import (
 )
 from xtalate.schema.arrays import ArrayNx
 from xtalate.schema.cell import cell_parameters, lattice_from_parameters
-from xtalate.schema.paths import OCCUPANCY_CUSTOM_KEY
 
 _REGISTRY = default_registry()
 _EXPORTER = make_cif_exporter()
@@ -48,6 +47,7 @@ def _object(
     positions: np.ndarray | None = None,
     lattice: np.ndarray | None = None,
     space_group: str | None = None,
+    occupancies: list[float | None] | None = None,
     custom_per_atom: dict[str, ArrayNx | list[JsonValue]] | None = None,
     custom_global: dict[str, JsonValue] | None = None,
     extra: dict[str, str] | None = None,
@@ -60,7 +60,7 @@ def _object(
         frames=[
             Frame(
                 index=i,
-                atoms=AtomsBlock(symbols=symbols, positions=positions),
+                atoms=AtomsBlock(symbols=symbols, positions=positions, occupancies=occupancies),
                 cell=Cell(lattice_vectors=lattice, pbc=(True, True, True), space_group=space_group),
             )
             for i in range(n_frames)
@@ -272,35 +272,31 @@ def test_cartesian_positions_survive_the_round_trip() -> None:
 
 
 def test_occupancy_is_written_back_to_its_atom_site_column() -> None:
-    obj = _object(custom_per_atom={OCCUPANCY_CUSTOM_KEY: [0.5, 1.0]})
+    obj = _object(occupancies=[0.5, 1.0])
     text = _write(obj)
     assert "_atom_site_occupancy" in text
-    assert _reparse(text).user_metadata.custom_per_atom[OCCUPANCY_CUSTOM_KEY] == pytest.approx(
-        [0.5, 1.0]
-    )
+    reparsed = _reparse(text).frames[0].atoms.occupancies
+    assert reparsed is not None
+    assert reparsed == pytest.approx([0.5, 1.0])
 
 
 def test_cif_suppresses_the_partial_occupancy_warning() -> None:
-    # The P6 hook M19 slice 2 built, now exercised by a real format rather than a stub: CIF names
-    # 'cif:occupancy' in writable_custom_keys, so it *represents* occupancy and the warning that
-    # fires for all six other targets does not fire here. No edit to the pre-flight diff was
-    # needed to make this happen.
-    obj = _object(custom_per_atom={OCCUPANCY_CUSTOM_KEY: [0.5, 1.0]})
+    # CIF declares a writable atoms.occupancies capability, so it *represents* occupancy and the
+    # warning that fires for all six other targets does not fire here (P6). No edit to the
+    # pre-flight diff was needed to make this happen.
+    obj = _object(occupancies=[0.5, 1.0])
     diff = build_preflight(obj, _REGISTRY.capability_matrix(), "cif")
     assert "PARTIAL_OCCUPANCY_NOT_REPRESENTED" not in [w.code for w in diff.warnings]
 
 
 def test_unknown_occupancy_is_written_back_as_unknown() -> None:
     # '?' in, '?' out (P3). Writing 1.0 for an occupancy the source said was unknown would turn
-    # its silence into an assertion.
-    #
-    # `None`, not the string "?", because that is what the parser actually produces: `_resolve`
-    # maps the bare marker to `None` on the way in. This fixture used to say "?" and passed for
-    # the wrong reason — the bare `?` it asserted came from `_quote` failing to quote a literal
-    # (the defect below), not from the absence convention it claims to be testing.
-    text = _write(_object(custom_per_atom={OCCUPANCY_CUSTOM_KEY: [None, "1.0"]}))
+    # its silence into an assertion. A per-site unknown is the field's None.
+    text = _write(_object(occupancies=[None, 1.0]))
     assert "  ?" in text
-    assert _reparse(text).user_metadata.custom_per_atom[OCCUPANCY_CUSTOM_KEY][0] is None
+    occupancies = _reparse(text).frames[0].atoms.occupancies
+    assert occupancies is not None
+    assert occupancies[0] is None
 
 
 def test_a_literal_question_mark_is_quoted_so_it_stays_a_value() -> None:

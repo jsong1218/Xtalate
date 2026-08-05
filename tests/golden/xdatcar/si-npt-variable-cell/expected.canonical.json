@@ -25,7 +25,8 @@
             2.8
           ]
         ],
-        "masses": null
+        "masses": null,
+        "occupancies": null
       },
       "cell": {
         "lattice_vectors": [
@@ -89,7 +90,8 @@
             2.9
           ]
         ],
-        "masses": null
+        "masses": null,
+        "occupancies": null
       },
       "cell": {
         "lattice_vectors": [
@@ -153,7 +155,8 @@
             3.0
           ]
         ],
-        "masses": null
+        "masses": null,
+        "occupancies": null
       },
       "cell": {
         "lattice_vectors": [

@@ -309,3 +309,36 @@ Supplying the same `recovery_choices` in the initial `convert` request (instead 
 path produce byte-equivalent reports. Read the advertised limits (`GET /v1/limits`) before you hit
 them: an oversized upload is `413`, a rate burst is `429` with `Retry-After`, and — on an instance
 configured with a static API key — a keyless mutating request is `401`.
+
+### 5.3 The `/v1` contract and how it evolves
+
+As of the v1.0 contract freeze, the `/v1` surface is **frozen for the 1.x series**. Three things are
+the contract, and they are the same three the service ships as machine-readable artifacts:
+
+- the **endpoint set** — the paths and methods enumerated above (`upload`, `inspect`, `convert`,
+  `validate`, `jobs/{id}` and its `recovery` / `recovery/preview` / `cancel` sub-resources,
+  `conversions/{id}`, `download/{id}`, `history`, `capabilities[/{format_id}]`, `limits`, `health`);
+- the **response envelopes** — the pydantic report models of §3, embedded verbatim, and the single
+  error envelope `{ error: { code, message, details, request_id, documentation_url } }`; and
+- the **error-code set** — the stable machine strings each non-2xx response carries, cataloged in
+  [`error_codes.json`](error_codes.json) with a human reference in [`errors.md`](errors.md).
+
+[`docs/openapi.json`](openapi.json) is the **versioned, machine-readable form of this contract**. It
+is generated deterministically from the assembled app (`python -m backend.openapi`), source-pinned so
+two checkouts produce byte-identical output, and diff-guarded in CI — a route added, a field renamed,
+or a status code changed fails the build until the artifact is regenerated on purpose. It is
+published as a release artifact, so each release carries the exact `/v1` schema it shipped.
+
+The surface evolves under an **additive-only policy** (Part 6 §7), so a client written against 1.x
+keeps working across the series:
+
+- **Path-prefix versioning.** The version lives in the path (`/v1`). A change that would break the
+  frozen endpoints, envelopes, or codes waits for a new prefix (`/v2`); it is never slipped into
+  `/v1`.
+- **New capability arrives as *values*, not new endpoints.** A new format or a new recovery scenario
+  is a new *value* in an existing request or response field (a `format_id`, a scenario name), so it
+  needs no new route — `GET /v1/capabilities` and the report bodies simply carry more. Third-party
+  plugin formats appear on this surface with no API change at all.
+- **Additive fields are non-breaking.** New optional request fields and new response fields may be
+  added within 1.x; existing fields are not removed, renamed, or repurposed, and an existing error
+  code is never given a new meaning (new codes may be *added* to the set).

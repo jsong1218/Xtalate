@@ -32,7 +32,7 @@ Run it with the Tier 1 stack — `docker compose up` serves the UI at <http://lo
 v0.7 closes the product surface the specification's Parts 6–7 describe: the engine, the CLI, the `/v1` service, and the Web UI — upload, inspect, convert, interactive recovery, the acknowledgment gate, the record, formats, and history — plus the rendered docs site and a first-class self-hosting deployment. Two boundaries are stated rather than hidden:
 
 - **Advisory surfacing is a named, deliberate cut (post-1.0).** The recovery-feedback aggregation ships in the service as a read-only, metadata-only statistic; the seam to surface it in the UI is in place, but the aggregation-fed rendering is deferred. This costs no honesty by construction: **no default ever changes because of those statistics** (P4), so a recovery decision is never quietly steered by what other users chose.
-- **This release is not the v1.0 freeze.** The plugin SDK and the `/v1` REST contract are **not frozen until v1.0** — a pre-1.0 minor may still break them (risk R12) — and the canonical schema is unchanged at `0.1.0`. v0.7 finishes the product surface; v1.0 is the discipline pass. **Pin a version if you depend on the SDK or the REST contract.**
+- **The plugin SDK and the `/v1` REST contract are both frozen for 1.x.** The SDK ABCs (`ParserPlugin`/`ExporterPlugin`, the streaming surface, `ParseResult`/`ParseIssue`/`ParseError`, `FormatCapabilities`) are the **stable contract** third-party plugins build against, as of the v1.0 contract freeze: within 1.x they evolve **additively only**, so a plugin built against 1.0 keeps working across the series (see [CONTRIBUTING.md](CONTRIBUTING.md) for the promise and its scope). The `/v1` REST surface — its endpoints, response envelopes, and error codes — is **likewise frozen for 1.x** and evolves additively only: new formats and recovery scenarios arrive as *values* in existing fields, never as new endpoints, and [`docs/openapi.json`](docs/openapi.json) is its versioned, machine-readable form (see the [API reference](docs/API.md) for the additive-evolution policy). This closes risk R12. v0.7 finished the product surface; v1.0 is the discipline pass.
 
 ## What v0.5 does
 
@@ -67,7 +67,7 @@ contract. The library and CLI below are unchanged.
 - **No Web UI, and no accounts.** The Service is a headless REST API; the Next.js Web UI is v0.6. The v0.5 service runs in **anonymous mode** (optional static API keys only) — there are no user accounts, sessions, or per-user resources, so the account endpoints answer `404 NOT_ENABLED` and a resource is reachable by anyone holding its unguessable id.
 - **CIF is read and written, but not every CIF.** A file whose symmetry must be reconstructed from a space-group *symbol* alone is refused rather than guessed at; occupancy is carried under a namespaced key rather than modelled as a first-class canonical field, and only the CIF target writes it back.
 - **CLI recovery is still preset-only.** The command line takes choices up front or refuses; the *interactive* pause/resume is a Service feature (`allow_recovery` → `awaiting_recovery`).
-- **Pre-1.0, a minor version may break.** The plugin SDK and the REST `/v1` contract are not frozen until v1.0 (risk R12); the canonical schema is still `0.1.0`.
+- **The REST `/v1` contract — unfrozen in v0.5 — is now the frozen 1.x contract.** As of the v1.0 contract freeze its endpoint set, response envelopes, and error codes evolve **additively only** within 1.x ([`docs/openapi.json`](docs/openapi.json) is its versioned, machine-readable form; see the [API reference](docs/API.md) for the policy). This closed the open risk R12. (The plugin SDK ABCs are likewise frozen for 1.x.)
 
 ## Install
 
@@ -202,6 +202,49 @@ Architectural decisions (D1–D99) and MASTER_SPEC are maintained privately. Pub
 reference decision IDs. If you need the rationale for a particular decision, feel free to open an
 issue or contact me.
 
+## Versioning and stability
+
+Xtalate follows [Semantic Versioning](https://semver.org/). As of the **v1.0 contract freeze**, the
+version number protects a **named public surface** — the last free breaking change was the freeze
+itself, and within the 1.x series every one of these evolves **additively only** (new formats,
+scenarios, optional fields, and hooks arrive with safe defaults; nothing already documented is
+removed, renamed, or given a new meaning):
+
+- **The canonical schema** — the field names, shapes, unit conventions, and absence semantics (**P3**)
+  of the eight-category Canonical Model.
+- **The report schemas** — `DiscoveryReport`, `ConversionReport`, and `ValidationReport`, embedded
+  verbatim in every CLI/library/`/v1` result.
+- **The plugin SDK ABCs** — `ParserPlugin`, `ExporterPlugin`, the streaming surface,
+  `ParseResult`/`ParseIssue`/`ParseError`, and `FormatCapabilities` (see
+  [CONTRIBUTING.md](CONTRIBUTING.md)).
+- **The `/v1` REST surface** — its endpoints, response envelopes, and error codes; the versioned,
+  machine-readable form is [`docs/openapi.json`](docs/openapi.json) (see the
+  [API reference](docs/API.md) for the additive-evolution policy).
+- **The documented CLI flags** — the four subcommands, their flags, the `--json` convention, and the
+  exit-code ladder `0`–`5` (see the [CLI reference](docs/cli.md)).
+
+Anything that would break one of these waits for **2.0**, with migration notes. The internal,
+`_`-prefixed surface is explicitly **not** part of the contract.
+
+**Two version numbers, moving under distinct rules.** Xtalate carries two independent version axes,
+and it is worth keeping them straight:
+
+- The **product version** (`xtalate.__version__`, `pyproject.toml`, `CITATION.cff` — guarded to agree)
+  is the SemVer of the distribution: what `pip install xtalate` reports and what is stamped into
+  `provenance.history[].tool_version`. It bumps on every release.
+- The **canonical `schema_version`** is the on-the-wire version of the Canonical Model, stamped into
+  every object and reported in every result. It is **1.0.0** as of the freeze, and it bumps only when
+  the schema itself changes — behind a **real migration** (a stored object of an older `schema_version`
+  is carried forward on load and gains a `ConversionRecord(operation="migrate")`; a forward migration
+  is recorded, never silent). A product release can ship without a schema change, so the two numbers
+  are decoupled by design: a REST break and a canonical-model migration move under different rules and
+  at different times.
+
+The v1.0 contract freeze **declares** this surface; the `1.0.0` **release** follows only after a
+30-day window of green nightly runs (a nightly red in the window is a stop-the-line defect that
+restarts the count). Until that release, the product version stays below `1.0.0` even though the
+schema and the contract are already frozen.
+
 ## Development
 
 ```bash
@@ -225,8 +268,8 @@ kinds and they ask different things of you. A **golden** case (`tests/golden/`) 
 a real third-party file asserting what it *does* produce — the exact set of issue codes, plus the
 composition the file declares for itself — so it needs a triage rather than a derivation, which
 makes it much cheaper to add. Both need a manifest and a license; no manifest, no license, no
-merge. Parser plugins are welcome too, with the caveat that the plugin SDK is not frozen until
-v1.0.
+merge. Parser plugins are welcome too — the plugin SDK is the frozen 1.x contract (see
+[CONTRIBUTING.md](CONTRIBUTING.md) for the stability promise and its scope).
 
 ## License
 

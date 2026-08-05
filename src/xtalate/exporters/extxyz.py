@@ -179,7 +179,7 @@ class ExtxyzExporter(ExporterPlugin):
                     level=CapabilityLevel.PARTIAL,
                     notes="Written back as Properties= columns, but only under a name extXYZ can "
                     "spell: the Properties= grammar separates its fields with ':', so a "
-                    "format-scoped key such as 'cif:occupancy' cannot be written at all, and a "
+                    "format-scoped key such as 'cif:wyckoff_symbol' cannot be written, and a "
                     "bare name is read back re-prefixed as 'extxyz:<name>'. Keys matching "
                     "'extxyz:<name>' round-trip exactly; the rest are dropped.",
                 ),

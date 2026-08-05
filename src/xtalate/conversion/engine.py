@@ -654,9 +654,10 @@ class ConversionEngine:
             presence,
             frame_count=counters["frames"],
             has_constraints=False,  # constraint targets are ineligible; no frame carries a subset
-            # Occupancy is a header-level per-atom array, so the streamed path has it in hand
-            # before the first frame — same scalar the materialized path computes (rule 3).
-            partial_occupancy=partial_occupancy_count(header.custom_per_atom),
+            # Occupancy is only ever produced by CIF, a single-structure format that never streams,
+            # so a streamed source carries none — the same scalar (0) the materialized path would
+            # compute for the same occupancy-free object (rule 3).
+            partial_occupancy=partial_occupancy_count(None),
             matrix=matrix,
             target_format_id=target_format_id,
         )
@@ -826,9 +827,9 @@ class ConversionEngine:
             presence,
             frame_count=n,
             has_constraints=False,  # guaranteed by the constraint-absence guard just above
-            # Per-atom, so frame selection does not change it: the retained frame carries the same
-            # occupancies as the whole trajectory did.
-            partial_occupancy=partial_occupancy_count(header.custom_per_atom),
+            # Occupancy is only ever produced by CIF, a single-structure format that never streams,
+            # so a streamed source carries none (frame selection cannot introduce it either).
+            partial_occupancy=partial_occupancy_count(None),
             matrix=matrix,
             target_format_id=target_format_id,
         )

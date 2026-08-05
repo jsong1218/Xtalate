@@ -22,8 +22,9 @@ The HTTP service (adds FastAPI and the job/queue/storage stack) is an optional e
 pip install "xtalate[service]"
 ```
 
-> Xtalate's plugin SDK is **not yet frozen** — parser/exporter interfaces may change before v1.0.
-> Pin a version if you depend on them.
+> Xtalate's plugin SDK is the **frozen 1.x contract** (v1.0 contract freeze): the parser/exporter
+> ABCs evolve additively only within 1.x, so a plugin built against 1.0 keeps working across the
+> series. See [CONTRIBUTING.md](../CONTRIBUTING.md) for the promise and its scope.
 
 ## 2. Convert a file (CLI)
 

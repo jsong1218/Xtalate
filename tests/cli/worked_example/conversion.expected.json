@@ -8,7 +8,7 @@
     "format_id": "ase_traj",
     "filename": "relax.traj",
     "sha256": "<normalized>",
-    "schema_version": "0.1.0"
+    "schema_version": "1.0.0"
   },
   "target": {
     "format_id": "poscar",

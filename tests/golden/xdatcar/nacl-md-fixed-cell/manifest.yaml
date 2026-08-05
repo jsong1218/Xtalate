@@ -4,7 +4,7 @@ source_file: XDATCAR
 expected_canonical: expected.canonical.json
 canonical_schema_version: "0.1.0"
 sha256: "222aa93cfb70cf392d37c44a03eb3d706fb2d849f352027b60ef4859927159c6"
-expected_sha256: "3b53a32cc418bfeb5938fca373e62ac2a8bd49c2e9e354d7b23e80d5e9ca2371"
+expected_sha256: "68bfd090ac2a2a9afa3937395faf956e5aafdb1c48277f6650e5cdb1a4b7da38"
 origin:
   kind: synthetic
   source: "Hand-written for M13 (VASP-5 XDATCAR, fixed-cell form, NaCl-like, 3 configurations)"

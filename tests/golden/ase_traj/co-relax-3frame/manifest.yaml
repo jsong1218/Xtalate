@@ -4,7 +4,7 @@ source_file: relax.traj
 expected_canonical: expected.canonical.json
 canonical_schema_version: "0.1.0"
 sha256: "39c5b8b0e4a270f1211015e62c7ce095e7821308ce31d5ff12ebc6bfc22f7cd4"
-expected_sha256: "15f444f591ecab3d75d7b9483bd89a2f7766991fdc05f030b5fcd1c6170aff17"
+expected_sha256: "b4772d5a6cfa8f17d460772311f9f929e16a0fee61648e523a67bd9dd76403c1"
 origin:
   kind: synthetic
   source: >-

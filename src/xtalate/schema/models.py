@@ -32,9 +32,12 @@ from xtalate.schema.arrays import (
 )
 from xtalate.schema.elements import atomic_number, is_valid_symbol
 
-# The schema version shipped with product v0.1. Pre-1.0 schema is a 0.x.y series
-# (§5): reaching "1.0.0" is itself a v1.0 deliverable, so no v0.1 object may claim it.
-SCHEMA_VERSION = "0.1.0"
+# The Canonical Model schema version (§5), frozen at the v1.0 contract-freeze milestone (M35).
+# The predecessor 0.x series is carried forward by the real 0.1.0 -> 1.0.0 migration in
+# ``schema.migrations`` (D114); a stored 0.1.0 object loaded through ``load_canonical`` becomes a
+# 1.0.0 object with a ``migrate`` provenance record. This is the *schema* version — the product
+# package version moves under separate rules (Part 10 §4.2) and is not this string.
+SCHEMA_VERSION = "1.0.0"
 
 
 class _Model(BaseModel):
@@ -55,6 +58,12 @@ class AtomsBlock(_Model):
     atomic_numbers: list[int] = Field(default_factory=list)
     positions: ArrayN3  # Cartesian, Å. REQUIRED (§4).
     masses: ArrayN | None = None  # u. None = source specified none.
+    # Fractional site occupancy, one entry per atom (§3.3). None (the field) = the source
+    # declared no occupancy; a per-site None = the source declared this site's occupancy
+    # unknown/inapplicable (CIF '?'/'.') — silence, not a claim of fullness (P3, P4). Held as
+    # a list rather than an ``ArrayN`` because that array type refuses non-finite values, and a
+    # per-site "unknown" has no finite float that would not fabricate a number the source withheld.
+    occupancies: list[float | None] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -83,6 +92,8 @@ class AtomsBlock(_Model):
             )
         if self.masses is not None and self.masses.shape[0] != n:
             raise ValueError(f"masses length {self.masses.shape[0]} != atom count {n}")
+        if self.occupancies is not None and len(self.occupancies) != n:
+            raise ValueError(f"occupancies length {len(self.occupancies)} != atom count {n}")
         for s in self.symbols:
             if not is_valid_symbol(s):
                 raise ValueError(f"invalid element symbol {s!r} (use 'X' for unknown, §3.3)")

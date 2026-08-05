@@ -243,7 +243,7 @@ def test_xyz_target_keeps_comment_key_per_key_in_write_plan() -> None:
 
 def test_extxyz_target_removes_a_per_atom_key_its_grammar_cannot_spell() -> None:
     # extXYZ's writable per-atom set is open-ended, so it is declared as a *pattern* rather than a
-    # list (D69). A CIF source's `cif:occupancy` fails that pattern — the Properties= grammar
+    # list (D69). A CIF source's `cif:type_symbol` fails that pattern — the Properties= grammar
     # separates its fields with ':', so the column cannot be written under that name at all. This
     # must be predicted Removed, and the stakes are higher than the usual over-promise: writing it
     # anyway does not merely lose the column, it produces a file ASE cannot re-parse.
@@ -251,7 +251,7 @@ def test_extxyz_target_removes_a_per_atom_key_its_grammar_cannot_spell() -> None
     source = _parse(reg, "cif", GOLDEN / "cif" / "zno-hexagonal-p1" / "zno_hexagonal.cif")
     diff = build_preflight(source, _matrix(reg), "extxyz")
 
-    key = "user_metadata.custom_per_atom['cif:occupancy']"
+    key = "user_metadata.custom_per_atom['cif:type_symbol']"
     removed = {e.path: e for e in diff.removed}
     assert key in removed
     assert key not in {e.path for e in diff.preserved}
