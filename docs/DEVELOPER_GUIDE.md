@@ -179,6 +179,11 @@ convenient:
   seems wrong, say so in your PR and propose the rename explicitly — never rename silently.
 - **Docs and behavior change together.** A behavior change and its documentation change are one
   atomic PR.
+- **Every release states its schema version.** The `CHANGELOG.md` release entry — and the
+  `[Unreleased]` section that accrues the next release — carries a required `Schema version:` line
+  naming the canonical `schema_version` it ships, guarded against `xtalate.schema.SCHEMA_VERSION` by
+  `tests/test_changelog_schema_version.py`. The product version and the schema version move under
+  distinct rules (see [Versioning and stability](../README.md#versioning-and-stability)).
 - **No AI attribution in commits.** No `Co-Authored-By` AI trailer, no "Generated with…" line, and
   no AI listed as author or contributor in commit metadata, `CITATION.cff`, or release notes — the
   human maintainer is the author of record on every commit.

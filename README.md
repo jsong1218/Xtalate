@@ -202,6 +202,49 @@ Architectural decisions (D1–D99) and MASTER_SPEC are maintained privately. Pub
 reference decision IDs. If you need the rationale for a particular decision, feel free to open an
 issue or contact me.
 
+## Versioning and stability
+
+Xtalate follows [Semantic Versioning](https://semver.org/). As of the **v1.0 contract freeze**, the
+version number protects a **named public surface** — the last free breaking change was the freeze
+itself, and within the 1.x series every one of these evolves **additively only** (new formats,
+scenarios, optional fields, and hooks arrive with safe defaults; nothing already documented is
+removed, renamed, or given a new meaning):
+
+- **The canonical schema** — the field names, shapes, unit conventions, and absence semantics (**P3**)
+  of the eight-category Canonical Model.
+- **The report schemas** — `DiscoveryReport`, `ConversionReport`, and `ValidationReport`, embedded
+  verbatim in every CLI/library/`/v1` result.
+- **The plugin SDK ABCs** — `ParserPlugin`, `ExporterPlugin`, the streaming surface,
+  `ParseResult`/`ParseIssue`/`ParseError`, and `FormatCapabilities` (see
+  [CONTRIBUTING.md](CONTRIBUTING.md)).
+- **The `/v1` REST surface** — its endpoints, response envelopes, and error codes; the versioned,
+  machine-readable form is [`docs/openapi.json`](docs/openapi.json) (see the
+  [API reference](docs/API.md) for the additive-evolution policy).
+- **The documented CLI flags** — the four subcommands, their flags, the `--json` convention, and the
+  exit-code ladder `0`–`5` (see the [CLI reference](docs/cli.md)).
+
+Anything that would break one of these waits for **2.0**, with migration notes. The internal,
+`_`-prefixed surface is explicitly **not** part of the contract.
+
+**Two version numbers, moving under distinct rules.** Xtalate carries two independent version axes,
+and it is worth keeping them straight:
+
+- The **product version** (`xtalate.__version__`, `pyproject.toml`, `CITATION.cff` — guarded to agree)
+  is the SemVer of the distribution: what `pip install xtalate` reports and what is stamped into
+  `provenance.history[].tool_version`. It bumps on every release.
+- The **canonical `schema_version`** is the on-the-wire version of the Canonical Model, stamped into
+  every object and reported in every result. It is **1.0.0** as of the freeze, and it bumps only when
+  the schema itself changes — behind a **real migration** (a stored object of an older `schema_version`
+  is carried forward on load and gains a `ConversionRecord(operation="migrate")`; a forward migration
+  is recorded, never silent). A product release can ship without a schema change, so the two numbers
+  are decoupled by design: a REST break and a canonical-model migration move under different rules and
+  at different times.
+
+The v1.0 contract freeze **declares** this surface; the `1.0.0` **release** follows only after a
+30-day window of green nightly runs (a nightly red in the window is a stop-the-line defect that
+restarts the count). Until that release, the product version stays below `1.0.0` even though the
+schema and the contract are already frozen.
+
 ## Development
 
 ```bash
