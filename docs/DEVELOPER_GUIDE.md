@@ -152,9 +152,14 @@ A complete, installable worked example lives at
 exporter with its own `pyproject.toml` and entry-point declarations, importing only the public SDK,
 which the test suite installs and drives end-to-end. Copy its shape.
 
-> **Churn warning.** The Plugin SDK (`xtalate.sdk`) is **not frozen until v1.0**. An installable
-> plugin — like an in-tree format — may need to follow SDK signature changes between minor
-> versions. Pin the Xtalate version you build against, and watch the changelog for SDK changes.
+> **Stability promise.** The Plugin SDK (`xtalate.sdk`) is the **frozen 1.x contract** as of the
+> v1.0 contract freeze. The ABCs an installable plugin builds against — `ParserPlugin`,
+> `ExporterPlugin`, the streaming surface, `ParseResult`/`ParseIssue`/`ParseError`, and
+> `FormatCapabilities` — evolve **additively only** within 1.x: new optional hooks and capability
+> fields arrive with safe defaults, and no existing signature, field meaning, or the absence/error
+> contract changes. A plugin built against 1.0 keeps working across every 1.x release. The freeze
+> covers the public SDK only — the `_`-prefixed internal surface is not part of the contract — and a
+> breaking change waits for 2.0, with migration notes.
 
 ## 6. Coding conventions (the non-negotiables)
 

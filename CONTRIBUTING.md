@@ -19,12 +19,17 @@ This guide is the practical companion to the [Architecture Overview](docs/ARCHIT
 > a review any domain expert can do without reverse-engineering this codebase, and it is how the
 > two defects fixed in v0.4 were found.
 >
-> **Parser/exporter contributions are welcome — with a churn warning.** The plugin SDK
-> (`xtalate.sdk`) is **not frozen until v1.0** (roadmap risk R12). Until then, a format
-> plugin you write may need to follow SDK signature changes between minor versions. We'll
-> help, and we'll keep the churn visible in the changelog, but you should know it's there
-> before you invest. If you want a format supported and don't want to track churn, filing a
-> **Format request** issue with example files is itself a valuable contribution.
+> **Parser/exporter contributions are welcome — against a stable SDK.** The plugin SDK
+> (`xtalate.sdk`) is the **frozen 1.x contract** as of the v1.0 contract freeze: `ParserPlugin`,
+> `ExporterPlugin`, the streaming surface, `ParseResult`/`ParseIssue`/`ParseError`, and
+> `FormatCapabilities` evolve **additively only** within 1.x — new optional hooks and capability
+> fields arrive with safe defaults, and no existing abstract-method signature, field meaning, or the
+> absence/error contract changes — so a plugin you build against 1.0 keeps working across every 1.x
+> release. The promise covers the public SDK only: the `_`-prefixed internal surface is not part of
+> the contract, and first-party formats hold no privileged API, so your plugin has exactly the
+> guarantees a built-in does. A breaking change waits for 2.0, with migration notes. If you'd rather
+> we maintain the format, filing a **Format request** issue with example files is itself a valuable
+> contribution.
 
 ## Start here
 
@@ -124,7 +129,7 @@ A golden case is a source file plus its hand-verified expected Canonical Object 
 ## Adding a format (parser/exporter)
 
 The full checklist (see also [Developer Guide §5](docs/DEVELOPER_GUIDE.md#5-adding-a-format), and
-the churn warning above):
+the SDK stability promise above):
 
 1. Implement `ParserPlugin` / `ExporterPlugin` (`xtalate.sdk`). A parser reads one format to a
    Canonical Object and **never** reads files of another format or calls another parser (P2);
@@ -169,10 +174,10 @@ public SDK, which the test suite installs and drives end-to-end (registry discov
 Matrix membership, the `xtalate capabilities` surface, and a full-pipeline conversion). Copy its
 shape.
 
-**The churn warning applies here too, doubly.** The plugin SDK (`xtalate.sdk`) is **not frozen
-until v1.0** (risk R12): an installable plugin may need to follow SDK signature changes between
-minor versions, exactly as an in-tree format does. Pin the Xtalate version you build against, and
-watch the changelog for SDK changes.
+**The stability promise applies here too.** The public SDK an installable plugin imports is the
+frozen 1.x contract, exactly as for an in-tree format: within 1.x it changes only additively, so a
+plugin published against 1.0 keeps working across the series without tracking signature churn.
+Depend on any 1.x release; a breaking change waits for 2.0, with migration notes.
 
 ## PR expectations
 
