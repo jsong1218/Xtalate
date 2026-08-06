@@ -51,10 +51,10 @@ function Card({
   tone?: "neutral" | "fail";
   children?: React.ReactNode;
 }) {
-  const border = tone === "fail" ? "border-cb-fail bg-cb-fail-bg" : "border-slate-200 bg-white";
+  const border = tone === "fail" ? "border-cb-fail bg-cb-fail-bg" : "border-line bg-surface";
   return (
     <section aria-label={title} className={`space-y-2 rounded-lg border p-4 ${border}`}>
-      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+      <h2 className="text-lg font-semibold text-strong">{title}</h2>
       {children}
     </section>
   );
@@ -62,7 +62,7 @@ function Card({
 
 function StartOver() {
   return (
-    <Link href="/convert" className="text-sm text-slate-600 underline">
+    <Link href="/convert" className="text-sm text-muted underline">
       Convert another file
     </Link>
   );
@@ -118,7 +118,7 @@ export default function ConversionJobPage() {
   if (!envelope) {
     return (
       <main>
-        <p role="status" className="text-slate-600">
+        <p role="status" className="text-muted">
           Loading this conversion…
         </p>
       </main>
@@ -137,7 +137,7 @@ export default function ConversionJobPage() {
     <main className="space-y-6">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Conversion</h1>
-        <p className="font-mono text-xs text-slate-400">job {envelope.job_id}</p>
+        <p className="font-mono text-xs text-faint">job {envelope.job_id}</p>
       </header>
 
       {state === "queued" || state === "running" ? <JobPhase envelope={envelope} /> : null}
@@ -174,7 +174,7 @@ export default function ConversionJobPage() {
                   ? `/conversions/${result.conversion_id}?file_id=${encodeURIComponent(fileId)}`
                   : `/conversions/${result.conversion_id}`
               }
-              className="inline-block text-sm font-medium text-slate-800 underline"
+              className="inline-block text-sm font-medium text-strong underline"
             >
               View the full record{report.status === "refused" ? "" : " and download the file"}
             </Link>
@@ -194,13 +194,13 @@ export default function ConversionJobPage() {
       {state === "expired" ? (
         <div className="space-y-3">
           <Card title="Refused — no recovery choice was made" tone="fail">
-            <p className="text-sm text-slate-800">
+            <p className="text-sm text-strong">
               This conversion needed a decision before it could be written, and the window for
               supplying one closed. Xtalate <strong>refused the conversion</strong> rather than
               choosing on your behalf: no default was applied, no value was invented, and no output
               file was written.
             </p>
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-body">
               The refusal itself is recorded — the reference below identifies it — so the outcome is
               auditable rather than merely absent. Converting again lets you supply the choices up
               front.
@@ -221,7 +221,7 @@ export default function ConversionJobPage() {
       {state === "cancelled" ? (
         <div className="space-y-3">
           <Card title="Cancelled">
-            <p className="text-sm text-slate-800">
+            <p className="text-sm text-strong">
               You cancelled this conversion, so <strong>no report exists for it</strong> — not an
               empty one, none at all. Nothing was written and nothing was measured.
             </p>
@@ -233,7 +233,7 @@ export default function ConversionJobPage() {
       {/* A terminal state the UI does not have a card for is still named, never rendered blank. */}
       {terminal && state !== "completed" && !["failed", "expired", "cancelled"].includes(state) ? (
         <Card title={`Job ${state}`}>
-          <p className="text-sm text-slate-700">
+          <p className="text-sm text-body">
             The service reported this job as <code className="font-mono">{state}</code>.
           </p>
         </Card>
@@ -241,7 +241,7 @@ export default function ConversionJobPage() {
 
       {state === "completed" && !report ? (
         <Card title="Completed">
-          <p className="text-sm text-slate-700">
+          <p className="text-sm text-body">
             This job completed but carried no conversion report.
           </p>
         </Card>
@@ -258,11 +258,11 @@ export default function ConversionJobPage() {
             type="button"
             onClick={handleCancel}
             disabled={cancelling}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            className="rounded-md border border-line px-3 py-1.5 text-sm text-body hover:bg-raised disabled:opacity-60"
           >
             {cancelling ? "Cancelling…" : "Cancel this conversion"}
           </button>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-faint">
             Cancelling is best-effort: work already underway may finish first, and a conversion that
             has already produced its result keeps it.
           </p>

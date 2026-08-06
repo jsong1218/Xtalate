@@ -51,7 +51,7 @@ export function DeleteFileControl({
           setFailed(false);
           setConfirming(true);
         }}
-        className="text-sm text-slate-600 underline underline-offset-2 hover:text-slate-900"
+        className="text-sm text-muted underline underline-offset-2 hover:text-strong"
       >
         Delete file
       </button>
@@ -72,8 +72,8 @@ export function DeleteFileControl({
   }
 
   return (
-    <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
-      <p className="text-sm text-slate-700">{retentionSentence(retention)}</p>
+    <div className="space-y-2 rounded-md border border-line bg-raised p-3">
+      <p className="text-sm text-body">{retentionSentence(retention)}</p>
       {failed ? (
         <p className="text-sm text-cb-fail" role="alert">
           The file could not be deleted — nothing was removed. Please try again.
@@ -84,7 +84,7 @@ export function DeleteFileControl({
           type="button"
           onClick={confirmDelete}
           disabled={deleting}
-          className="rounded-md bg-cb-fail px-3 py-1 text-sm font-medium text-white disabled:opacity-60"
+          className="rounded-md bg-cb-fail-solid px-3 py-1 text-sm font-medium text-white disabled:opacity-60"
         >
           {deleting ? "Deleting…" : "Delete"}
         </button>
@@ -92,7 +92,7 @@ export function DeleteFileControl({
           type="button"
           onClick={() => setConfirming(false)}
           disabled={deleting}
-          className="text-sm text-slate-600 underline underline-offset-2"
+          className="text-sm text-muted underline underline-offset-2"
         >
           Cancel
         </button>

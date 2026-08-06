@@ -171,7 +171,7 @@ export function RecoveryWizard({
       {/* The record must be in view before consent (P4). While it loads, Confirm waits; if it cannot
           be fetched, we say so — nothing has been recorded — and offer a retry, never a silent commit. */}
       {complete && previewState === "loading" ? (
-        <p className="text-sm text-slate-600" data-testid="preview-loading">
+        <p className="text-sm text-muted" data-testid="preview-loading">
           Checking the exact wording that will be recorded…
         </p>
       ) : null}
@@ -182,12 +182,12 @@ export function RecoveryWizard({
           data-testid="preview-error"
           className="space-y-2 rounded-md border border-cb-assumption bg-cb-assumption-bg p-3"
         >
-          <p className="text-sm font-medium text-slate-900">
+          <p className="text-sm font-medium text-strong">
             The exact Assumption text could not be fetched — nothing has been recorded, and the
             conversion has not resumed.
           </p>
           {previewUnresolved.length > 0 ? (
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-body">
               The engine still needs a decision for:{" "}
               {previewUnresolved.map((code) => labelForScenario(code).label).join(", ")}.
             </p>
@@ -196,7 +196,7 @@ export function RecoveryWizard({
           <button
             type="button"
             onClick={() => setPreviewNonce((n) => n + 1)}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-body hover:bg-raised"
           >
             Try previewing again
           </button>
@@ -209,7 +209,7 @@ export function RecoveryWizard({
         type="button"
         onClick={handleConfirm}
         disabled={!canConfirm}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+        className="rounded-md bg-inverse px-4 py-2 text-sm font-medium text-inverse-fg hover:bg-inverse-hover disabled:opacity-50"
       >
         {submitting ? "Resuming…" : "Confirm and convert"}
       </button>

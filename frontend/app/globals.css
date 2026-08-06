@@ -3,23 +3,53 @@
 @tailwind utilities;
 
 /*
- * The loss-communication palette — MASTER_SPEC Part 7 §4, defined ONCE here (D90 token-once rule).
- * Tailwind aliases these variables into its color scale (tailwind.config.ts); nothing else in the
- * app hard-codes a loss color. Color is never the sole carrier of meaning — every use pairs a
- * token with an icon and a text label (see components/loss/icons.tsx) — but each foreground token
- * clears WCAG AA contrast (>= 4.5:1) against every surface it renders on anyway, and the palette is
- * kept distinguishable under common color-vision deficiencies (green/red separated by the ✓ vs ✗
- * glyph and by lightness, not hue alone). The M30 accessibility pass verified these bounds and
- * `globals.contrast.test.ts` guards them: a token edit that drops any pair below AA fails CI.
+ * The Xtalate UI palette — MASTER_SPEC Part 7 §4, defined ONCE here (D90 token-once rule). Two kinds
+ * of token live here:
  *
- * The v0.6 UI renders a **single light surface** — the body is `bg-white text-slate-900` and no
- * component carries `dark:` variants (D96). So there is intentionally no `prefers-color-scheme:
- * dark` override here: lightening the foregrounds while the panels stayed white (they are hard-coded
- * `bg-white`) would *lower* contrast to ~1.7–2.8:1, the opposite of an accessibility gain. A real
- * dark theme — dark surfaces plus surface-aware tokens — is deferred to a later version.
+ *   1. The **loss-communication palette** (`--cb-*`): one color per §4 meaning. Color is never the
+ *      sole carrier of meaning — every use pairs a token with an icon and a text label (see
+ *      components/loss/icons.tsx) — but each foreground token also clears WCAG AA contrast
+ *      (>= 4.5:1) against every surface it renders on, in BOTH themes.
+ *   2. The **semantic surface tokens** (`--surface`, `--text-*`, `--border-*`, `--inverse*`,
+ *      `--accent*`): the neutral chrome every page is built from. Components write `bg-surface` /
+ *      `text-body` / `border-default` (aliased in tailwind.config.ts) instead of hard-coding
+ *      `bg-white` / `text-slate-900`, so a single theme flip re-skins the whole app.
+ *
+ * **Two themes (the pre-M36 frontend-redesign addendum).** The base `:root {…}` block is the light
+ * theme; `:root[data-theme="dark"] {…}` overrides it for dark. The theme is selected by a
+ * `data-theme` attribute on <html> (default light, opt-in toggle persisted in localStorage) — NOT by
+ * `prefers-color-scheme`. This overrides D96, which deferred dark mode on the grounds that lightening
+ * the loss foregrounds while the panels stayed `bg-white` would *lower* contrast: the fix is exactly
+ * this — dark surfaces AND surface-aware `--cb-*` values, so every pair clears AA on the surface it
+ * actually renders on. `globals.contrast.test.ts` reads these values and guards both themes: a token
+ * edit that drops any rendered pair below AA in either theme fails CI. The palette stays
+ * distinguishable under common color-vision deficiencies (meaning carried by glyph + label + lightness,
+ * not hue alone).
  */
 :root {
-  /* Foreground / icon colors, one per §4 meaning (on the light surface). */
+  /* Neutral surface chrome (light). Values match the pre-addendum look (white page, slate text). */
+  --surface: #ffffff; /* page + panel background            */
+  --surface-raised: #f8fafc; /* subtle raised/hover zones (slate-50)   */
+  --surface-muted: #f1f5f9; /* chips / inert fills (slate-100)        */
+  --border-default: #e2e8f0; /* default hairline border (slate-200)    */
+  --border-subtle: #f1f5f9; /* faint dividers (slate-100)             */
+  --border-strong: #0f172a; /* selected / emphasized outline (slate-900) */
+  --text-strong: #0f172a; /* headings, emphasis (slate-900)          */
+  --text-body: #334155; /* default paragraph text (slate-700)      */
+  --text-muted: #475569; /* secondary text (slate-600)              */
+  --text-faint: #64748b; /* hints, metadata (slate-500)             */
+
+  /* The inverse surface — dark chip/button in light, light chip/button in dark. */
+  --inverse: #0f172a; /* filled neutral button bg (slate-900)    */
+  --inverse-fg: #ffffff; /* text on the inverse surface             */
+  --inverse-hover: #334155; /* inverse hover (slate-700)               */
+
+  /* The forward-action accent (used by the S3 Button primitive; defined here so it flips too). */
+  --accent: #2563eb; /* blue-600                                */
+  --accent-fg: #ffffff;
+  --accent-hover: #1d4ed8; /* blue-700                                */
+
+  /* Loss foregrounds, one per §4 meaning (on the light surface). */
   --cb-preserve: #15803d; /* green  — present / preserved / check passed        */
   /* Slate, not gray: on the capabilities grid (Part 7 §2.7) a ✓/✗ column of green vs pale gray was
      too low-contrast to scan (the v0.7 review). Darkened to slate so ✗ reads clearly against ✓ —
@@ -30,7 +60,8 @@
   --cb-removed: #b91c1c; /* red    — removed by conversion                      */
   --cb-assumption: #6d28d9; /* violet — assumption / supplied (third thing)     */
   --cb-warning: #b45309; /* amber  — warning                                    */
-  --cb-fail: #d42020; /* red, filled — validation fail / refusal (AA on fail-bg) */
+  --cb-fail: #d42020; /* red    — validation fail / refusal, as TEXT + border   */
+  --cb-fail-solid: #d42020; /* red    — filled ✕ badge / destructive button (white text on it) */
   --cb-skipped: #6b7280; /* gray with label — validation skipped                */
 
   /* Subtle row tints for the report panels (M27), AA-legible with the foregrounds above. */
@@ -39,4 +70,44 @@
   --cb-assumption-bg: #f5f3ff;
   --cb-warning-bg: #fffbeb;
   --cb-fail-bg: #fef2f2;
+}
+
+:root[data-theme="dark"] {
+  /* Neutral surface chrome (dark). Page + panels share a dark slate; separation is by border. */
+  --surface: #0f172a; /* slate-900 */
+  --surface-raised: #1e293b; /* slate-800 */
+  --surface-muted: #334155; /* slate-700 */
+  --border-default: #334155; /* slate-700 */
+  --border-subtle: #1e293b; /* slate-800 */
+  --border-strong: #cbd5e1; /* slate-300 */
+  --text-strong: #f8fafc; /* slate-50  */
+  --text-body: #e2e8f0; /* slate-200 */
+  --text-muted: #cbd5e1; /* slate-300 */
+  --text-faint: #94a3b8; /* slate-400 */
+
+  --inverse: #e2e8f0; /* light chip/button on dark (slate-200)   */
+  --inverse-fg: #0f172a; /* dark text on it                         */
+  --inverse-hover: #cbd5e1; /* slate-300                               */
+
+  --accent: #3b82f6; /* blue-500 (brighter for the dark surface) */
+  --accent-fg: #ffffff;
+  --accent-hover: #60a5fa; /* blue-400 */
+
+  /* Loss foregrounds, lightened so each clears AA on the dark surface and its dark tint. */
+  --cb-preserve: #4ade80; /* green-400  */
+  --cb-absent-format: #cbd5e1; /* slate-300 (calm) */
+  --cb-absent-file: #94a3b8; /* slate-400  */
+  --cb-removed: #f87171; /* red-400    */
+  --cb-assumption: #c4b5fd; /* violet-300 */
+  --cb-warning: #fbbf24; /* amber-400  */
+  --cb-fail: #f87171; /* red-400 — legible as TEXT on the dark surface + tint */
+  --cb-fail-solid: #dc2626; /* red-600 — filled badge, dark enough for white text  */
+  --cb-skipped: #9ca3af; /* gray-400   */
+
+  /* Dark tints — low-luminance, AA-legible with both the dark foregrounds and the dark body text. */
+  --cb-preserve-bg: #0d2a1c;
+  --cb-removed-bg: #2b1417;
+  --cb-assumption-bg: #1d1a33;
+  --cb-warning-bg: #2a2008;
+  --cb-fail-bg: #2b1417;
 }

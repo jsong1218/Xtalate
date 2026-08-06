@@ -11,19 +11,19 @@ export default function DocsLayout({ children }: { children: ReactNode }) {
   return (
     <div className="grid gap-8 md:grid-cols-[12rem_minmax(0,1fr)]">
       <nav aria-label="Documentation" className="space-y-1 text-sm md:sticky md:top-8 md:self-start">
-        <Link href="/docs" className="block font-semibold text-slate-900">
+        <Link href="/docs" className="block font-semibold text-strong">
           Documentation
         </Link>
         {DOC_PAGES.map((page) => (
           <Link
             key={page.slug}
             href={`/docs/${page.slug}`}
-            className="block text-slate-600 hover:text-slate-900 hover:underline"
+            className="block text-muted hover:text-strong hover:underline"
           >
             {page.title}
           </Link>
         ))}
-        <Link href="/" className="block pt-2 text-slate-500 hover:text-slate-900 hover:underline">
+        <Link href="/" className="block pt-2 text-faint hover:text-strong hover:underline">
           ← Home
         </Link>
       </nav>

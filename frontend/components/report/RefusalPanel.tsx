@@ -24,23 +24,23 @@ function UnresolvedScenarioRow({ scenario }: { scenario: UnresolvedScenario }) {
   return (
     <li data-testid="unresolved-scenario" className="space-y-1 py-2">
       <div className="flex flex-wrap items-baseline gap-2">
-        <span className="font-medium text-slate-900">{label.label}</span>
+        <span className="font-medium text-strong">{label.label}</span>
         <code className="rounded bg-cb-fail-bg px-1.5 py-0.5 font-mono text-xs text-cb-fail">
           {scenario.scenario}
         </code>
         {scenario.path ? (
-          <span className="text-sm text-slate-600">→ {labelForPath(scenario.path).label}</span>
+          <span className="text-sm text-muted">→ {labelForPath(scenario.path).label}</span>
         ) : null}
       </div>
-      {scenario.detail ? <p className="text-sm text-slate-600">{scenario.detail}</p> : null}
-      {label.description ? <p className="text-sm text-slate-500">{label.description}</p> : null}
+      {scenario.detail ? <p className="text-sm text-muted">{scenario.detail}</p> : null}
+      {label.description ? <p className="text-sm text-faint">{label.description}</p> : null}
       {scenario.options.length > 0 ? (
-        <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+        <p className="flex flex-wrap items-center gap-1.5 text-xs text-faint">
           <span>Available choices:</span>
           {scenario.options.map((opt) => (
             <code
               key={opt}
-              className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-slate-600"
+              className="rounded bg-well px-1.5 py-0.5 font-mono text-muted"
             >
               {opt}
             </code>
@@ -66,16 +66,16 @@ export function RefusalPanel({ report }: { report: ConversionReport }) {
       >
         <div className="flex flex-wrap items-center gap-2">
           <LossIcon kind="fail" />
-          <h2 className="text-lg font-semibold text-slate-900">Conversion refused</h2>
-          <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs font-semibold text-cb-fail">
+          <h2 className="text-lg font-semibold text-strong">Conversion refused</h2>
+          <code className="rounded bg-raised px-1.5 py-0.5 font-mono text-xs font-semibold text-cb-fail">
             {refusal.code}
           </code>
         </div>
-        <p className="text-sm text-slate-800">{refusal.message}</p>
+        <p className="text-sm text-strong">{refusal.message}</p>
 
         {refusal.unresolved_scenarios.length > 0 ? (
           <div>
-            <h3 className="mb-1 text-sm font-semibold text-slate-700">Needs a decision</h3>
+            <h3 className="mb-1 text-sm font-semibold text-body">Needs a decision</h3>
             <ul className="divide-y divide-cb-fail/20">
               {refusal.unresolved_scenarios.map((scenario) => (
                 <UnresolvedScenarioRow

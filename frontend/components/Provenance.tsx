@@ -34,8 +34,8 @@ function Field({
 }) {
   return (
     <div className="space-y-0.5">
-      <dt className="text-xs uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="text-sm text-slate-800" title={title}>
+      <dt className="text-xs uppercase tracking-wide text-faint">{label}</dt>
+      <dd className="text-sm text-strong" title={title}>
         {children}
       </dd>
     </div>
@@ -45,7 +45,7 @@ function Field({
 /** A value the service did not send — said plainly, so absence never reads as a value (P3). */
 function Unknown({ reason }: { reason: string }) {
   return (
-    <span className="text-slate-500">
+    <span className="text-faint">
       <span aria-hidden="true">—</span> <span className="text-xs">{reason}</span>
     </span>
   );
@@ -72,7 +72,7 @@ export function Provenance({ record }: { record: ConversionRecord }) {
     <section
       aria-label="Provenance"
       data-testid="provenance"
-      className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+      className="rounded-lg border border-line bg-raised p-4"
     >
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
         <Field label="Conversion">
@@ -92,7 +92,7 @@ export function Provenance({ record }: { record: ConversionRecord }) {
         </Field>
 
         <Field label="Mode">
-          <span className="rounded bg-white px-1.5 py-0.5 text-xs text-slate-700">
+          <span className="rounded bg-surface px-1.5 py-0.5 text-xs text-body">
             {report.mode}
           </span>
         </Field>

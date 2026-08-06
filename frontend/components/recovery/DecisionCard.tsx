@@ -68,22 +68,22 @@ export function DecisionCard({
     <section
       data-testid="decision-card"
       aria-label={scenarioLabel.label}
-      className="space-y-3 rounded-lg border border-slate-200 bg-white p-4"
+      className="space-y-3 rounded-lg border border-line bg-surface p-4"
     >
       <div className="flex flex-wrap items-baseline gap-2">
         <LossIcon kind="assumption" />
-        <h3 className="text-base font-semibold text-slate-900">{scenarioLabel.label}</h3>
+        <h3 className="text-base font-semibold text-strong">{scenarioLabel.label}</h3>
         <code className="rounded bg-cb-assumption-bg px-1.5 py-0.5 font-mono text-xs text-cb-assumption">
           {scenario.scenario}
         </code>
         {scenario.path ? (
-          <span className="text-sm text-slate-600">→ {labelForPath(scenario.path).label}</span>
+          <span className="text-sm text-muted">→ {labelForPath(scenario.path).label}</span>
         ) : null}
       </div>
       {scenarioLabel.description ? (
-        <p className="text-sm text-slate-600">{scenarioLabel.description}</p>
+        <p className="text-sm text-muted">{scenarioLabel.description}</p>
       ) : null}
-      {scenario.detail ? <p className="text-sm text-slate-500">{scenario.detail}</p> : null}
+      {scenario.detail ? <p className="text-sm text-faint">{scenario.detail}</p> : null}
 
       {/* The scientific stakes, behind a disclosure — a non-expert acts on the options without it,
           and opens it when they want to know what the missing thing is and which choice is safe. */}
@@ -94,7 +94,7 @@ export function DecisionCard({
           const params = Object.keys(option.parameters_schema ?? {});
           const active = option.choice === choice;
           return (
-            <div key={option.choice} className="rounded-md border border-slate-200 p-2">
+            <div key={option.choice} className="rounded-md border border-line p-2">
               <div className="flex items-center gap-2">
                 {/* §3.2's card template: the radio reads in plain language, with the machine code kept
                     beside it (§3.3, always correlatable) inside the label so both name the control.
@@ -107,15 +107,15 @@ export function DecisionCard({
                     checked={active}
                     onChange={() => selectChoice(option.choice)}
                   />
-                  <span className="text-sm text-slate-800">
+                  <span className="text-sm text-strong">
                     {labelForChoice(scenario.scenario, option.choice).label}
                   </span>
-                  <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-600">
+                  <code className="rounded bg-well px-1.5 py-0.5 font-mono text-xs text-muted">
                     {option.choice}
                   </code>
                 </label>
                 {params.length > 0 ? (
-                  <span aria-hidden className="text-xs text-slate-500">
+                  <span aria-hidden className="text-xs text-faint">
                     needs {params.join(", ")}
                   </span>
                 ) : null}

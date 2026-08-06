@@ -22,7 +22,7 @@ function CapabilityCell({ row, path }: { row: FormatRow; path: string }) {
   const read = cellLevel(row.read, path);
   const write = cellLevel(row.write, path);
   return (
-    <td className="border-t border-slate-100 px-3 py-2 align-top">
+    <td className="border-t border-line-soft px-3 py-2 align-top">
       <span className="flex flex-col gap-0.5">
         {read !== null ? <CapabilityGlyph direction="read" level={read} /> : null}
         {write !== null ? <CapabilityGlyph direction="write" level={write} /> : null}
@@ -43,14 +43,14 @@ export function FormatsGrid({ capabilities }: { capabilities: CapabilitiesMap })
         </caption>
         <thead>
           <tr>
-            <th scope="col" className="sticky left-0 bg-white px-3 py-2 font-semibold text-slate-900">
+            <th scope="col" className="sticky left-0 bg-surface px-3 py-2 font-semibold text-strong">
               Format
             </th>
             {fields.map((field) => (
               <th
                 key={field.path}
                 scope="col"
-                className="whitespace-nowrap px-3 py-2 font-medium text-slate-600"
+                className="whitespace-nowrap px-3 py-2 font-medium text-muted"
               >
                 {field.label}
               </th>
@@ -62,9 +62,9 @@ export function FormatsGrid({ capabilities }: { capabilities: CapabilitiesMap })
             <tr key={row.format_id}>
               <th
                 scope="row"
-                className="sticky left-0 whitespace-nowrap border-t border-slate-100 bg-white px-3 py-2 font-medium"
+                className="sticky left-0 whitespace-nowrap border-t border-line-soft bg-surface px-3 py-2 font-medium"
               >
-                <Link href={`/formats/${row.format_id}`} className="text-slate-900 underline">
+                <Link href={`/formats/${row.format_id}`} className="text-strong underline">
                   {row.format_name}
                 </Link>
               </th>

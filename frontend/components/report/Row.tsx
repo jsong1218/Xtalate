@@ -32,8 +32,8 @@ export function Row({
     <li data-testid={testId} className="flex gap-2.5 px-3 py-2">
       <LossIcon kind={kind} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1 space-y-1">
-        <div className="text-sm font-medium text-slate-900">{label}</div>
-        {detail ? <div className="text-sm text-slate-600">{detail}</div> : null}
+        <div className="text-sm font-medium text-strong">{label}</div>
+        {detail ? <div className="text-sm text-muted">{detail}</div> : null}
         {children}
       </div>
     </li>

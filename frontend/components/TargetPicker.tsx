@@ -46,16 +46,16 @@ function PreflightColumn({
   emptyLabel: string;
 }) {
   return (
-    <section aria-label={title} className="rounded-md border border-slate-200">
-      <h4 className="flex items-center gap-2 border-b border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900">
+    <section aria-label={title} className="rounded-md border border-line">
+      <h4 className="flex items-center gap-2 border-b border-line px-3 py-2 text-sm font-semibold text-strong">
         <LossIcon kind={kind} />
         {title}
-        <span className="text-slate-400">({items.length})</span>
+        <span className="text-faint">({items.length})</span>
       </h4>
       {items.length === 0 ? (
-        <p className="px-3 py-2 text-sm text-slate-500">{emptyLabel}</p>
+        <p className="px-3 py-2 text-sm text-faint">{emptyLabel}</p>
       ) : (
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-line-soft">
           {items.map((item) => (
             <Row
               key={item.path ?? item.scenario ?? item.label}
@@ -73,7 +73,7 @@ function PreflightColumn({
 function PreflightOverlay({ preview }: { preview: PreflightPreview }) {
   return (
     <div className="space-y-3" data-testid="preflight-overlay">
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-muted">
         A prediction of converting to <strong>{preview.targetFormatName}</strong>, from this file&rsquo;s
         contents and the format&rsquo;s capabilities. The conversion returns the binding report.
       </p>
@@ -124,7 +124,7 @@ export function TargetPicker({
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="text-sm font-semibold text-slate-900">Convert to</h3>
+        <h3 className="text-sm font-semibold text-strong">Convert to</h3>
         <ul className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4" role="list">
           {targets.map((t) => {
             const active = t.format_id === selectedId;
@@ -136,8 +136,8 @@ export function TargetPicker({
                   onClick={() => setSelectedId(t.format_id)}
                   className={`w-full rounded-md border px-3 py-2 text-left text-sm ${
                     active
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-300 text-slate-800 hover:border-slate-400"
+                      ? "border-line-strong bg-inverse text-inverse-fg"
+                      : "border-line text-strong hover:border-line-strong"
                   }`}
                 >
                   {t.format_name}
@@ -151,15 +151,15 @@ export function TargetPicker({
       {preview ? <PreflightOverlay preview={preview} /> : null}
 
       {selectedTarget ? (
-        <div className="space-y-4 border-t border-slate-200 pt-4">
+        <div className="space-y-4 border-t border-line pt-4">
           <fieldset>
-            <legend className="text-sm font-semibold text-slate-900">If information would be lost</legend>
+            <legend className="text-sm font-semibold text-strong">If information would be lost</legend>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {MODES.map((m) => (
                 <label
                   key={m.value}
                   className={`flex cursor-pointer gap-2 rounded-md border px-3 py-2 ${
-                    mode === m.value ? "border-slate-900" : "border-slate-300"
+                    mode === m.value ? "border-line-strong" : "border-line"
                   }`}
                 >
                   <input
@@ -171,8 +171,8 @@ export function TargetPicker({
                     className="mt-0.5"
                   />
                   <span>
-                    <span className="block text-sm font-medium text-slate-900">{m.title}</span>
-                    <span className="block text-sm text-slate-600">{m.caption}</span>
+                    <span className="block text-sm font-medium text-strong">{m.title}</span>
+                    <span className="block text-sm text-muted">{m.caption}</span>
                   </span>
                 </label>
               ))}
@@ -182,7 +182,7 @@ export function TargetPicker({
           <button
             type="button"
             onClick={() => onConvert(selectedTarget.format_id, mode)}
-            className="rounded-md bg-slate-900 px-4 py-2 font-medium text-white"
+            className="rounded-md bg-inverse px-4 py-2 font-medium text-inverse-fg"
           >
             Convert to {selectedTarget.format_name}
           </button>

@@ -49,13 +49,13 @@ export default async function FormatDetailPage({
 
   return (
     <main className="space-y-6">
-      <Link href="/formats" className="text-sm text-slate-600 underline">
+      <Link href="/formats" className="text-sm text-muted underline">
         ← All formats
       </Link>
       {format ? (
         <FormatDetail format={format} />
       ) : (
-        <p className="text-slate-700">
+        <p className="text-body">
           This format&rsquo;s details are unavailable right now — this instance&rsquo;s API could not
           be reached.
         </p>

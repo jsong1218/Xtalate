@@ -29,7 +29,7 @@ export default function ConvertPage() {
     <main className="space-y-6">
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Convert a file</h1>
-        <p className="max-w-2xl text-slate-600">
+        <p className="max-w-2xl text-muted">
           Upload a source file to inspect what it contains, then choose a target format. Every
           conversion produces a report of exactly what was kept, dropped, or assumed.
         </p>
@@ -46,7 +46,7 @@ export default function ConvertPage() {
         onFile={onFile}
       />
 
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-faint">
         <Link href="/" className="underline">
           Back to home
         </Link>

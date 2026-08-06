@@ -50,26 +50,26 @@ function FileHeader({
   return (
     <header className="space-y-2">
       <h1 className="break-all text-2xl font-semibold tracking-tight">{report.file.filename}</h1>
-      <p className="text-sm text-slate-600">
-        Detected <strong className="text-slate-900">{report.format.format_name}</strong>{" "}
+      <p className="text-sm text-muted">
+        Detected <strong className="text-strong">{report.format.format_name}</strong>{" "}
         {report.format.overridden ? (
-          <span className="text-slate-500">(format set manually)</span>
+          <span className="text-faint">(format set manually)</span>
         ) : (
-          <span className="text-slate-500">
+          <span className="text-faint">
             ({percent(report.format.confidence)} confidence
             {report.format.ambiguous ? ", ambiguous" : ""})
           </span>
         )}
       </p>
-      <p className="font-mono text-xs text-slate-400">sha256 {report.file.sha256.slice(0, 12)}…</p>
+      <p className="font-mono text-xs text-faint">sha256 {report.file.sha256.slice(0, 12)}…</p>
       <details className="text-sm">
-        <summary className="cursor-pointer text-slate-600 underline">Not the right format?</summary>
+        <summary className="cursor-pointer text-muted underline">Not the right format?</summary>
         <label className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="text-slate-600">Read this file as</span>
+          <span className="text-muted">Read this file as</span>
           <select
             value={override ?? detected}
             onChange={(e) => onOverride(e.target.value === detected ? undefined : e.target.value)}
-            className="rounded-md border border-slate-300 px-2 py-1"
+            className="rounded-md border border-line px-2 py-1"
           >
             {candidates.map((id) => (
               <option key={id} value={id}>
@@ -88,16 +88,16 @@ function StructureSummary({ report }: { report: DiscoveryReport }) {
   return (
     <section aria-label="Structure summary" className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
       <div>
-        <div className="text-slate-500">Frames</div>
-        <div className="font-medium text-slate-900">{frame_count}</div>
+        <div className="text-faint">Frames</div>
+        <div className="font-medium text-strong">{frame_count}</div>
       </div>
       <div>
-        <div className="text-slate-500">Atoms</div>
-        <div className="font-medium text-slate-900">{atom_count}</div>
+        <div className="text-faint">Atoms</div>
+        <div className="font-medium text-strong">{atom_count}</div>
       </div>
       <div className="min-w-0">
-        <div className="text-slate-500">Species</div>
-        <div className="font-medium text-slate-900">{species.join(", ") || "—"}</div>
+        <div className="text-faint">Species</div>
+        <div className="font-medium text-strong">{species.join(", ") || "—"}</div>
       </div>
     </section>
   );
@@ -154,13 +154,13 @@ export default function FilePage() {
   return (
     <main className="space-y-8">
       {inspection.status === "loading" ? (
-        <p className="text-slate-600" role="status">
+        <p className="text-muted" role="status">
           Inspecting this file…
         </p>
       ) : inspection.status === "error" ? (
         <div className="space-y-4">
           <ErrorEnvelope envelope={inspection.error} />
-          <Link href="/convert" className="text-slate-600 underline">
+          <Link href="/convert" className="text-muted underline">
             Upload a different file
           </Link>
         </div>

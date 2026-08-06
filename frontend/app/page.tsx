@@ -39,11 +39,11 @@ export default async function LandingPage() {
     <main className="space-y-10">
       <section className="space-y-4">
         <h1 className="text-3xl font-semibold tracking-tight">Xtalate</h1>
-        <p className="max-w-2xl text-lg text-slate-700">
+        <p className="max-w-2xl text-lg text-body">
           The trusted translation layer between computational chemistry file formats — a converter
           that tells you exactly what it kept, what it lost, and why.
         </p>
-        <p className="max-w-2xl text-slate-600">
+        <p className="max-w-2xl text-muted">
           Every conversion produces a <strong>Conversion Report</strong>: a line-by-line record of
           each field that was preserved, dropped because the target format can&rsquo;t hold it, or
           filled in by an explicit recovery choice. Nothing is changed silently.
@@ -51,22 +51,22 @@ export default async function LandingPage() {
         <div className="flex flex-wrap items-center gap-4 pt-1">
           <Link
             href="/convert"
-            className="inline-block rounded-md bg-slate-900 px-5 py-2.5 font-medium text-white"
+            className="inline-block rounded-md bg-inverse px-5 py-2.5 font-medium text-inverse-fg"
           >
             Convert a file
           </Link>
-          <Link href="/formats" className="text-slate-600 underline">
+          <Link href="/formats" className="text-muted underline">
             Explore formats
           </Link>
-          <Link href="/history" className="text-slate-600 underline">
+          <Link href="/history" className="text-muted underline">
             History
           </Link>
-          <Link href="/docs" className="text-slate-600 underline">
+          <Link href="/docs" className="text-muted underline">
             Docs
           </Link>
         </div>
         {formatCount !== null ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-faint">
             {formatCount} formats supported
             {maxMb !== null ? ` · files up to ${maxMb} MB on this instance` : ""}.
           </p>
@@ -116,14 +116,14 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2 rounded-lg border border-slate-200 p-4">
+    <div className="space-y-2 rounded-lg border border-line p-4">
       <div className="flex items-center gap-2">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-inverse text-xs font-semibold text-inverse-fg">
           {n}
         </span>
-        <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+        <h2 className="text-sm font-semibold text-strong">{title}</h2>
       </div>
-      <p className="text-sm text-slate-600">{body}</p>
+      <p className="text-sm text-muted">{body}</p>
       <div>{children}</div>
     </div>
   );

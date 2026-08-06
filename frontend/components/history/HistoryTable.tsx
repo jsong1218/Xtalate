@@ -29,7 +29,7 @@ export function HistoryTable() {
     : null;
 
   if (history.isPending) {
-    return <p className="text-slate-600">Loading your conversion history…</p>;
+    return <p className="text-muted">Loading your conversion history…</p>;
   }
 
   if (history.isError) {
@@ -48,7 +48,7 @@ export function HistoryTable() {
 
   if (items.length === 0) {
     return (
-      <p className="text-slate-700">
+      <p className="text-body">
         No conversions yet. Once you convert a file, it will appear here with a full record of what
         was kept, dropped, or recovered.
       </p>

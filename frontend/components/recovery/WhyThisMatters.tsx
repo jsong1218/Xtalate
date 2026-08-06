@@ -19,10 +19,10 @@ export function WhyThisMatters({ scenario }: { scenario: string }) {
 
   return (
     <details data-testid="why-this-matters" className="group text-sm">
-      <summary className="cursor-pointer list-none text-slate-600 underline decoration-dotted underline-offset-2 hover:text-slate-800 [&::-webkit-details-marker]:hidden">
+      <summary className="cursor-pointer list-none text-muted underline decoration-dotted underline-offset-2 hover:text-strong [&::-webkit-details-marker]:hidden">
         {why.question}
       </summary>
-      <div className="mt-2 space-y-2 border-l-2 border-slate-200 pl-3 text-slate-600">
+      <div className="mt-2 space-y-2 border-l-2 border-line pl-3 text-muted">
         {why.stakes.map((paragraph, index) => (
           <p key={index}>{paragraph}</p>
         ))}

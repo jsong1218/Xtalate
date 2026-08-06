@@ -74,7 +74,7 @@ export function LossIcon({
       <span
         role="img"
         aria-label={accessibleLabel}
-        className={`inline-flex h-[1.1em] w-[1.1em] items-center justify-center rounded-full bg-cb-fail text-[0.72em] font-bold leading-none text-white ${className}`}
+        className={`inline-flex h-[1.1em] w-[1.1em] items-center justify-center rounded-full bg-cb-fail-solid text-[0.72em] font-bold leading-none text-white ${className}`}
       >
         <span aria-hidden="true">{spec.glyph}</span>
       </span>

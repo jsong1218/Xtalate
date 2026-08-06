@@ -21,12 +21,12 @@ export default function HistoryPage() {
     <main className="space-y-6">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">History</h1>
-        <p className="max-w-2xl text-slate-700">
+        <p className="max-w-2xl text-body">
           Every conversion this instance has run, newest first — with the loss summary visible on
           each row. A conversion&rsquo;s report stays readable even after its uploaded source file
           expires or is deleted.
         </p>
-        <Link href="/" className="inline-block text-sm text-slate-600 underline">
+        <Link href="/" className="inline-block text-sm text-muted underline">
           ← Home
         </Link>
       </header>

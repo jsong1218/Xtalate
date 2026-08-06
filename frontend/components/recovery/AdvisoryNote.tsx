@@ -17,7 +17,7 @@ export interface Advisory {
 export function AdvisoryNote({ advisory }: { advisory?: Advisory | null }) {
   if (!advisory?.note.trim()) return null;
   return (
-    <p role="note" data-testid="advisory-note" className="mt-1 text-xs italic text-slate-500">
+    <p role="note" data-testid="advisory-note" className="mt-1 text-xs italic text-faint">
       {advisory.note}
     </p>
   );

@@ -48,10 +48,10 @@ function Section({
   const headingId = `report-section-${title.toLowerCase().replace(/[^a-z]+/g, "-")}`;
   return (
     <section aria-labelledby={headingId} className={`border-l-2 pl-3 ${tint}`}>
-      <h3 id={headingId} className="mb-1 text-sm font-semibold text-slate-700">
-        {title} <span className="font-normal text-slate-500">({count})</span>
+      <h3 id={headingId} className="mb-1 text-sm font-semibold text-body">
+        {title} <span className="font-normal text-faint">({count})</span>
       </h3>
-      <ul className="divide-y divide-slate-100">{children}</ul>
+      <ul className="divide-y divide-line-soft">{children}</ul>
     </section>
   );
 }
@@ -60,8 +60,8 @@ function Section({
 function RemovedRow({ entry }: { entry: RemovedEntry }) {
   return (
     <Row kind="removed" testId="removed-row" label={labelForPath(entry.path).label}>
-      <p className="text-sm text-slate-700">{entry.reason}</p>
-      {entry.detail ? <p className="text-sm text-slate-600">{entry.detail}</p> : null}
+      <p className="text-sm text-body">{entry.reason}</p>
+      {entry.detail ? <p className="text-sm text-muted">{entry.detail}</p> : null}
     </Row>
   );
 }
@@ -92,10 +92,10 @@ function AssumptionRow({
       {supplied.length > 0 ? (
         <ul className="mt-1 space-y-0.5">
           {supplied.map((entry) => (
-            <li key={entry.path} data-testid="supplied-row" className="text-sm text-slate-600">
+            <li key={entry.path} data-testid="supplied-row" className="text-sm text-muted">
               <span className="text-cb-assumption">+ </span>
               {labelForPath(entry.path).label}
-              {entry.detail ? <span className="text-slate-500"> — {entry.detail}</span> : null}
+              {entry.detail ? <span className="text-faint"> — {entry.detail}</span> : null}
             </li>
           ))}
         </ul>
@@ -123,16 +123,16 @@ export function ConversionReportPanel({ report }: { report: ConversionReport }) 
   const target = report.target;
 
   return (
-    <div className="space-y-4 rounded-lg border border-slate-200 p-4">
+    <div className="space-y-4 rounded-lg border border-line p-4">
       <header className="space-y-2">
-        <h2 className="text-lg font-semibold text-slate-900">Conversion report</h2>
-        <p className="text-sm text-slate-600">
-          <span className="font-medium text-slate-800">{source.filename}</span>{" "}
-          <span className="text-slate-500">({source.format_id})</span>
+        <h2 className="text-lg font-semibold text-strong">Conversion report</h2>
+        <p className="text-sm text-muted">
+          <span className="font-medium text-strong">{source.filename}</span>{" "}
+          <span className="text-faint">({source.format_id})</span>
           <span aria-hidden="true"> → </span>
-          <span className="font-medium text-slate-800">{target.filename}</span>{" "}
-          <span className="text-slate-500">({target.format_id})</span>
-          <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+          <span className="font-medium text-strong">{target.filename}</span>{" "}
+          <span className="text-faint">({target.format_id})</span>
+          <span className="ml-2 rounded bg-well px-1.5 py-0.5 text-xs text-muted">
             {report.mode}
           </span>
         </p>
@@ -178,10 +178,10 @@ export function ConversionReportPanel({ report }: { report: ConversionReport }) 
           >
             <ul className="mt-1 space-y-0.5">
               {orphanedSupplied.map((entry) => (
-                <li key={entry.path} data-testid="supplied-row" className="text-sm text-slate-600">
+                <li key={entry.path} data-testid="supplied-row" className="text-sm text-muted">
                   <span className="text-cb-assumption">+ </span>
                   {labelForPath(entry.path).label}
-                  {entry.detail ? <span className="text-slate-500"> — {entry.detail}</span> : null}
+                  {entry.detail ? <span className="text-faint"> — {entry.detail}</span> : null}
                 </li>
               ))}
             </ul>
@@ -203,7 +203,7 @@ export function ConversionReportPanel({ report }: { report: ConversionReport }) 
                 >
                   {warning.code}
                 </code>
-                <span className="font-normal text-slate-800">{warning.message}</span>
+                <span className="font-normal text-strong">{warning.message}</span>
               </span>
             }
           />

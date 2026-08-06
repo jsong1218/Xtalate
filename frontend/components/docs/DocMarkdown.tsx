@@ -11,11 +11,13 @@ import remarkGfm from "remark-gfm";
  * (`{docs_base_url}#{code.lower()}`). That link resolving is what the M34-S1 coverage lint guards.
  *
  * The `prose` classes come from the Tailwind typography plugin; loss colors are never used here (this
- * is long-form documentation, not a report), so the `--cb-*` token system is untouched.
+ * is long-form documentation, not a report), so the `--cb-*` token system is untouched. In dark mode
+ * `dark:prose-invert` flips the long-form text to light-on-dark; the code blocks stay dark in both
+ * themes (a dark code block on a light or dark page is conventional and legible).
  */
 export function DocMarkdown({ content }: { content: string }) {
   return (
-    <article className="prose prose-slate max-w-none prose-pre:bg-slate-900 prose-pre:text-slate-100">
+    <article className="prose prose-slate max-w-none dark:prose-invert prose-pre:bg-slate-900 prose-pre:text-slate-100">
       <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSlug]}>
         {content}
       </Markdown>
