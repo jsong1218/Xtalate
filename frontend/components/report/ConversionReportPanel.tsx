@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
 import { labelForPath, labelForScenario } from "@/lib/mapping";
+import { groupByKey, shouldCollapse } from "@/lib/report/grouping";
 import type {
   Assumption,
   ConversionReport,
   RemovedEntry,
+  ReportWarning,
   SuppliedEntry,
 } from "@/lib/report/types";
 import { Row } from "./Row";
@@ -18,7 +20,7 @@ import { SummaryChips } from "./SummaryChips";
  * Invariants enforced here:
  *  - **Row completeness.** Each section is `report.<array>.map(...)` — one row per entry, no
  *    filtering, no truncation. A dropped row is a dropped loss, so the tests count rows against the
- *    fixture arrays.
+ *    fixture arrays. Grouping (below) re-parents rows into disclosures but never removes one.
  *  - **Reason verbatim.** A Removed row shows its `reason` string exactly as the engine wrote it,
  *    never a UI paraphrase (Part 7 §2.3).
  *  - **Supplied + Assumptions are adjacent, in the shared ◆ violet, at prominence equal to
@@ -28,6 +30,13 @@ import { SummaryChips } from "./SummaryChips";
  *  - **Plain language, code one step away.** Field paths and scenario codes resolve through
  *    `lib/mapping.ts`; the raw machine code is never the primary text (Part 7 §3.3).
  *
+ * **Readability at scale (addendum S4).** A summary band elevates the count chips to an at-a-glance
+ * overview, and the two floodable sections — Warnings, and a lengthy Removed — collapse **same-typed
+ * entries into expanded-by-default disclosures** (`lib/report/grouping`): Warnings by `code`, Removed
+ * by canonical category. The disclosures start open, so nothing is ever a click away from being seen
+ * (the never-buried promise); grouping only kicks in when a key actually repeats, so the ordinary
+ * single-warning report stays a flat list. This complements the engine-side D108 frame-range collapse.
+ *
  * An empty section is omitted here — the always-present {@link SummaryChips} carry the affirmative
  * zero accounting ("✓ 0 fields removed"), so omission is never a silent blank.
  */
@@ -36,12 +45,16 @@ function Section({
   title,
   count,
   tint,
+  wrapList = true,
   children,
 }: {
   title: string;
   count: number;
   /** Left accent bar color class, bound to a `--cb-*` token. */
   tint: string;
+  /** When true (default) the section wraps its rows in a divided `<ul>`; grouped sections manage
+   *  their own list/disclosure structure and pass false. */
+  wrapList?: boolean;
   children: ReactNode;
 }) {
   if (count === 0) return null;
@@ -51,9 +64,48 @@ function Section({
       <h3 id={headingId} className="mb-1 text-sm font-semibold text-body">
         {title} <span className="font-normal text-faint">({count})</span>
       </h3>
-      <ul className="divide-y divide-line-soft">{children}</ul>
+      {wrapList ? <ul className="divide-y divide-line-soft">{children}</ul> : children}
     </section>
   );
+}
+
+/**
+ * An expanded-by-default disclosure holding same-typed rows (addendum S4). It starts `open` — the
+ * grouping tames the wall of text without hiding a single row behind a required click — and its rows
+ * live in the same divided `<ul>` a flat section uses, so row-completeness assertions are unaffected.
+ */
+function CollapsibleGroup({
+  heading,
+  count,
+  children,
+}: {
+  heading: ReactNode;
+  count: number;
+  children: ReactNode;
+}) {
+  return (
+    <details open data-testid="report-group" className="rounded-md border border-line-soft bg-raised">
+      <summary className="flex cursor-pointer select-none flex-wrap items-center gap-2 px-3 py-2 text-sm font-medium text-body">
+        {heading}
+        <span className="font-normal text-faint">({count})</span>
+      </summary>
+      <ul className="divide-y divide-line-soft border-t border-line-soft">{children}</ul>
+    </details>
+  );
+}
+
+/** The top-level canonical category a path belongs to, e.g. `dynamics.forces` → `dynamics`. */
+function canonicalCategory(path: string): string {
+  const dot = path.indexOf(".");
+  return dot === -1 ? path : path.slice(0, dot);
+}
+
+/** A canonical category token as a plain heading, e.g. `user_metadata` → "User metadata". */
+function categoryLabel(category: string): string {
+  const words = category.split("_");
+  const [first, ...rest] = words;
+  const head = first.charAt(0).toUpperCase() + first.slice(1);
+  return [head, ...rest].join(" ");
 }
 
 /** A Removed row: field name, then the engine's `reason` verbatim, then any quantitative detail. */
@@ -63,6 +115,104 @@ function RemovedRow({ entry }: { entry: RemovedEntry }) {
       <p className="text-sm text-body">{entry.reason}</p>
       {entry.detail ? <p className="text-sm text-muted">{entry.detail}</p> : null}
     </Row>
+  );
+}
+
+/**
+ * The Removed section body — flat when the losses are all distinct categories, grouped by canonical
+ * category once a category repeats (a lengthy `dynamics.*`/`electronic.*` list collapses into
+ * one open disclosure per category rather than a long undivided run).
+ */
+function RemovedBody({ removed }: { removed: RemovedEntry[] }) {
+  const groups = groupByKey(removed, (entry) => canonicalCategory(entry.path));
+  if (!shouldCollapse(groups)) {
+    return (
+      <ul className="divide-y divide-line-soft">
+        {removed.map((entry, i) => (
+          <RemovedRow key={`${entry.path}-${i}`} entry={entry} />
+        ))}
+      </ul>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {groups.map((group) => (
+        <CollapsibleGroup
+          key={group.key}
+          count={group.items.length}
+          heading={<span className="text-strong">{categoryLabel(group.key)}</span>}
+        >
+          {group.items.map((entry, i) => (
+            <RemovedRow key={`${group.key}-${entry.path}-${i}`} entry={entry} />
+          ))}
+        </CollapsibleGroup>
+      ))}
+    </div>
+  );
+}
+
+/** The stable warning `code` badge; its `source` rides in the tooltip, as on the flat row. */
+function WarningCode({ code, source }: { code: string; source: string }) {
+  return (
+    <code
+      className="rounded bg-cb-warning-bg px-1.5 py-0.5 text-xs text-cb-warning"
+      title={`source: ${source}`}
+    >
+      {code}
+    </code>
+  );
+}
+
+/** One warning row. In a group the `code` heads the disclosure, so the row carries the message alone. */
+function WarningRow({ warning, showCode }: { warning: ReportWarning; showCode: boolean }) {
+  return (
+    <Row
+      kind="warning"
+      testId="warning-row"
+      label={
+        showCode ? (
+          <span className="flex flex-wrap items-center gap-2">
+            <WarningCode code={warning.code} source={warning.source} />
+            <span className="font-normal text-strong">{warning.message}</span>
+          </span>
+        ) : (
+          <span className="font-normal text-strong">{warning.message}</span>
+        )
+      }
+    />
+  );
+}
+
+/**
+ * The Warnings section body — flat when every warning is a distinct code, grouped by `code` once a
+ * code repeats. The repeated-code case is the trajectory flood (many frames raising the same note);
+ * grouping shows the code + count once and keeps every verbatim message a row inside the open group.
+ */
+function WarningsBody({ warnings }: { warnings: ReportWarning[] }) {
+  const groups = groupByKey(warnings, (warning) => warning.code);
+  if (!shouldCollapse(groups)) {
+    return (
+      <ul className="divide-y divide-line-soft">
+        {warnings.map((warning, i) => (
+          <WarningRow key={`${warning.code}-${i}`} warning={warning} showCode />
+        ))}
+      </ul>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {groups.map((group) => (
+        <CollapsibleGroup
+          key={group.key}
+          count={group.items.length}
+          heading={<WarningCode code={group.key} source={group.items[0].source} />}
+        >
+          {group.items.map((warning, i) => (
+            <WarningRow key={`${group.key}-${i}`} warning={warning} showCode={false} />
+          ))}
+        </CollapsibleGroup>
+      ))}
+    </div>
   );
 }
 
@@ -124,19 +274,27 @@ export function ConversionReportPanel({ report }: { report: ConversionReport }) 
 
   return (
     <div className="space-y-4 rounded-lg border border-line p-4">
-      <header className="space-y-2">
-        <h2 className="text-lg font-semibold text-strong">Conversion report</h2>
-        <p className="text-sm text-muted">
-          <span className="font-medium text-strong">{source.filename}</span>{" "}
-          <span className="text-faint">({source.format_id})</span>
-          <span aria-hidden="true"> → </span>
-          <span className="font-medium text-strong">{target.filename}</span>{" "}
-          <span className="text-faint">({target.format_id})</span>
-          <span className="ml-2 rounded bg-well px-1.5 py-0.5 text-xs text-muted">
-            {report.mode}
-          </span>
-        </p>
-        <SummaryChips report={report} />
+      <header className="space-y-3">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold text-strong">Conversion report</h2>
+          <p className="text-sm text-muted">
+            <span className="font-medium text-strong">{source.filename}</span>{" "}
+            <span className="text-faint">({source.format_id})</span>
+            <span aria-hidden="true"> → </span>
+            <span className="font-medium text-strong">{target.filename}</span>{" "}
+            <span className="text-faint">({target.format_id})</span>
+            <span className="ml-2 rounded bg-well px-1.5 py-0.5 text-xs text-muted">
+              {report.mode}
+            </span>
+          </p>
+        </div>
+        {/* The summary band: the count chips elevated to a distinct at-a-glance overview (S4). */}
+        <div
+          data-testid="report-summary-band"
+          className="rounded-md border border-line bg-well px-3 py-2.5"
+        >
+          <SummaryChips report={report} />
+        </div>
       </header>
 
       <Section title="Preserved" count={report.preserved.length} tint="border-cb-preserve">
@@ -151,10 +309,13 @@ export function ConversionReportPanel({ report }: { report: ConversionReport }) 
         ))}
       </Section>
 
-      <Section title="Removed" count={report.removed.length} tint="border-cb-removed">
-        {report.removed.map((entry, i) => (
-          <RemovedRow key={`${entry.path}-${i}`} entry={entry} />
-        ))}
+      <Section
+        title="Removed"
+        count={report.removed.length}
+        tint="border-cb-removed"
+        wrapList={false}
+      >
+        <RemovedBody removed={report.removed} />
       </Section>
 
       <Section
@@ -189,25 +350,13 @@ export function ConversionReportPanel({ report }: { report: ConversionReport }) 
         ) : null}
       </Section>
 
-      <Section title="Warnings" count={report.warnings.length} tint="border-cb-warning">
-        {report.warnings.map((warning, i) => (
-          <Row
-            key={`${warning.code}-${i}`}
-            kind="warning"
-            testId="warning-row"
-            label={
-              <span className="flex flex-wrap items-center gap-2">
-                <code
-                  className="rounded bg-cb-warning-bg px-1.5 py-0.5 text-xs text-cb-warning"
-                  title={`source: ${warning.source}`}
-                >
-                  {warning.code}
-                </code>
-                <span className="font-normal text-strong">{warning.message}</span>
-              </span>
-            }
-          />
-        ))}
+      <Section
+        title="Warnings"
+        count={report.warnings.length}
+        tint="border-cb-warning"
+        wrapList={false}
+      >
+        <WarningsBody warnings={report.warnings} />
       </Section>
     </div>
   );
