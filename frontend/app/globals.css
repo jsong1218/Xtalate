@@ -114,3 +114,23 @@
   --cb-warning-bg: #2a2008;
   --cb-fail-bg: #2b1417;
 }
+
+@layer base {
+  /*
+   * One accessible keyboard-focus indicator for the whole app (pre-M36 frontend-redesign addendum,
+   * Slice S6). `:focus-visible` paints only when the browser judges a focus ring appropriate — i.e.
+   * keyboard navigation — so a mouse click never draws it. Bound to `--accent`, so it flips with the
+   * theme and stays AA-visible on both surfaces.
+   *
+   * This is a *baseline*, not an override: the bespoke component rings (the S3 `Button`, the shell
+   * header/back link, the theme toggle) declare their own `focus-visible:ring-*` together with
+   * `focus-visible:outline-none` in Tailwind's **utilities** layer, which the cascade ranks above this
+   * **base** layer — so those keep their tailored ring with no double indicator. Everything without a
+   * bespoke ring (form fields, the recovery radios, the ack checkbox, native `<summary>` disclosures,
+   * doc-markdown links) inherits this consistent outline instead of the inconsistent UA default.
+   */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
