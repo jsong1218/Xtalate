@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { apiClient } from "@/lib/api/client";
 import { FormatsGrid } from "@/components/formats/FormatsGrid";
+import { BackLink } from "@/components/shell/BackLink";
 import { LossTag } from "@/components/loss/icons";
 import type { CapabilitiesMap } from "@/lib/capabilities/types";
 
@@ -36,9 +36,10 @@ export default async function FormatsPage() {
 
   return (
     <main className="space-y-6">
+      <BackLink href="/" label="Home" />
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Formats</h1>
-        <p className="max-w-2xl text-slate-700">
+        <p className="max-w-2xl text-body">
           Every supported format and exactly which canonical fields it can <strong>read</strong> and{" "}
           <strong>write</strong>. This grid is generated from this instance&rsquo;s own registry, so
           it always matches what the converter can actually do.
@@ -48,11 +49,11 @@ export default async function FormatsPage() {
       {capabilities ? (
         <>
           {/* The glyph key — the §4 loss vocabulary, taught once so the grid needs no repetition. */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-slate-600">
-            <span className="font-medium text-slate-500">Each cell:</span>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted">
+            <span className="font-medium text-faint">Each cell:</span>
             <span>
-              <span className="font-mono text-xs text-slate-400">R</span> reads /{" "}
-              <span className="font-mono text-xs text-slate-400">W</span> writes
+              <span className="font-mono text-xs text-faint">R</span> reads /{" "}
+              <span className="font-mono text-xs text-faint">W</span> writes
             </span>
             <LossTag kind="preserved">Full</LossTag>
             <LossTag kind="assumption">Partial (see the format for the condition)</LossTag>
@@ -61,14 +62,9 @@ export default async function FormatsPage() {
           <FormatsGrid capabilities={capabilities} />
         </>
       ) : (
-        <div className="space-y-4">
-          <p className="text-slate-700">
-            The format list is unavailable right now — this instance&rsquo;s API could not be reached.
-          </p>
-          <Link href="/" className="text-slate-600 underline">
-            Back to home
-          </Link>
-        </div>
+        <p className="text-body">
+          The format list is unavailable right now — this instance&rsquo;s API could not be reached.
+        </p>
       )}
     </main>
   );

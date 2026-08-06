@@ -30,7 +30,7 @@ function Chip({ count, singular, plural, kind }: ChipModel) {
   const shownKind: LossKind = affirmative ? "preserved" : kind;
   const spec = LOSS_GLYPHS[shownKind];
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1">
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1">
       <LossIcon kind={shownKind} />
       <span className={`text-sm font-medium ${spec.color}`}>
         {count} {count === 1 ? singular : plural}

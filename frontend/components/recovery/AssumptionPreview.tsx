@@ -21,7 +21,7 @@ export function AssumptionPreview({ description }: { description: string }) {
           This will be recorded as an assumption
         </span>
       </div>
-      <p className="text-sm text-slate-800">{description}</p>
+      <p className="text-sm text-strong">{description}</p>
     </div>
   );
 }

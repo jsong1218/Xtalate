@@ -1,4 +1,5 @@
 import { CapabilityGlyph } from "./capabilityGlyph";
+import { FormatGuidePanel } from "./FormatGuidePanel";
 import { fieldLabel, type FormatRow } from "@/lib/capabilities/matrix";
 import type { FormatCapabilities } from "@/lib/capabilities/types";
 
@@ -22,14 +23,14 @@ function FieldRows({ caps }: { caps: FormatCapabilities }) {
   const direction = caps.direction;
   const paths = Object.keys(caps.fields).sort((a, b) => fieldLabel(a).localeCompare(fieldLabel(b)));
   return (
-    <ul className="divide-y divide-slate-100 text-sm">
+    <ul className="divide-y divide-line-soft text-sm">
       {paths.map((path) => {
         const field = caps.fields[path];
         return (
           <li key={path} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2">
-            <span className="min-w-[14rem] font-medium text-slate-900">{fieldLabel(path)}</span>
+            <span className="min-w-[14rem] font-medium text-strong">{fieldLabel(path)}</span>
             <CapabilityGlyph direction={direction} level={field.level} />
-            {field.notes ? <span className="text-slate-600">{field.notes}</span> : null}
+            {field.notes ? <span className="text-muted">{field.notes}</span> : null}
           </li>
         );
       })}
@@ -40,12 +41,12 @@ function FieldRows({ caps }: { caps: FormatCapabilities }) {
 function DirectionSection({ caps, title }: { caps: FormatCapabilities; title: string }) {
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-      <p className="text-sm text-slate-600">{frameLimit(caps.max_frames)}</p>
+      <h2 className="text-lg font-semibold text-strong">{title}</h2>
+      <p className="text-sm text-muted">{frameLimit(caps.max_frames)}</p>
       <FieldRows caps={caps} />
       {caps.lossy_notes.length > 0 ? (
-        <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-          <p className="font-medium text-slate-900">On writing this format:</p>
+        <div className="space-y-1 rounded-md border border-line bg-raised p-3 text-sm text-body">
+          <p className="font-medium text-strong">On writing this format:</p>
           <ul className="list-disc space-y-1 pl-5">
             {caps.lossy_notes.map((note) => (
               <li key={note}>{note}</li>
@@ -70,11 +71,11 @@ function RequiredFields({ caps }: { caps: FormatCapabilities }) {
       aria-label={`Fields required to write ${caps.format_name}`}
       className="space-y-2 rounded-md border border-cb-assumption/40 bg-cb-assumption-bg p-4"
     >
-      <p className="text-sm font-medium text-slate-900">
+      <p className="text-sm font-medium text-strong">
         Converting into {caps.format_name} requires these fields — if a source lacks one, the
         conversion pauses to recover it explicitly:
       </p>
-      <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+      <ul className="list-disc space-y-1 pl-5 text-sm text-body">
         {caps.required_fields.map((path) => (
           <li key={path}>{fieldLabel(path)}</li>
         ))}
@@ -88,8 +89,12 @@ export function FormatDetail({ format }: { format: FormatRow }) {
     <article className="space-y-8">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">{format.format_name}</h1>
-        <p className="font-mono text-xs text-slate-400">{format.format_id}</p>
+        <p className="font-mono text-xs text-faint">{format.format_id}</p>
       </header>
+
+      {/* The editorial guide (addendum §4.5) — the plain-language "what is this?" a newcomer meets
+          before the field-by-field grid. Falls back to an honest note for a plugin with no entry. */}
+      <FormatGuidePanel formatId={format.format_id} formatName={format.format_name} />
 
       {format.write ? <RequiredFields caps={format.write} /> : null}
       {format.read ? <DirectionSection caps={format.read} title="Reading this format" /> : null}

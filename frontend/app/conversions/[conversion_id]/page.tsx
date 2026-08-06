@@ -7,6 +7,7 @@ import { DownloadPanel } from "@/components/DownloadPanel";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { Provenance } from "@/components/Provenance";
 import { ResolveAndRetry } from "@/components/ResolveAndRetry";
+import { BackLink } from "@/components/shell/BackLink";
 import { ConversionReportPanel } from "@/components/report/ConversionReportPanel";
 import { RefusalPanel } from "@/components/report/RefusalPanel";
 import { SummaryChips } from "@/components/report/SummaryChips";
@@ -124,10 +125,11 @@ export default function ConversionRecordPage() {
   if (query.isError) {
     return (
       <main className="space-y-4">
+        <BackLink href="/history" label="History" />
         <ErrorEnvelope
           envelope={toErrorEnvelope(query.error, "NETWORK_ERROR", "Could not load this conversion.")}
         />
-        <Link href="/" className="text-sm text-slate-600 underline">
+        <Link href="/" className="text-sm text-muted underline">
           Start a new conversion
         </Link>
       </main>
@@ -138,7 +140,7 @@ export default function ConversionRecordPage() {
   if (!record) {
     return (
       <main>
-        <p role="status" className="text-slate-600">
+        <p role="status" className="text-muted">
           Loading this conversion record…
         </p>
       </main>
@@ -150,18 +152,19 @@ export default function ConversionRecordPage() {
 
   return (
     <main className="space-y-6">
+      <BackLink href="/history" label="History" />
       {/* 1. Outcome header — quantitative, never celebratory. */}
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+        <h1 className="text-2xl font-semibold tracking-tight text-strong">
           {outcomeHeadline(record)}
         </h1>
-        <p className="text-sm text-slate-700">
+        <p className="text-sm text-body">
           <span className="font-medium">{record.source.filename ?? "source"}</span>{" "}
-          <span className="text-slate-500">({record.source.format_id})</span>
+          <span className="text-faint">({record.source.format_id})</span>
           <span aria-hidden="true"> → </span>
-          <span className="text-slate-500">({record.target.format_id})</span>
+          <span className="text-faint">({record.target.format_id})</span>
         </p>
-        <p className="text-sm text-slate-700">{validationHeadline(record)}</p>
+        <p className="text-sm text-body">{validationHeadline(record)}</p>
       </header>
 
       {/* 2. Summary chips — the loss summary, above the download by law (see the docstring). */}
@@ -191,10 +194,10 @@ export default function ConversionRecordPage() {
         ) : (
           <section
             aria-label="Validation report"
-            className="space-y-2 rounded-lg border border-slate-200 p-4"
+            className="space-y-2 rounded-lg border border-line p-4"
           >
-            <h2 className="text-lg font-semibold text-slate-900">Validation report</h2>
-            <p className="text-sm text-slate-700">
+            <h2 className="text-lg font-semibold text-strong">Validation report</h2>
+            <p className="text-sm text-body">
               {refused
                 ? "None — the conversion was refused, so no output was written and nothing was measured."
                 : "None recorded for this conversion yet."}
@@ -208,13 +211,13 @@ export default function ConversionRecordPage() {
       {record.validation_report ? (
         <section aria-label="Re-validate" className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
+            <label className="flex items-center gap-2 text-sm text-body">
               <span>Tolerance profile</span>
               <select
                 value={profile}
                 onChange={(e) => setProfile(e.target.value)}
                 disabled={revalidating}
-                className="rounded-md border border-slate-300 px-2 py-1 disabled:opacity-60"
+                className="rounded-md border border-line px-2 py-1 disabled:opacity-60"
               >
                 <option value="default">default</option>
                 <option value="strict">strict (100× tighter)</option>
@@ -225,12 +228,12 @@ export default function ConversionRecordPage() {
               type="button"
               onClick={handleRevalidate}
               disabled={revalidating}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              className="rounded-md border border-line px-3 py-1.5 text-sm text-body hover:bg-raised disabled:opacity-60"
             >
               {revalidating ? "Re-validating…" : "Re-validate"}
             </button>
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-faint">
             Re-validation re-thresholds the measurements already recorded — it does not re-read the
             file, and it <strong>adds</strong> a report rather than replacing this one.
           </p>
@@ -244,7 +247,7 @@ export default function ConversionRecordPage() {
       <nav className="flex flex-wrap gap-4 text-sm">
         <Link
           href={fileId ? `/files/${fileId}` : "/"}
-          className="text-slate-600 underline"
+          className="text-muted underline"
         >
           {fileId ? "Convert again with different choices" : "Convert another file"}
         </Link>

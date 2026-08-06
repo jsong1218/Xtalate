@@ -23,28 +23,28 @@ export function ErrorEnvelope({ envelope }: { envelope: ErrorEnvelopeModel }) {
   return (
     <div
       role="alert"
-      className="space-y-3 rounded-lg border border-cb-fail bg-cb-fail-bg p-4 text-sm text-slate-800"
+      className="space-y-3 rounded-lg border border-cb-fail bg-cb-fail-bg p-4 text-sm text-strong"
     >
       <div className="flex flex-wrap items-center gap-2">
         <span
           role="img"
           aria-label="Error"
-          className="inline-flex h-[1.1em] w-[1.1em] items-center justify-center rounded-full bg-cb-fail text-[0.72em] font-bold leading-none text-white"
+          className="inline-flex h-[1.1em] w-[1.1em] items-center justify-center rounded-full bg-cb-fail-solid text-[0.72em] font-bold leading-none text-white"
         >
           <span aria-hidden="true">✕</span>
         </span>
         {/* Verbatim machine code — the badge a reader can match to the docs and to a support thread. */}
-        <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs font-semibold text-cb-fail">
+        <code className="rounded bg-raised px-1.5 py-0.5 font-mono text-xs font-semibold text-cb-fail">
           {code}
         </code>
-        <span className="font-medium text-slate-900">{message}</span>
+        <span className="font-medium text-strong">{message}</span>
       </div>
 
       {detailEntries.length > 0 ? (
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs text-slate-700">
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs text-body">
           {detailEntries.map(([key, value]) => (
             <div key={key} className="col-span-2 grid grid-cols-subgrid">
-              <dt className="font-mono text-slate-500">{key}</dt>
+              <dt className="font-mono text-faint">{key}</dt>
               <dd className="font-mono break-all">
                 {typeof value === "string" ? value : JSON.stringify(value)}
               </dd>
@@ -53,9 +53,9 @@ export function ErrorEnvelope({ envelope }: { envelope: ErrorEnvelopeModel }) {
         </dl>
       ) : null}
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-faint">
         Reference{" "}
-        <code className="select-all font-mono text-slate-600">{request_id}</code>
+        <code className="select-all font-mono text-muted">{request_id}</code>
         {documentation_url ? (
           <>
             {" · "}

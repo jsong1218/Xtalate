@@ -44,7 +44,7 @@ function LatticeGrid({
   };
   return (
     <fieldset className="space-y-1">
-      <legend className="text-xs font-medium text-slate-600">lattice — row vectors (Å)</legend>
+      <legend className="text-xs font-medium text-muted">lattice — row vectors (Å)</legend>
       <div className="grid grid-cols-3 gap-1" style={{ maxWidth: "18rem" }}>
         {grid.map((row, r) =>
           row.map((cell, c) => (
@@ -57,7 +57,7 @@ function LatticeGrid({
               step="any"
               value={Number.isFinite(cell) ? String(cell) : ""}
               onChange={(e) => update(r, c, e.target.value)}
-              className="w-full rounded border border-slate-300 px-1.5 py-1 text-sm"
+              className="w-full rounded border border-line px-1.5 py-1 text-sm"
             />
           )),
         )}
@@ -83,8 +83,8 @@ function ListField({
   const text = Array.isArray(value) ? value.join(" ") : "";
   return (
     <div className="space-y-1">
-      <label htmlFor={id} className="block text-xs font-medium text-slate-600">
-        {name} <span className="font-normal text-slate-500">({description})</span>
+      <label htmlFor={id} className="block text-xs font-medium text-muted">
+        {name} <span className="font-normal text-faint">({description})</span>
       </label>
       <input
         id={id}
@@ -94,7 +94,7 @@ function ListField({
           const tokens = e.target.value.split(/[\s,]+/).filter(Boolean);
           onSet(numeric ? tokens.map(Number) : tokens);
         }}
-        className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+        className="w-full rounded border border-line px-2 py-1 text-sm"
       />
     </div>
   );
@@ -113,8 +113,8 @@ function UploadReferenceField({
   const [status, setStatus] = useState<string | null>(null);
   return (
     <div className="space-y-1">
-      <label htmlFor={id} className="block text-xs font-medium text-slate-600">
-        {name} <span className="font-normal text-slate-500">({description})</span>
+      <label htmlFor={id} className="block text-xs font-medium text-muted">
+        {name} <span className="font-normal text-faint">({description})</span>
       </label>
       <input
         id={id}
@@ -132,9 +132,9 @@ function UploadReferenceField({
             setStatus(result.error.error.message);
           }
         }}
-        className="block w-full text-sm text-slate-700"
+        className="block w-full text-sm text-body"
       />
-      {status ? <p className="text-xs text-slate-500">{status}</p> : null}
+      {status ? <p className="text-xs text-faint">{status}</p> : null}
     </div>
   );
 }
@@ -154,8 +154,8 @@ function ScalarField({
   const numeric = NUMBER_PARAMS.has(name);
   return (
     <div className="space-y-1">
-      <label htmlFor={id} className="block text-xs font-medium text-slate-600">
-        {name} <span className="font-normal text-slate-500">({description})</span>
+      <label htmlFor={id} className="block text-xs font-medium text-muted">
+        {name} <span className="font-normal text-faint">({description})</span>
       </label>
       <input
         id={id}
@@ -167,7 +167,7 @@ function ScalarField({
           if (raw === "") return onSet(undefined);
           onSet(numeric ? Number(raw) : raw);
         }}
-        className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+        className="w-full rounded border border-line px-2 py-1 text-sm"
       />
     </div>
   );

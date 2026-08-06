@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AckGate } from "@/components/AckGate";
+import { Button } from "@/components/ui/Button";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { downloadOutput, saveBlob } from "@/lib/api/download";
 import type { ConversionRecord, ErrorEnvelope as ErrorEnvelopeModel } from "@/lib/report/types";
@@ -41,15 +42,15 @@ function Panel({
     tone === "warning"
       ? "border-cb-fail bg-cb-fail-bg"
       : tone === "muted"
-        ? "border-slate-200 bg-slate-50"
-        : "border-slate-200 bg-white";
+        ? "border-line bg-raised"
+        : "border-line bg-surface";
   return (
     <section
       aria-labelledby="download-heading"
       data-testid="download-panel"
       className={`space-y-3 rounded-lg border p-4 ${border}`}
     >
-      <h2 id="download-heading" className="text-lg font-semibold text-slate-900">
+      <h2 id="download-heading" className="text-lg font-semibold text-strong">
         Download
       </h2>
       {children}
@@ -97,7 +98,7 @@ export function DownloadPanel({ record }: { record: ConversionRecord }) {
   if (refused) {
     return (
       <Panel tone="muted">
-        <p className="text-sm text-slate-800">
+        <p className="text-sm text-strong">
           <strong>There is no file to download.</strong> Xtalate refused this conversion, so no
           output was ever written — the reason is in the refusal above.
         </p>
@@ -108,13 +109,13 @@ export function DownloadPanel({ record }: { record: ConversionRecord }) {
   if (!download.available) {
     return (
       <Panel tone="muted">
-        <p className="text-sm text-slate-800">
+        <p className="text-sm text-strong">
           <strong>The converted file has expired.</strong> Output bytes are kept for a limited window
           and this one&rsquo;s has closed, so{" "}
-          <span className="font-mono text-slate-700">{download.filename}</span> is no longer
+          <span className="font-mono text-body">{download.filename}</span> is no longer
           retrievable.
         </p>
-        <p className="text-sm text-slate-700">
+        <p className="text-sm text-body">
           The record itself has not expired: both reports below are exactly as they were written, so
           what this conversion kept, lost, and assumed is still fully auditable. Converting the
           source again reproduces the file.
@@ -126,18 +127,18 @@ export function DownloadPanel({ record }: { record: ConversionRecord }) {
   return (
     <Panel tone={download.requires_ack ? "warning" : "neutral"}>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-        <dt className="text-slate-500">File</dt>
-        <dd className="font-mono text-slate-800">{download.filename}</dd>
+        <dt className="text-faint">File</dt>
+        <dd className="font-mono text-strong">{download.filename}</dd>
         {download.size_bytes !== null ? (
           <>
-            <dt className="text-slate-500">Size</dt>
-            <dd className="text-slate-800">{formatBytes(download.size_bytes)}</dd>
+            <dt className="text-faint">Size</dt>
+            <dd className="text-strong">{formatBytes(download.size_bytes)}</dd>
           </>
         ) : null}
         {download.expires_at !== null ? (
           <>
-            <dt className="text-slate-500">Available until</dt>
-            <dd className="text-slate-800" title={download.expires_at}>
+            <dt className="text-faint">Available until</dt>
+            <dd className="text-strong" title={download.expires_at}>
               {formatTimestamp(download.expires_at)}
             </dd>
           </>
@@ -149,14 +150,9 @@ export function DownloadPanel({ record }: { record: ConversionRecord }) {
         <AckGate record={record} />
       ) : (
         <>
-          <button
-            type="button"
-            onClick={handleDownload}
-            disabled={busy}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-60"
-          >
+          <Button size="sm" onClick={handleDownload} disabled={busy}>
             {busy ? "Preparing…" : `Download ${download.filename}`}
-          </button>
+          </Button>
           {error ? <ErrorEnvelope envelope={error} /> : null}
         </>
       )}

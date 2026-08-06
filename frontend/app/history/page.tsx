@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { HistoryTable } from "@/components/history/HistoryTable";
+import { BackLink } from "@/components/shell/BackLink";
 
 /**
  * History (`/history`) — the durable list of past conversions (MASTER_SPEC Part 7 §2.6; slice
@@ -19,16 +19,14 @@ export const metadata: Metadata = {
 export default function HistoryPage() {
   return (
     <main className="space-y-6">
+      <BackLink href="/" label="Home" />
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">History</h1>
-        <p className="max-w-2xl text-slate-700">
+        <p className="max-w-2xl text-body">
           Every conversion this instance has run, newest first — with the loss summary visible on
           each row. A conversion&rsquo;s report stays readable even after its uploaded source file
           expires or is deleted.
         </p>
-        <Link href="/" className="inline-block text-sm text-slate-600 underline">
-          ← Home
-        </Link>
       </header>
 
       <HistoryTable />

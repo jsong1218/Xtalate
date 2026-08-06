@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { makeQueryClient } from "@/lib/query/client";
+import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 
 /**
  * Client-side providers. The only global client concern is TanStack Query — there is deliberately
@@ -14,5 +15,9 @@ import { makeQueryClient } from "@/lib/query/client";
 export function Providers({ children }: { children: ReactNode }) {
   // One client per browser session, created lazily so it is not shared across SSR requests.
   const [queryClient] = useState(makeQueryClient);
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>{children}</ThemeProvider>
+    </QueryClientProvider>
+  );
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { submitConvert } from "@/lib/api/queries";
 import { toErrorEnvelope } from "@/lib/api/useInspection";
@@ -91,14 +92,14 @@ export function ResolveAndRetry({
 
   return (
     <section aria-label="Resolve and retry" className="space-y-2">
-      <p className="text-sm text-slate-700">
+      <p className="text-sm text-body">
         This refusal is preserved as-is. To get a converted file, re-run the conversion of the same
-        source into <span className="font-mono text-slate-800">{targetFormatId}</span> in{" "}
-        <span className="font-medium text-slate-800">{mode}</span> mode
+        source into <span className="font-mono text-strong">{targetFormatId}</span> in{" "}
+        <span className="font-medium text-strong">{mode}</span> mode
         {profileName ? (
           <>
             {" "}
-            under the <span className="font-mono text-slate-800">{profileName}</span> tolerance
+            under the <span className="font-mono text-strong">{profileName}</span> tolerance
             profile
           </>
         ) : null}{" "}
@@ -107,18 +108,13 @@ export function ResolveAndRetry({
         conversion, not a change to this record.
       </p>
       {fileId ? (
-        <button
-          type="button"
-          onClick={handleRetry}
-          disabled={busy}
-          className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-60"
-        >
+        <Button size="sm" onClick={handleRetry} disabled={busy}>
           {busy ? "Starting…" : "Resolve and retry"}
-        </button>
+        </Button>
       ) : (
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted">
           The uploaded source is no longer in hand here, so it must be provided again.{" "}
-          <Link href="/convert" className="text-slate-700 underline">
+          <Link href="/convert" className="text-body underline">
             Upload the file again to resolve
           </Link>
           .

@@ -46,8 +46,8 @@ function Measurements({ data }: { data: Record<string, unknown> }) {
     <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5">
       {entries.map(([key, value]) => (
         <div key={key} className="col-span-2 grid grid-cols-subgrid">
-          <dt className="font-mono text-slate-500">{key}</dt>
-          <dd className="font-mono break-all text-slate-700">
+          <dt className="font-mono text-faint">{key}</dt>
+          <dd className="font-mono break-all text-body">
             {typeof value === "string" ? value : JSON.stringify(value)}
           </dd>
         </div>
@@ -69,12 +69,12 @@ function CheckRow({ check }: { check: CheckResult }) {
       label={
         <span className="flex flex-wrap items-center gap-2">
           <code
-            className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-600"
+            className="rounded bg-well px-1.5 py-0.5 font-mono text-xs text-muted"
             title={`check: ${check.check_id}`}
           >
             {check.check_id}
           </code>
-          <span className="font-normal text-slate-800">{check.message}</span>
+          <span className="font-normal text-strong">{check.message}</span>
         </span>
       }
     >
@@ -84,21 +84,21 @@ function CheckRow({ check }: { check: CheckResult }) {
       ) : null}
 
       {check.paths.length > 0 ? (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-faint">
           {check.paths.map((p) => labelForPath(p).label).join(" · ")}
         </p>
       ) : null}
 
       {hasNumbers ? (
-        <details className="text-xs text-slate-600">
-          <summary className="cursor-pointer select-none text-slate-500">
+        <details className="text-xs text-muted">
+          <summary className="cursor-pointer select-none text-faint">
             Measurements &amp; tolerances
           </summary>
           <div className="mt-1 space-y-2">
             <Measurements data={check.measured} />
             {check.tolerance_applied ? (
               <div>
-                <p className="mb-0.5 text-slate-500">Tolerance applied</p>
+                <p className="mb-0.5 text-faint">Tolerance applied</p>
                 <Measurements data={check.tolerance_applied} />
               </div>
             ) : null}
@@ -120,7 +120,7 @@ function ReparseIssueRow({ issue }: { issue: ParseIssue }) {
           <code className="rounded bg-cb-warning-bg px-1.5 py-0.5 font-mono text-xs text-cb-warning">
             {issue.code}
           </code>
-          <span className="font-normal text-slate-800">{issue.message}</span>
+          <span className="font-normal text-strong">{issue.message}</span>
         </span>
       }
       detail={issue.location}
@@ -134,20 +134,20 @@ export function ValidationReportPanel({ report }: { report: ValidationReport }) 
     typeof report.tolerance_profile.name === "string" ? report.tolerance_profile.name : null;
 
   return (
-    <div className="space-y-4 rounded-lg border border-slate-200 p-4">
+    <div className="space-y-4 rounded-lg border border-line p-4">
       <header className="space-y-2">
-        <h2 className="text-lg font-semibold text-slate-900">Validation report</h2>
+        <h2 className="text-lg font-semibold text-strong">Validation report</h2>
         <LossTag kind={aggregate.kind}>{aggregate.label}</LossTag>
         {profileName ? (
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-faint">
             Tolerance profile:{" "}
-            <code className="font-mono text-slate-600">{profileName}</code>
+            <code className="font-mono text-muted">{profileName}</code>
           </p>
         ) : null}
       </header>
 
       <section aria-label="Checks">
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-line-soft">
           {report.checks.map((check, i) => (
             // `check_id`-plus-index, like `reparse_issues` below: a `check_id` alone is not
             // guaranteed unique (a trajectory can run the same catalog check per frame), and a
@@ -160,11 +160,11 @@ export function ValidationReportPanel({ report }: { report: ValidationReport }) 
 
       {report.reparse_issues.length > 0 ? (
         <section aria-labelledby="reparse-heading" className="border-l-2 border-cb-warning pl-3">
-          <h3 id="reparse-heading" className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+          <h3 id="reparse-heading" className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-body">
             <LossIcon kind="warning" /> Re-parse issues
-            <span className="font-normal text-slate-500">({report.reparse_issues.length})</span>
+            <span className="font-normal text-faint">({report.reparse_issues.length})</span>
           </h3>
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-line-soft">
             {report.reparse_issues.map((issue, i) => (
               <ReparseIssueRow key={`${issue.code}-${i}`} issue={issue} />
             ))}

@@ -86,22 +86,22 @@ export function JobPhase({ envelope, now }: { envelope: JobEnvelope; now?: numbe
           aria-hidden="true"
           className="inline-block h-2 w-2 animate-pulse rounded-full bg-cb-assumption"
         />
-        <span className="font-medium text-slate-900" role="status">
+        <span className="font-medium text-strong" role="status">
           {phaseLabel(progress?.phase)}
         </span>
         {progress?.phase ? (
-          <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-600">
+          <code className="rounded bg-well px-1.5 py-0.5 font-mono text-xs text-muted">
             {progress.phase}
           </code>
         ) : null}
         {elapsed !== null ? (
-          <span className="text-sm text-slate-500">{formatElapsed(elapsed)} elapsed</span>
+          <span className="text-sm text-faint">{formatElapsed(elapsed)} elapsed</span>
         ) : null}
       </div>
 
       {hasFrameCounts ? (
         <div className="space-y-1" data-testid="frame-progress">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted">
             Frame {processed} of {total}
           </p>
           {/* Width comes from counted frames — the only percentage on this page that was measured. */}
@@ -111,7 +111,7 @@ export function JobPhase({ envelope, now }: { envelope: JobEnvelope; now?: numbe
             aria-valuemin={0}
             aria-valuemax={total as number}
             aria-label="Frames processed"
-            className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200"
+            className="h-1.5 w-full overflow-hidden rounded-full bg-well"
           >
             <div
               className="h-full rounded-full bg-cb-preserve"
@@ -121,7 +121,7 @@ export function JobPhase({ envelope, now }: { envelope: JobEnvelope; now?: numbe
         </div>
       ) : (
         // No counters reported ⇒ no bar at all. Phase and elapsed time are the honest whole truth.
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-faint">
           This step does not report frame counts, so there is no progress bar to show.
         </p>
       )}

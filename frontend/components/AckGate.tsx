@@ -54,7 +54,7 @@ export function AckGate({ record }: { record: ConversionRecord }) {
 
   return (
     <div className="space-y-3">
-      <p className="flex items-start gap-2 text-sm text-slate-900">
+      <p className="flex items-start gap-2 text-sm text-strong">
         <LossIcon kind="fail" />
         <span>
           <strong>Validation failed for this output.</strong> Xtalate re-parsed the file it wrote and
@@ -64,13 +64,13 @@ export function AckGate({ record }: { record: ConversionRecord }) {
       </p>
 
       {failedChecks.length > 0 ? (
-        <ul data-testid="failed-checks" className="space-y-1 pl-6 text-sm text-slate-800">
+        <ul data-testid="failed-checks" className="space-y-1 pl-6 text-sm text-strong">
           {failedChecks.map((check, i) => (
             // Index-suffixed like the report panels: check_id alone is not a guaranteed-unique key
             // (a trajectory can carry the same catalog check per frame), and a duplicate React key
             // silently drops rows — never lose a reported check to a key collision (the v0.7 review).
             <li key={`${check.check_id}-${i}`}>
-              <span className="font-mono text-xs text-slate-600">{check.check_id}</span>{" "}
+              <span className="font-mono text-xs text-muted">{check.check_id}</span>{" "}
               {/* The engine's own sentence, verbatim — quantitative, never paraphrased. */}
               {check.message}
             </li>
@@ -78,7 +78,7 @@ export function AckGate({ record }: { record: ConversionRecord }) {
         </ul>
       ) : null}
 
-      <label htmlFor={ackId} className="flex items-start gap-2 text-sm text-slate-800">
+      <label htmlFor={ackId} className="flex items-start gap-2 text-sm text-strong">
         <input
           id={ackId}
           type="checkbox"
@@ -96,7 +96,7 @@ export function AckGate({ record }: { record: ConversionRecord }) {
         type="button"
         onClick={handleDownload}
         disabled={!acknowledged || busy}
-        className="rounded-md border border-cb-fail px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+        className="rounded-md border border-cb-fail px-3 py-1.5 text-sm font-medium text-strong hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
       >
         {busy ? "Preparing…" : "Download the unverified file"}
       </button>

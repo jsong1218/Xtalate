@@ -27,10 +27,10 @@ export function HistoryTableView({
 }) {
   return (
     <div className="space-y-4">
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full border-collapse text-left">
           <thead>
-            <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr className="bg-raised text-xs uppercase tracking-wide text-faint">
               <th scope="col" className="px-3 py-2 font-medium">
                 When
               </th>
@@ -67,7 +67,7 @@ export function HistoryTableView({
             type="button"
             onClick={onLoadMore}
             disabled={loadingMore}
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-60"
+            className="rounded-md border border-line px-4 py-2 text-sm font-medium text-body disabled:opacity-60"
           >
             {loadingMore ? "Loading…" : "Load more"}
           </button>

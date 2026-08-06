@@ -44,7 +44,7 @@ export function CapabilityGlyph({
   const dirLabel = direction === "read" ? "Read" : "Write";
   return (
     <span className="inline-flex items-center gap-1">
-      <span aria-hidden="true" className="font-mono text-[0.7rem] uppercase text-slate-400">
+      <span aria-hidden="true" className="font-mono text-[0.7rem] uppercase text-faint">
         {direction === "read" ? "R" : "W"}
       </span>
       <LossIcon kind={CAPABILITY_KIND[level]} label={`${dirLabel} ${CAPABILITY_LABEL[level]}`} />

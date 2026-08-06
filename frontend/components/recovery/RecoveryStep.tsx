@@ -1,6 +1,7 @@
 "use client";
 
 import { LossIcon } from "@/components/loss/icons";
+import { Button } from "@/components/ui/Button";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { SummaryChips } from "@/components/report/SummaryChips";
 import { formatUtc } from "@/lib/format/datetime";
@@ -73,25 +74,25 @@ export function RecoveryStep({
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <LossIcon kind="assumption" />
-          <h2 className="text-xl font-semibold text-slate-900">
+          <h2 className="text-xl font-semibold text-strong">
             This conversion needs {n} {n === 1 ? "decision" : "decisions"} before it can proceed
           </h2>
-          <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs font-semibold text-cb-assumption">
+          <code className="rounded bg-raised px-1.5 py-0.5 font-mono text-xs font-semibold text-cb-assumption">
             awaiting_recovery
           </code>
         </div>
-        <p className="text-sm text-slate-800">
+        <p className="text-sm text-strong">
           The target format needs information this file does not contain. Xtalate paused rather than
           filling it in, because anything it invented would be data you never supplied — so nothing
           is written until you decide.
         </p>
 
         {/* The deadline, said plainly and up front — expiry refuses, it does not choose. */}
-        <p className="text-sm text-slate-700" data-testid="recovery-deadline">
+        <p className="text-sm text-body" data-testid="recovery-deadline">
           {expiresAt ? (
             <>
               This pause is held until{" "}
-              <time dateTime={expiresAt} className="font-medium text-slate-900">
+              <time dateTime={expiresAt} className="font-medium text-strong">
                 {formatUtc(expiresAt)}
               </time>
               .{" "}
@@ -104,13 +105,13 @@ export function RecoveryStep({
 
       {/* Rule 3: decide in full view of what this conversion already keeps and drops. */}
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-slate-700">
+        <h3 className="text-sm font-semibold text-body">
           What this conversion will keep and drop, before your decisions
         </h3>
         <SummaryChips report={block.draft_report} />
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="rounded-lg border border-line bg-surface p-4">
         <RecoveryWizard
           block={block}
           jobId={jobId}
@@ -122,15 +123,10 @@ export function RecoveryStep({
 
       {/* Decline is first-class, not a trap: an equal way out that records the honest outcome. */}
       <div className="space-y-1 border-t border-cb-assumption/30 pt-4">
-        <button
-          type="button"
-          onClick={onDecline}
-          disabled={declining}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-        >
+        <Button variant="secondary" size="sm" onClick={onDecline} disabled={declining}>
           {declining ? "Cancelling…" : "Cancel conversion"}
-        </button>
-        <p className="text-xs text-slate-500">
+        </Button>
+        <p className="text-xs text-faint">
           Cancelling writes nothing and records that you cancelled — not an empty report, none at
           all. You can convert again with your choices supplied up front.
         </p>

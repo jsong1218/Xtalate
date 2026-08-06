@@ -72,11 +72,11 @@ export function Inventory({ report }: { report: DiscoveryReport }) {
   return (
     <div className="space-y-4">
       <ParseWarningsBand report={report} />
-      <section aria-label="Contents inventory" className="rounded-md border border-slate-200">
-        <h3 className="border-b border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900">
+      <section aria-label="Contents inventory" className="rounded-md border border-line">
+        <h3 className="border-b border-line px-3 py-2 text-sm font-semibold text-strong">
           What this file contains
         </h3>
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-line-soft">
           {report.fields.map((entry) => (
             <Row
               key={entry.path}

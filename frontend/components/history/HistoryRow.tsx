@@ -44,19 +44,19 @@ export function HistoryRow({
   const target = endpointLabel(item.target);
 
   return (
-    <tr data-testid={`history-row-${item.conversion_id}`} className="border-t border-slate-200 align-top">
-      <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-600">
+    <tr data-testid={`history-row-${item.conversion_id}`} className="border-t border-line align-top">
+      <td className="whitespace-nowrap px-3 py-3 text-sm text-muted">
         <time dateTime={item.created_at}>{formatUtc(item.created_at)}</time>
       </td>
 
       <td className="px-3 py-3 text-sm">
-        <span className="font-medium text-slate-900">{source.formatId}</span>
-        <span aria-hidden="true" className="mx-1 text-slate-400">
+        <span className="font-medium text-strong">{source.formatId}</span>
+        <span aria-hidden="true" className="mx-1 text-faint">
           →
         </span>
-        <span className="font-medium text-slate-900">{target.formatId}</span>
+        <span className="font-medium text-strong">{target.formatId}</span>
         {source.filename ? (
-          <span className="block break-all text-xs text-slate-500">{source.filename}</span>
+          <span className="block break-all text-xs text-faint">{source.filename}</span>
         ) : null}
       </td>
 
@@ -76,7 +76,7 @@ export function HistoryRow({
                 ? `/conversions/${item.conversion_id}?file_id=${encodeURIComponent(item.file_id)}`
                 : `/conversions/${item.conversion_id}`
             }
-            className="text-sm text-slate-700 underline underline-offset-2 hover:text-slate-900"
+            className="text-sm text-body underline underline-offset-2 hover:text-strong"
           >
             Open record
           </Link>
@@ -84,7 +84,7 @@ export function HistoryRow({
             <>
               <Link
                 href={`/files/${item.file_id}`}
-                className="text-sm text-slate-700 underline underline-offset-2 hover:text-slate-900"
+                className="text-sm text-body underline underline-offset-2 hover:text-strong"
               >
                 Re-convert
               </Link>
@@ -95,7 +95,7 @@ export function HistoryRow({
               />
             </>
           ) : (
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-faint">
               Source file expired — the report stays readable, but re-converting needs a fresh upload.
             </span>
           )}

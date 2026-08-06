@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type DragEvent } from "react";
+import { Button } from "@/components/ui/Button";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import type { ErrorEnvelope as ErrorEnvelopeModel } from "@/lib/report/types";
 import type { UploadProgress } from "@/lib/api/upload";
@@ -85,24 +86,23 @@ export function UploadDropzone({
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
         className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
-          dragging ? "border-slate-500 bg-slate-50" : "border-slate-300"
+          dragging ? "border-line-strong bg-raised" : "border-line"
         } ${busy ? "opacity-70" : ""}`}
       >
-        <p className="text-base font-medium text-slate-900">
+        <p className="text-base font-medium text-strong">
           Drop a structure or trajectory file here
         </p>
-        <p className="mt-1 text-sm text-slate-600">
+        <p className="mt-1 text-sm text-muted">
           XYZ, extXYZ, CIF, POSCAR, CONTCAR, XDATCAR, or an ASE trajectory.
         </p>
 
-        <button
-          type="button"
+        <Button
           disabled={busy}
           onClick={() => inputRef.current?.click()}
-          className="mt-4 inline-block rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="mt-4"
         >
           {busy ? "Uploading…" : "Choose a file"}
-        </button>
+        </Button>
         <input
           ref={inputRef}
           type="file"
@@ -116,7 +116,7 @@ export function UploadDropzone({
             §2.2 rule is that *both halves* (size and retention) are visible before failure is
             possible, so a reader knows the posture up front rather than discovering it. */}
         {maxUploadBytes !== null ? (
-          <p className="mt-4 text-xs text-slate-500">
+          <p className="mt-4 text-xs text-faint">
             Files up to {humanBytes(maxUploadBytes)} on this instance
             {uploadRetentionHours != null
               ? ` · uploads deleted after ${uploadRetentionHours} hours`
@@ -131,7 +131,7 @@ export function UploadDropzone({
 
       {busy ? (
         <div className="space-y-1" aria-live="polite">
-          <div className="flex items-center justify-between text-xs text-slate-600">
+          <div className="flex items-center justify-between text-xs text-muted">
             <span className="truncate">{fileName ?? "Uploading…"}</span>
             {pct !== null ? <span className="tabular-nums">{pct}%</span> : null}
           </div>
@@ -141,10 +141,10 @@ export function UploadDropzone({
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={pct ?? undefined}
-            className="h-2 overflow-hidden rounded-full bg-slate-200"
+            className="h-2 overflow-hidden rounded-full bg-well"
           >
             <div
-              className={`h-full bg-slate-900 transition-[width] ${pct === null ? "w-1/3 animate-pulse" : ""}`}
+              className={`h-full bg-inverse transition-[width] ${pct === null ? "w-1/3 animate-pulse" : ""}`}
               style={pct !== null ? { width: `${pct}%` } : undefined}
             />
           </div>
@@ -154,7 +154,7 @@ export function UploadDropzone({
       {status === "error" && error ? <ErrorEnvelope envelope={error} /> : null}
 
       {status === "error" && error?.error.code === "FILE_TOO_LARGE" ? (
-        <p className="text-sm text-slate-700" data-testid="size-funnel">
+        <p className="text-sm text-body" data-testid="size-funnel">
           This cap is this instance&rsquo;s, not the tool&rsquo;s — run Xtalate locally and there is
           no size limit at all.{" "}
           {selfHostingUrl ? (
