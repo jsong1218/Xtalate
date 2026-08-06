@@ -1,4 +1,5 @@
 import { CapabilityGlyph } from "./capabilityGlyph";
+import { FormatGuidePanel } from "./FormatGuidePanel";
 import { fieldLabel, type FormatRow } from "@/lib/capabilities/matrix";
 import type { FormatCapabilities } from "@/lib/capabilities/types";
 
@@ -90,6 +91,10 @@ export function FormatDetail({ format }: { format: FormatRow }) {
         <h1 className="text-2xl font-semibold tracking-tight">{format.format_name}</h1>
         <p className="font-mono text-xs text-faint">{format.format_id}</p>
       </header>
+
+      {/* The editorial guide (addendum §4.5) — the plain-language "what is this?" a newcomer meets
+          before the field-by-field grid. Falls back to an honest note for a plugin with no entry. */}
+      <FormatGuidePanel formatId={format.format_id} formatName={format.format_name} />
 
       {format.write ? <RequiredFields caps={format.write} /> : null}
       {format.read ? <DirectionSection caps={format.read} title="Reading this format" /> : null}

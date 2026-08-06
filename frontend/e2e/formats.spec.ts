@@ -25,4 +25,9 @@ test("answers a capability question in two clicks, generated from the live regis
   await extxyz.click();
   await expect(page.getByRole("heading", { level: 1, name: "Extended XYZ" })).toBeVisible();
   await expect(page.getByText(/Converting into Extended XYZ requires/i)).toBeVisible();
+
+  // The editorial File Format Guide (addendum §4.5) rides on the same page — one page, whole story:
+  // the plain-language "about" sits with the generated capability declarations.
+  await expect(page.getByTestId("format-guide")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "About this format" })).toBeVisible();
 });

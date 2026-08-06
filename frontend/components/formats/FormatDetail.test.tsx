@@ -66,4 +66,21 @@ describe("FormatDetail (Part 7 §2.7)", () => {
     // No write side → no "required to write" block at all.
     expect(screen.queryByRole("region", { name: /required to write/i })).not.toBeInTheDocument();
   });
+
+  it("leads with the editorial guide alongside the capability declarations (S5)", () => {
+    // One page tells the whole story: the plain-language guide sits with the field-by-field grid.
+    render(<FormatDetail format={cif} />);
+    expect(screen.getByTestId("format-guide")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /About this format/i })).toBeInTheDocument();
+    // The capability declarations are still present on the same page.
+    expect(screen.getByRole("heading", { name: /^Reading/i })).toBeInTheDocument();
+  });
+
+  it("falls back honestly for a format the guide has never heard of — no fabricated prose (S5)", () => {
+    // A plugin format still gets its grid; the guide slot shows an honest note instead of a blank.
+    const plugin: FormatRow = { format_id: "toyfmt", format_name: "Toy Format", read: cif.read };
+    render(<FormatDetail format={plugin} />);
+    expect(screen.queryByTestId("format-guide")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("format-guide-fallback")).getByText(/no extended guide/i)).toBeInTheDocument();
+  });
 });
