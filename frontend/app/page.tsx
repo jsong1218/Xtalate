@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { apiClient } from "@/lib/api/client";
 import { LossTag } from "@/components/loss/icons";
+import { buttonClasses } from "@/components/ui/Button";
 
 // The live figures (format count, size cap) must describe the *running* instance, never the build
 // machine: Part 9 §2 fixes only the API origin at build time — limits and capabilities are learned
@@ -54,10 +55,7 @@ export default async function LandingPage() {
           not be repeated here (addendum S2).
         */}
         <div className="flex flex-wrap items-center gap-4 pt-1">
-          <Link
-            href="/convert"
-            className="inline-block rounded-md bg-inverse px-5 py-2.5 font-medium text-inverse-fg"
-          >
+          <Link href="/convert" className={buttonClasses("primary", "lg")}>
             Convert a file
           </Link>
         </div>

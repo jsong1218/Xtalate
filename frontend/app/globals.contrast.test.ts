@@ -120,8 +120,15 @@ function checkTheme(theme: string, block: () => string) {
       },
     );
 
-    it("inverse foreground clears AA on the inverse surface (primary buttons)", () => {
+    it("inverse foreground clears AA on the inverse surface (neutral buttons)", () => {
       expect(contrast(t("inverse-fg"), t("inverse"))).toBeGreaterThanOrEqual(AA);
+    });
+
+    // The forward-action accent is a rendered surface as of the addendum S3 Button primitive: the
+    // filled primary button is `--accent-fg` on `--accent`. Guard that pair so a future accent edit
+    // (e.g. brightening the dark blue) cannot silently drop the label below AA in either theme.
+    it("accent foreground clears AA on the accent surface (primary buttons)", () => {
+      expect(contrast(t("accent-fg"), t("accent"))).toBeGreaterThanOrEqual(AA);
     });
   });
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { LossIcon } from "@/components/loss/icons";
 import { Row } from "@/components/report/Row";
 import type { FormatCapabilities } from "@/lib/capabilities/types";
@@ -179,13 +180,9 @@ export function TargetPicker({
             </div>
           </fieldset>
 
-          <button
-            type="button"
-            onClick={() => onConvert(selectedTarget.format_id, mode)}
-            className="rounded-md bg-inverse px-4 py-2 font-medium text-inverse-fg"
-          >
+          <Button onClick={() => onConvert(selectedTarget.format_id, mode)}>
             Convert to {selectedTarget.format_name}
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>

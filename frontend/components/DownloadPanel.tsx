@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AckGate } from "@/components/AckGate";
+import { Button } from "@/components/ui/Button";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { downloadOutput, saveBlob } from "@/lib/api/download";
 import type { ConversionRecord, ErrorEnvelope as ErrorEnvelopeModel } from "@/lib/report/types";
@@ -149,14 +150,9 @@ export function DownloadPanel({ record }: { record: ConversionRecord }) {
         <AckGate record={record} />
       ) : (
         <>
-          <button
-            type="button"
-            onClick={handleDownload}
-            disabled={busy}
-            className="rounded-md bg-inverse px-3 py-1.5 text-sm font-medium text-inverse-fg hover:bg-inverse-hover disabled:opacity-60"
-          >
+          <Button size="sm" onClick={handleDownload} disabled={busy}>
             {busy ? "Preparing…" : `Download ${download.filename}`}
-          </button>
+          </Button>
           {error ? <ErrorEnvelope envelope={error} /> : null}
         </>
       )}

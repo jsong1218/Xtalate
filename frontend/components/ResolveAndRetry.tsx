@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { submitConvert } from "@/lib/api/queries";
 import { toErrorEnvelope } from "@/lib/api/useInspection";
@@ -107,14 +108,9 @@ export function ResolveAndRetry({
         conversion, not a change to this record.
       </p>
       {fileId ? (
-        <button
-          type="button"
-          onClick={handleRetry}
-          disabled={busy}
-          className="rounded-md bg-inverse px-3 py-1.5 text-sm font-medium text-inverse-fg hover:bg-inverse-hover disabled:opacity-60"
-        >
+        <Button size="sm" onClick={handleRetry} disabled={busy}>
           {busy ? "Starting…" : "Resolve and retry"}
-        </button>
+        </Button>
       ) : (
         <p className="text-sm text-muted">
           The uploaded source is no longer in hand here, so it must be provided again.{" "}

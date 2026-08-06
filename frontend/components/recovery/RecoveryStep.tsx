@@ -1,6 +1,7 @@
 "use client";
 
 import { LossIcon } from "@/components/loss/icons";
+import { Button } from "@/components/ui/Button";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { SummaryChips } from "@/components/report/SummaryChips";
 import { formatUtc } from "@/lib/format/datetime";
@@ -122,14 +123,9 @@ export function RecoveryStep({
 
       {/* Decline is first-class, not a trap: an equal way out that records the honest outcome. */}
       <div className="space-y-1 border-t border-cb-assumption/30 pt-4">
-        <button
-          type="button"
-          onClick={onDecline}
-          disabled={declining}
-          className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-body hover:bg-raised disabled:opacity-60"
-        >
+        <Button variant="secondary" size="sm" onClick={onDecline} disabled={declining}>
           {declining ? "Cancelling…" : "Cancel conversion"}
-        </button>
+        </Button>
         <p className="text-xs text-faint">
           Cancelling writes nothing and records that you cancelled — not an empty report, none at
           all. You can convert again with your choices supplied up front.

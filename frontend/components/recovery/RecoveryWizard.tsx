@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DecisionCard } from "./DecisionCard";
+import { Button } from "@/components/ui/Button";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { buildRecoveryBody, isWizardComplete, type WizardState } from "@/lib/recovery/choices";
 import { orderedScenarios } from "@/lib/recovery/order";
@@ -193,26 +194,17 @@ export function RecoveryWizard({
             </p>
           ) : null}
           {previewError ? <ErrorEnvelope envelope={previewError} /> : null}
-          <button
-            type="button"
-            onClick={() => setPreviewNonce((n) => n + 1)}
-            className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-body hover:bg-raised"
-          >
+          <Button variant="secondary" size="sm" onClick={() => setPreviewNonce((n) => n + 1)}>
             Try previewing again
-          </button>
+          </Button>
         </div>
       ) : null}
 
       {submitError ? <ErrorEnvelope envelope={submitError} /> : null}
 
-      <button
-        type="button"
-        onClick={handleConfirm}
-        disabled={!canConfirm}
-        className="rounded-md bg-inverse px-4 py-2 text-sm font-medium text-inverse-fg hover:bg-inverse-hover disabled:opacity-50"
-      >
+      <Button onClick={handleConfirm} disabled={!canConfirm}>
         {submitting ? "Resuming…" : "Confirm and convert"}
-      </button>
+      </Button>
     </div>
   );
 }

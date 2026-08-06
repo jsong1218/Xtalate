@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { deleteFile } from "@/lib/api/queries";
 
 /** The instance's retention windows, in the plain units the confirmation states (Part 6 §5). */
@@ -80,14 +81,9 @@ export function DeleteFileControl({
         </p>
       ) : null}
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={confirmDelete}
-          disabled={deleting}
-          className="rounded-md bg-cb-fail-solid px-3 py-1 text-sm font-medium text-white disabled:opacity-60"
-        >
+        <Button variant="destructive" size="sm" onClick={confirmDelete} disabled={deleting}>
           {deleting ? "Deleting…" : "Delete"}
-        </button>
+        </Button>
         <button
           type="button"
           onClick={() => setConfirming(false)}

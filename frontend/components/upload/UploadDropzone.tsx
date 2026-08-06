@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type DragEvent } from "react";
+import { Button } from "@/components/ui/Button";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import type { ErrorEnvelope as ErrorEnvelopeModel } from "@/lib/report/types";
 import type { UploadProgress } from "@/lib/api/upload";
@@ -95,14 +96,13 @@ export function UploadDropzone({
           XYZ, extXYZ, CIF, POSCAR, CONTCAR, XDATCAR, or an ASE trajectory.
         </p>
 
-        <button
-          type="button"
+        <Button
           disabled={busy}
           onClick={() => inputRef.current?.click()}
-          className="mt-4 inline-block rounded-md bg-inverse px-4 py-2 text-sm font-medium text-inverse-fg disabled:opacity-50"
+          className="mt-4"
         >
           {busy ? "Uploading…" : "Choose a file"}
-        </button>
+        </Button>
         <input
           ref={inputRef}
           type="file"

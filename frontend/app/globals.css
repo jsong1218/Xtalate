@@ -89,9 +89,12 @@
   --inverse-fg: #0f172a; /* dark text on it                         */
   --inverse-hover: #cbd5e1; /* slate-300                               */
 
-  --accent: #3b82f6; /* blue-500 (brighter for the dark surface) */
+  /* Same blue-600 as light: white text on it clears AA (5.07:1 — blue-500 would be only 3.68:1,
+     failing white-on-fill), and it still reads as a saturated blue against the dark slate surface.
+     The hover lifts *brighter* here (the opposite direction from light), the dark-surface way. */
+  --accent: #2563eb; /* blue-600 */
   --accent-fg: #ffffff;
-  --accent-hover: #60a5fa; /* blue-400 */
+  --accent-hover: #3b82f6; /* blue-500 (brighter on hover, for the dark surface) */
 
   /* Loss foregrounds, lightened so each clears AA on the dark surface and its dark tint. */
   --cb-preserve: #4ade80; /* green-400  */

@@ -9,6 +9,7 @@ import { BackLink } from "@/components/shell/BackLink";
 import { RecoveryStep } from "@/components/recovery/RecoveryStep";
 import { ConversionReportPanel } from "@/components/report/ConversionReportPanel";
 import { RefusalPanel } from "@/components/report/RefusalPanel";
+import { buttonClasses } from "@/components/ui/Button";
 import { cancelJob, isTerminalJobState, jobQuery, queryKeys } from "@/lib/api/queries";
 import { toErrorEnvelope } from "@/lib/api/useInspection";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -184,7 +185,7 @@ export default function ConversionJobPage() {
                   ? `/conversions/${result.conversion_id}?file_id=${encodeURIComponent(fileId)}`
                   : `/conversions/${result.conversion_id}`
               }
-              className="inline-block text-sm font-medium text-strong underline"
+              className={buttonClasses("primary", "md")}
             >
               View the full record{report.status === "refused" ? "" : " and download the file"}
             </Link>
