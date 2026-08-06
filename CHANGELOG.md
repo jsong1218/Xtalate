@@ -17,6 +17,50 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+### Changed — Addendum before M36: frontend redesign (UI/UX only)
+
+An enhancement pass over the Web UI (`frontend/`), taken before M36 as an **addendum, not a
+milestone**: it makes the interface more polished and professional while staying simple, clean, and
+usable for a broad audience — researchers, students, and non-technical users alike. It is
+**presentation-only**. The engine (`src/xtalate/`), the `/v1` API (`backend/`), the Canonical Model,
+the capability declarations, and every conversion/validation/recovery behaviour are **unchanged**;
+the canonical `schema_version` stays `1.0.0`. The binding invariants held throughout: no silent loss
+(P1), the `--cb-*` loss palette keeps its one-meaning-each semantics with colour never the sole
+carrier, and the formats explorer stays generated from `GET /v1/capabilities` (D103).
+
+- **A real light/dark theme (S1).** The neutral chrome moved to CSS-variable-backed semantic surface
+  tokens (`surface`/`raised`/`well`, `strong`/`body`/`muted`/`faint`, `line*`, `inverse*`, `accent*`),
+  defined once and aliased in Tailwind, so one flip re-skins the app. Dark mode ships as an explicit,
+  `localStorage`-persisted `data-theme` choice (default light, no-flash before first paint), with
+  dark **surfaces** *and* surface-aware `--cb-*` values so every rendered pair clears WCAG AA in both
+  themes — the `globals.contrast.test.ts` guard now runs the full battery against each theme. This
+  supersedes the earlier decision to defer dark mode; the light UI is byte-for-byte unchanged.
+- **A consistent app shell and back-navigation (S2).** A shared header (wordmark home, primary nav,
+  theme toggle) rendered once for every page, and a predictable left-arrow back control that
+  navigates by route hierarchy rather than raw browser-back, replacing the old ad-hoc per-page links.
+- **A primary-action system (S3).** A shared `Button` primitive with `primary`/`secondary`/`ghost`/
+  `destructive` variants gives forward-moving actions (Upload, Convert, Download, Finish) one
+  unmistakable accent treatment while secondary and destructive actions recede. The accent is a
+  forward-action colour only — never a loss signal — and its foreground/fill pair is contrast-guarded
+  in both themes.
+- **More readable reports at scale (S4).** A summary band elevates the count chips to an at-a-glance
+  overview, and the two floodable sections — Warnings and a lengthy Removed — group same-typed rows
+  into **expanded-by-default** disclosures. Grouping only engages when a key repeats, and because the
+  disclosures start open and only re-parent rows (never filter or truncate), the never-buried promise
+  holds: no individual loss row is hidden behind a click, and the summary counts stay always-visible.
+  Complements the existing per-frame frame-range collapse.
+- **A File Format Guide on `/formats` (S5).** The per-format detail page now leads with plain-language
+  editorial context — what the format is, who uses it, what it stores, its strengths, trade-offs, and
+  limitations — rendered *beside* the generated capability grid so one page tells the whole story. The
+  prose is first-party editorial content, never derived from the capability declaration; a format the
+  guide has no entry for (e.g. a plugin) shows an honest note and its generated grid still stands
+  alone, preserving the plugin-zero-change guarantee (P6).
+- **An accessibility & UX sweep (S6).** A single global `:focus-visible` baseline gives every
+  interactive element a consistent, theme-flipping keyboard-focus ring (the bespoke component rings
+  still override it via cascade-layer order, so there is no double indicator); contrast is audited in
+  both themes, the layout is verified responsive down to a 375 px phone, and the shell, theme toggle,
+  and disclosures are all keyboard-operable.
+
 ## [0.7.0] — 2026-08-02
 
 v0.7 — **"Feature-complete."** The version that finishes the product surface of Parts 6–7 and cuts
