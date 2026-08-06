@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { JobPhase } from "@/components/JobPhase";
+import { BackLink } from "@/components/shell/BackLink";
 import { RecoveryStep } from "@/components/recovery/RecoveryStep";
 import { ConversionReportPanel } from "@/components/report/ConversionReportPanel";
 import { RefusalPanel } from "@/components/report/RefusalPanel";
@@ -75,6 +76,12 @@ export default function ConversionJobPage() {
   const fileId = useSearchParams().get("file_id");
   const queryClient = useQueryClient();
 
+  // The consistent back affordance goes to this job's own parent: the file it came from when we know
+  // it, otherwise the upload step (a shared link carries no file_id). Never raw browser-back.
+  const back = fileId
+    ? { href: `/files/${fileId}`, label: "Inspection" }
+    : { href: "/convert", label: "Upload" };
+
   const [cancelError, setCancelError] = useState<ErrorEnvelopeModel | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
@@ -106,6 +113,7 @@ export default function ConversionJobPage() {
   if (job.isError) {
     return (
       <main className="space-y-4">
+        <BackLink href={back.href} label={back.label} />
         <ErrorEnvelope
           envelope={toErrorEnvelope(job.error, "NETWORK_ERROR", "Could not reach this job.")}
         />
@@ -117,7 +125,8 @@ export default function ConversionJobPage() {
   const envelope = job.data;
   if (!envelope) {
     return (
-      <main>
+      <main className="space-y-6">
+        <BackLink href={back.href} label={back.label} />
         <p role="status" className="text-muted">
           Loading this conversion…
         </p>
@@ -135,6 +144,7 @@ export default function ConversionJobPage() {
 
   return (
     <main className="space-y-6">
+      <BackLink href={back.href} label={back.label} />
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Conversion</h1>
         <p className="font-mono text-xs text-faint">job {envelope.job_id}</p>

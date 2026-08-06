@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { AppHeader } from "@/components/shell/AppHeader";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -22,7 +23,26 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="min-h-screen bg-surface text-strong antialiased">
         <script dangerouslySetInnerHTML={{ __html: noFlashThemeScript }} />
         <Providers>
-          <div className="mx-auto max-w-5xl px-4 py-8">{children}</div>
+          {/*
+            Skip link — the first focusable element on every page, so a keyboard or screen-reader
+            user can jump past the shell's nav straight to the page content. Visually hidden until
+            focused (Part 7 §4). The target below is focusable (tabIndex -1) so activating this moves
+            focus there, not just the scroll position.
+          */}
+          <a
+            href="#main-content"
+            className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:left-4 focus-visible:top-4 focus-visible:z-50 focus-visible:rounded-md focus-visible:bg-inverse focus-visible:px-4 focus-visible:py-2 focus-visible:text-sm focus-visible:font-medium focus-visible:text-inverse-fg"
+          >
+            Skip to main content
+          </a>
+          <AppHeader />
+          <div
+            id="main-content"
+            tabIndex={-1}
+            className="mx-auto max-w-5xl px-4 py-8 focus:outline-none"
+          >
+            {children}
+          </div>
         </Providers>
       </body>
     </html>

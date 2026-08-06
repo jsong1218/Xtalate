@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { limitsQuery } from "@/lib/api/queries";
 import { useUpload } from "@/lib/api/useUpload";
+import { BackLink } from "@/components/shell/BackLink";
 import { UploadDropzone } from "@/components/upload/UploadDropzone";
 
 /**
@@ -27,6 +27,7 @@ export default function ConvertPage() {
 
   return (
     <main className="space-y-6">
+      <BackLink href="/" label="Home" />
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Convert a file</h1>
         <p className="max-w-2xl text-muted">
@@ -45,12 +46,6 @@ export default function ConvertPage() {
         fileName={result?.filename ?? null}
         onFile={onFile}
       />
-
-      <p className="text-sm text-faint">
-        <Link href="/" className="underline">
-          Back to home
-        </Link>
-      </p>
     </main>
   );
 }

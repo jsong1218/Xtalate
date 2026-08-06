@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { apiClient } from "@/lib/api/client";
 import { FormatsGrid } from "@/components/formats/FormatsGrid";
+import { BackLink } from "@/components/shell/BackLink";
 import { LossTag } from "@/components/loss/icons";
 import type { CapabilitiesMap } from "@/lib/capabilities/types";
 
@@ -36,6 +36,7 @@ export default async function FormatsPage() {
 
   return (
     <main className="space-y-6">
+      <BackLink href="/" label="Home" />
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Formats</h1>
         <p className="max-w-2xl text-body">
@@ -61,14 +62,9 @@ export default async function FormatsPage() {
           <FormatsGrid capabilities={capabilities} />
         </>
       ) : (
-        <div className="space-y-4">
-          <p className="text-body">
-            The format list is unavailable right now — this instance&rsquo;s API could not be reached.
-          </p>
-          <Link href="/" className="text-muted underline">
-            Back to home
-          </Link>
-        </div>
+        <p className="text-body">
+          The format list is unavailable right now — this instance&rsquo;s API could not be reached.
+        </p>
       )}
     </main>
   );

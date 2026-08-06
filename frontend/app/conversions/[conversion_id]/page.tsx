@@ -7,6 +7,7 @@ import { DownloadPanel } from "@/components/DownloadPanel";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { Provenance } from "@/components/Provenance";
 import { ResolveAndRetry } from "@/components/ResolveAndRetry";
+import { BackLink } from "@/components/shell/BackLink";
 import { ConversionReportPanel } from "@/components/report/ConversionReportPanel";
 import { RefusalPanel } from "@/components/report/RefusalPanel";
 import { SummaryChips } from "@/components/report/SummaryChips";
@@ -124,6 +125,7 @@ export default function ConversionRecordPage() {
   if (query.isError) {
     return (
       <main className="space-y-4">
+        <BackLink href="/history" label="History" />
         <ErrorEnvelope
           envelope={toErrorEnvelope(query.error, "NETWORK_ERROR", "Could not load this conversion.")}
         />
@@ -150,6 +152,7 @@ export default function ConversionRecordPage() {
 
   return (
     <main className="space-y-6">
+      <BackLink href="/history" label="History" />
       {/* 1. Outcome header — quantitative, never celebratory. */}
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight text-strong">

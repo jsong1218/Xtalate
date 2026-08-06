@@ -13,13 +13,22 @@ test("the primary path is reachable and operable by keyboard from the landing pa
 }) => {
   await page.goto("/");
 
-  // The first Tab lands on the primary call to action, and Enter follows it — no mouse needed.
+  // The app shell puts a skip link first (addendum S2), so a keyboard user can jump past the header
+  // nav straight to the content. Activating it moves focus to the main region…
+  await page.keyboard.press("Tab");
+  await expect(page.locator(":focus")).toHaveText(/Skip to main content/);
+  await page.keyboard.press("Enter");
+
+  // …from which the next Tab lands on the primary call to action, and Enter follows it — no mouse.
   await page.keyboard.press("Tab");
   await expect(page.locator(":focus")).toHaveText(/Convert a file/);
   await page.keyboard.press("Enter");
   await page.waitForURL("**/convert");
 
-  // On the upload step the first control is the file chooser, with a real accessible name.
+  // The upload step opens with the consistent back link, then the file chooser — both reachable by
+  // keyboard, in that order (the back affordance is the first in-content control on every page, S2).
+  await page.keyboard.press("Tab");
+  await expect(page.locator(":focus")).toHaveText(/Home/);
   await page.keyboard.press("Tab");
   await expect(page.locator(":focus")).toHaveText(/Choose a file/);
 });

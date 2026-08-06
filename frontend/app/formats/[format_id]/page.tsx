@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
 import { FormatDetail } from "@/components/formats/FormatDetail";
+import { BackLink } from "@/components/shell/BackLink";
 import { formatRows, type FormatRow } from "@/lib/capabilities/matrix";
 import type { CapabilitiesMap } from "@/lib/capabilities/types";
 
@@ -49,9 +49,7 @@ export default async function FormatDetailPage({
 
   return (
     <main className="space-y-6">
-      <Link href="/formats" className="text-sm text-muted underline">
-        ← All formats
-      </Link>
+      <BackLink href="/formats" label="All formats" />
       {format ? (
         <FormatDetail format={format} />
       ) : (

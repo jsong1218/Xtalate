@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { Inventory } from "@/components/Inventory";
+import { BackLink } from "@/components/shell/BackLink";
 import { TargetPicker } from "@/components/TargetPicker";
 import { apiClient } from "@/lib/api/client";
 import { capabilitiesQuery } from "@/lib/api/queries";
@@ -153,6 +154,7 @@ export default function FilePage() {
 
   return (
     <main className="space-y-8">
+      <BackLink href="/convert" label="Upload" />
       {inspection.status === "loading" ? (
         <p className="text-muted" role="status">
           Inspecting this file…

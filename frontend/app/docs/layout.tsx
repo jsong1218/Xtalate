@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { DOC_PAGES } from "@/lib/docs/pages";
+import { BackLink } from "@/components/shell/BackLink";
 
 /**
  * Shell for the `/docs/*` static site (MASTER_SPEC Part 7 §1; slice M34-S1): a left nav generated
@@ -11,6 +12,9 @@ export default function DocsLayout({ children }: { children: ReactNode }) {
   return (
     <div className="grid gap-8 md:grid-cols-[12rem_minmax(0,1fr)]">
       <nav aria-label="Documentation" className="space-y-1 text-sm md:sticky md:top-8 md:self-start">
+        <div className="pb-2">
+          <BackLink href="/" label="Home" />
+        </div>
         <Link href="/docs" className="block font-semibold text-strong">
           Documentation
         </Link>
@@ -23,9 +27,6 @@ export default function DocsLayout({ children }: { children: ReactNode }) {
             {page.title}
           </Link>
         ))}
-        <Link href="/" className="block pt-2 text-faint hover:text-strong hover:underline">
-          ← Home
-        </Link>
       </nav>
       <div className="min-w-0">{children}</div>
     </div>

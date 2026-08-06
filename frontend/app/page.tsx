@@ -48,21 +48,17 @@ export default async function LandingPage() {
           each field that was preserved, dropped because the target format can&rsquo;t hold it, or
           filled in by an explicit recovery choice. Nothing is changed silently.
         </p>
+        {/*
+          The landing hero keeps only the one primary call to action; the secondary destinations
+          (Formats · History · Docs) now live in the app-shell header, on every page, so they need
+          not be repeated here (addendum S2).
+        */}
         <div className="flex flex-wrap items-center gap-4 pt-1">
           <Link
             href="/convert"
             className="inline-block rounded-md bg-inverse px-5 py-2.5 font-medium text-inverse-fg"
           >
             Convert a file
-          </Link>
-          <Link href="/formats" className="text-muted underline">
-            Explore formats
-          </Link>
-          <Link href="/history" className="text-muted underline">
-            History
-          </Link>
-          <Link href="/docs" className="text-muted underline">
-            Docs
           </Link>
         </div>
         {formatCount !== null ? (
