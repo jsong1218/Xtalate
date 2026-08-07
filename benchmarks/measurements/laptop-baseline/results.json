@@ -1,0 +1,110 @@
+[
+  {
+    "name": "parse_xdatcar_10k",
+    "scale": "full",
+    "wall_seconds": 2.1842348340142053,
+    "peak_rss_bytes": 163692544,
+    "metrics": {
+      "frames": 10000.0,
+      "atoms": 100.0
+    },
+    "budgets": [
+      {
+        "metric": "wall_seconds",
+        "limit": 30.0,
+        "unit": "s",
+        "value": 2.1842348340142053,
+        "within_budget": true
+      },
+      {
+        "metric": "peak_rss_bytes",
+        "limit": 2147483648,
+        "unit": "bytes",
+        "value": 163692544,
+        "within_budget": true
+      }
+    ]
+  },
+  {
+    "name": "convert_xdatcar_to_extxyz_10k",
+    "scale": "full",
+    "wall_seconds": 10.264265084028011,
+    "peak_rss_bytes": 93290496,
+    "metrics": {
+      "frames": 10000.0,
+      "atoms": 100.0
+    },
+    "budgets": [
+      {
+        "metric": "wall_seconds",
+        "limit": 90.0,
+        "unit": "s",
+        "value": 10.264265084028011,
+        "within_budget": true
+      },
+      {
+        "metric": "peak_rss_bytes",
+        "limit": 2147483648,
+        "unit": "bytes",
+        "value": 93290496,
+        "within_budget": true
+      }
+    ]
+  },
+  {
+    "name": "convert_extxyz_roundtrip_1k",
+    "scale": "full",
+    "wall_seconds": 13.15726462501334,
+    "peak_rss_bytes": 140132352,
+    "metrics": {
+      "frames": 1000.0,
+      "atoms": 1000.0
+    },
+    "budgets": [
+      {
+        "metric": "wall_seconds",
+        "limit": 60.0,
+        "unit": "s",
+        "value": 13.15726462501334,
+        "within_budget": true
+      },
+      {
+        "metric": "peak_rss_bytes",
+        "limit": 3221225472,
+        "unit": "bytes",
+        "value": 140132352,
+        "within_budget": true
+      }
+    ]
+  },
+  {
+    "name": "frame_limit_ceiling",
+    "scale": "full",
+    "wall_seconds": 12.473522332991706,
+    "peak_rss_bytes": 90374144,
+    "metrics": {
+      "frames": 100000.0,
+      "atoms": 10.0
+    },
+    "budgets": []
+  },
+  {
+    "name": "preflight_latency",
+    "scale": "full",
+    "wall_seconds": 2.2828800420102198,
+    "peak_rss_bytes": 165068800,
+    "metrics": {
+      "frames": 10000.0,
+      "preflight_seconds": 0.03345679200720042
+    },
+    "budgets": [
+      {
+        "metric": "preflight_seconds",
+        "limit": 1.0,
+        "unit": "s",
+        "value": 0.03345679200720042,
+        "within_budget": true
+      }
+    ]
+  }
+]

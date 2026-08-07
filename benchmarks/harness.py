@@ -42,6 +42,7 @@ import argparse
 import gc
 import io
 import json
+import os
 import resource
 import shutil
 import subprocess
@@ -52,6 +53,7 @@ from collections.abc import Callable, Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from csv import writer as csv_writer
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +62,7 @@ from tests.streaming._generators import (
     write_xdatcar_trajectory,
 )
 
+from benchmarks import tripwire
 from xtalate.cli.main import EXIT_OK
 from xtalate.cli.main import main as cli_main
 from xtalate.conversion.preflight import build_preflight
@@ -398,7 +401,52 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="DIR",
         help="Write results.json and results.csv here (default: print a table to stdout only).",
     )
+    parser.add_argument(
+        "--tripwire",
+        action="store_true",
+        help=(
+            "After running, compare this run against the trailing-median series for --runner and "
+            "EXIT NON-ZERO on a >20%% regression (the nightly gate; pinned runner only). "
+            "Requires --runner. See docs/ops/pinned-runner.md."
+        ),
+    )
+    parser.add_argument(
+        "--runner",
+        metavar="ID",
+        default=os.environ.get("XTALATE_BENCH_RUNNER"),
+        help=(
+            "Pinned-runner identity keying the history series (history/<runner>.jsonl). "
+            "Defaults to $XTALATE_BENCH_RUNNER. Required with --tripwire so shared/laptop noise "
+            "never enters a pinned series."
+        ),
+    )
+    parser.add_argument(
+        "--history-dir",
+        type=Path,
+        default=Path(__file__).resolve().parent / "history",
+        metavar="DIR",
+        help="Where the per-runner rolling series live (default: benchmarks/history/).",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=tripwire.DEFAULT_THRESHOLD,
+        metavar="FRAC",
+        help="Regression threshold as a fraction over the median (default: 0.20 = 20%%).",
+    )
+    parser.add_argument(
+        "--window-days",
+        type=int,
+        default=tripwire.DEFAULT_WINDOW_DAYS,
+        metavar="N",
+        help="Trailing window the median is taken over (default: 14 days).",
+    )
     ns = parser.parse_args(args)
+
+    if ns.tripwire and not ns.runner:
+        parser.error("--tripwire requires --runner (or $XTALATE_BENCH_RUNNER)")
+    if ns.tripwire and ns.smoke:
+        parser.error("--tripwire compares real measurements; refusing to run against --smoke scale")
 
     names = ns.only or [b.name for b in BENCHMARKS]
     unknown = [n for n in names if n not in _BY_NAME]
@@ -413,4 +461,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         _write_series(results, ns.out)
         print(f"\nwrote {ns.out / 'results.json'} and {ns.out / 'results.csv'}")
 
-    return 1 if any("error" in r for r in results) else 0
+    crashed = any("error" in r for r in results)
+    if not ns.tripwire:
+        return 1 if crashed else 0
+    return _run_tripwire(results, ns, crashed=crashed)
+
+
+def _run_tripwire(results: list[dict[str, Any]], ns: argparse.Namespace, *, crashed: bool) -> int:
+    """Compare this run against its runner's trailing-median series, print the verdict, and — only
+    for a clean run — append it to the series. Returns non-zero on a crash or a regression."""
+    now = datetime.now(tz=UTC)
+    current = tripwire.flatten_run(results)
+    path = ns.history_dir / f"{ns.runner}.jsonl"
+    history = tripwire.load_series(path)
+    report = tripwire.evaluate(
+        current,
+        history,
+        now=now,
+        threshold=ns.threshold,
+        window_days=ns.window_days,
+    )
+    print()
+    print(tripwire.format_report(report))
+
+    if crashed:
+        # A crashed benchmark is not a comparable data point — never seed the series with a partial
+        # run, and fail regardless of the (partial) tripwire verdict.
+        print("\nnot appending to series: a benchmark crashed this run.")
+        return 1
+    record = tripwire.run_record(
+        current, runner=ns.runner, now=now, commit=os.environ.get("GITHUB_SHA")
+    )
+    tripwire.append_run(path, record, now=now)
+    print(f"\nappended this run to {path}")
+    return 1 if not report.passed else 0
