@@ -40,10 +40,19 @@ pytest                  # unit + golden + governance + property, with the covera
 `ruff format --check` fails independently of `ruff check`: a green `ruff check` does **not** mean
 formatting is clean. If `ruff format --check` reports files, run `ruff format .` to fix them.
 
-CI additionally installs the in-repo proof plugin before running the suite:
+CI additionally installs two out-of-tree plugins before running the suite. The `toyfmt` fixture is
+the minimal discovery proof — installed `--no-deps`, its tests **skip when absent**:
 
 ```bash
 pip install --no-deps ./tests/fixtures/xtalate_toyfmt   # its 4 end-to-end tests skip when absent
+```
+
+The reference plugin is the **compatibility canary** — installed **before** `lint-imports` (so its
+`forbidden` import contract is evaluated) with its suite a *required* part of the run, so a core
+change that breaks the frozen public SDK fails CI (see [§5.3](#53-the-compatibility-canary)):
+
+```bash
+pip install --no-deps ./plugins/example-format         # its suite is required, never skipped
 ```
 
 A separate nightly workflow runs the full n×n round-trip matrix
@@ -99,6 +108,14 @@ There are two ways to add a format. Implementing it **in-tree** puts it in `src/
 and `src/xtalate/exporters/`; shipping it as a **separate installable plugin** requires no fork.
 Both use the same SDK and the same rules.
 
+The complete, published worked example this section points at is the reference plugin
+[`plugins/example-format/`](../plugins/example-format) — a small, deliberately simple format
+(`exfmt`) that exists to be *copied*: a parser, an exporter, honest capability declarations, golden
+cases with licensed manifests, and its own end-to-end test suite, built **only** against the frozen
+public SDK. It is a separate installable distribution, and CI treats it as a compatibility canary —
+a core change that breaks it fails the build (see [§5.3](#53-the-compatibility-canary)). Every step
+below names the file in it that demonstrates the step.
+
 Most formats are a single module per side. CIF is the exception and the precedent for a large one:
 its reader is a *package*, `src/xtalate/parsers/cif/`, split into four stages with a one-way flow —
 tokens, then a format-shaped document, then format-level invariants, then the Canonical Object —
@@ -110,26 +127,57 @@ when the backend might later be replaced by a library, and not otherwise.
 
 1. Subclass `ParserPlugin` / `ExporterPlugin` from `xtalate.sdk`. A parser reads one format into a
    Canonical Object and **never** reads another format or calls another parser (P2); an exporter
-   writes one format from a Canonical Object and never reads native files.
-2. Declare `capabilities()` **honestly**: a `PARTIAL` field with a note beats an optimistic `FULL`.
-   An over-declaration is not a cosmetic slip — the pre-flight predicts the field preserved, so
-   the Conversion Report promises the user something the artifact does not carry.
+   writes one format from a Canonical Object and never reads native files. In the reference plugin
+   these are `ExampleFormatParser`
+   ([`parser.py`](../plugins/example-format/src/xtalate_examplefmt/parser.py)) and
+   `ExampleFormatExporter`
+   ([`exporter.py`](../plugins/example-format/src/xtalate_examplefmt/exporter.py)) — each a single
+   module importing only `xtalate.sdk` and `xtalate.schema`.
+2. Declare `capabilities()` **honestly**: a `PARTIAL` (or `NONE`) field with a note beats an
+   optimistic `FULL`. An over-declaration is not a cosmetic slip — the pre-flight predicts the field
+   preserved, so the Conversion Report promises the user something the artifact does not carry. This
+   is the lesson the reference plugin was built to teach concretely. `exfmt` reads an optional
+   per-frame label into `user_metadata.custom_per_frame['exfmt:label']`, but its exporter **cannot
+   write it back**, so `ExampleFormatExporter.capabilities()` declares that container `NONE` with a
+   note — and a file carrying a label reports that key `removed` in pre-flight, before any bytes are
+   written, instead of promising it and dropping it. **`NONE` and `PARTIAL` are the two honest shapes
+   of "less than FULL":** declare `NONE` when the format writes *nothing* in a container (as `exfmt`
+   does), and `PARTIAL` when it writes *some* of it —
    - For a carry-through container you write only *some* keys of, name them in
      `writable_custom_keys`. If the writable set is genuinely open-ended but its *spelling* is
      constrained, declare a `writable_custom_key_pattern` instead — a `{container_path: regex}`
      map applied in the same place, so a present key whose name does not `fullmatch` is reported
      `removed` before any bytes are written. extXYZ declares `^extxyz:[^:]*$` because its
      `Properties=` grammar separates fields with `:`, so a key like `cif:occupancy` cannot be
-     spelled at all. Declare a list or a pattern for a container, never both.
+     spelled at all. Declare a list or a pattern for a container, never both. (Plain XYZ is the
+     `PARTIAL` counterpoint to `exfmt`'s `NONE`: it *can* write exactly one key — its `xyz:comment`
+     line — so it declares the container `PARTIAL`, not `NONE`.)
 3. Keep the **default-laundering** suite green: prove your parser returns `None` for anything the
    source file does not actually state. Never default an absent field to a zero/identity value.
-4. Add golden cases with licensed manifests, and pass the identity round-trip.
+   `exfmt`'s parser sets every field the source does not carry — cell, dynamics, electronic, all of
+   it — to `None`, and its test suite asserts exactly that.
+4. Add golden cases with licensed manifests, and pass the identity round-trip. The reference plugin
+   carries two, both under [`plugins/example-format/tests/golden/exfmt/`](../plugins/example-format/tests/golden/exfmt):
+   `water-monomer` (no label — the clean identity round-trip) and `labeled-methane` (with a label —
+   the case that exercises the `removed` story end to end). Each has a `manifest.yaml` mirroring the
+   `tests/golden/` schema (`case`, `format_id`, `source_file`, `expected_canonical`,
+   `canonical_schema_version`, `sha256`/`expected_sha256`, and an `origin` block with `kind` and a
+   data `license`). The identity round-trip (`A → Canonical → A`, diffed within tolerance) is
+   deliberately lossy by exactly the label and nothing else — the comparable subspace comes from the
+   Capability Matrix, so a drop the plugin did *not* declare would fail it.
+5. Add the format's row. **In-tree**, a format appears in the capability table the sync test guards;
+   a row you forget, or a declaration your row disagrees with, fails that test. **As a plugin**,
+   there is no hand-authored row to add at all: once installed, the format appears in
+   `xtalate capabilities`, `GET /v1/capabilities`, the `/formats` explorer, sniffing, Discovery,
+   conversion, and validation with **zero changes to Xtalate** — the P6 payoff, and the reason
+   `exfmt` shows up in the nightly round-trip matrix (as both source and target) without a core edit.
 
 ### 5.2 Ship it as an installable plugin (no fork)
 
 A third-party distribution advertises its parser/exporter under Xtalate's entry-point groups;
 `default_registry()` discovers them at startup through the *same* declaration validation and
-duplicate-`format_id` guards a built-in format gets. In your package's `pyproject.toml`:
+duplicate-`format_id` guards a built-in format gets. In your package's `pyproject.toml` (the
+reference plugin's own [`pyproject.toml`](../plugins/example-format/pyproject.toml) is the template):
 
 ```toml
 [project.entry-points."xtalate.parsers"]
@@ -144,13 +192,30 @@ zero-argument factory returning one. **Import only the public SDK:** `xtalate.sd
 classes and the `FormatCapabilities` / `FieldCapability` declaration model) and `xtalate.schema`
 (the Canonical Model). Never import `xtalate.parsers`, `xtalate.capabilities`, or any other
 internal layer — a plugin that reaches past the SDK is coupled to internals that move without
-notice. Discovery **fails loudly**: a broken installed plugin (import failure, malformed
+notice, and the `import-linter` `forbidden` contract that guards the reference plugin proves that
+wall mechanically. Discovery **fails loudly**: a broken installed plugin (import failure, malformed
 declaration, `format_id` collision) is surfaced as an attributed error, never silently skipped.
 
-A complete, installable worked example lives at
-[`tests/fixtures/xtalate_toyfmt/`](../tests/fixtures/xtalate_toyfmt) — a minimal `toyfmt` parser +
-exporter with its own `pyproject.toml` and entry-point declarations, importing only the public SDK,
-which the test suite installs and drives end-to-end. Copy its shape.
+**The reference to copy is [`plugins/example-format/`](../plugins/example-format)** — the complete,
+installable `exfmt` plugin described above. There is a second, deliberately smaller installable
+example, [`tests/fixtures/xtalate_toyfmt/`](../tests/fixtures/xtalate_toyfmt): it is the minimal
+*discovery* proof — the smallest thing that shows entry-point discovery working against a real
+installed distribution — installed `--no-deps` with tests that skip when it is absent, all-`FULL`
+and outside the matrix and the golden corpus. Reach for `toyfmt` when you want the bare mechanism;
+copy `plugins/example-format/` when you are building a real format, because it is the one that also
+shows the honest-loss declaration, the golden cases, and the CI canary.
+
+### 5.3 The compatibility canary
+
+The reference plugin is not only documentation — it is a **hard CI gate**. On every PR, CI installs
+`plugins/example-format` and runs its test suite as a *required* part of the run (not skip-if-absent
+like `toyfmt`); the install happens **before** `lint-imports`, so the plugin's `forbidden` import
+contract is evaluated too. A core change that breaks the plugin — a renamed or re-typed public SDK
+symbol, a changed signature, a broken parse/export/capabilities path — fails the build. The two
+gates are complementary: `lint-imports` catches a *structural* break (the plugin reaching past the
+public wall), and the pytest canary catches an *attribute/signature-level* break of the frozen
+surface (the import graph can be unchanged while a renamed symbol still breaks every importer).
+Together they are what gives the frozen-SDK stability promise below mechanical teeth.
 
 > **Stability promise.** The Plugin SDK (`xtalate.sdk`) is the **frozen 1.x contract** as of the
 > v1.0 contract freeze. The ABCs an installable plugin builds against — `ParserPlugin`,
