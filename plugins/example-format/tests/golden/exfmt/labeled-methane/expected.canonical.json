@@ -1,0 +1,93 @@
+{
+  "schema_version": "1.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "C",
+          "H",
+          "H",
+          "H",
+          "H"
+        ],
+        "atomic_numbers": [
+          6,
+          1,
+          1,
+          1,
+          1
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.629,
+            0.629,
+            0.629
+          ],
+          [
+            -0.629,
+            -0.629,
+            0.629
+          ],
+          [
+            -0.629,
+            0.629,
+            -0.629
+          ],
+          [
+            0.629,
+            -0.629,
+            -0.629
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": null,
+      "dynamics": {
+        "velocities": null,
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": null,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": null,
+  "provenance": {
+    "source_filename": "labeled_methane.exfmt",
+    "source_format": "exfmt",
+    "source_units": {
+      "positions": "angstrom"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "parsed by the xtalate-example-format reference plugin",
+      "label line preserved in user_metadata.custom_per_frame['exfmt:label']"
+    ],
+    "history": []
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {},
+    "custom_per_atom": {},
+    "custom_per_frame": {
+      "exfmt:label": [
+        "methane, tetrahedral geometry"
+      ]
+    }
+  }
+}
