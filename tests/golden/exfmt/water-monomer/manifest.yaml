@@ -1,0 +1,19 @@
+case: water-monomer
+format_id: exfmt
+source_file: water_monomer.exfmt
+expected_canonical: expected.canonical.json
+canonical_schema_version: "1.0.0"
+sha256: "67451cd44c714637998def00fcbe061b60e6083851b1db3e45e8012da80e05df"
+expected_sha256: "5519feb8dd276187d0e590ce372af8b66e39ad5d87cfe826b2171c85955bc057"
+origin:
+  kind: synthetic
+  source: "Hand-written water monomer for the xtalate-example-format reference plugin (M36)."
+  license: "Apache-2.0"
+notes: >-
+  The round-trip matrix's anchor for exfmt (M36 S2). exfmt is provided by the installed
+  reference plugin (plugins/example-format/), whose golden fixtures are not part of its built wheel,
+  so the matrix — which runs from this checkout, not the installed distribution — needs the anchor
+  here under tests/golden/. This is a byte-exact mirror of the plugin's own water-monomer case;
+  both copies are hash-governed (this corpus, and the plugin's own suite), so neither can drift
+  silently. Label-free: species + Cartesian positions only, everything else absent (P3) — the
+  lossless case that flows cleanly through every hop of the n x n matrix.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata as importlib_metadata
 import io
 import json
 from contextlib import redirect_stdout
@@ -18,6 +19,14 @@ def _cli_capabilities_json(argv: list[str]) -> object:
         rc = main(argv)
     assert rc == 0
     return json.loads(buf.getvalue())
+
+
+def _reference_plugin_installed() -> bool:
+    try:
+        importlib_metadata.distribution("xtalate-example-format")
+    except importlib_metadata.PackageNotFoundError:
+        return False
+    return True
 
 
 def test_capabilities_equals_cli_json(client: TestClient) -> None:
@@ -58,3 +67,27 @@ def test_each_known_format_resolves(client: TestClient, fmt: str) -> None:
     resp = client.get(f"/v1/capabilities/{fmt}")
     assert resp.status_code == 200
     assert fmt in resp.json()
+
+
+@pytest.mark.skipif(
+    not _reference_plugin_installed(),
+    reason="xtalate-example-format not installed (CI installs it; it is the M36 canary)",
+)
+def test_installed_reference_plugin_surfaces_in_both_read_surfaces(client: TestClient) -> None:
+    """M36 done-means (S2 deliverable 3): once the reference plugin is installed, ``exfmt`` shows up
+    on *both* generated read-surfaces with zero core changes — the ``/v1/capabilities`` data behind
+    the format explorer, and the ``xtalate capabilities`` CLI it is byte-equal to (M21). This is a
+    pure read assertion against the registry the app and CLI both build, so it needs no
+    ``backend/`` change and no running stack. Skip-guarded for a plain local checkout; in CI (which
+    always installs the plugin) it runs, and the equality check above (API == CLI) holds because
+    both surfaces enumerate the same discovered registry."""
+    api = client.get("/v1/capabilities").json()
+    cli = _cli_capabilities_json(["capabilities", "--json"])
+    assert isinstance(cli, dict)
+    assert "exfmt" in api, "reference plugin installed but exfmt missing from /v1/capabilities"
+    assert {"read", "write"} <= set(api["exfmt"])
+    assert "exfmt" in cli, "reference plugin installed but exfmt missing from CLI capabilities"
+    # Single-format resolution works too — the format explorer's per-format page reads this route.
+    single = client.get("/v1/capabilities/exfmt")
+    assert single.status_code == 200
+    assert set(single.json()) == {"exfmt"}

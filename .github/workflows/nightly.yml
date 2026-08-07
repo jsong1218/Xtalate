@@ -38,6 +38,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      # Install the reference plugin (M36) so exfmt is registered before the matrix runs — its
+      # exporter makes it a round-trip target and its golden anchor makes it a source, so the
+      # `exfmt ↔ *` pairs (nightly-only: exfmt is not in the curated PR subset) are exercised across
+      # the full n×n matrix. Without this the matrix would silently omit exfmt (its source enrolment
+      # is gated on the parser being registered — tests/roundtrip/_matrix.py), defeating the
+      # milestone's "appears in the nightly matrix with zero core changes". `--no-deps` as elsewhere.
+      - name: Install reference plugin (M36 — enrols exfmt in the matrix)
+        run: pip install --no-deps ./plugins/example-format
+
       # Stage 1 — the full n×n round-trip matrix beyond the curated PR subset (Part 8 §2.4).
       # XTALATE_FULL_MATRIX=1 un-gates the `nightly`-marked pairs (tests/conftest.py); `-m nightly`
       # then runs *only* them — the curated high-risk pairs already ran on the PR, so re-running them

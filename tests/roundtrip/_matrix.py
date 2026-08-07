@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from xtalate.capabilities import CapabilityMatrix, Registry
+from xtalate.registry import default_registry
 from xtalate.schema.paths import CANONICAL_FIELD_PATHS, DERIVED_PATHS
 from xtalate.sdk import CapabilityLevel
 
@@ -61,6 +62,14 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     # error cannot hide. It is also the only source carrying site occupancy, which is how the
     # partial-occupancy pre-flight warning (M19 slice 2) gets exercised across the whole matrix.
     "cif": ("cif/zno-hexagonal-p1", "zno_hexagonal.cif"),
+    # M36: exfmt, the *installed reference plugin* (plugins/example-format/), enrolled as a source
+    # so the compatibility canary participates in the full matrix — the milestone's "appears in the
+    # nightly matrix with zero core changes" (Part 8 §2). Its parser lives in a separate
+    # distribution, so unlike every entry above this one is only *live* when the plugin is
+    # installed; ``source_formats_with_golden`` gates it on registration accordingly. The anchor
+    # (a byte-exact mirror of the plugin's golden) sits under tests/golden/ because the plugin's own
+    # fixtures are not shipped in its wheel and the matrix runs from the checkout, not the install.
+    "exfmt": ("exfmt/water-monomer", "water_monomer.exfmt"),
 }
 
 # Capability paths that are never round-trip content: provenance records *how* a file was read
@@ -113,8 +122,21 @@ def golden_source(format_id: str) -> GoldenSource:
 
 
 def source_formats_with_golden() -> list[str]:
-    """Read-side formats that have a committed golden source fixture, sorted for stable test ids."""
-    return sorted(_GOLDEN_DIRS)
+    """Read-side formats that have a committed golden source fixture *and* a registered parser to
+    read it — sorted for stable test ids.
+
+    A golden fixture is only usable as a round-trip *source* if some parser is registered to parse
+    it, so this intersects the on-disk anchors with the default registry's parsers — the symmetric
+    complement of the already-registry-derived *targets* (:func:`writeable_targets`). For the seven
+    built-in formats this changes nothing (their parsers are always registered), so every existing
+    caller is unaffected. It matters only for a plugin-provided source like ``exfmt`` (M36): when
+    the reference plugin is installed the format joins the matrix as a source; when it is not, the
+    anchor silently drops out and a plain checkout stays green — no parser is ever looked up for a
+    format that has none. The default registry is the right lens here because every real caller
+    drives the matrix from it or a superset of it, so a source it yields is always parseable by the
+    registry a pair is run against."""
+    registered = {parser.format_id for parser in default_registry().parsers()}
+    return sorted(fmt for fmt in _GOLDEN_DIRS if fmt in registered)
 
 
 def writeable_targets(registry: Registry) -> list[str]:
