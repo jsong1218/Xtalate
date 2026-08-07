@@ -1,0 +1,39 @@
+# xtalate-example-format — the published reference Xtalate plugin (M36).
+#
+# Unlike tests/fixtures/xtalate_toyfmt (a hidden discovery fixture whose tests skip when
+# absent), this is the reference distribution a third party copies to add a format. Its
+# SDK compatibility is verified by the CI canary on every PR, and `exfmt` participates in
+# the nightly round-trip matrix — both with ZERO changes to xtalate's core (src/xtalate/).
+#
+# Synthetic Apache-2.0 (matching the parent repo); self-contained, so it has no coupling to
+# the golden-corpus governance suite (which scans only tests/golden/, never here).
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xtalate-example-format"
+version = "1.0.0"
+description = "The reference third-party Xtalate plugin: a small single-frame text format (exfmt) that declares its own loss honestly."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+# `xtalate` is always already present in the environment this plugin installs into. It is
+# declared here for realism — a real third-party plugin depends on the SDK — but CI installs
+# with `--no-deps` so pip never resolves it from an index (xtalate is not published yet; D52).
+# Once xtalate 1.0.0 publishes (M38), a real third party would pin the frozen major it builds
+# against per the SemVer promise: `xtalate>=1.0,<2.0`. Left bare for now because the package
+# version is still 0.7.0 until the M38 release, even though the SDK CONTRACT froze at M35.
+dependencies = ["xtalate"]
+
+# The whole point of an installable plugin: advertise a parser and an exporter under the
+# Xtalate entry-point groups, exactly as any real distribution would (MASTER_SPEC Part 3 §7.1).
+# `default_registry()` discovers these through the same declaration validation and duplicate-
+# `format_id` guards a built-in format gets.
+[project.entry-points."xtalate.parsers"]
+exfmt = "xtalate_examplefmt.parser:ExampleFormatParser"
+
+[project.entry-points."xtalate.exporters"]
+exfmt = "xtalate_examplefmt.exporter:ExampleFormatExporter"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xtalate_examplefmt"]

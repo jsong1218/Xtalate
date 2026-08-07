@@ -17,6 +17,44 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+### Added — M36: the reference plugin and its compatibility canary
+
+Proof that the frozen 1.x Plugin SDK is buildable-on from **outside** the wall — the v1.0 discipline
+claim *"the SDK is stable when someone outside the wall can build on it,"* made concrete with a
+first-party stand-in. **No product feature, no engine change** (`src/xtalate/` is untouched), and
+the canonical `schema_version` stays `1.0.0`.
+
+- **A published reference plugin, `plugins/example-format/` (`exfmt`).** A complete, deliberately
+  simple format that exists to be **copied**: a single-frame `<symbol> <x> <y> <z>` text format with
+  a magic header and an optional per-frame label line, shipped as a **separate installable
+  distribution** (`xtalate-example-format`) built **only** against the public SDK (`xtalate.sdk` +
+  `xtalate.schema`) — an `import-linter` `forbidden` contract proves it imports no internal layer.
+  It carries a parser, an exporter, golden cases with licensed manifests (a no-label identity case
+  and a labeled case), and its own end-to-end test suite.
+- **The plugin teaches loss honestly (the thing `toyfmt` could not).** `exfmt` reads the label into
+  `user_metadata.custom_per_frame['exfmt:label']` but its exporter **cannot write it back**, so it
+  declares that container `NONE` with a note — and a labeled file reports that key `removed` in
+  pre-flight, before any bytes are written, rather than promising it and dropping it. `NONE` (writes
+  nothing) and `PARTIAL` (writes some) are surfaced as the two honest shapes of "less than `FULL`",
+  the central lesson of the finalized add-a-format guide.
+- **The compatibility canary in CI (risk R12's named mitigation).** Every PR installs the reference
+  plugin **before** `lint-imports` (so its forbidden contract is evaluated) and runs its suite as a
+  **required** check — unlike `toyfmt`'s skip-if-absent fixture. A core change that breaks the frozen
+  SDK now **fails the build**: `lint-imports` catches a structural break (reaching past the wall) and
+  the pytest canary catches an attribute/signature-level break of the frozen surface — complementary,
+  neither subsuming the other. Demonstrated to fail on a deliberate SDK-breaking commit, then
+  reverted; the real branch is green.
+- **`exfmt` participates in the nightly round-trip matrix, source and target, with zero core
+  changes.** An installed exporter is a matrix target automatically; enrolling it as a source is one
+  test-infra entry (`tests/roundtrip/_matrix.py`), registry-gated so a plain checkout without the
+  plugin stays green. It also appears in `xtalate capabilities`, `GET /v1/capabilities`, and the
+  `/formats` explorer — the P6 payoff, visible.
+- **The add-a-format guide is finalized around real code.** [Developer Guide
+  §5](docs/DEVELOPER_GUIDE.md#5-adding-a-format) and CONTRIBUTING now point every step —
+  implement, declare honestly, golden cases, identity round-trip, table row — at the reference
+  plugin's files, and reposition `toyfmt` as the minimal discovery proof (copy `example-format`, not
+  `toyfmt`, when building a real format).
+
 ### Changed — Addendum before M36: frontend redesign (UI/UX only)
 
 An enhancement pass over the Web UI (`frontend/`), taken before M36 as an **addendum, not a

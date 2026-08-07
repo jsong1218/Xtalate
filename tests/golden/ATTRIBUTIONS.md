@@ -65,6 +65,13 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-authored CONTCAR (VASP-5 shape, Direct coords, CO diatomic) with a Cartesian velocity block
 
+## `exfmt` / `water-monomer` (golden)
+
+- **Source file:** `water_monomer.exfmt`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written water monomer for the xtalate-example-format reference plugin (M36).
+
 ## `extxyz` / `co-in-cell` (golden)
 
 - **Source file:** `sample.extxyz`

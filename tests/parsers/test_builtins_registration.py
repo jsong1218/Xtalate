@@ -21,6 +21,18 @@ from xtalate.parsers import builtin_parsers
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 
+# The first-party formats that have a golden source fixture. Historically this was simply
+# ``_matrix.source_formats_with_golden()``, because every golden source *was* a built-in. Since M36
+# that list can also contain a plugin format (``exfmt``, from the installed reference plugin), which
+# is not in ``builtin_parsers()`` and does not follow the first-party provenance-version discipline
+# these tests assert — so the parametrization is intersected with the built-in set to stay about the
+# built-ins alone, whether or not the reference plugin happens to be installed in the environment.
+_BUILTIN_GOLDEN_FORMATS = sorted(
+    fmt
+    for fmt in _matrix.source_formats_with_golden()
+    if fmt in {p.format_id for p in builtin_parsers()}
+)
+
 
 def _registry() -> Registry:
     reg = Registry()
@@ -56,7 +68,7 @@ def test_builtins_register_without_error() -> None:
     }
 
 
-@pytest.mark.parametrize("format_id", sorted(_matrix.source_formats_with_golden()))
+@pytest.mark.parametrize("format_id", _BUILTIN_GOLDEN_FORMATS)
 def test_every_builtin_records_the_package_version_in_provenance(format_id: str) -> None:
     """``parser_version`` must track the *package* version for every first-party format.
 
@@ -86,7 +98,7 @@ def test_every_builtin_records_the_package_version_in_provenance(format_id: str)
 #: constant is rebuilt — but it means the string cannot follow a *runtime* patch, so the simulated
 #: bump below would fail it for a reason that is not the defect. Its derivation from the package
 #: version is covered by ``test_every_builtin_records_the_package_version_in_provenance`` above.
-_LATE_BOUND_VERSION = sorted(set(_matrix.source_formats_with_golden()) - {"ase_traj"})
+_LATE_BOUND_VERSION = sorted(set(_BUILTIN_GOLDEN_FORMATS) - {"ase_traj"})
 
 
 @pytest.mark.parametrize("format_id", _LATE_BOUND_VERSION)

@@ -1,0 +1,15 @@
+case: water-monomer
+format_id: exfmt
+source_file: water_monomer.exfmt
+expected_canonical: expected.canonical.json
+canonical_schema_version: "1.0.0"
+sha256: "67451cd44c714637998def00fcbe061b60e6083851b1db3e45e8012da80e05df"
+expected_sha256: "5519feb8dd276187d0e590ce372af8b66e39ad5d87cfe826b2171c85955bc057"
+origin:
+  kind: synthetic
+  source: "Hand-written water monomer for the xtalate-example-format reference plugin (M36)."
+  license: "Apache-2.0"
+notes: >-
+  exfmt with no label line: species + Cartesian positions only. Exercises absence
+  (cell/dynamics/electronic all None, user_metadata empty) and the clean identity round-trip —
+  the label-free case that survives exfmt -> exfmt byte-for-byte.

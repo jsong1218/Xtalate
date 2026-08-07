@@ -167,12 +167,19 @@ that reaches past the SDK is coupled to internals that move without notice. Once
 installed in the same environment, the format appears in `xtalate capabilities`, sniffing,
 Discovery, conversion, and validation with zero changes to Xtalate.
 
-A complete, installable worked example lives in this repository at
-[`tests/fixtures/xtalate_toyfmt/`](tests/fixtures/xtalate_toyfmt) — a minimal `toyfmt`
-parser + exporter with its own `pyproject.toml` and entry-point declarations, importing only the
-public SDK, which the test suite installs and drives end-to-end (registry discovery, Capability
-Matrix membership, the `xtalate capabilities` surface, and a full-pipeline conversion). Copy its
-shape.
+**The reference to copy is [`plugins/example-format/`](plugins/example-format)** — the complete,
+published `exfmt` plugin: a parser, an exporter, **honest capability declarations** (it reads a
+per-frame label its exporter cannot write, and declares that container `NONE` so the loss is
+reported `removed`, not silently dropped), golden cases with licensed manifests, and its own
+end-to-end suite, all built against the frozen public SDK. CI installs it and runs that suite as a
+required check on every PR (a **compatibility canary**: a core change that breaks the SDK fails the
+build), and it appears in the nightly round-trip matrix with zero core changes. See
+[Developer Guide §5](docs/DEVELOPER_GUIDE.md#5-adding-a-format) for the step-by-step, which points
+at its files. A second, deliberately smaller example lives at
+[`tests/fixtures/xtalate_toyfmt/`](tests/fixtures/xtalate_toyfmt) — the minimal `toyfmt` parser +
+exporter that is the bare *discovery* proof (installed `--no-deps`, tests skip when absent, all
+`FULL`); reach for it when you want only the mechanism, and copy `plugins/example-format/` when you
+are building a real format.
 
 **The stability promise applies here too.** The public SDK an installable plugin imports is the
 frozen 1.x contract, exactly as for an in-tree format: within 1.x it changes only additively, so a

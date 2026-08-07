@@ -225,7 +225,7 @@ source = ["xtalate"]
 # Two root packages from v0.5 M21: the library and the service. `backend` sits above `xtalate`
 # and imports it freely; the reverse is forbidden by the contract below, encoding Part 1 §2 (the
 # API is a presenter over the library — nothing in the library may import the service).
-root_packages = ["xtalate", "backend"]
+root_packages = ["xtalate", "backend", "xtalate_examplefmt"]
 
 # The service depends on the library, never the reverse (v0.5 M21; Part 1 §2). Stated as a
 # `forbidden` contract rather than a layer of the graph above because `backend` is a separate root
@@ -289,4 +289,32 @@ forbidden_modules = ["xtalate.schema"]
 # Direct imports only. These stages legitimately import `sdk` for the ParseError/ParseIssue
 # error contract, and `sdk` reaches `schema` on its own — forbidding that chain would forbid
 # reporting errors at all. What must not happen is a stage reaching for a canonical *model*.
+allow_indirect_imports = true
+
+# The reference plugin (plugins/example-format, M36) is the mechanical proof that the frozen 1.x
+# Plugin SDK is buildable-on from outside the wall: it may import ONLY the public surface
+# (`xtalate.sdk` + `xtalate.schema`) and nothing internal. A plugin that reached past the SDK
+# would be coupled to internals that move without notice — the exact failure this milestone
+# exists to rule out. This contract only *evaluates* when `xtalate_examplefmt` is importable, i.e.
+# installed (CI installs it before `lint-imports`; M36-S2), so a plain checkout that has not
+# installed the plugin simply skips it.
+[[tool.importlinter.contracts]]
+name = "Reference plugin builds only on the frozen public SDK (M36)"
+type = "forbidden"
+source_modules = ["xtalate_examplefmt"]
+forbidden_modules = [
+    "xtalate.parsers",
+    "xtalate.exporters",
+    "xtalate.capabilities",
+    "xtalate.conversion",
+    "xtalate.discovery",
+    "xtalate.recovery",
+    "xtalate.validation",
+    "xtalate.cli",
+    "xtalate.registry",
+    "xtalate._time",
+]
+# Direct imports only: the plugin imports `xtalate.sdk`, which legitimately reaches `schema` and
+# `_time` on its own — forbidding that transitive chain would forbid using the SDK at all. What
+# must not happen is the plugin importing an internal layer *directly*.
 allow_indirect_imports = true

@@ -1,0 +1,15 @@
+case: labeled-methane
+format_id: exfmt
+source_file: labeled_methane.exfmt
+expected_canonical: expected.canonical.json
+canonical_schema_version: "1.0.0"
+sha256: "ca7d205579c7c38f2dfe5fc62bdd6cd410422ef4e031e87001b64e04c4b791f9"
+expected_sha256: "3d296298e617ca216d4cc81f85636c7ee228c469899b58b332a596021995216f"
+origin:
+  kind: synthetic
+  source: "Hand-written labeled methane for the xtalate-example-format reference plugin (M36)."
+  license: "Apache-2.0"
+notes: >-
+  exfmt WITH a label line, read into user_metadata.custom_per_frame['exfmt:label']. The exporter
+  declares that container NONE on the write side, so a conversion reports the label `removed`
+  (never silently dropped) — the honest non-FULL declaration this reference plugin exists to teach.
