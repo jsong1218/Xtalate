@@ -42,8 +42,12 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-xtalate}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # Loopback-only publish: reachable from the host (psql, the restore drill) but NOT from the LAN.
+    # A bare "5432:5432" binds 0.0.0.0 and exposes the DB to the whole network — a LBNL network scan
+    # flagged exactly that. Services reach each other over the compose network by name (postgres:5432),
+    # so this host-side bind never needs to leave loopback. Same rule applies to every publish below.
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-xtalate} -d ${POSTGRES_DB:-xtalate}"]
       interval: 5s
@@ -59,8 +63,8 @@ services:
     volumes:
       - miniodata:/data
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     healthcheck:
       test: ["CMD-SHELL", "mc ready local || exit 1"]
       interval: 5s
@@ -98,8 +102,9 @@ services:
 
   queue:
     image: redis:7-alpine
+    # Loopback-only: this Redis has no auth, so it must never be reachable off the host.
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -122,7 +127,7 @@ services:
     environment:
       <<: *backend-env
     ports:
-      - "${XTALATE_PORT:-8000}:8000"
+      - "127.0.0.1:${XTALATE_PORT:-8000}:8000"
     # Ready — not merely alive — so the worker (and the CI integration job) wait until migrations
     # have run and the database + object store answer. The slim image ships no curl/wget, so the
     # probe is a stdlib Python one-liner; ``?ready=true`` is exactly the M21 done-means check.
@@ -188,12 +193,18 @@ services:
       XTALATE_MAX_UPLOAD_BYTES: ${XTALATE_MAX_UPLOAD_BYTES:-104857600}
       # Reliable hot reload on bind mounts across host platforms.
       WATCHPACK_POLLING: "true"
+      # Inside the container the dev server must bind all interfaces so Docker's port proxy can reach
+      # it; `::` is dual-stack (IPv4 + IPv6), matching Next's original no-`-H` default so the busybox
+      # healthcheck (`wget localhost`, which resolves to ::1) still connects. The *host* side stays
+      # loopback-only via the `ports:` bind below — same layering as the Dockerfile's uvicorn. On a
+      # bare host `npm run dev` (no XTALATE_DEV_HOST) defaults to 127.0.0.1, never the LAN.
+      XTALATE_DEV_HOST: "::"
     volumes:
       - ./frontend:/repo/frontend
       - ./docs:/repo/docs:ro
       - frontend_node_modules:/repo/frontend/node_modules
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     # Serving — not merely started — so `docker compose up --wait` (and the M30 e2e lane) block until
     # the dev server actually answers, past the on-start `npm install` and the first Next compile.
     # busybox `wget` ships in the node:20-alpine image; a long start_period covers the cold install.

@@ -7,7 +7,7 @@
     "gen:api": "openapi-typescript ../docs/openapi.json -o lib/api/schema.d.ts",
     "postinstall": "npm run gen:api",
     "predev": "npm run gen:api",
-    "dev": "next dev",
+    "dev": "next dev -H ${XTALATE_DEV_HOST:-127.0.0.1}",
     "prebuild": "npm run gen:api",
     "build": "next build",
     "start": "next start",
