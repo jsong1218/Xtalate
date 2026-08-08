@@ -59,15 +59,16 @@ jobs:
         run: pytest -m nightly --no-cov
 
       # Stage 2 — the performance corpus (Part 8 §4), measured not gated: a budget breach is
-      # reported, only a *crash* fails the step (non-zero exit). The >20% regression tripwire against
-      # a rolling median is deliberately NOT wired here — shared GitHub runners are too noisy for
-      # comparable timings; it activates on v0.5's pinned runner (harness docstring; slice plan 15C).
+      # reported, only a *crash* fails the step (non-zero exit). The >20% regression tripwire is
+      # deliberately NOT run here — shared `ubuntu-latest` timings are too noisy to be a baseline. It
+      # runs in the `perf-tripwire` job below, on the pinned runner, where timings are comparable
+      # (M37 S2; docs/ops/pinned-runner.md). This step keeps producing the measured-only series so the
+      # trend stays visible even before a pinned runner exists.
       - name: Performance benchmarks
         run: python -m benchmarks --out benchmark-results
 
       # The wall-time + peak-RSS series (JSON + CSV) — the artifact a maintainer downloads to chart
-      # the trend by hand until the automated tripwire lands. always() so a benchmark crash still
-      # uploads whatever series was written before it.
+      # the trend. always() so a benchmark crash still uploads whatever series was written before it.
       - name: Upload benchmark series
         if: always()
         uses: actions/upload-artifact@v4
@@ -91,13 +92,72 @@ jobs:
         continue-on-error: true
         run: pip-audit
 
-  # A failure in the nightly job (a crashed benchmark, a red matrix, a broken property) opens a
-  # tracking issue — the "failures auto-open issues" of Part 9 §3, so the scheduled run is visible
-  # without anyone watching the Actions tab. The dependency audit is excluded by design (it is
-  # continue-on-error, so an advisory never reaches here). Its own failure is swallowed (`|| true`):
-  # the issue is a courtesy, never a second thing that can break the pipeline.
+  # The >20% regression tripwire (M37 S2; Part 8 §4 / §6 item 5) — the gate the measured-only
+  # benchmark step cannot be. It runs ONLY on the pinned runner, where timings are comparable enough
+  # for a relative-regression bound to hold, and it commits the trailing series back so future
+  # medians include this run.
+  #
+  # GATED by a repo variable so it is *skipped* — never queued forever against a non-existent
+  # self-hosted runner, never red — until the maintainer registers the pinned runner (labels:
+  # `self-hosted`, `xtalate-pinned`) and sets `vars.XTALATE_PINNED_RUNNER == 'true'`. Runbook:
+  # docs/ops/pinned-runner.md.
+  perf-tripwire:
+    if: vars.XTALATE_PINNED_RUNNER == 'true'
+    runs-on: [self-hosted, xtalate-pinned]
+    permissions:
+      contents: write # to commit the appended benchmarks/history/<runner>.jsonl series back
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # Run the full corpus, compare against this runner's trailing-14-day median, append the run to
+      # the series, and EXIT NON-ZERO on a >20% regression (failing the job → the tracking issue).
+      # --runner keys the series file; a crashed benchmark is reported and never appended.
+      - name: Performance benchmarks + regression tripwire
+        run: python -m benchmarks --tripwire --runner xtalate-pinned --out benchmark-results
+
+      # Upload the measurement artifact regardless of the tripwire verdict (the §6-item-5 evidence).
+      - name: Upload benchmark series
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-pinned
+          path: benchmark-results/
+          if-no-files-found: warn
+
+      # Commit the appended series back so the median is durable. always() because a *regression*
+      # still appended its run (we want it recorded); a crash appended nothing, so `git diff` is
+      # empty and this is a no-op. [skip ci] avoids any accidental trigger loop.
+      - name: Commit benchmark series
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- benchmarks/history/; then
+            echo "no series change to commit"
+            exit 0
+          fi
+          git add benchmarks/history/
+          git commit -m "[skip ci] chore(benchmarks): append nightly series (${GITHUB_SHA::7})"
+          # actions/checkout leaves a detached HEAD; push explicitly to the branch this ran on.
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  # A failure in a nightly job (a crashed benchmark, a red matrix, a broken property, a tripped
+  # regression) opens a tracking issue — the "failures auto-open issues" of Part 9 §3, so the
+  # scheduled run is visible without anyone watching the Actions tab. The dependency audit is excluded
+  # by design (it is continue-on-error, so an advisory never reaches here). Its own failure is
+  # swallowed (`|| true`): the issue is a courtesy, never a second thing that can break the pipeline.
   open-issue-on-failure:
-    needs: nightly
+    needs: [nightly, perf-tripwire]
     if: failure()
     runs-on: ubuntu-latest
     permissions:

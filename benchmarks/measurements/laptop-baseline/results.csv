@@ -1,0 +1,6 @@
+name,scale,wall_seconds,peak_rss_bytes,peak_rss_gib,budgets_ok
+parse_xdatcar_10k,full,2.184235,163692544,0.152451,True
+convert_xdatcar_to_extxyz_10k,full,10.264265,93290496,0.086884,True
+convert_extxyz_roundtrip_1k,full,13.157265,140132352,0.130508,True
+frame_limit_ceiling,full,12.473522,90374144,0.084167,
+preflight_latency,full,2.282880,165068800,0.153732,True

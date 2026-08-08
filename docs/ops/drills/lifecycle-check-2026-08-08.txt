@@ -1,0 +1,36 @@
+
+=== lifecycle drill — 2026-08-08T02:36:59Z ===
+compose        : docker compose
+
+=== 0. preflight — the stack is up and ready ===
+
+--- 1. byte window is a bucket lifecycle rule (read via boto3, as the app's adapter sees it)
+  retention config: uploads=24h outputs=24h record=30d
+  ok : uploads/ expires after 1 day(s) (bucket rule)
+  ok : outputs/ expires after 1 day(s) (bucket rule)
+
+--- 2. reports outlive bytes: remove the output object, download 410s, record still reads
+  ok : uploaded (201)
+  ok : convert submitted (202)
+  ok : conversion completed
+  ok : download works while bytes exist (200)
+  ok : record reads while bytes exist (200)
+  ok : output object present in bucket (outputs/cnv-96a30c0570db403d8536eb60562f42f5)
+  ok : output object removed (simulating lifecycle expiry)
+  ok : download is a clean 410 GONE after byte expiry
+  ok : 410 body is OUTPUT_EXPIRED
+  ok : conversion record still reads 200 after bytes are gone
+  ok : the Conversion Report survived the byte expiry
+
+--- 3. record window: sweep_reports ages out the record; upload/job rows survive the cascade
+  ok : sweep deleted the record past the 30d window
+  ok : conversion record is gone after the record window (404)
+  ok : upload row survives the report cascade
+  ok : job row survives the report cascade
+
+PASS — byte window is a bucket rule; reports outlive bytes; record window cascades cleanly
+
+=== PASS — lifecycle drilled: bucket rule read, reports outlive bytes, record window swept ===
+
+⏳ maintainer step: deletion-on-schedule against an actual deployment bucket (AWS S3 / R2 / B2)
+   is not run here — see docs/ops/lifecycle-expiry.md.

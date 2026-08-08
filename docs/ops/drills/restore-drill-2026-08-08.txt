@@ -1,0 +1,48 @@
+
+=== restore drill — 2026-08-08T02:39:06Z ===
+compose        : docker compose
+scratch db     : xtalate_restore_drill
+
+=== 0. preflight — the stack is up ===
+
+=== 1. dump — pg_dump the live database (dry run) ===
+dump           :    14878 bytes from live xtalate
+source counts  :
+  conversions=1
+  jobs=4
+  reports=2
+  uploads=4
+
+=== 2. scratch — (re)create xtalate_restore_drill ===
+NOTICE:  database "xtalate_restore_drill" does not exist, skipping
+created        : xtalate_restore_drill
+
+=== 3. restore — load the dump into the scratch database ===
+ set_config 
+------------
+ 
+(1 row)
+
+restored       : ok
+
+=== 4. migration chain — alembic upgrade head against the restored data ===
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+alembic current: 0003 (head)
+
+=== 5. service reads restored data — row counts ===
+restored counts:
+  conversions=1
+  jobs=4
+  reports=2
+  uploads=4
+round-trip     : source and restored counts match
+ORM opened scratch db and read conversions: 1
+
+=== 6. canonical schema migration — 0.1.0 -> 1.0.0 (library-level, separate from the DB restore) ===
+canonical object migrated 0.1.0 -> 1.0.0; recorded: Migrated canonical schema 0.1.0 → 1.0.0.
+
+=== 7. cleanup — drop xtalate_restore_drill ===
+dropped        : xtalate_restore_drill
+
+=== PASS — restore drilled: dump restored, migration chain green at head, service read it ===
