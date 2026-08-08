@@ -66,9 +66,12 @@ This brings up the API, a worker, PostgreSQL, object storage, and the Web UI. Op
 `http://localhost:3000` for the UI, or drive the API directly:
 
 ```bash
-# Upload a file, then start a conversion job against it.
-curl -F file=@relax.traj http://localhost:8000/v1/files
+# Upload a file — the response carries the file_id you convert against.
+curl -s -F file=@relax.traj http://localhost:8000/v1/upload
 ```
+
+See the [API reference](./API.md#5-service-http-api) for the full upload → convert → recover →
+download flow, including the interactive recovery pause.
 
 A conversion the engine declines is **not** an HTTP error — it is a completed job whose report has
 `status: "refused"` (HTTP 200). Genuine transport failures use the one error envelope documented in

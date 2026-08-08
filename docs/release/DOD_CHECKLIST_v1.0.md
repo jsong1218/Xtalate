@@ -14,7 +14,7 @@
 > **Scope guard.** M38 makes **zero `src/xtalate/` engine changes** — it audits and records; it does not
 > fix the engine (a real engine fix would restart the 30-day clock, and is a stop-and-escalate).
 
-**Status:** in progress (S1–S2 landed: §6 items 1–3, 5/6). Last updated: 2026-08-08.
+**Status:** in progress (S1–S3 landed: §6 items 1–5/6). Last updated: 2026-08-08.
 
 ---
 
@@ -25,7 +25,7 @@
 | **1** | Seven-format golden coverage; 30-day nightly-matrix green | ✅ coverage + matrix green now · ⏳ 30-day clock (4/30) | S1 |
 | **2** | Completeness property test passes with **zero waivers** | ✅ confirmed (grep clean; 570 green) | S1 |
 | **3** | Frozen contracts: schema 1.0.0 + migration; SDK + reference-plugin canary; `/v1` OpenAPI artifact | ✅ all present + green | S1 |
-| **4** | Stranger reproduces 3 worked examples on 4 surfaces from public docs | ⬜ pending | S3 |
+| **4** | Stranger reproduces 3 worked examples on 4 surfaces from public docs | ✅ reproduced in-session (4/4 surfaces) · ⏳ true-stranger run (procedure committed) | S3 |
 | **5/6** | Honesty: risk register tracked; README SemVer; **ATTRIBUTIONS.md complete + CI-enforced** | ✅ ATTRIBUTIONS.md landed + CI-enforced; README/risks verified | S2 |
 | **7** | docs↔code drift review as a release blocker | ⬜ pending | S4 |
 | Release | CHANGELOG 1.0 entry, announcement, tag + publish | ⏳ **deferred** (post-v1.0.0-arch-review, then maintainer) | — |
@@ -136,9 +136,50 @@ in Xtalate code).
 
 ## §6 item 4 — Worked-example stranger reproduction (4 surfaces)
 
-⬜ **Pending (S3).** Best-effort in-session reproduction of the three worked examples (Part 2 §8, Part 4
-§5, Part 5 §6) on library, CLI, API, and UI from published docs only, plus a committed reproduction
-procedure for a real non-author (⏳ stranger step). e2e-gated.
+**Claim.** A non-author reproduces the three worked examples (Part 2 §8 — discovery; Part 4 §5 —
+ASE-trajectory→POSCAR conversion with recovery; Part 5 §6 — validating that conversion) on all four
+surfaces from the *published* docs only.
+
+**Evidence (✅ in-session · ⏳ true-stranger run).** All three examples were reproduced in-session on
+all four surfaces from the published docs alone (`quickstart.md`, `cli.md`, `API.md`,
+`DEVELOPER_GUIDE.md`, the Web UI) — never `docs/private/`. The three examples form one story
+(discover → convert-with-recovery → validate); the reproduction inputs were built from published
+materials (a 2-frame XYZ + a fractional POSCAR typed inline, and a 10-frame water `relax.traj` with
+forces/energy and no cell built by a short ASE snippet — ASE being a declared dependency), so the run
+needs no repository fixtures.
+
+| Surface | Path driven | Result |
+|---|---|---|
+| **Library** | `default_registry()` + `DiscoveryEngine.discover` / `ConversionEngine.convert(recovery_choices=…)` (`API.md §2`) | ✅ discovery present=`[atoms.symbols, atoms.positions]`; conversion preserved symbols+positions, removed forces+total_energy+extra-frames, supplied lattice+pbc (both `A2`); validation `passed`, 9 checks |
+| **CLI** | `xtalate inspect`; `xtalate convert --to poscar --recover frame_selection=last --recover missing_lattice=bounding_box,padding_ang=5.0` (`cli.md`) | ✅ same accounting; A1/A2 assumptions in plain language; validation `passed` (8 pass + `numeric_field_fidelity` reported `skipped`); exit `0` |
+| **API** | `docker compose up`; `POST /v1/upload` → `/v1/inspect` → `/v1/convert {allow_recovery}` (pauses `awaiting_recovery`) → `/v1/jobs/{id}/recovery/preview` → `/recovery` → `/download/{cid}` → `/conversions/{cid}` (`API.md §5.2`) | ✅ pause exposed both unresolved scenarios; durable record served `conversion_report.status="completed"` + `validation_report.status="passed"`; assumptions `origin:"user"` (interactive path) |
+| **Web UI** | landing → upload → inspect → preview loss → decide recovery → record → download, against the live stack | ✅ confirmed live + the `recovery-flagship` Playwright e2e journey ("upload → convert → pause → decide → preview → record, the trajectory→POSCAR flagship") passes; full e2e suite **24/24 green** on-branch |
+
+**Docs gap found and fixed (a release blocker, §6 item 7 in spirit).** The one published-docs defect a
+stranger would hit: `quickstart.md` used `POST /v1/files` for upload, which **does not exist** — the
+only `/v1/files/{id}` route is `DELETE`. Verified live: `POST /v1/files` → **404**, `POST /v1/upload`
+→ **201** (and `README.md` + `SECURITY.md` already used the correct `/v1/upload`). Fixed in
+`quickstart.md` to `POST /v1/upload`, with a pointer to the full `API.md §5` flow. Docs-only; no
+`src/xtalate/` change.
+
+**Notes (not defects, recorded for honesty):**
+- The service `curl` examples (`API.md §5.2`, `quickstart.md`) assume **`jq`** — a standard curl+JSON
+  idiom, not a Xtalate requirement. The committed reproduction procedure names it as a prerequisite
+  with the raw-JSON fallback, so a stranger without `jq` is not blocked.
+- The *private*-spec §5 worked example lists two conversion warnings (a coordinate-representation
+  warning alongside the precision warning); the shipped engine emits the precision warning only. This
+  is a private-spec-example detail, **not** a published-docs promise (the published `API.md`/UI describe
+  warnings generically), so it is neither a released-docs drift nor an engine change — recorded here and
+  carried to S4's spec-side reconciliation.
+
+**Committed artifacts.** [`reproduction-procedure.md`](reproduction-procedure.md) — the self-contained,
+published procedure a real non-author follows to reproduce all three examples on all four surfaces
+from public docs only (builds its own inputs; states the expected result for each surface). This is the
+⏳ artifact the maintainer hands to an actual stranger.
+
+**⏳ Maintainer step.** Hand `reproduction-procedure.md` to a real non-author and capture their run.
+The in-session reproduction above is the evidence that the procedure is followable and the docs
+support it; the true-stranger execution is the wall-clock/human half that a coding session cannot be.
 
 ---
 
