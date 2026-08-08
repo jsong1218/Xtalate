@@ -17,6 +17,42 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+### Security — M37: the v1.0 security, performance, and operations discipline pass
+
+A hardening and operations-readiness milestone for the 1.0 release. It adds **no product feature and
+no engine change** (`src/xtalate/` is untouched, so the pre-release nightly-green window is
+undisturbed) and the canonical `schema_version` stays `1.0.0`; every drill leaves a committed,
+re-runnable artifact.
+
+- **A published security policy, [`docs/SECURITY.md`](docs/SECURITY.md).** Disclosure via GitHub
+  private vulnerability reporting (no personal contact address), a supported-versions table, a
+  standing confidentiality / hostile-input / abuse threat checklist, and a self-hoster deployment
+  note — also the project's GitHub Security-tab surface.
+- **A security review with a files-as-data audit.** Every place untrusted bytes meet an interpreter
+  is enumerated and shown to be treated as data, not code (no `eval`/`pickle`/`yaml.load`/`exec` over
+  the wire); the two audit hits are shown benign. A resource-cap regression test pins the upload-byte
+  (`413 FILE_TOO_LARGE`) and active-job (`429 TOO_MANY_ACTIVE_JOBS`) caps the service actually
+  enforces, and a deterministic parser-fuzz seed corpus asserts the graceful-failure contract across
+  every built-in parser. `pip-audit`: clean.
+- **All 12 open Dependabot advisories cleared** (all in the `frontend/` npm tree; the Python
+  library/CLI and backend carry none). Resolved by pinning patched versions through npm `overrides`
+  (postcss, sharp, js-yaml, vite, esbuild) plus a `vitest` 2→3 bump for the one critical advisory
+  with no 2.x remedy — lockfile-only, no product-behaviour change; `npm audit` reports 0.
+- **Operations drills shipped as scripts + runbooks + captured proofs.** A backup/restore drill
+  ([`docs/ops/restore-drill.md`](docs/ops/restore-drill.md)) and a byte-expiry / report-retention
+  drill ([`docs/ops/lifecycle-expiry.md`](docs/ops/lifecycle-expiry.md)) each demonstrate the
+  application side in-session, with the real-deployment-bucket run documented as the maintainer step.
+- **A performance regression tripwire.** Nightly benchmarks now flag any metric that regresses
+  more than 20% against its trailing 14-day median (per pinned runner), gated so it stays a clean
+  skip until the maintainer registers the runner. Absolute Part 8 budgets remain; this catches
+  *creep* under budget.
+- **Honesty fix — the advertised max-frames cap is documented as advisory, not enforced.** The
+  security review found `GET /v1/limits`' `max_frames` had no enforcing check
+  (`FRAME_LIMIT_EXCEEDED` existed in no source file). Rather than change engine behaviour during the
+  release freeze, the limit is now documented as an advisory hint (real per-job bounds are memory via
+  the streaming core, wall-clock via the job timeout, and input via the upload byte cap), with the
+  discrete gate filed as a v1.1 ticket. No safety change.
+
 ### Added — M36: the reference plugin and its compatibility canary
 
 Proof that the frozen 1.x Plugin SDK is buildable-on from **outside** the wall — the v1.0 discipline
