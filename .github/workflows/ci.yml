@@ -70,8 +70,15 @@ jobs:
 
       # Pytest enforces the coverage ratchet (--cov-fail-under in pyproject addopts) and the
       # golden-corpus governance suite: manifest schema + license, per-source sha256, the
-      # schema-version migration-chain load, and the ATTRIBUTIONS.md regeneration diff
+      # schema-version migration-chain load, and the tests/golden/ATTRIBUTIONS.md regeneration diff
       # (Part 8 §3; v0.2 M11). A silent fixture edit or a lapsed attribution fails here.
+      #
+      # It also collects tests/test_attributions.py (v1.0 M38, Part 10 §6): the project-level
+      # ATTRIBUTIONS.md completeness check — every runtime distribution declared in pyproject.toml
+      # (core + the `service` extra) must be attributed in the root ATTRIBUTIONS.md. Add a
+      # dependency without its attribution row and this step fails, so the file cannot drift behind
+      # the dependency set. (Collected by the ordinary `pytest tests` run below — no separate step,
+      # same as the golden-corpus governance suite.)
       #
       # The M36 compatibility canary, part 2 of 2: the reference plugin's own contract suite
       # (plugins/example-format/tests/) is collected here as a *required* part of the run — passing

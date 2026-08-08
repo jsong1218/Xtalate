@@ -14,7 +14,7 @@
 > **Scope guard.** M38 makes **zero `src/xtalate/` engine changes** — it audits and records; it does not
 > fix the engine (a real engine fix would restart the 30-day clock, and is a stop-and-escalate).
 
-**Status:** in progress (S1 landed: §6 items 1–3). Last updated: 2026-08-08.
+**Status:** in progress (S1–S2 landed: §6 items 1–3, 5/6). Last updated: 2026-08-08.
 
 ---
 
@@ -26,7 +26,7 @@
 | **2** | Completeness property test passes with **zero waivers** | ✅ confirmed (grep clean; 570 green) | S1 |
 | **3** | Frozen contracts: schema 1.0.0 + migration; SDK + reference-plugin canary; `/v1` OpenAPI artifact | ✅ all present + green | S1 |
 | **4** | Stranger reproduces 3 worked examples on 4 surfaces from public docs | ⬜ pending | S3 |
-| **5/6** | Honesty: risk register tracked; README SemVer; **ATTRIBUTIONS.md complete + CI-enforced** | ⬜ pending | S2 |
+| **5/6** | Honesty: risk register tracked; README SemVer; **ATTRIBUTIONS.md complete + CI-enforced** | ✅ ATTRIBUTIONS.md landed + CI-enforced; README/risks verified | S2 |
 | **7** | docs↔code drift review as a release blocker | ⬜ pending | S4 |
 | Release | CHANGELOG 1.0 entry, announcement, tag + publish | ⏳ **deferred** (post-v1.0.0-arch-review, then maintainer) | — |
 
@@ -144,9 +144,49 @@ procedure for a real non-author (⏳ stranger step). e2e-gated.
 
 ## §6 items 5/6 — Honesty checks
 
-⬜ **Pending (S2).** Risk-register (R1/R3/R7/R8/R10/R12) status table; README §4.2 SemVer promises +
-self-hosting posture verification; **root `ATTRIBUTIONS.md` complete + CI-enforced** (the one real gap —
-absent today; only `tests/golden/ATTRIBUTIONS.md` exists).
+**Claim.** The honesty half of the finish line: the flagged risks are tracked; the README's SemVer
+promises and self-hosting posture are present and correct; and a **complete, CI-enforced** project-level
+`ATTRIBUTIONS.md` records every dependency's license.
+
+### Root `ATTRIBUTIONS.md` — complete + CI-enforced (✅ — the one real gap, now closed)
+
+The one genuine gap the audit found: a **project-level** attributions file was **absent** — only
+`tests/golden/ATTRIBUTIONS.md` (scoped to test *data*) existed. Closed in S2:
+
+| Artifact | Evidence | Verdict |
+|---|---|---|
+| **Root `ATTRIBUTIONS.md`** (new) | Covers Xtalate's own Apache-2.0 license; the 4 core runtime deps + licenses (pydantic MIT, numpy BSD-3-Clause, ASE LGPL-2.1-or-later, PyYAML MIT); the 10 `service`-extra deps + licenses (FastAPI/pydantic-settings/SQLAlchemy/alembic/redis MIT, uvicorn BSD-3-Clause, boto3/python-multipart Apache-2.0, rq BSD-2-Clause, psycopg LGPL-3.0-only); the frontend npm license posture (permissive tree, lockfile-authoritative); the ASE-sole-scientific-dependency note (D7) and honest LGPL-as-library note for ASE + psycopg; a pointer to the test-*data* attributions (`tests/golden/ATTRIBUTIONS.md` + `NOTICE`). Licenses taken from installed package metadata, not guessed. | ✅ complete |
+| **Completeness check** | `tests/test_attributions.py` parses `pyproject.toml` (`[project].dependencies` + the `service` extra) and asserts every distribution name appears in `ATTRIBUTIONS.md`, matched on token boundaries (so `pydantic-settings` cannot spuriously satisfy `pydantic`). Reads the file, not the venv → runs in the ordinary gate, no network. | ✅ present + green |
+| **CI enforcement** | Collected by the existing `pytest tests` step in `.github/workflows/ci.yml` (same fold-in as the golden-corpus governance suite; the step comment now names it). Adding a dependency without its attribution row fails CI. | ✅ enforced |
+
+### README SemVer promises + self-hosting posture (✅ verified — no change needed)
+
+| Check | Evidence | Verdict |
+|---|---|---|
+| SemVer promises present + correct | `README.md` "Versioning and stability" (lines ~205–246): names the exact frozen public surface (canonical schema, the three report schemas, the plugin SDK ABCs, `/v1` + `docs/openapi.json`, documented CLI flags); "additive only within 1.x, breaks wait for 2.0"; the two-version-axis distinction (product version vs canonical `schema_version` 1.0.0); the "1.0.0 release follows a 30-day green-nightly window" gate. Matches MASTER_SPEC Part 10 §6 + the risk register R12. | ✅ present + correct |
+| Self-hosting is the primary supported deployment | `README.md:28` states self-hosting is the primary supported deployment with `docker-compose.prod.yml`, an honest backup posture, and a zero-SaaS review, pointing to `docs/self-hosting.md` (M37 D132). | ✅ present + consistent |
+
+No README change needed — verify-only, as S2 anticipated. (Any drift here would have fed S4; none found.)
+
+### Risk-register status (✅ recorded)
+
+The flagged risks (R1/R3/R7/R8/R10/R12 — the register's genuinely-open ⚠ items, MASTER_SPEC Part 10 §3)
+and their current posture at the v1.0 finish line:
+
+| Risk | Current posture at v1.0 | Tracking | Verdict |
+|---|---|---|---|
+| **R1** Silent data loss | Fully realized: absence convention, pre-flight prediction, the completeness property test (§6 item 2, zero waivers), post-hoc validation, UI anti-burying rules — all shipped and green. Residual (symmetric parser/exporter bugs passing their own round-trips) mitigated by golden + wild anchoring to external truth; corpus grows forever. | Standing (golden/wild corpus governance in CI) | ✅ mitigated as designed; residual is inherent, tracked by the ever-growing corpus |
+| **R3** Unit mismatches | One canonical unit system; conversion only at boundaries; `provenance.source_units` recorded. Residual (ambiguous unit declarations, e.g. LAMMPS unit styles) is **post-1.0 per-format work** — the `recovery_hint` pattern exists; no ambiguous-unit format is in the Phase-1 seven. | Post-1.0 (per-format, on format admission) | ✅ no open Phase-1 exposure |
+| **R7** Unsupported metadata | Verbatim carry-through (`simulation.extra`, `user_metadata`); drops named per key in `removed`. Residual (bytes preserved, not cross-format meaning) is inherent; the promotion path converts recurring extras to first-class fields over time. | Standing (promotion path on recurring cases) | ✅ mitigated; residual inherent |
+| **R8** Large-trajectory performance | Retired for v1.0: frame-chunking **shipped** (v0.3 M12), the benchmark tripwire runs nightly (M37 >20% regression gate), memory bounds enforced via the frame ceiling. The "top schedule risk of v0.2" (chunking committed-but-unimplemented) is closed. | Standing (nightly benchmark tripwire) | ✅ closed for v1.0 |
+| **R10** Security of uploaded files | Threat-decomposed controls shipped + reviewed (M37 security-review artifact): private buckets, authenticated streaming, size/rate/concurrency caps, files-as-data. Residual (dependency-inherited parser CVEs, e.g. ASE) mitigated by the nightly `pip-audit` + the worker sandbox; never eliminable. The M37 Dependabot sweep cleared all 12 advisories. | Standing (nightly pip-audit; Dependabot) | ✅ mitigated; residual never eliminable, actively watched |
+| **R12** Extensibility / SDK stability | Retired at the freeze: the plugin SDK is **frozen at 1.0** (M35) and the reference plugin is the compatibility canary as a **hard CI gate** (M36, §6 item 3). The pre-1.0 "third-party plugins will break" honesty caveat is now satisfied by the freeze itself. | Standing (reference-plugin canary in CI) | ✅ closed by the freeze |
+
+**Issue-filing note (no external post made).** Per the S2 plan, the default is this committed status
+table naming each risk's posture; **no GitHub tracking issue is filed silently.** None of the six needs a
+new tracking issue at v1.0 — R1/R7/R10 are standing residuals watched by existing CI gates, R8/R12 are
+closed by shipped work, R3 is post-1.0 per-format work with no Phase-1 exposure. If the maintainer wants
+any tracked as a GitHub issue, that is a maintainer step (external posting).
 
 ---
 
