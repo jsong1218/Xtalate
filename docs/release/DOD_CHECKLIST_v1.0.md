@@ -14,7 +14,12 @@
 > **Scope guard.** M38 makes **zero `src/xtalate/` engine changes** — it audits and records; it does not
 > fix the engine (a real engine fix would restart the 30-day clock, and is a stop-and-escalate).
 
-**Status:** in progress (S1–S4 landed: §6 items 1–7 all audited; S5 finalize + record + PR pending). Last updated: 2026-08-09.
+**Status:** finalized (S1–S5 landed: §6 items 1–7 all audited and evidenced; the audit half of M38 is
+complete). The two wall-clock/human ⏳ items (the 30-day nightly-green completion and the true-stranger
+reproduction run) and the entire **release packaging** (version bump, CHANGELOG 1.0.0 entry,
+announcement, tag/publish) are the remaining steps — the packaging deferred by explicit maintainer
+decision to after a v1.0.0 architectural review (see Deferred, and `docs/private/DECISIONS.md` D137).
+Package version stays `0.7.0`. Last updated: 2026-08-10.
 
 ---
 
