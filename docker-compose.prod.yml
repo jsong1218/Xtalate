@@ -23,7 +23,7 @@
 # XTALATE_IMAGE to a published release tag in production; the build context makes `up --build` work
 # turnkey from a clone before the image is published.
 x-service-image: &service-image
-  image: ${XTALATE_IMAGE:-xtalate/service:0.7.0}
+  image: ${XTALATE_IMAGE:-xtalate/service:1.0.0}
   build:
     context: .
     dockerfile: Dockerfile
