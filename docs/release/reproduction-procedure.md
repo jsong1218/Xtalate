@@ -35,7 +35,7 @@ Install the library + CLI:
 
 ```bash
 pip install xtalate           # library + `xtalate` CLI
-xtalate --version             # expect: 0.7.0  (or the release you installed)
+xtalate --version             # expect: 1.0.0  (or the release you installed)
 ```
 
 Everything runs in a scratch directory:
