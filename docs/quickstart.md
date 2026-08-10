@@ -41,12 +41,12 @@ Convert, and read the report:
 xtalate convert relax.traj --to poscar -o POSCAR --report report.json
 ```
 
-If the target format requires something the source lacks (POSCAR needs chemical symbols an XYZ may
-not carry), the conversion **pauses and refuses rather than guessing**. Supply the missing data
-explicitly with `--recover`, and the choice is recorded in the report as an Assumption:
+If the target format requires something the source lacks (POSCAR needs a periodic cell an XYZ does
+not carry), the conversion **refuses rather than guessing**. Supply the missing data explicitly with
+`--recover`, and the choice is recorded in the report as an Assumption:
 
 ```bash
-xtalate convert min.xyz --to poscar -o POSCAR --recover "missing_species=periodic_table"
+xtalate convert min.xyz --to poscar -o POSCAR --recover "missing_lattice=bounding_box,padding_ang=5.0"
 ```
 
 See the full [CLI reference](./cli) for every command and flag.
@@ -70,7 +70,7 @@ This brings up the API, a worker, PostgreSQL, object storage, and the Web UI. Op
 curl -s -F file=@relax.traj http://localhost:8000/v1/upload
 ```
 
-See the [API reference](./API.md#5-service-http-api) for the full upload → convert → recover →
+See the [API reference](./api#5-service-http-api) for the full upload → convert → recover →
 download flow, including the interactive recovery pause.
 
 A conversion the engine declines is **not** an HTTP error — it is a completed job whose report has

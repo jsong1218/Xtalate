@@ -14,7 +14,7 @@
 > **Scope guard.** M38 makes **zero `src/xtalate/` engine changes** — it audits and records; it does not
 > fix the engine (a real engine fix would restart the 30-day clock, and is a stop-and-escalate).
 
-**Status:** in progress (S1–S3 landed: §6 items 1–5/6). Last updated: 2026-08-08.
+**Status:** in progress (S1–S4 landed: §6 items 1–7 all audited; S5 finalize + record + PR pending). Last updated: 2026-08-09.
 
 ---
 
@@ -27,7 +27,7 @@
 | **3** | Frozen contracts: schema 1.0.0 + migration; SDK + reference-plugin canary; `/v1` OpenAPI artifact | ✅ all present + green | S1 |
 | **4** | Stranger reproduces 3 worked examples on 4 surfaces from public docs | ✅ reproduced in-session (4/4 surfaces) · ⏳ true-stranger run (procedure committed) | S3 |
 | **5/6** | Honesty: risk register tracked; README SemVer; **ATTRIBUTIONS.md complete + CI-enforced** | ✅ ATTRIBUTIONS.md landed + CI-enforced; README/risks verified | S2 |
-| **7** | docs↔code drift review as a release blocker | ⬜ pending | S4 |
+| **7** | docs↔code drift review as a release blocker | ✅ every published doc reconciled; 4 drifts fixed (1 reproduction-breaking), all docs-only | S4 |
 | Release | CHANGELOG 1.0 entry, announcement, tag + publish | ⏳ **deferred** (post-v1.0.0-arch-review, then maintainer) | — |
 
 Legend: ✅ verified with committed evidence · ⏳ maintainer/wall-clock step (documented, not silently skipped) · ⬜ not yet audited.
@@ -233,8 +233,68 @@ any tracked as a GitHub issue, that is a maintainer step (external posting).
 
 ## §6 item 7 — docs↔code drift review (release blocker)
 
-⬜ **Pending (S4).** The accumulated MASTER_SPEC Revision-notes as the worklist; every published doc
-diffed against shipped reality; every drift fixed in docs (a code drift → stop-and-escalate).
+**Claim.** Every published doc is reconciled to shipped reality; every drift is fixed **in docs** (a
+code drift → stop-and-escalate, never fixed mid-freeze). The accumulated MASTER_SPEC Revision-notes
+(1.1→1.31) and the D-log are the worklist; S3's empirical reproduction findings fold in.
+
+**Method.** Every published doc was content-diffed against the authoritative code surface, not just
+read: version strings vs `pyproject.toml`/`__init__.py`/`CITATION.cff`; endpoint paths vs
+`docs/openapi.json`; error codes vs `backend/error_codes.py`; CLI flags/exit-codes vs
+`src/xtalate/cli/main.py`; recovery scenario/choice names vs `src/xtalate/recovery/` +
+`src/xtalate/parsers/`; env-var names vs `backend/config.py`; SDK ABC names + entry-point groups vs
+`src/xtalate/sdk/` + `registry.py`; concrete path references (`tests/fuzz/`, `docs/security/`,
+`plugins/example-format/`) vs the tree. The strongest drifts were confirmed by **running the tool**,
+not by reading alone.
+
+### Drifts found and fixed (✅ — all docs-only, zero `src/xtalate/` change)
+
+| # | Doc | Drift | Severity | Fix |
+|---|---|---|---|---|
+| D-a | `quickstart.md` | The `--recover` example used `missing_species=periodic_table`. **`periodic_table` is not a valid choice** (`missing_species` offers only `species_map`/`upload_reference`, `recovery/scenarios.py:167`), **and `missing_species` is the wrong scenario for XYZ→POSCAR** — an XYZ always carries symbols; what POSCAR requires and XYZ lacks is the **lattice**. Verified live: the published command is **REFUSED** (`RECOVERY_REQUIRED: missing_lattice`), with `atoms.symbols` shown *preserved*. A stranger copying it would hit a dead end. | **High** (reproduction-breaking) | Command → `--recover "missing_lattice=bounding_box,padding_ang=5.0"`; prose "POSCAR needs chemical symbols an XYZ may not carry" → "POSCAR needs a periodic cell an XYZ does not carry"; "pauses and refuses" → "refuses" (the CLI refuses, exit 2 — it does not pause; the pause is the interactive job path). Corrected command verified live: **completed**, assumption `A1`, validation `passed`. |
+| D-b | `cli.md` | "See the **Developer Guide** for the recovery scenarios" — a **dead cross-reference**: `DEVELOPER_GUIDE.md` documents no recovery scenarios (it mentions recovery only as principle P4, and its "where to go next" points onward to the API reference). | Medium (broken pointer) | Retargeted to the [API reference §1.2](../API.md#12-convert) (`./api#12-convert` in `cli.md`), where the scenarios + choices are actually documented with examples. |
+| D-c | `errors.md` | "**Two** exceptions below (`PARSE_ERROR`, `RECOVERY_REQUIRED`, `VALIDATION_UNAVAILABLE`) are recorded on a *job* body…" — lists **three** codes; each of the three sections confirms it is job-recorded. The count was the error. | Low (factual miscount) | "Two exceptions" → "Three exceptions". |
+| D-d | `quickstart.md`, `cli.md` | Link-style inconsistency: two `./API.md#anchor` links against the docs' native clean-URL convention (`./api`, `./errors`, `./cli` — 10 instances). The `./API.md#5-service-http-api` form (S3-introduced) risks a 404 on the clean-URL static docs site (self-hosting.md §"static docs site"). | Low (link hygiene) | Both aligned to `./api#…` (the resolvable page path used elsewhere), anchors unchanged. |
+
+### Checked against code, no drift (recorded so the sweep is auditable)
+
+| Surface | Cross-checked against | Verdict |
+|---|---|---|
+| Product version (`0.7.0`) | `pyproject.toml`, `src/xtalate/__init__.py`, `CITATION.cff` | ✅ all three agree |
+| Canonical `schema_version` `1.0.0`; two-axis SemVer; 30-day gate | `README.md` §"Versioning and stability" vs `schema/models.py` | ✅ accurate |
+| `/v1` endpoint paths | `docs/API.md` vs `docs/openapi.json` (drift-guarded) | ✅ every path resolves |
+| Error codes (25) | `docs/errors.md` + `docs/error_codes.json` vs `backend/error_codes.py` | ✅ exact set, `error_codes.json` drift-guarded |
+| CLI subcommands, flags, exit codes `0`–`5` | `docs/cli.md` vs `src/xtalate/cli/main.py` | ✅ match |
+| Recovery scenario + choice names | `README.md`/`API.md` vs `src/xtalate/recovery/` + `parsers/` | ✅ match (`frame_selection`, `missing_lattice`/`bounding_box`, `missing_masses`/`standard_masses`, `missing_velocities`/`maxwell_boltzmann`, `missing_species`/`species_map`) |
+| `split_all` scoping | `API.md` (library §2 only) vs D113 (HTTP declines it) | ✅ no doc falsely claims it over HTTP |
+| Format count (seven Phase-1; eight-category model) | `README.md`, `ARCHITECTURE.md`, `API.md` | ✅ consistent |
+| Compose file names (`compose.yaml`, `docker-compose.prod.yml`) | `README.md`, `quickstart.md`, `self-hosting.md` vs the tree | ✅ both exist, referenced correctly |
+| Self-hosting env vars (`XTALATE_DATABASE_URL`, `_OBJECT_STORE_*`, `_MAX_UPLOAD_BYTES`, `_*_RETENTION_*`, …) | `docs/self-hosting.md` vs `backend/config.py` (`env_prefix="XTALATE_"`) | ✅ every name maps to a real settings field |
+| SECURITY.md concrete refs (`tests/fuzz/`, `docs/security/`, `XTALATE_API_KEYS`, open-endpoint set) | vs the tree + `backend/config.py` + `errors.md` | ✅ all present + consistent |
+| SDK ABC names + entry-point groups (`xtalate.parsers`/`xtalate.exporters`) | `CONTRIBUTING.md`, `DEVELOPER_GUIDE.md` vs `src/xtalate/sdk/` + `registry.py` + `pyproject.toml` | ✅ exact match |
+| Reference-plugin paths (`plugins/example-format/`, `tests/fixtures/xtalate_toyfmt/`) | `DEVELOPER_GUIDE.md` vs the tree | ✅ match |
+| Machine contract `vocabulary.json` | drift-guarded (`tests/backend/test_vocabulary_artifact.py`) + consumed by `frontend/` | ✅ wired + guarded |
+
+### S3 carry-over reconciled
+
+The private-spec §5 worked example lists two conversion warnings while the shipped engine emits one
+(the precision warning). This lives only in the **gitignored** `docs/private/MASTER_SPEC.md` — it is
+not a published surface, so it is **out of scope for the published-docs drift review** and needs no
+published-docs fix. It is a private-spec-example nicety, not an engine defect (the engine's single
+warning is correct; the published `API.md`/UI describe warnings generically). Recorded here to close
+the S3 note; the maintainer may tighten the private example at will (no code change, no clock impact).
+
+### Scope boundary (out-of-worklist docs, spot-checked)
+
+The M37 operational records under `docs/ops/` (dated drill logs, the incident report, the
+lifecycle/pinned-runner/restore runbooks) and `docs/security/REVIEW_M37.md` are **point-in-time
+records**, not living behaviour docs, and were outside the S4 named worklist. Spot-grepped for stale
+endpoint/env references: they reference ops-tooling env vars (`XTALATE_PINNED_RUNNER`,
+`XTALATE_BENCH_RUNNER`) and real config vars only — no obvious staleness.
+
+**Verdict (✅).** Every published doc reconciled to shipped reality. Four drifts found (one
+reproduction-breaking, three minor), **all fixed in docs**, **zero `src/xtalate/` changes** — no code
+drift surfaced, so no stop-and-escalate was needed. The two strongest fixes (D-a, and the S3 upload
+endpoint) were confirmed by running the tool, not by reading.
 
 ---
 

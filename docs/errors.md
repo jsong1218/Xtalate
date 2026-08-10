@@ -22,7 +22,7 @@ server-side log; quote it when reporting a problem.
 **A refused conversion is not an error.** When the engine declines a conversion it returns a
 *completed* job at HTTP 200 whose `ConversionReport.status == "refused"` — it never appears here.
 This page is for transport failures only: bad input, missing or expired resources, limits, and server
-faults. Two exceptions below (`PARSE_ERROR`, `RECOVERY_REQUIRED`, `VALIDATION_UNAVAILABLE`) are
+faults. Three exceptions below (`PARSE_ERROR`, `RECOVERY_REQUIRED`, `VALIDATION_UNAVAILABLE`) are
 recorded on a *job* body rather than carried as an HTTP status, and are marked as such.
 
 Codes are grouped by concern. Within each group the heading is the exact machine code.
