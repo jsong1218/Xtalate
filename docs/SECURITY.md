@@ -7,13 +7,13 @@ project is hardened against the threats a converter faces, and how to report a v
 
 ## Supported versions
 
-Xtalate is pre-1.0. Security fixes land on the latest release line; there is no long-term-support
-branch for older versions. Self-hosters should track the most recent tag.
+Security fixes land on the latest 1.x release line; there is no long-term-support branch for older
+versions. Self-hosters should track the most recent tag.
 
 | Version | Supported |
 |---------|-----------|
-| Latest release line (0.7.x → 1.0) | ✅ |
-| Older pre-1.0 tags | ❌ (upgrade to the latest) |
+| 1.x (latest minor) | ✅ |
+| Older 1.x / pre-1.0 tags | ❌ (upgrade to the latest) |
 
 ## Reporting a vulnerability
 

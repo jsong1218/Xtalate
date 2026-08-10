@@ -15,11 +15,11 @@
 > fix the engine (a real engine fix would restart the 30-day clock, and is a stop-and-escalate).
 
 **Status:** finalized (S1–S5 landed: §6 items 1–7 all audited and evidenced; the audit half of M38 is
-complete). The two wall-clock/human ⏳ items (the 30-day nightly-green completion and the true-stranger
-reproduction run) and the entire **release packaging** (version bump, CHANGELOG 1.0.0 entry,
-announcement, tag/publish) are the remaining steps — the packaging deferred by explicit maintainer
-decision to after a v1.0.0 architectural review (see Deferred, and `docs/private/DECISIONS.md` D137).
-Package version stays `0.7.0`. Last updated: 2026-08-10.
+complete). The v1.0 architectural review then performed the deferred **release packaging** (version
+bump to `1.0.0` and the CHANGELOG `[1.0.0]` entry, slice R4) — the remaining steps are the
+wall-clock/human ⏳ items (the 30-day nightly-green completion and the true-stranger reproduction run)
+and the maintainer's tag/publish/announcement (see Deferred). Package version is `1.0.0`. Last
+updated: 2026-08-10.
 
 ---
 
@@ -27,7 +27,7 @@ Package version stays `0.7.0`. Last updated: 2026-08-10.
 
 | §6 item | Claim | Verdict | Slice |
 |---|---|---|---|
-| **1** | Seven-format golden coverage; 30-day nightly-matrix green | ✅ coverage + matrix green now · ⏳ 30-day clock (4/30) | S1 |
+| **1** | Seven-format golden coverage; 30-day nightly-matrix green | ✅ coverage + matrix green now · ⏳ 30-day clock (6/30) | S1 |
 | **2** | Completeness property test passes with **zero waivers** | ✅ confirmed (grep clean; 570 green) | S1 |
 | **3** | Frozen contracts: schema 1.0.0 + migration; SDK + reference-plugin canary; `/v1` OpenAPI artifact | ✅ all present + green | S1 |
 | **4** | Stranger reproduces 3 worked examples on 4 surfaces from public docs | ✅ reproduced in-session (4/4 surfaces) · ⏳ true-stranger run (procedure committed) | S3 |
@@ -86,8 +86,10 @@ Nightly runs **after** the 2026-08-04 20:47 clock start (via `gh run list --work
 | 2026-08-06 09:37 | success |
 | 2026-08-07 08:11 | success |
 | 2026-08-08 07:47 | success |
+| 2026-08-09 07:52 | success |
+| 2026-08-10 08:24 | success |
 
-**Consecutive greens since clock start: 4 / 30.** (The 2026-08-04 09:37 nightly and everything earlier —
+**Consecutive greens since clock start: 6 / 30** (recounted for the v1.0 architectural review's R4 close, 2026-08-10). (The 2026-08-04 09:37 nightly and everything earlier —
 also an unbroken green streak back past 2026-07-18 — ran against the *pre-freeze* engine and do not count
 toward the frozen engine's stability claim; the honest count is post-M35 only.)
 
@@ -310,8 +312,12 @@ is deferred to *after* a v1.0.0 architectural review — following the project's
 version's architectural review folds into that version before tagging. M38-in-session ships the audit
 half only. The following are **not** done in M38 and are not silently skipped:
 
-- **Version bump `0.7.0 → 1.0.0`** (`pyproject.toml`, `src/xtalate/__init__.py`) — at tag time.
-- **CHANGELOG 1.0.0 release entry** — M38 leaves only an `[Unreleased]` audit note.
+- **Version bump `0.7.0 → 1.0.0`** (`pyproject.toml`, `src/xtalate/__init__.py`, `CITATION.cff`,
+  `frontend/package.json`, regenerated `docs/openapi.json`) — **done by the v1.0 architectural review**
+  (slice R4, this branch; the `__init__.py` change is the sanctioned version-string exception).
+- **CHANGELOG 1.0.0 release entry** — **done by the v1.0 architectural review** (slice R4): the
+  `[1.0.0]` entry with the backfilled M35 section and the review section; a fresh guarded
+  `[Unreleased]` opens the next cycle.
 - **The v1.0 announcement** (what is frozen, what SemVer promises, what post-1.0 looks like — Part 10 §5).
 - **`git tag v1.0.0` + publish** — PyPI, GHCR images, GitHub release with the OpenAPI artifact
   (`docs/openapi.json`) and the schema migration notes attached. Always the maintainer's manual step

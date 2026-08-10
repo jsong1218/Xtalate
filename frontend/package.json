@@ -1,6 +1,6 @@
 {
   "name": "xtalate-frontend",
-  "version": "0.7.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Xtalate Web UI — a faithful presentation layer over the /v1 service (MASTER_SPEC Part 7).",
   "scripts": {

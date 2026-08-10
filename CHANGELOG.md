@@ -6,7 +6,7 @@ All notable changes to Xtalate are recorded here. The format follows
 
 The canonical **schema version** is tracked separately from the package version and moves under its
 own rules (see [Versioning and stability](README.md#versioning-and-stability)). It is `1.0.0` in code
-as of the v1.0 contract freeze; the *package* version reaches `1.0.0` only at the v1.0 release, and
+as of the v1.0 contract freeze; the *package* version reached `1.0.0` at the v1.0 release, and
 objects written by earlier releases carry `schema_version = "0.1.0"` (loaded forward through a real
 migration). Every release entry — and the `[Unreleased]` section that accrues the next one — carries
 a required **`Schema version:`** line stating the canonical `schema_version` it ships; a guard
@@ -16,6 +16,37 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 ## [Unreleased]
 
 Schema version: 1.0.0
+
+## [1.0.0] — 2026-08-10
+
+Schema version: 1.0.0
+
+### Fixed — the v1.0 architectural review
+
+The pre-tag review (folded into 1.0.0, as every version's review has been): five parallel
+audits over everything v1.0 shipped confirmed the machinery sound and fixed the gaps they
+found — all outside the frozen engine, so the pre-release nightly-green window is undisturbed.
+
+- **The golden corpus proves the migration again.** Four occupancy-bearing CIF expectations
+  had been rewritten to the post-migration shape while still stamped `0.1.0`, so the
+  corpus-wide `0.1.0 → 1.0.0` proof never exercised the occupancy move on them. They are
+  restored to the genuine pre-freeze shape, and a new governance check fails if a
+  `0.1.0`-stamped expectation ever carries a `1.0.0`-only field again.
+- **The reference plugin joins the strict type gate.** `mypy` now analyzes
+  `plugins/example-format/src` (it was silently absent from the gate's file list while the
+  add-a-format guide billed the plugin as the reference to copy).
+- **The parse-warnings band joins the theme system.** The one surface that escaped the dark-mode
+  tokenization — the amber parse-warnings band on the inspect page, a loss-signaling surface —
+  now renders on the `--cb-warning` tokens in both themes.
+- **Record-page back navigation keeps the file in hand.** Arriving at a conversion record with
+  a live `file_id`, the back control returns to that file's page instead of unconditionally to
+  history.
+- **The dependency drill record corrected.** The `sharp` npm override is outside `next`'s
+  declared optional range (`^0.35.0` vs `^0.34.3`) — the drill record claimed otherwise; a
+  dated addendum states the fact, the dormant exposure, and the condition for revisiting.
+- **README told the truth again** about occupancy (first-class since the freeze, not a
+  namespaced carry-through) and dropped its version-frozen section titles; two `src/`-touching
+  cleanups found by the review are ticketed to v1.1 rather than fixed mid-freeze.
 
 ### Audited — M38: the v1.0 definition-of-done audit (the release packaging deliberately deferred)
 
@@ -164,6 +195,39 @@ carrier, and the formats explorer stays generated from `GET /v1/capabilities` (D
   still override it via cascade-layer order, so there is no double indicator); contrast is audited in
   both themes, the layout is verified responsive down to a 375 px phone, and the shell, theme toggle,
   and disclosures are all keyboard-operable.
+
+### Changed — M35: the v1.0 contract freeze (schema `1.0.0`, the public surface frozen for 1.x)
+
+The first v1.0 milestone freezes the public surface — the Canonical Model, the plugin SDK, the
+`/v1` REST contract, and the documented CLI — as the stable 1.x contract: within 1.x each
+evolves **additively only**, and the freeze itself was the last free breaking change.
+
+- **The canonical schema is `1.0.0`, and site occupancy is first-class.** `atoms.occupancies`
+  (`list[float | None] | None`) replaces the `user_metadata.custom_per_atom["cif:occupancy"]`
+  carry-through, closing the one schema gap the spec had left open. A stated value, a per-site
+  unknown (CIF `?`/`.`), and "no column at all" are now three distinct statements (P3). The
+  `CIF_OCCUPANCY_NOT_MODELLED` warning is retired; `PARTIAL_OCCUPANCY_NOT_REPRESENTED` fires
+  capability-gated — silent only for a target that declares it can write the field.
+- **A real `0.1.0 → 1.0.0` migration** (`xtalate.schema.migrations`). `migrate()` carries a
+  stored older object forward and stamps exactly one `ConversionRecord(operation="migrate")` —
+  a forward migration is recorded provenance, never a silent rewrite; `load_canonical()`
+  accepts str/bytes/dict and refuses an unknown or future schema version. Golden-corpus
+  expectations stay authored at `0.1.0` and load through the chain, so the corpus exercises
+  the migration on every run; a committed before/after fixture pair pins the transform.
+- **The plugin SDK is declared stable.** The public ABCs (`ParserPlugin`/`ExporterPlugin`, the
+  streaming surface, `ParseResult`/`ParseIssue`/`ParseError`, `FormatCapabilities`) are the
+  frozen 1.x contract: additive-only within 1.x, `_`-prefixed internals unfrozen, a breaking
+  change means 2.0. The old instability warnings are replaced by the stability promise across
+  the published docs.
+- **The `/v1` REST contract and the CLI are frozen.** `docs/openapi.json` is the versioned,
+  machine-readable `/v1` contract; the additive-evolution policy is published (new formats and
+  scenarios arrive as *values*, never new endpoints); documented CLI flags and the 0–5
+  exit-code ladder are frozen surface (`docs/cli.md`).
+- **The SemVer promise is published** (README "Versioning and stability"): the protected
+  surface named, and the two version axes decoupled — the *package* version moves every
+  release, the canonical `schema_version` only on a schema change behind a real migration.
+  Every release entry's `Schema version:` line is mandatory and CI-guarded
+  (`tests/test_changelog_schema_version.py`).
 
 ## [0.7.0] — 2026-08-02
 
@@ -1343,7 +1407,8 @@ byte of scientific information kept, dropped, or fabricated.
 - Recovery is preset-only; tolerance profiles are the three named ones (custom tables are later
   seams).
 
-[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/jsong1218/Xtalate/compare/v0.7.0...v1.0.0
 [0.7.0]: https://github.com/jsong1218/Xtalate/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jsong1218/Xtalate/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jsong1218/Xtalate/compare/v0.4.0...v0.5.0
