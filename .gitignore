@@ -228,6 +228,8 @@ __marimo__/
 docs/private/
 # AI-specific project-context file; stays at repo root on disk so Claude Code still loads it.
 /CLAUDE.md
+# Slice-implementer instructions for freebuff/DeepSeek; local working-tree file like CLAUDE.md, read from disk.
+/AGENTS.md
 
 # Secrets (CLAUDE.md "Never commit secrets" / DECISIONS.md) — defensive, ahead of need:
 # no credentials exist in the v0.1 codebase yet, but these patterns are excluded before
