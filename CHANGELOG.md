@@ -27,11 +27,12 @@ The pre-tag review (folded into 1.0.0, as every version's review has been): five
 audits over everything v1.0 shipped confirmed the machinery sound and fixed the gaps they
 found — all outside the frozen engine, so the pre-release nightly-green window is undisturbed.
 
-- **The golden corpus proves the migration again.** Four occupancy-bearing CIF expectations
-  had been rewritten to the post-migration shape while still stamped `0.1.0`, so the
-  corpus-wide `0.1.0 → 1.0.0` proof never exercised the occupancy move on them. They are
-  restored to the genuine pre-freeze shape, and a new governance check fails if a
-  `0.1.0`-stamped expectation ever carries a `1.0.0`-only field again.
+- **The golden corpus proves the migration again.** Every `0.1.0`-stamped golden expectation
+  had been mechanically rewritten to the post-migration shape (real occupancy values in the four
+  CIF cases, a spurious `occupancies: null` in the other nine) while still stamped `0.1.0`, so the
+  corpus-wide `0.1.0 → 1.0.0` proof never exercised the occupancy move. All thirteen are restored
+  to the genuine pre-freeze shape, and a new governance check fails if a `0.1.0`-stamped
+  expectation ever carries a `1.0.0`-only field again.
 - **The reference plugin joins the strict type gate.** `mypy` now analyzes
   `plugins/example-format/src` (it was silently absent from the gate's file list while the
   add-a-format guide billed the plugin as the reference to copy).
