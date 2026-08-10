@@ -72,6 +72,22 @@ describe("Inventory", () => {
     );
   });
 
+  it("renders the loss-signalling band on the --cb-* warning tokens, not raw amber literals", () => {
+    render(<Inventory report={cifReport} />);
+    const warnings = screen.getByRole("region", { name: "Parse warnings" });
+    // The band is the one surface whose job is to flag a loss condition, so it must follow the
+    // theme system: the same tokens ConversionReportPanel uses, so one flip re-skins it too
+    // (pre-M36 addendum; the v1.0 review caught it as the sole tokenization escapee, F5).
+    expect(warnings.className).toContain("border-cb-warning");
+    expect(warnings.className).toContain("bg-cb-warning-bg");
+    expect(within(warnings).getByRole("heading", { name: /parsed with \d+ warnings?/i }).className).toContain(
+      "text-cb-warning",
+    );
+    // No raw amber Tailwind literals survive anywhere in the band.
+    expect(warnings.className).not.toMatch(/amber/);
+    expect(within(warnings).getByText("CIF_OCCUPANCY_NOT_MODELLED").className).not.toMatch(/amber/);
+  });
+
   it("omits the warnings band entirely for a file that parsed clean", () => {
     render(<Inventory report={extxyzReport} />);
     expect(extxyzReport.issues).toHaveLength(0);

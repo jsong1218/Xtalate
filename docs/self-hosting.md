@@ -109,8 +109,9 @@ keep clients insulated if the origin ever moves.
 >    Caddy has no default limit).
 
 The Web UI and the static docs site are built and served at this edge — there is no production
-frontend image in v0.7. Build them from the `frontend/` project (`npm ci && npm run build && npm run
-start`, or a static export) and serve behind the same proxy so the whole surface shares one origin.
+frontend image as of v1.0 (the guide builds it at the edge). Build them from the `frontend/` project
+(`npm ci && npm run build && npm run start`, or a static export) and serve behind the same proxy so
+the whole surface shares one origin.
 
 ## Backups and restore — the honest posture
 
@@ -148,9 +149,9 @@ user's `conversion_id` straight from a bug report.
 **Metrics: a specified contract, not yet implemented.** MASTER_SPEC Part 9 §6.1 specifies a
 Prometheus-format `/metrics` endpoint on the internal network exposing job counts by kind × terminal
 state, `PARSE_ERROR` counts by format, validation pass/fail rates, queue depth, and storage bytes by
-class. **That endpoint is not implemented in v0.7** — this guide will not pretend an endpoint exists
-that does not. Until it lands, the structured logs above carry the same facts (state transitions,
-error codes, durations) for you to aggregate.
+class. **That endpoint is not implemented (planned post-1.0)** — this guide will not pretend an
+endpoint exists that does not. Until it lands, the structured logs above carry the same facts (state
+transitions, error codes, durations) for you to aggregate.
 
 **The five alerts worth having** (Part 9 §6.1) — documented here, not bundled, because every operator
 has their own monitoring stack and shipping opinionated dashboards is maintenance surface you did not

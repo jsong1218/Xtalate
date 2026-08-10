@@ -25,11 +25,7 @@
             2.5
           ]
         ],
-        "masses": null,
-        "occupancies": [
-          1.0,
-          1.0
-        ]
+        "masses": null
       },
       "cell": {
         "lattice_vectors": [
@@ -127,6 +123,10 @@
       "cif:type_symbol": [
         "Zn",
         "O"
+      ],
+      "cif:occupancy": [
+        1.0,
+        1.0
       ]
     },
     "custom_per_frame": {}

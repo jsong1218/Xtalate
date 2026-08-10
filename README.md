@@ -34,11 +34,11 @@ v0.7 closes the product surface the specification's Parts 6–7 describe: the en
 - **Advisory surfacing is a named, deliberate cut (post-1.0).** The recovery-feedback aggregation ships in the service as a read-only, metadata-only statistic; the seam to surface it in the UI is in place, but the aggregation-fed rendering is deferred. This costs no honesty by construction: **no default ever changes because of those statistics** (P4), so a recovery decision is never quietly steered by what other users chose.
 - **The plugin SDK and the `/v1` REST contract are both frozen for 1.x.** The SDK ABCs (`ParserPlugin`/`ExporterPlugin`, the streaming surface, `ParseResult`/`ParseIssue`/`ParseError`, `FormatCapabilities`) are the **stable contract** third-party plugins build against, as of the v1.0 contract freeze: within 1.x they evolve **additively only**, so a plugin built against 1.0 keeps working across the series (see [CONTRIBUTING.md](CONTRIBUTING.md) for the promise and its scope). The `/v1` REST surface — its endpoints, response envelopes, and error codes — is **likewise frozen for 1.x** and evolves additively only: new formats and recovery scenarios arrive as *values* in existing fields, never as new endpoints, and [`docs/openapi.json`](docs/openapi.json) is its versioned, machine-readable form (see the [API reference](docs/API.md) for the additive-evolution policy). This closes risk R12. v0.7 finished the product surface; v1.0 is the discipline pass.
 
-## What v0.5 does
+## What Xtalate does
 
 **The whole engine, now over HTTP — and Phase 1 stays complete: all seven formats read *and* write.**
 
-New in v0.5, the **Service layer**: a FastAPI application exposes the same engine under `/v1` as
+The **Service layer** (v0.5): a FastAPI application exposes the same engine under `/v1` as
 async jobs (`inspect` / `convert` / `validate` → poll `GET /v1/jobs/{id}` → retrieve). It adds
 nothing scientific — it is a thin presenter that embeds the pydantic report models **verbatim** — and
 it carries the two rules the whole product turns on: a **refused conversion is a completed HTTP-200
@@ -62,10 +62,10 @@ contract. The library and CLI below are unchanged.
 - **Round-trip matrix** — beyond identity round-trips, a cross-format **two-hop** (`A→B→Canonical′`) and **three-hop** (`A→B→A`) test suite whose comparable subspace is computed from the Capability Matrix, catching parser/exporter asymmetry.
 - **Third-party formats via plugins** — a parser/exporter shipped in a separate installable package is discovered automatically through Python **entry points** (`xtalate.parsers` / `xtalate.exporters`), with no fork or edit to Xtalate; it joins sniffing, Discovery, conversion, and validation on equal footing (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
-## What v0.5 does *not* do (yet)
+## Boundaries, stated
 
-- **No Web UI, and no accounts.** The Service is a headless REST API; the Next.js Web UI is v0.6. The v0.5 service runs in **anonymous mode** (optional static API keys only) — there are no user accounts, sessions, or per-user resources, so the account endpoints answer `404 NOT_ENABLED` and a resource is reachable by anyone holding its unguessable id.
-- **CIF is read and written, but not every CIF.** A file whose symmetry must be reconstructed from a space-group *symbol* alone is refused rather than guessed at; occupancy is carried under a namespaced key rather than modelled as a first-class canonical field, and only the CIF target writes it back.
+- **No Web UI, and no accounts.** The Service is a headless REST API; the Web UI ships with the product (see [The Web UI](#the-web-ui-v07) above). The v0.5 service runs in **anonymous mode** (optional static API keys only) — there are no user accounts, sessions, or per-user resources, so the account endpoints answer `404 NOT_ENABLED` and a resource is reachable by anyone holding its unguessable id.
+- **CIF is read and written, but not every CIF.** A file whose symmetry must be reconstructed from a space-group *symbol* alone is refused rather than guessed at. Site occupancy is a first-class canonical field (`atoms.occupancies`, since the v1.0 schema freeze) with a real `0.1.0 → 1.0.0` migration behind it; a target that cannot represent a partial occupancy says so in the Conversion Report rather than dropping it silently.
 - **CLI recovery is still preset-only.** The command line takes choices up front or refuses; the *interactive* pause/resume is a Service feature (`allow_recovery` → `awaiting_recovery`).
 - **The REST `/v1` contract — unfrozen in v0.5 — is now the frozen 1.x contract.** As of the v1.0 contract freeze its endpoint set, response envelopes, and error codes evolve **additively only** within 1.x ([`docs/openapi.json`](docs/openapi.json) is its versioned, machine-readable form; see the [API reference](docs/API.md) for the policy). This closed the open risk R12. (The plugin SDK ABCs are likewise frozen for 1.x.)
 
@@ -198,7 +198,7 @@ The **Canonical Object** is the only thing that crosses the parser/exporter boun
 
 That spine is what makes **adding a format O(1) in the number of formats already present** — a claim now paid three times over. XDATCAR, ASE `.traj`, and CIF each arrived as one parser and one exporter against the Canonical Object plus a row in the Capability Matrix, and each joined sniffing, Discovery, conversion, validation, and the full n×n round-trip matrix without a single edit to any other format. CIF is the strongest evidence, because it is the least like the others: it is the only format whose native coordinates are fractional, the only one carrying symmetry, and the only one that needed a whole expansion stage — and it still cost no format-to-format code, because there is none to write.
 
-Architectural decisions (D1–D99) and MASTER_SPEC are maintained privately. Public commits may
+Architectural decisions (the D-log) and MASTER_SPEC are maintained privately. Public commits may
 reference decision IDs. If you need the rationale for a particular decision, feel free to open an
 issue or contact me.
 

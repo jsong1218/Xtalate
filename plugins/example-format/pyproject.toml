@@ -19,10 +19,10 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 # `xtalate` is always already present in the environment this plugin installs into. It is
 # declared here for realism — a real third-party plugin depends on the SDK — but CI installs
-# with `--no-deps` so pip never resolves it from an index (xtalate is not published yet; D52).
-# Once xtalate 1.0.0 publishes (M38), a real third party would pin the frozen major it builds
-# against per the SemVer promise: `xtalate>=1.0,<2.0`. Left bare for now because the package
-# version is still 0.7.0 until the M38 release, even though the SDK CONTRACT froze at M35.
+# with `--no-deps` so pip never resolves it from an index (xtalate is published on PyPI as of
+# the v1.0 release; D52). A real third party building against the frozen 1.x SDK would pin the
+# major it builds against per the SemVer promise: `xtalate>=1.0,<2.0`. Left bare here for the
+# same --no-deps reason, not because the contract is still unstable — it froze at M35.
 dependencies = ["xtalate"]
 
 # The whole point of an installable plugin: advertise a parser and an exporter under the

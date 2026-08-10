@@ -12,6 +12,7 @@ lapsed attribution could become a real licensing problem rather than a hypotheti
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -96,6 +97,38 @@ def test_expectation_loads_through_migration_chain(case: gov.GoldenCase) -> None
     else:
         assert len(migrate_records) == 1
         assert f"{authored} → {SCHEMA_VERSION}" in migrate_records[0].assumptions[0]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [c for c in _golden_cases() if str(c.data["canonical_schema_version"]) == "0.1.0"],
+    ids=lambda c: c.rel_manifest,
+)
+def test_pre_migration_expectation_has_no_post_migration_field(case: gov.GoldenCase) -> None:
+    """A `0.1.0`-stamped expectation cannot carry a `1.0.0`-only field (v1.0 review F2, D138).
+
+    The corpus-wide migration proof (D114) is only real if expectations authored at `0.1.0` are
+    genuinely pre-freeze: a `0.1.0` document already carrying `atoms.occupancies` — a field that
+    exists only since the `1.0.0` freeze — would migrate trivially and the occupancy-promotion
+    step would never fire, silently vacating the proof. The four occupancy-bearing CIF goldens
+    were rewritten back to the genuine pre-freeze shape (values under
+    ``user_metadata.custom_per_atom["cif:occupancy"]``) by the v1.0 review; this guard is what
+    keeps them there. Only `0.1.0`-authored expectations are bound: the exfmt golden declares
+    `1.0.0` and is outside the rule's reach.
+    """
+
+    raw = json.loads(case.expected_path.read_text(encoding="utf-8"))
+    offenders = [
+        f"frame {frame.get('index')}"
+        for frame in raw.get("frames", [])
+        if "occupancies" in frame.get("atoms", {})
+    ]
+    assert not offenders, (
+        f"{case.rel_manifest}: a 0.1.0-stamped expectation carries the 1.0.0-only "
+        f"atoms.occupancies field in {', '.join(offenders)} — a pre-freeze document must hold "
+        "occupancy under user_metadata.custom_per_atom['cif:occupancy'] so the migration "
+        "promotion step genuinely fires (v1.0 review F2, D138)"
+    )
 
 
 @pytest.mark.parametrize("case", _golden_cases(), ids=lambda c: c.rel_manifest)

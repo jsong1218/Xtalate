@@ -101,6 +101,13 @@ export default function ConversionRecordPage() {
   const fileId = useSearchParams().get("file_id");
   const queryClient = useQueryClient();
 
+  // The consistent back affordance goes to the file this record came from when we know it,
+  // otherwise to the history list (a shared link carries no file_id). Never raw browser-back —
+  // the same rule as the sibling job page (`app/convert/[job_id]/page.tsx`).
+  const back = fileId
+    ? { href: `/files/${fileId}`, label: "Inspection" }
+    : { href: "/history", label: "History" };
+
   const [revalidateError, setRevalidateError] = useState<ErrorEnvelopeModel | null>(null);
   const [revalidating, setRevalidating] = useState(false);
   const [profile, setProfile] = useState("default");
@@ -125,7 +132,7 @@ export default function ConversionRecordPage() {
   if (query.isError) {
     return (
       <main className="space-y-4">
-        <BackLink href="/history" label="History" />
+        <BackLink href={back.href} label={back.label} />
         <ErrorEnvelope
           envelope={toErrorEnvelope(query.error, "NETWORK_ERROR", "Could not load this conversion.")}
         />
@@ -152,7 +159,7 @@ export default function ConversionRecordPage() {
 
   return (
     <main className="space-y-6">
-      <BackLink href="/history" label="History" />
+      <BackLink href={back.href} label={back.label} />
       {/* 1. Outcome header — quantitative, never celebratory. */}
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight text-strong">

@@ -32,12 +32,7 @@
             0.0
           ]
         ],
-        "masses": null,
-        "occupancies": [
-          1.0,
-          0.5,
-          null
-        ]
+        "masses": null
       },
       "cell": {
         "lattice_vectors": [
@@ -137,6 +132,11 @@
         "Na",
         "Cl",
         "Cl"
+      ],
+      "cif:occupancy": [
+        1.0,
+        0.5,
+        null
       ]
     },
     "custom_per_frame": {}

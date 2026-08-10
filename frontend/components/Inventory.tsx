@@ -40,9 +40,9 @@ function ParseWarningsBand({ report }: { report: DiscoveryReport }) {
   return (
     <section
       aria-label="Parse warnings"
-      className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3"
+      className="rounded-md border border-cb-warning bg-cb-warning-bg px-4 py-3"
     >
-      <h3 className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-cb-warning">
         <LossIcon kind="warning" />
         {report.issues.length === 1
           ? "This file parsed with 1 warning"
@@ -50,16 +50,16 @@ function ParseWarningsBand({ report }: { report: DiscoveryReport }) {
       </h3>
       <ul className="mt-2 space-y-2">
         {report.issues.map((issue, i) => (
-          <li key={`${issue.code}-${i}`} className="text-sm text-amber-900">
-            <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-xs text-amber-900">
+          <li key={`${issue.code}-${i}`} className="text-sm text-cb-warning">
+            <code className="rounded px-1.5 py-0.5 font-mono text-xs text-cb-warning">
               {issue.code}
             </code>{" "}
             <span>{issue.message}</span>
             {issue.location ? (
-              <span className="text-amber-700"> ({issue.location})</span>
+              <span className="text-cb-warning"> ({issue.location})</span>
             ) : null}
             {issue.recovery_hint ? (
-              <div className="mt-0.5 text-amber-700">{issue.recovery_hint}</div>
+              <div className="mt-0.5 text-cb-warning">{issue.recovery_hint}</div>
             ) : null}
           </li>
         ))}

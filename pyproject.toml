@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xtalate"
-version = "0.7.0"
+version = "1.0.0"
 description = "The trusted translation layer between computational chemistry file formats — a converter that tells you exactly what it kept, what it lost, and why."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -163,7 +163,7 @@ known-first-party = ["xtalate", "backend"]
 # the stubs without either breaking 3.11 or upper-capping a foundational dependency.
 python_version = "3.12"
 strict = true
-files = ["src", "tests", "backend"]
+files = ["src", "tests", "backend", "plugins/example-format/src"]
 # The M16B entry-point discovery fixture (tests/fixtures/xtalate_toyfmt) is an independently
 # packaged distribution with its own src/ root. It is installed — and thus importable — only
 # right before pytest, never when mypy runs, and its package root sits off the module search
