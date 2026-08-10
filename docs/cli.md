@@ -69,7 +69,8 @@ xtalate convert FILE --to FORMAT_ID [-o PATH] [--format FORMAT_ID]
 | `--json` | Print both reports as one JSON object. |
 
 A conversion that would need data the source lacks does not guess — it refuses unless you supply the
-value with `--recover`. See the [Developer Guide](./developer-guide) for the recovery scenarios.
+value with `--recover`. See the [API reference](./api#12-convert) for the recovery scenarios and
+their choices.
 
 ## validate
 

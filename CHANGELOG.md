@@ -17,6 +17,36 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+### Audited — M38: the v1.0 definition-of-done audit (the release packaging deliberately deferred)
+
+The finish-line review for the 1.0 release. It walks MASTER_SPEC Part 10 §6 — *"this list is the
+finish line; nothing else is"* — line by line and resolves each line to a **committed evidence
+artifact**, so the release record shows *"here is the proof we're done,"* not an unverified checklist.
+It adds **no product feature and no engine change** (`src/xtalate/` is untouched, so the pre-release
+nightly-green window is undisturbed) and the canonical `schema_version` stays `1.0.0`. **The release
+packaging — the version bump `0.7.0 → 1.0.0`, the CHANGELOG 1.0.0 release entry, the announcement, and
+the `git tag`/publish — is deliberately deferred to after a v1.0.0 architectural review** and is not
+in this milestone; the package version stays `0.7.0`.
+
+- **The §6 evidence artifact, [`docs/release/DOD_CHECKLIST_v1.0.md`](docs/release/DOD_CHECKLIST_v1.0.md).**
+  Each §6 line resolves to a file, a passing test, a CI run, or a marked ⏳ maintainer step. The two
+  halves a build session cannot execute — the 30-day nightly-green wall-clock and the real
+  *non-author* reproduction run — are marked ⏳ with their current state (the running green count; the
+  committed reproduction procedure), never silently ticked.
+- **A complete, CI-enforced project-level [`ATTRIBUTIONS.md`](ATTRIBUTIONS.md)** — the one real gap the
+  audit found (only a test-*data* attributions file existed). It records every runtime dependency and
+  its license (read from installed package metadata, not guessed); a completeness test
+  (`tests/test_attributions.py`) fails CI if a declared dependency is missing a row.
+- **A four-surface worked-example reproduction** — the three canonical worked examples reproduced on
+  library, CLI, HTTP API, and Web UI from the *published* docs only, with a committed
+  [`reproduction-procedure.md`](docs/release/reproduction-procedure.md) a real non-author can follow.
+  It found and fixed one reproduction-breaking docs defect (a stale upload route in the quickstart).
+- **A docs↔code drift review as a release blocker.** Every published doc was content-diffed against the
+  authoritative code surface (versions, endpoints, error codes, CLI flags, recovery scenarios, env
+  vars, SDK contracts); four drifts were found — one reproduction-breaking (an invalid `--recover`
+  example), three minor — and **all fixed in docs**, zero engine change. A drift needing a code change
+  would have been reconciled docs-side and ticketed, never fixed mid-freeze.
+
 ### Security — M37: the v1.0 security, performance, and operations discipline pass
 
 A hardening and operations-readiness milestone for the 1.0 release. It adds **no product feature and
