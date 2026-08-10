@@ -53,15 +53,7 @@
             1.47945
           ]
         ],
-        "masses": null,
-        "occupancies": [
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0
-        ]
+        "masses": null
       },
       "cell": {
         "lattice_vectors": [
@@ -167,6 +159,14 @@
         "O",
         "O",
         "O"
+      ],
+      "cif:occupancy": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
       ]
     },
     "custom_per_frame": {}

@@ -32,8 +32,7 @@
             0.0
           ]
         ],
-        "masses": null,
-        "occupancies": null
+        "masses": null
       },
       "cell": null,
       "dynamics": {
@@ -80,8 +79,7 @@
             0.01
           ]
         ],
-        "masses": null,
-        "occupancies": null
+        "masses": null
       },
       "cell": null,
       "dynamics": {

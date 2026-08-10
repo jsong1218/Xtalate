@@ -4,7 +4,7 @@ source_file: CONTCAR
 expected_canonical: expected.canonical.json
 canonical_schema_version: "0.1.0"
 sha256: "0bcb4aaffceb9d4292c8f9938ceefcad14759243bdd1b06f71a950f9953093e1"
-expected_sha256: "2dd0e30e8aa2acce7534d2072a4a1cc5924524663afc3d3afb488a7a1246a574"
+expected_sha256: "154ea84ee5b2862fe11214e0468c3c488f62c60a12bdc449897536e6622e0f8e"
 origin:
   kind: synthetic
   source: "Hand-authored CONTCAR (VASP-5 shape, Direct coords, CO diatomic) with a Cartesian velocity block"
