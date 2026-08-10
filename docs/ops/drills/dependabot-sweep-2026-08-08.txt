@@ -101,3 +101,20 @@ Tooling      : node v26.5.0 / npm 11.17.0 (local); the compose frontend builds o
   Dependabot re-scans the dependency graph on push; the twelve alerts auto-close once GitHub sees the
   lockfile no longer resolves any vulnerable version. This artifact is the local proof captured before
   push: the lockfile resolves only patched versions, and `npm audit` is clean.
+
+--- Correction addendum (2026-08-10, v1.0 architectural review F6) ---
+
+The original record's "patched (and semver-compatible) 8.x / 0.35.x" claim is wrong for sharp.
+next@15.5.21 declares its optional image optimizer as `sharp: ^0.34.3`, which for a 0.x version
+means `>=0.34.3 <0.35.0`; the override forces `sharp ^0.35.0` (lock resolves 0.35.3), which is
+OUTSIDE that declared range. The claim is correct for postcss (direct devDep + override aligned
+at ^8.5.23, within next's ^8.4.31 caret) — the sharp half of the sentence was the error.
+
+The exposure is dormant, not live: nothing in frontend/app or frontend/components imports
+`next/image`, and `npm run build` is clean. The override is deliberately kept — dropping it
+reopens the cleared advisory (#8) for nil live exposure, and no patched release exists in the
+^0.34.x line to re-pin to.
+
+Standing condition: revisit this override before ever adopting `next/image`. If that feature is
+ever introduced, the first task is to re-pin sharp inside next's declared range (or bump next to
+a release whose optional range admits the patched sharp), not to ship with the override.

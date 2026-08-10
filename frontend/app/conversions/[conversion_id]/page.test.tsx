@@ -16,9 +16,13 @@ import refusedRecord from "@/components/__fixtures__/conversion.record.refused.j
  * into the header would still render, and would still be wrong.
  */
 
+// Hoisted so the mocked `useSearchParams` returns a value tests can change per-case: the page's
+// back affordance and re-convert link branch on whether a live `file_id` was handed forward.
+const { urlSearchParams } = vi.hoisted(() => ({ urlSearchParams: new URLSearchParams() }));
+
 vi.mock("next/navigation", () => ({
   useParams: () => ({ conversion_id: "cnv-under-test" }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => urlSearchParams,
   useRouter: () => ({ push: vi.fn() }),
 }));
 
@@ -44,6 +48,7 @@ function renderWithRecord(body: unknown) {
 beforeEach(() => {
   apiPost.mockReset();
   apiPost.mockResolvedValue({ data: { job_id: "job-x" }, error: undefined });
+  urlSearchParams.delete("file_id");
 });
 
 describe("ConversionRecordPage", () => {
@@ -106,6 +111,27 @@ describe("ConversionRecordPage", () => {
     renderWithRecord(lossyRecord);
     const link = await screen.findByRole("link", { name: /convert another file/i });
     expect(link).toHaveAttribute("href", "/");
+  });
+
+  it("back returns to history when no file_id is known", async () => {
+    renderWithRecord(lossyRecord);
+    await screen.findByRole("heading", { level: 1 });
+    // A shared link carries no file_id; the honest destination is the history list.
+    expect(screen.getByRole("link", { name: "Back to History" })).toHaveAttribute(
+      "href",
+      "/history",
+    );
+  });
+
+  it("back returns to the file page when a live file_id was handed forward", async () => {
+    urlSearchParams.set("file_id", "file-42");
+    renderWithRecord(lossyRecord);
+    await screen.findByRole("heading", { level: 1 });
+    // Arriving from a live upload, back should return to that file — not drop the file in hand.
+    expect(screen.getByRole("link", { name: "Back to Inspection" })).toHaveAttribute(
+      "href",
+      "/files/file-42",
+    );
   });
 
   it("re-validates under the tolerance profile the reader chose, not always the default", async () => {

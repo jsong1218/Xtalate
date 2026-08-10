@@ -230,6 +230,8 @@ docs/private/
 /CLAUDE.md
 # Slice-implementer instructions for freebuff/DeepSeek; local working-tree file like CLAUDE.md, read from disk.
 /AGENTS.md
+# Local freebuff desktop app state (SQLite db + -shm/-wal); never commit the app's working state.
+/.freebuff/
 
 # Secrets (CLAUDE.md "Never commit secrets" / DECISIONS.md) — defensive, ahead of need:
 # no credentials exist in the v0.1 codebase yet, but these patterns are excluded before
