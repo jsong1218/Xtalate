@@ -37,7 +37,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             Skip to main content
           </a>
           {/* The public-demo banner (v1.1 M39-S1): rendered only when NEXT_PUBLIC_DEMO_BANNER is
-              set, i.e. only on the Hugging Face Spaces demo image — a self-host never sees it. */}
+              set, i.e. only on the hosted-demo image — a self-host never sees it. */}
           <DemoBanner />
           <AppHeader />
           <div

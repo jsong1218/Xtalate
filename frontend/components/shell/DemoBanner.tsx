@@ -6,7 +6,7 @@ import { humanBytes } from "@/lib/format";
 import { limitsQuery } from "@/lib/api/queries";
 
 /**
- * The public-demo banner (v1.1 M39-S1, the Hugging Face Spaces hosted demo).
+ * The public-demo banner (v1.1 M39-S1, re-targeted S1b — the hosted demo).
  *
  * Shown **only** when `NEXT_PUBLIC_DEMO_BANNER` is set — the baked demo image sets it; a self-host
  * never renders the banner. It states the demo's posture up front rather than letting a visitor

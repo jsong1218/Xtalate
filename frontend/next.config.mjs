@@ -29,7 +29,7 @@ const proxyClientMaxBodySize = backendMaxUploadBytes + PROXY_HEADROOM_BYTES;
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // The single-container Hugging Face Spaces demo (v1.1 M39-S1) runs the standalone Next server
+  // The single-container hosted demo (v1.1 M39-S1, re-targeted S1b) runs the standalone Next server
   // (`.next/standalone`) inside the same container as the backend, so the frontend needs the
   // self-contained bundle `output: "standalone"` produces. Purely additive: `next dev` ignores it,
   // and the ordinary `next build && next start` self-host still gets a working `.next/`, so no

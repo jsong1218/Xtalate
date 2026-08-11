@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DemoBanner } from "./DemoBanner";
 
 /**
- * The public-demo banner (v1.1 M39-S1) is env-flagged: it exists so the Hugging Face Spaces demo
+ * The public-demo banner (v1.1 M39-S1) is env-flagged: it exists so the hosted demo
  * states its ephemeral posture up front, and it must be **absent** everywhere else — a self-host
  * must never render "Public demo". The two load-bearing invariants, each a test:
  *  1. flag-off → nothing renders, and the limits query never fires (the demo-only surface must not
