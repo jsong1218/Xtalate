@@ -117,6 +117,7 @@ def resolve_reference_choices(
     repository: Repository,
     object_store: ObjectStore,
     registry: Registry,
+    max_frames: int | None = None,
 ) -> dict[str, Any]:
     """Turn an ``upload_reference`` choice's ``reference`` file_id into a parsed canonical object.
 
@@ -134,7 +135,7 @@ def resolve_reference_choices(
     :class:`~xtalate.recovery.RecoveryError`, which the runner maps to ``INVALID_RECOVERY_CHOICE``.
     Returns a new mapping; the input is not mutated.
     """
-    from xtalate.conversion import parse_with_recovery
+    from xtalate.conversion import FrameLimitExceeded, parse_with_recovery
     from xtalate.recovery import RecoveryError
 
     resolved: dict[str, Any] = {}
@@ -166,7 +167,13 @@ def resolve_reference_choices(
         with object_store.open(upload.storage_key) as chunks:
             data = b"".join(chunks)
         try:
-            canonical = parse_with_recovery(registry, data, filename=upload.filename).canonical
+            canonical = parse_with_recovery(
+                registry, data, filename=upload.filename, max_frames=max_frames
+            ).canonical
+        except FrameLimitExceeded:
+            # A frame-cap refusal is a policy answer, not a bad choice — it keeps its own stable
+            # code (422 FRAME_LIMIT_EXCEEDED) instead of being folded into INVALID_RECOVERY_CHOICE.
+            raise
         except Exception as exc:  # noqa: BLE001 - an unparseable reference is a bad choice, not a 500.
             raise RecoveryError(
                 f"{scenario} 'upload_reference': reference file {reference!r} could not be parsed"

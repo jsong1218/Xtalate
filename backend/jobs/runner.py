@@ -216,10 +216,21 @@ def _failure_body(exc: Exception, settings: Settings, request_id: str | None) ->
     """
     from backend.jobs.revalidate import RevalidateError
     from xtalate.recovery import RecoveryError
-    from xtalate.sdk import ParseError
+    from xtalate.sdk import FrameLimitExceeded, ParseError
 
     if isinstance(exc, RevalidateError):
         return _error_body(settings, "VALIDATION_UNAVAILABLE", str(exc), {}, request_id)
+    if isinstance(exc, FrameLimitExceeded):
+        # The frame cap fired during the streaming read — the Part 6 §5 ``422 PARSE_ERROR``-class
+        # ``FRAME_LIMIT_EXCEEDED`` refusal, distinct from a *refused* conversion (a completed
+        # HTTP-200 job): this is a failed job.
+        return _error_body(
+            settings,
+            "FRAME_LIMIT_EXCEEDED",
+            str(exc),
+            {"frame_count": exc.frame_count, "max_frames": exc.max_frames},
+            request_id,
+        )
     if isinstance(exc, ParseError):
         codes = {issue.code for issue in exc.issues if issue.severity == "error"}
         code = "UNKNOWN_FORMAT" if codes == {"UNKNOWN_FORMAT"} else "PARSE_ERROR"
@@ -256,7 +267,7 @@ def _dispatch(
     assembled later from those rows by :func:`~backend.jobs.result.build_job_result` (one source of
     truth — the persisted state — for both the worker and every poll)."""
     if job.kind == "inspect":
-        _run_inspect(job, upload, repository, object_store, registry)
+        _run_inspect(job, upload, repository, object_store, registry, settings)
     elif job.kind == "convert":
         _run_convert(job, upload, repository, object_store, registry, settings)
     elif job.kind == "validate":
@@ -271,6 +282,7 @@ def _run_inspect(
     repository: Repository,
     object_store: ObjectStore,
     registry: Registry,
+    settings: Settings,
 ) -> None:
     """Discovery Engine over the uploaded bytes — the ``xtalate inspect`` path (Part 3 §6)."""
     from backend.db.models import Report
@@ -281,7 +293,12 @@ def _run_inspect(
     override = job.request.get("format_override") or upload.format_override
     data = _read_bytes(object_store, upload.storage_key)
     report = DiscoveryEngine(registry).discover(
-        data, filename=upload.filename, format_override=override
+        data,
+        filename=upload.filename,
+        format_override=override,
+        # The frame cap is a service policy (M39-S3, F1): an over-cap trajectory is refused
+        # mid-stream (``FrameLimitExceeded`` → 422 ``FRAME_LIMIT_EXCEEDED``) without materializing.
+        max_frames=settings.max_frames,
     )
     repository.add_report(
         Report(
@@ -327,6 +344,8 @@ def _run_convert(
         repository=repository,
         object_store=object_store,
         registry=registry,
+        # Reference files are uploads too — the frame cap applies to any parse this job drives.
+        max_frames=settings.max_frames,
     )
     allow_recovery = bool(options.get("allow_recovery", False))
     # Resume merges the user's answers into the request and marks them (M23 slice 2); the flag is
@@ -335,7 +354,13 @@ def _run_convert(
 
     data = _read_bytes(object_store, upload.storage_key)
     parsed = parse_with_recovery(
-        registry, data, filename=upload.filename, recovery_choices=recovery_choices
+        registry,
+        data,
+        filename=upload.filename,
+        recovery_choices=recovery_choices,
+        # The frame cap is a service policy (M39-S3, F1): an over-cap trajectory is refused
+        # mid-stream (``FrameLimitExceeded`` → 422 ``FRAME_LIMIT_EXCEEDED``) without materializing.
+        max_frames=settings.max_frames,
     )
     repository.set_job_progress(job.job_id, {"phase": "converting"})
     engine = ConversionEngine(registry)

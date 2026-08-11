@@ -22,7 +22,13 @@ from xtalate.capabilities import Registry
 from xtalate.discovery.report import DiscoveryReport, FieldPresenceEntry
 from xtalate.discovery.sniffer import Sniffer, SniffResult
 from xtalate.schema import CanonicalObject
-from xtalate.sdk import CapabilityLevel, ParseError, ParseIssue, collapse_frame_issues
+from xtalate.sdk import (
+    CapabilityLevel,
+    ParseError,
+    ParseIssue,
+    collapse_frame_issues,
+    enforce_max_frames,
+)
 
 # The canonical scientific leaf paths the Discovery Report is complete over (Part 3 §6.2, §6.3):
 # Part 2 §3.3–§3.7 plus frame.time and trajectory.timestep, in the §6.3 worked-example order.
@@ -54,11 +60,22 @@ class DiscoveryEngine:
         self._sniffer = Sniffer(registry)
 
     def discover(
-        self, data: bytes, *, filename: str | None = None, format_override: str | None = None
+        self,
+        data: bytes,
+        *,
+        filename: str | None = None,
+        format_override: str | None = None,
+        max_frames: int | None = None,
     ) -> DiscoveryReport:
         """Inspect ``data`` and return its Discovery Report (Part 3 §6). ``format_override``
         forces a parser (the sniff-override of §6.1); otherwise the sniffer selects one, and an
-        undetermined format raises ``ParseError`` (nothing can be inspected without a parser)."""
+        undetermined format raises ``ParseError`` (nothing can be inspected without a parser).
+
+        ``max_frames`` (optional; the HTTP service passes its ``settings.max_frames``) makes the
+        frame cap a real gate for inspect jobs too (M39-S3, F1): frames are counted as they stream
+        before the materialized parse, and an over-cap file is refused with
+        ``FrameLimitExceeded`` — an inspect job must not materialize a pathological trajectory
+        either."""
         sniff = self._sniffer.sniff(data, filename)
         format_id = format_override or sniff.format_id
         if format_id is None:
@@ -86,7 +103,10 @@ class DiscoveryEngine:
                 ]
             )
 
-        result = self._registry.get_parser(format_id).parse(BytesIO(data), filename=filename)
+        parser = self._registry.get_parser(format_id)
+        if max_frames is not None:
+            enforce_max_frames(parser, data, filename=filename, max_frames=max_frames)
+        result = parser.parse(BytesIO(data), filename=filename)
         canonical = result.canonical
 
         return DiscoveryReport(

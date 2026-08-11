@@ -37,7 +37,7 @@ from xtalate.recovery import (
     available_options,
 )
 from xtalate.schema import CanonicalObject
-from xtalate.sdk import ParseError, ParseIssue
+from xtalate.sdk import ParseError, ParseIssue, enforce_max_frames
 
 # A recoverable parse hint (Part 3 §5) → the recovery scenario that resolves it (Part 4 §3.3).
 _HINT_TO_SCENARIO = {
@@ -74,9 +74,15 @@ def parse_with_recovery(
     filename: str | None,
     format_override: str | None = None,
     recovery_choices: dict[str, dict[str, object]] | None = None,
+    max_frames: int | None = None,
 ) -> ParseRecovery:
     """Sniff + parse ``data``; if the parse raises a recoverable ``ParseError`` the caller supplied
-    a preset for, re-parse through the parser's ``parse_recover`` hook and record the Assumption."""
+    a preset for, re-parse through the parser's ``parse_recover`` hook and record the Assumption.
+
+    ``max_frames`` (optional; the HTTP service passes its ``settings.max_frames``) makes the frame
+    cap a real gate (M39-S3, F1): the trajectory's frames are counted as they stream **before** the
+    materialized parse, and an over-cap file is refused with ``FrameLimitExceeded`` without ever
+    building the whole object — the cap bounds worker memory, which is its entire point."""
     recovery_choices = recovery_choices or {}
     fmt = format_override or Sniffer(registry).sniff(data, filename).format_id
     if fmt is None:
@@ -100,6 +106,8 @@ def parse_with_recovery(
             ]
         )
     parser = registry.get_parser(fmt)
+    if max_frames is not None:
+        enforce_max_frames(parser, data, filename=filename, max_frames=max_frames)
     try:
         result = parser.parse(BytesIO(data), filename=filename)
         return ParseRecovery(canonical=result.canonical, format_id=fmt, issues=list(result.issues))

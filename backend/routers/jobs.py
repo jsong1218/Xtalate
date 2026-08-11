@@ -324,7 +324,7 @@ def preview_recovery(
     Additive to the Part 6 §3.2 recovery surface — a new endpoint, so non-breaking.
     """
     from backend.jobs.recovery import resolve_reference_choices
-    from xtalate.conversion import ConversionEngine, parse_with_recovery
+    from xtalate.conversion import ConversionEngine, FrameLimitExceeded, parse_with_recovery
     from xtalate.recovery import RecoveryError
 
     job = repository.get_job(job_id)
@@ -363,12 +363,20 @@ def preview_recovery(
 
     try:
         resolved = resolve_reference_choices(
-            effective, repository=repository, object_store=object_store, registry=registry
+            effective,
+            repository=repository,
+            object_store=object_store,
+            registry=registry,
+            max_frames=settings.max_frames,
         )
         with object_store.open(upload.storage_key) as chunks:
             data = b"".join(chunks)
         parsed = parse_with_recovery(
-            registry, data, filename=upload.filename, recovery_choices=resolved
+            registry,
+            data,
+            filename=upload.filename,
+            recovery_choices=resolved,
+            max_frames=settings.max_frames,
         )
         preview = ConversionEngine(registry).preview_recovery(
             parsed.canonical,
@@ -382,6 +390,16 @@ def preview_recovery(
             # `ConversionEngine.convert`'s `output_multifile` (Part 4 §3.3).
             output_multifile=False,
         )
+    except FrameLimitExceeded as exc:
+        # The frame cap fired while preview-parsing the job's trajectory or a reference file — a
+        # policy refusal with its own stable code (422 FRAME_LIMIT_EXCEEDED), not a bad choice and
+        # not a server fault (Part 6 §5, M39-S3).
+        raise ApiError(
+            status_code=422,
+            code="FRAME_LIMIT_EXCEEDED",
+            message=str(exc),
+            details={"frame_count": exc.frame_count, "max_frames": exc.max_frames},
+        ) from exc
     except RecoveryError as exc:
         # A choice offered but ill-parameterized (a non-integer Maxwell–Boltzmann seed, an
         # unparseable reference file) — a caller error, not a server fault (Part 6 §6).

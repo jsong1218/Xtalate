@@ -131,6 +131,13 @@ ERROR_CODES: tuple[ErrorCodeSpec, ...] = (
         "The format was identified but the file could not be parsed; recorded on the failed job, "
         "with the parse issues in `details.issues`.",
     ),
+    ErrorCodeSpec(
+        "FRAME_LIMIT_EXCEEDED",
+        422,
+        "The trajectory's frame count exceeds this instance's `max_frames` limit; the job was "
+        "refused during the streaming read (counted as it streams, before the remaining frames are "
+        "parsed). `details.frame_count` and `details.max_frames` state the numbers.",
+    ),
     # --- Conversion, recovery, validation ------------------------------------------------------
     ErrorCodeSpec(
         "INVALID_RECOVERY_CHOICE",

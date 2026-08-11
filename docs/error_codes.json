@@ -26,6 +26,11 @@
       "summary": "No format with this id is registered on this instance. See the capabilities endpoint for the supported set."
     },
     {
+      "code": "FRAME_LIMIT_EXCEEDED",
+      "http_status": 422,
+      "summary": "The trajectory's frame count exceeds this instance's `max_frames` limit; the job was refused during the streaming read (counted as it streams, before the remaining frames are parsed). `details.frame_count` and `details.max_frames` state the numbers."
+    },
+    {
       "code": "HTTP_ERROR",
       "http_status": null,
       "summary": "A framework-level HTTP error with no more specific code. The `request_id` links to the server log with the detail."

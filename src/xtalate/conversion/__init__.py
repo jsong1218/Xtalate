@@ -32,12 +32,16 @@ from xtalate.conversion.report import (
 )
 from xtalate.recovery import UnresolvedScenario
 
+# Re-exported: the conversion package is ``FrameLimitExceeded``'s named home (M39-S3).
+from xtalate.sdk import FrameLimitExceeded
+
 __all__ = [
     "Assumption",
     "CompletenessInvariantError",
     "ConversionEngine",
     "ConversionReport",
     "ConversionResult",
+    "FrameLimitExceeded",
     "ParseRecovery",
     "PreflightDiff",
     "PreservedEntry",

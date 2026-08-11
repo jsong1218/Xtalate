@@ -111,6 +111,16 @@ know the format, pass it explicitly rather than relying on sniffing.
 could not be parsed. `details.issues` lists the specific parse issues — a truncated record, a
 malformed line — so you can see exactly where reading failed.
 
+### FRAME_LIMIT_EXCEEDED
+
+**HTTP 422 on the failed job.** The trajectory's frame count exceeds this instance's `max_frames`
+limit. The job was refused **during the streaming read** — frames are counted as they stream, so an
+over-cap file is refused before the remaining frames are ever parsed (the cap bounds worker memory;
+this is the gate for a tiny-structure file with an enormous frame count). `details.frame_count` and
+`details.max_frames` state the numbers. Reduce the frame count (or the target format's frame
+selection) and re-submit; there is no frame cap on the CLI or a self-hosted instance.
+
+
 ## Conversion, recovery, and validation
 
 ### INVALID_RECOVERY_CHOICE
