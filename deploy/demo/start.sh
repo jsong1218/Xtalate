@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
 # start.sh — the hosted-demo launcher (v1.1 M39-S1, re-targeted S1b).
 #
-# One container, two processes: the FastAPI service on :8000 (Tier-0 defaults, no external
-# dependencies) and the Next.js standalone server on :3000 — or the platform-injected $PORT (Render
-# sets $PORT, e.g. 10000, and routes external traffic to it) — which proxies same-origin /v1/* to
-# the backend via API_PROXY_TARGET. Minimal and explicit: migrations first, backend in the
-# background, wait for real readiness, then the frontend in the foreground. If either process
-# exits, the script exits (non-zero on failure) so the platform restarts the container — a demo
-# that half-died must not keep serving a broken page.
+# One container, two processes: the FastAPI service on 127.0.0.1:8000 (Tier-0 defaults, no external
+# dependencies) and the Next.js standalone server on 0.0.0.0:$PORT (3000 by default, or the
+# platform-injected $PORT — Render sets it, e.g. 10000, and routes external traffic to it) — which
+# proxies same-origin /v1/* to the backend via API_PROXY_TARGET. Minimal and explicit: migrations
+# first, backend in the background, wait for real readiness, then the frontend in the foreground. If
+# either process exits, the script exits (non-zero on failure) so the platform restarts the
+# container — a demo that half-died must not keep serving a broken page.
+#
+# The backend binds LOOPBACK ONLY (127.0.0.1): it is an internal service reached solely through the
+# Next /v1 proxy inside this container, never from outside. Binding it to 0.0.0.0 would expose a
+# SECOND externally-visible port — and because the backend opens before the frontend (it comes up
+# during the readiness wait below), a platform that auto-detects the service port by scanning open
+# sockets (Render does) would latch onto :8000 and route the public URL straight to the API,
+# serving its NOT_FOUND envelope at `/` instead of the UI. Loopback-only leaves exactly one
+# externally-bound port — Next on 0.0.0.0:$PORT — so the platform can only route to the UI.
 #
 # tini is PID 1 (Dockerfile ENTRYPOINT), so signals reach the processes and zombies are reaped.
 set -euo pipefail
@@ -15,8 +23,8 @@ set -euo pipefail
 echo "[start.sh] applying migrations"
 alembic upgrade head
 
-echo "[start.sh] starting backend (uvicorn on :8000)"
-uvicorn backend.asgi:app --host 0.0.0.0 --port 8000 &
+echo "[start.sh] starting backend (uvicorn on 127.0.0.1:8000, loopback-only)"
+uvicorn backend.asgi:app --host 127.0.0.1 --port 8000 &
 BACKEND_PID=$!
 
 # Readiness, not liveness: /v1/health?ready=true only turns green once the database and object
