@@ -14,7 +14,7 @@
 # ~15 min idle and cold-starts in ~30-60s; ~5 GB/month bandwidth. Fine for a small demo.
 services:
   - type: web
-    name: xtalate-demo
+    name: xtalate
     runtime: docker
     plan: free
     dockerfilePath: ./deploy/demo/Dockerfile

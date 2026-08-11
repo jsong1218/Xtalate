@@ -40,6 +40,20 @@ backend). No env vars need setting — the demo policy is baked into the image a
 `$PORT`. Pick the default branch (or the milestone branch while the PR is open). The connect is the
 maintainer's manual step — no token or credential ever enters the repo.
 
+> **You MUST create the service as a Blueprint — not as a Web Service.** A **Web Service** creation
+> ignores `render.yaml` entirely and builds the repo-root `./Dockerfile` by default: the
+> backend-only Service image, which has **no frontend**. The public URL then serves the backend's
+> `{"error":{"code":"NOT_FOUND",…}}` envelope at `/` while Render still reports the service
+> **live** (the backend answers `/v1/health` too), so a "successful" deploy looks healthy and is
+> not. If a Web Service was already created, either **delete it and re-create as a Blueprint**, or
+> in **Settings → Build & Deploy** set **Dockerfile Path** to `./deploy/demo/Dockerfile` and
+> **Docker Build Context Directory** to `.`, then redeploy with **"Clear build cache & deploy"**.
+> (More in *Troubleshooting* below.)
+
+The service is named **`xtalate`**, so the Blueprint URL is **https://xtalate.onrender.com**.
+(If an existing service of that name is already deployed, delete it first — the subdomain is only
+freed once the service of that name is gone.)
+
 **2. Deploy.** The first build takes several minutes (npm ci, next build, pip install); deploys
 afterward are fast (the Dockerfile caches dependencies first). Every push to the linked branch
 auto-deploys.
@@ -50,6 +64,23 @@ next request; bandwidth is ~5 GB/month. Fine for a small demo — the 25 MB uplo
 `max_frames` frame cap keep any single job bounded on a small box. The demo banner's "ephemeral"
 posture already implies a demo that may sleep; if the cold start ever bothers users, the fix is the
 paid starter plan (no spin-down), not a code change.
+
+## Troubleshooting
+
+**Symptom: the public URL serves the backend's `{"error":{"code":"NOT_FOUND",…}}` JSON envelope at
+`/` instead of the app, while Render still reports the service "live".**
+
+**Cause:** the wrong image was built — the repo-root `./Dockerfile` (the backend-only Service image,
+no frontend) instead of `deploy/demo/Dockerfile`. The usual reasons: the service was created as
+**New → Web Service** (which ignores `render.yaml` and defaults to the root Dockerfile), or
+**Dockerfile Path** / **Docker Build Context Directory** were left at the root defaults.
+
+**Fix:** create the service as **New → Blueprint** (per the step-1 callout), or — if a Web Service
+already exists — either delete it and re-create as a Blueprint, or in **Settings → Build & Deploy**
+set **Dockerfile Path** to `./deploy/demo/Dockerfile` and **Docker Build Context Directory** to `.`,
+then redeploy with **"Clear build cache & deploy"**. A correct demo deploy serves the Next UI at `/`
+(which proxies `/v1` to the co-located backend), so the landing page renders, the banner shows the
+25 MB cap, and `/v1/health` answers through the proxy.
 
 ## Deploying on Fly.io (alternative, documented only)
 
