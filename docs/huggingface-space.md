@@ -64,7 +64,8 @@ cd /tmp/xtalate-demo
 cp "$REPO/deploy/huggingface/Dockerfile" .
 cp "$REPO/deploy/huggingface/README.md" .
 cp -r "$REPO/deploy" .
-cp "$REPO/pyproject.toml" "$REPO/src" .
+cp "$REPO/pyproject.toml" .
+cp -r "$REPO/src" .
 cp -r "$REPO/backend" "$REPO/alembic.ini" .
 cp -r "$REPO/frontend" .
 cp -r "$REPO/docs" .

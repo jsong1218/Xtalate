@@ -50,6 +50,18 @@ def _traj(n: int, *, corrupt_last: bool = False) -> bytes:
     return "".join(frames).encode()
 
 
+# A plain-XYZ frame, 2 atoms, with a frame label in the comment so successive frames are
+# distinguishable. No Lattice=/Properties= markers — the content sniffer routes it to the *plain*
+# XyzParser, the parser this suite's original fixtures could not exercise: it was whole-file by
+# default, so a count pass over it materialized the whole trajectory before counting (the M39
+# review catch — F1's exact tiny-structure/enormous-frame-count vector).
+_PLAIN_FRAME = "2\nframe {i}\nH 0.0 0.0 0.0\nH 1.0 0.0 0.0\n"
+
+# The same frame with one atom line dropped — parsing it raises ``ParseError`` (inconsistent atom
+# count), so it can prove a reader stopped before reaching it.
+_PLAIN_FRAME_CORRUPT = "2\nframe {i}\nH 0.0 0.0 0.0\nH 1.0 0.0\n"
+
+
 POSCAR = b"""single structure
 1.0
   4.0 0.0 0.0
@@ -61,6 +73,14 @@ Direct
   0.0 0.0 0.0
   0.5 0.5 0.5
 """
+
+
+def _plain_traj(n: int, *, corrupt_last: bool = False) -> bytes:
+    """``n`` good plain-XYZ frames, optionally with the final frame corrupt."""
+    frames = [_PLAIN_FRAME.format(i=i) for i in range(n)]
+    if corrupt_last:
+        frames[-1] = _PLAIN_FRAME_CORRUPT.format(i=n)
+    return "".join(frames).encode()
 
 
 @pytest.fixture
@@ -149,6 +169,38 @@ def test_single_structure_formats_skip_the_count_pass(registry: Registry) -> Non
     # skipped and the parse runs once (the skip exists so single-structure jobs pay nothing).
     parsed = parse_with_recovery(registry, POSCAR, filename="cell.poscar", max_frames=1)
     assert parsed.canonical.frame_count == 1
+
+
+# --- plain XYZ: the format the count pass used to materialize before counting --------------------
+
+
+def test_plain_xyz_convert_stream_counts_as_it_streams(engine: ConversionEngine) -> None:
+    with pytest.raises(FrameLimitExceeded) as excinfo:
+        engine.convert_stream(
+            io.BytesIO(_plain_traj(3)),
+            source_format_id="xyz",
+            target_format_id="extxyz",
+            output=io.BytesIO(),
+            max_frames=2,
+        )
+    assert excinfo.value.frame_count == 3  # the count-so-far when the gate fired
+
+
+def test_plain_xyz_never_reads_the_corrupt_frame(registry: Registry) -> None:
+    # Before the M39 review fix, plain XYZ materialized the whole trajectory in the count pass, so
+    # this corrupt third frame's ParseError surfaced instead of the cap refusal. With the streaming
+    # reader the count pass halts at frame 2 (cap 1) and the refusal wins — the corrupt frame is
+    # never read, proving the count stays ahead of materialization for plain XYZ too.
+    with pytest.raises(FrameLimitExceeded) as excinfo:
+        parse_with_recovery(
+            registry, _plain_traj(3, corrupt_last=True), filename="t.xyz", max_frames=1
+        )
+    assert excinfo.value.frame_count == 2
+
+
+def test_plain_xyz_at_cap_succeeds(registry: Registry) -> None:
+    parsed = parse_with_recovery(registry, _plain_traj(3), filename="t.xyz", max_frames=3)
+    assert parsed.canonical.frame_count == 3
 
 
 # --- discover: an inspect job is covered too -----------------------------------------------------

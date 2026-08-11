@@ -32,6 +32,17 @@ def _traj(n: int) -> bytes:
     return "".join(_FRAME.format(e=f"-1.{i}") for i in range(n)).encode()
 
 
+# One plain-XYZ frame, 2 atoms — genuine plain-XYZ content (no extXYZ Lattice=/Properties=
+# markers), so the content sniffer routes it to the *plain* XyzParser rather than the streaming
+# extXYZ one. The M39 review found the frame-cap count pass materialized this whole-file parser
+# before counting; the streaming reader makes the 422 fire before the frames past the cap are read.
+_PLAIN_FRAME = "2\nframe {i}\nH 0.0 0.0 0.0\nH 1.0 0.0 0.0\n"
+
+
+def _plain_traj(n: int) -> bytes:
+    return "".join(_PLAIN_FRAME.format(i=i) for i in range(n)).encode()
+
+
 def _upload(client: TestClient, content: bytes, filename: str) -> str:
     resp = client.post("/v1/upload", files={"file": (filename, content)})
     assert resp.status_code == 201, resp.text
@@ -75,6 +86,21 @@ def test_over_cap_inspect_is_refused_too(build_client: Callable[..., TestClient]
     assert env["state"] == "failed"
     assert env["error"]["code"] == "FRAME_LIMIT_EXCEEDED"
     assert env["error"]["details"] == {"frame_count": 3, "max_frames": 2}
+
+
+def test_over_cap_plain_xyz_convert_is_refused_422_frame_limit_exceeded(
+    build_client: Callable[..., TestClient],
+) -> None:
+    # The same refused path for a genuine plain-XYZ trajectory — the format whose count pass used
+    # to materialize before counting (the M39 review fix).
+    client = build_client(max_frames=2)
+    file_id = _upload(client, _plain_traj(3), "t.xyz")
+
+    env = client.post("/v1/convert", json={"file_id": file_id, "target_format_id": "extxyz"}).json()
+    assert env["state"] == "failed"
+    error = env["error"]
+    assert error["code"] == "FRAME_LIMIT_EXCEEDED"
+    assert error["details"] == {"frame_count": 3, "max_frames": 2}
 
 
 def test_limits_still_report_max_frames(build_client: Callable[..., TestClient]) -> None:

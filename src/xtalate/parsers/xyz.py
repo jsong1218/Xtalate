@@ -7,6 +7,15 @@ comment line per frame — and *nothing* else. Every other canonical field is th
 ``None`` on the resulting object; that is the absence convention (Part 2 §2), not a gap to
 be filled.
 
+**Streaming-first.** ``parse_stream`` is the real implementation and ``parse`` is defined as
+``materialize(parse_stream(...))``, so the whole-file and streamed readings are one code path
+and cannot diverge (M12; DECISIONS.md D56). Peak memory tracks one frame, never the trajectory
+length — the property the frame cap's count pass (M39-S3) relies on: an over-cap plain-XYZ
+trajectory is refused before the frames past the cap are read. One documented streaming nuance
+(D56): the reader splits lines on ``\\n``/``\\r\\n`` only, whereas ``splitlines()`` (the old
+whole-file path) also recognised bare ``\\r``; a file using bare ``\\r`` line endings is read as
+one (malformed) line rather than the frames ``splitlines()`` would have found.
+
 Grammar (one or more concatenated frames)::
 
     <atom count N>
@@ -21,19 +30,13 @@ so they are carried verbatim — one per frame — under
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import BinaryIO
 
 import numpy as np
-from pydantic import JsonValue
 
-from xtalate.parsers._common import build_provenance, decode_text
-from xtalate.schema import (
-    AtomsBlock,
-    CanonicalObject,
-    Frame,
-    TrajectoryMetadata,
-    UserMetadata,
-)
+from xtalate.parsers._common import build_provenance
+from xtalate.schema import SCHEMA_VERSION, AtomsBlock, Frame, TrajectoryMetadata
 from xtalate.schema.elements import is_valid_symbol
 from xtalate.sdk import (
     CapabilityLevel,
@@ -44,6 +47,7 @@ from xtalate.sdk import (
     ParseResult,
     ParserPlugin,
 )
+from xtalate.sdk.streaming import FrameStream, StreamFrame, StreamHeader, materialize
 
 FORMAT_ID = "xyz"
 _COMMENT_KEY = "xyz:comment"
@@ -64,6 +68,79 @@ def _looks_like_coordinate(line: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _error(
+    code: str, message: str, *, location: str | None = None, hint: str | None = None
+) -> ParseError:
+    return ParseError(
+        [
+            ParseIssue(
+                severity="error",
+                code=code,
+                message=message,
+                location=location,
+                recovery_hint=hint,
+            )
+        ]
+    )
+
+
+def _line_reader(stream: BinaryIO) -> Iterator[str]:
+    """Yield decoded lines off the raw byte stream one at a time.
+
+    Line-at-a-time (rather than ``stream.read()``) is what keeps the streaming parser's peak
+    memory bounded by one frame instead of the trajectory (M12). A non-UTF-8 byte raises the
+    structured ``ParseError`` of Part 3 §5 at the point of failure, exactly like the whole-file
+    reader's ``decode_text``; the byte offset named is the one *within the offending line*, since
+    a line-at-a-time reader has no file-global offset to report.
+    """
+    while True:
+        raw = stream.readline()
+        if raw == b"":
+            return
+        try:
+            yield raw.decode("utf-8").rstrip("\r\n")
+        except UnicodeDecodeError as exc:
+            raise _error(
+                "XYZ_ENCODING_ERROR",
+                f"file is not valid UTF-8 text (byte 0x{raw[exc.start]:02x}); xyz is a text format",
+            ) from exc
+
+
+class _Lines:
+    """A single-pass line source with one line of pushback and physical line numbers.
+
+    ``lineno`` is the 1-based number of the most recently *read* line (a pushed-back line keeps
+    its number), so the streaming reader's ``line N`` error locations match the numbering a
+    whole-file ``splitlines()`` read would have produced exactly.
+    """
+
+    def __init__(self, stream: BinaryIO) -> None:
+        self._iter = _line_reader(stream)
+        self._pushed: str | None = None
+        self.lineno = 0
+
+    def next(self) -> str | None:
+        if self._pushed is not None:
+            pushed = self._pushed
+            self._pushed = None
+            return pushed
+        line = next(self._iter, None)
+        if line is not None:
+            self.lineno += 1
+        return line
+
+    def push(self, line: str) -> None:
+        self._pushed = line
+
+
+def _first_significant(lines: _Lines) -> str | None:
+    """The first non-blank line, or ``None`` in a wholly blank/empty file."""
+    while (line := lines.next()) is not None:
+        if line.strip() != "":
+            return line
+    return None
 
 
 class XyzParser(ParserPlugin):
@@ -100,10 +177,19 @@ class XyzParser(ParserPlugin):
             score = min(score, 0.6)
         return score
 
+    # -- parse -------------------------------------------------------------------------
+
     def parse(self, stream: BinaryIO, *, filename: str | None) -> ParseResult:
-        lines = decode_text(stream.read(), format_id=FORMAT_ID).splitlines()
-        frames, comments, _corrupt = self._read_frames(lines, truncate=False)
-        return self._assemble(frames, comments, filename)
+        """Whole-file read, defined as the streamed read drained into an object.
+
+        Deliberately *not* a second implementation: ``materialize`` is the named fallback M12
+        introduced (DECISIONS.md D56), and routing ``parse`` through it means a streamed and a
+        whole-file XYZ reading are the same code, so they cannot disagree about a frame, a
+        warning, or the trajectory container.
+        """
+        frame_stream = self.parse_stream(stream, filename=filename)
+        canonical, issues = materialize(frame_stream)
+        return ParseResult(canonical=canonical, issues=issues)
 
     def parse_recover(
         self,
@@ -118,185 +204,195 @@ class XyzParser(ParserPlugin):
         (``truncate_at_last_valid_frame`` → ``truncate``, Part 4 §3.3).
 
         Only ``truncate`` reaches here — ``abort`` is the caller re-raising the original error, and
-        is handled in the orchestration, not the parser. Re-reads the file in stop-on-corrupt mode
-        and records the truncation as a warning ``ParseIssue`` so the dropped tail is not silent."""
+        is handled in the orchestration, not the parser. Re-reads through the *same* streaming path
+        in truncate mode, so the kept prefix is read by exactly the code that reads an intact file,
+        and the truncation is recorded as a warning ``ParseIssue`` so the dropped tail is not
+        silent (P1). A re-read that finds nothing corrupt returns the clean parse without
+        inventing a truncation record.
+        """
         if hint != "truncate_at_last_valid_frame":
             raise NotImplementedError(f"xyz parse_recover does not handle hint {hint!r}")
         if choice != "truncate":
             raise NotImplementedError(
                 f"xyz parse_recover applies only the 'truncate' choice (got {choice!r})"
             )
-        lines = decode_text(stream.read(), format_id=FORMAT_ID).splitlines()
-        frames, comments, corrupt = self._read_frames(lines, truncate=True)
-        if corrupt is None:
-            # The file re-parsed cleanly (the corruption was transient / already absent) — nothing
-            # to truncate; return the clean parse without inventing a truncation record.
-            return self._assemble(frames, comments, filename)
-        note = ParseIssue(
-            severity="warning",
-            code="XYZ_TRUNCATED",
-            message=(
-                f"kept frames 0..{len(frames) - 1} and discarded the corrupt tail beginning at "
-                f"frame {len(frames)} ({corrupt.message})"
-            ),
-            location=corrupt.location,
-        )
-        return self._assemble(frames, comments, filename, extra_issues=[note])
+        frame_stream = self.parse_stream(stream, filename=filename, truncate=True)
+        canonical, issues = materialize(frame_stream)
+        return ParseResult(canonical=canonical, issues=issues)
 
-    def _read_frames(
-        self, lines: list[str], *, truncate: bool
-    ) -> tuple[list[Frame], list[JsonValue], ParseIssue | None]:
-        """Read every frame. With ``truncate=False`` a corrupt frame raises (the normal contract);
-        with ``truncate=True`` it *stops* at the last valid frame and returns the good prefix plus
-        the corrupt frame's issue — but only if at least one valid frame precedes it (truncating to
-        nothing is not a recovery). Returns ``(frames, comments, corrupt_issue_or_None)``."""
-        frames: list[Frame] = []
-        comments: list[JsonValue] = []
-        i = 0
-        n_lines = len(lines)
+    def supports_streaming(self) -> bool:
+        return True
 
-        # Skip any leading blank lines, but a wholly blank/empty file is a parse error.
-        while i < n_lines and lines[i].strip() == "":
-            i += 1
-        if i >= n_lines:
-            raise ParseError(
-                [ParseIssue(severity="error", code="XYZ_EMPTY", message="file contains no frames")]
-            )
+    def parse_stream(
+        self, stream: BinaryIO, *, filename: str | None, truncate: bool = False
+    ) -> FrameStream:
+        """Header-eager, frame-lazy plain XYZ parse (M12; Part 3 §2).
 
-        frame_index = 0
-        while i < n_lines:
-            if lines[i].strip() == "":
-                i += 1
-                continue  # tolerate blank separators between frames
-            try:
-                frame, comment, i = self._read_one_frame(lines, i, frame_index)
-            except ParseError as exc:
-                if truncate and frames:
-                    return frames, comments, exc.issues[0]
-                raise
-            frames.append(frame)
-            comments.append(comment)
-            frame_index += 1
-        return frames, comments, None
+        Reads the file **one frame at a time** off the raw byte stream, so peak memory tracks the
+        resident frame, never the frame count — the property the frame cap's count pass (M39-S3)
+        relies on: an over-cap trajectory is refused before the frames past the cap are read. The
+        object-level header (``provenance``, the trajectory container) depends on nothing per
+        frame and is established eagerly; every frame is yielded lazily, each built by the same
+        ``_read_one_frame`` grammar the error contract documents (Part 3 §5).
 
-    def _read_one_frame(
-        self, lines: list[str], i: int, frame_index: int
-    ) -> tuple[Frame, JsonValue, int]:
-        """Read the single frame whose non-blank header is at line ``i``. Returns the frame, its
-        comment line, and the next line index. Raises ``ParseError`` on any malformation — mid-file
-        truncation-recoverable corruption carries ``recovery_hint="truncate_at_last_valid_frame"``.
+        ``truncate`` is the internal switch ``parse_recover`` sets to apply the caller's
+        ``truncate_at_last_valid_frame`` choice: a recoverable error mid-stream then *ends* the
+        stream at the last good frame (recording a warning) instead of propagating. It is not part
+        of the ``ParserPlugin.parse_stream`` contract — callers reach it through ``parse_recover``,
+        so the default read stays the honest one that refuses a corrupt file.
         """
-        n_lines = len(lines)
-        header = lines[i].strip()
+        issues: list[ParseIssue] = []
+        lines = _Lines(stream)
+        first = _first_significant(lines)
+        if first is None:
+            raise _error("XYZ_EMPTY", "file contains no frames")
+        lines.push(first)
+
+        header = StreamHeader(
+            schema_version=SCHEMA_VERSION,
+            provenance=build_provenance(
+                format_id=FORMAT_ID,
+                filename=filename,
+                original_coordinate_system="cartesian",
+                source_units={"positions": "angstrom"},
+                parse_notes=[
+                    "comment lines preserved in user_metadata.custom_per_frame['xyz:comment']"
+                ],
+            ),
+            # A single-frame XYZ is a static structure (trajectory=None, Part 2 §3.2); multiple
+            # frames form a trajectory whose source declares no time base (timestep=None, §8.1).
+            # ``materialize`` drops the container for a single-frame stream, reproducing the
+            # whole-file object exactly.
+            trajectory=TrajectoryMetadata(timestep=None),
+        )
+
+        def _frames() -> Iterator[StreamFrame]:
+            yielded = 0
+            try:
+                while True:
+                    read = self._read_one_frame(lines, yielded)
+                    if read is None:
+                        return
+                    frame, comment = read
+                    yielded += 1
+                    yield StreamFrame(frame=frame, per_frame_custom={_COMMENT_KEY: comment})
+            except ParseError as exc:
+                # Truncate mode: a *recoverable* mid-stream error ends the stream at the last good
+                # frame instead of propagating (the caller asked for the valid prefix via
+                # parse_recover). Two guards keep this honest: only errors the parser itself marked
+                # recoverable are swallowed — a structurally wrong file (bad header, invalid
+                # symbol) still raises, because that is not a torn tail — and the truncation is
+                # recorded as a warning so the dropped frames are never silent (P1).
+                issue = exc.issues[0]
+                if not (truncate and issue.recovery_hint == "truncate_at_last_valid_frame"):
+                    raise
+                if yielded == 0:
+                    # Truncating to nothing is not a recovery: there is no valid prefix to keep,
+                    # so the honest answer is the original error.
+                    raise
+                issues.append(
+                    ParseIssue(
+                        severity="warning",
+                        code="XYZ_TRUNCATED",
+                        message=(
+                            f"kept frames 0..{yielded - 1} and discarded the corrupt tail "
+                            f"beginning at frame {yielded} ({issue.message})"
+                        ),
+                        location=issue.location,
+                    )
+                )
+
+        return FrameStream(header, _frames(), issues=issues)
+
+    def _read_one_frame(self, lines: _Lines, frame_index: int) -> tuple[Frame, str] | None:
+        """Read the single frame whose count line is next, or ``None`` at a clean end of file.
+
+        Returns the frame and its comment line. Raises the same ``ParseError``s the whole-file
+        reader raised, with the same codes, messages, and ``line N`` / ``frame N`` locations
+        (Part 3 §5 rule 4) — this *is* that reader now, reading one line at a time. Mid-file
+        truncation-recoverable corruption carries
+        ``recovery_hint=\"truncate_at_last_valid_frame\"``.
+        """
+        # Skip blank separators between frames; running out of lines here is a clean end of the
+        # trajectory (a wholly blank file was already refused as ``XYZ_EMPTY`` by the eager
+        # header check).
+        while True:
+            line = lines.next()
+            if line is None or line.strip() != "":
+                break
+        if line is None:
+            return None
+        header = line.strip()
         try:
             count = int(header)
         except ValueError as exc:
-            raise ParseError(
-                [
-                    ParseIssue(
-                        severity="error",
-                        code="XYZ_MALFORMED_HEADER",
-                        message=f"expected an integer atom count, found {header!r}",
-                        location=f"line {i + 1}",
-                    )
-                ]
+            raise _error(
+                "XYZ_MALFORMED_HEADER",
+                f"expected an integer atom count, found {header!r}",
+                location=f"line {lines.lineno}",
             ) from exc
         if count <= 0:
-            raise ParseError(
-                [
-                    ParseIssue(
-                        severity="error",
-                        code="XYZ_MALFORMED_HEADER",
-                        message=f"atom count must be positive, found {count}",
-                        location=f"line {i + 1}",
-                    )
-                ]
+            raise _error(
+                "XYZ_MALFORMED_HEADER",
+                f"atom count must be positive, found {count}",
+                location=f"line {lines.lineno}",
             )
         # Comment line (may be empty; the line must still exist).
-        if i + 1 >= n_lines:
-            raise ParseError(
-                [
-                    ParseIssue(
-                        severity="error",
-                        code="XYZ_INCONSISTENT_ATOM_COUNT",
-                        message=(
-                            f"frame {frame_index} declares {count} atoms but the file ends "
-                            "before its comment line and coordinates"
-                        ),
-                        location=f"frame {frame_index}",
-                        recovery_hint="truncate_at_last_valid_frame",
-                    )
-                ]
+        comment = lines.next()
+        if comment is None:
+            raise _error(
+                "XYZ_INCONSISTENT_ATOM_COUNT",
+                (
+                    f"frame {frame_index} declares {count} atoms but the file ends "
+                    "before its comment line and coordinates"
+                ),
+                location=f"frame {frame_index}",
+                hint="truncate_at_last_valid_frame",
             )
-        comment = lines[i + 1]
-        body_start = i + 2
-        body_end = body_start + count
-        if body_end > n_lines:
-            found = n_lines - body_start
-            raise ParseError(
-                [
-                    ParseIssue(
-                        severity="error",
-                        code="XYZ_INCONSISTENT_ATOM_COUNT",
-                        message=(
-                            f"frame {frame_index} declares {count} atoms but only {found} "
-                            "coordinate lines are present before end of file"
-                        ),
-                        location=f"frame {frame_index}",
-                        recovery_hint="truncate_at_last_valid_frame",
-                    )
-                ]
-            )
-
         symbols: list[str] = []
         positions: list[list[float]] = []
-        for j in range(body_start, body_end):
-            parts = lines[j].split()
+        for j in range(count):
+            row = lines.next()
+            if row is None:
+                raise _error(
+                    "XYZ_INCONSISTENT_ATOM_COUNT",
+                    (
+                        f"frame {frame_index} declares {count} atoms but only {j} "
+                        "coordinate lines are present before end of file"
+                    ),
+                    location=f"frame {frame_index}",
+                    hint="truncate_at_last_valid_frame",
+                )
+            parts = row.split()
             if len(parts) < 4:
                 # Fewer tokens than "<symbol> x y z" means the declared count is wrong:
                 # a coordinate row is missing (Part 3 §5 rule 4 — mid-file corruption).
-                raise ParseError(
-                    [
-                        ParseIssue(
-                            severity="error",
-                            code="XYZ_INCONSISTENT_ATOM_COUNT",
-                            message=(
-                                f"frame {frame_index} declares {count} atoms but line "
-                                f"{j + 1} is not a '<symbol> x y z' coordinate row: "
-                                f"{lines[j]!r}"
-                            ),
-                            location=f"frame {frame_index}",
-                            recovery_hint="truncate_at_last_valid_frame",
-                        )
-                    ]
+                raise _error(
+                    "XYZ_INCONSISTENT_ATOM_COUNT",
+                    (
+                        f"frame {frame_index} declares {count} atoms but line {lines.lineno} "
+                        f"is not a '<symbol> x y z' coordinate row: {row!r}"
+                    ),
+                    location=f"frame {frame_index}",
+                    hint="truncate_at_last_valid_frame",
                 )
             symbol = parts[0]
             if not is_valid_symbol(symbol):
-                raise ParseError(
-                    [
-                        ParseIssue(
-                            severity="error",
-                            code="XYZ_INVALID_SYMBOL",
-                            message=(
-                                f"unknown element symbol {symbol!r} at line {j + 1} "
-                                "(use 'X' for a genuinely unknown species, Part 2 §3.3)"
-                            ),
-                            location=f"line {j + 1}",
-                        )
-                    ]
+                raise _error(
+                    "XYZ_INVALID_SYMBOL",
+                    (
+                        f"unknown element symbol {symbol!r} at line {lines.lineno} "
+                        "(use 'X' for a genuinely unknown species, Part 2 §3.3)"
+                    ),
+                    location=f"line {lines.lineno}",
                 )
             try:
                 xyz = [float(parts[1]), float(parts[2]), float(parts[3])]
             except ValueError as exc:
-                raise ParseError(
-                    [
-                        ParseIssue(
-                            severity="error",
-                            code="XYZ_MALFORMED_COORDINATE",
-                            message=f"non-numeric coordinate at line {j + 1}: {lines[j]!r}",
-                            location=f"line {j + 1}",
-                        )
-                    ]
+                raise _error(
+                    "XYZ_MALFORMED_COORDINATE",
+                    f"non-numeric coordinate at line {lines.lineno}: {row!r}",
+                    location=f"line {lines.lineno}",
                 ) from exc
             symbols.append(symbol)
             positions.append(xyz)
@@ -305,37 +401,7 @@ class XyzParser(ParserPlugin):
             index=frame_index,
             atoms=AtomsBlock(symbols=symbols, positions=np.asarray(positions, dtype=float)),
         )
-        return frame, comment, body_end
-
-    def _assemble(
-        self,
-        frames: list[Frame],
-        comments: list[JsonValue],
-        filename: str | None,
-        *,
-        extra_issues: list[ParseIssue] | None = None,
-    ) -> ParseResult:
-        # Comment lines are information — one per frame, carried verbatim (§6.1).
-        user_metadata = UserMetadata(custom_per_frame={_COMMENT_KEY: comments})
-        provenance = build_provenance(
-            format_id=FORMAT_ID,
-            filename=filename,
-            original_coordinate_system="cartesian",
-            source_units={"positions": "angstrom"},
-            parse_notes=[
-                "comment lines preserved in user_metadata.custom_per_frame['xyz:comment']"
-            ],
-        )
-        # A single-frame XYZ is a static structure (trajectory=None, Part 2 §3.2); multiple
-        # frames form a trajectory whose source declares no time base (timestep=None, §8.1).
-        trajectory = None if len(frames) == 1 else TrajectoryMetadata(timestep=None)
-        canonical = CanonicalObject(
-            frames=frames,
-            trajectory=trajectory,
-            provenance=provenance,
-            user_metadata=user_metadata,
-        )
-        return ParseResult(canonical=canonical, issues=extra_issues or [])
+        return frame, comment
 
     def capabilities(self) -> FormatCapabilities:
         full = FieldCapability(level=CapabilityLevel.FULL)

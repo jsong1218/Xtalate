@@ -228,10 +228,12 @@ def enforce_max_frames(
     whole CanonicalObject**: the count pass reads frames one at a time through
     :func:`parse_as_stream` and stops at ``max_frames + 1``. A parser whose declared read
     ``max_frames`` is a fixed small number (single-structure formats: ``1``) can never exceed the
-    cap and is skipped, so POSCAR/CIF jobs pay nothing. A ``ParseError`` raised mid-count is
-    swallowed — the real parse that follows reproduces it (and its recovery path) identically; only
-    the frame-count refusal propagates. Count-so-far is the cap + 1 — the count at which the gate
-    fired.
+    cap and is skipped, so POSCAR/CIF jobs pay nothing. Every trajectory-capable parser streams
+    (extXYZ, plain XYZ, XDATCAR, ASE traj — M12/D56; plain XYZ joined after the M39 review), so an
+    over-cap file is read only up to ``max_frames + 1`` frames for every format the service reads
+    — never materialized first. A ``ParseError`` raised mid-count is swallowed — the real parse
+    that follows reproduces it (and its recovery path) identically; only the frame-count refusal
+    propagates. Count-so-far is the cap + 1 — the count at which the gate fired.
     """
     caps = parser.capabilities()
     if caps.max_frames is not None and caps.max_frames <= max_frames:
