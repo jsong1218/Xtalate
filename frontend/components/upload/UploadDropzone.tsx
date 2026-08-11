@@ -4,8 +4,11 @@ import { useRef, useState, type DragEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import type { ErrorEnvelope as ErrorEnvelopeModel } from "@/lib/report/types";
+import { humanBytes } from "@/lib/format";
 import type { UploadProgress } from "@/lib/api/upload";
 import type { UploadStatus } from "@/lib/api/useUpload";
+
+export { humanBytes };
 
 /**
  * The upload drop zone (MASTER_SPEC Part 7 §2.2, the M28-S1 front door to a file resource).
@@ -21,16 +24,6 @@ import type { UploadStatus } from "@/lib/api/useUpload";
  * is not computable) — never a fabricated easing animation (Part 7 §2.4).
  */
 
-/** Human-readable size for the limit line, e.g. 52428800 → "50 MB". Exported for its unit test. */
-export function humanBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${Math.round(kb)} KB`;
-  const mb = kb / 1024;
-  if (mb < 1024) return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`;
-  const gb = mb / 1024;
-  return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`;
-}
 
 export function UploadDropzone({
   maxUploadBytes,

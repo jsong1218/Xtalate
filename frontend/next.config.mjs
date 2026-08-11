@@ -29,6 +29,13 @@ const proxyClientMaxBodySize = backendMaxUploadBytes + PROXY_HEADROOM_BYTES;
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // The single-container Hugging Face Spaces demo (v1.1 M39-S1) runs the standalone Next server
+  // (`.next/standalone`) inside the same container as the backend, so the frontend needs the
+  // self-contained bundle `output: "standalone"` produces. Purely additive: `next dev` ignores it,
+  // and the ordinary `next build && next start` self-host still gets a working `.next/`, so no
+  // existing flow (compose dev stack, CI production build, docker-compose.prod.yml edge build)
+  // changes behaviour.
+  output: "standalone",
   experimental: {
     // Raise the proxy body-clone ceiling above the backend's upload limit (see above). Without this
     // every upload over Next's 10 MB default fails with an opaque 500 before reaching the API.
