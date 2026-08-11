@@ -69,15 +69,11 @@ WILDCARD_PREFIXES: frozenset[str] = frozenset(_CATEGORY_MODELS) | {"frame"}
 #: re-derivation of the invariant must not import the value it checks against.)
 DERIVED_PATHS: frozenset[str] = frozenset({"atoms.atomic_numbers"})
 
-#: The ``user_metadata.custom_per_atom`` key holding fractional site occupancy — the Canonical
-#: Model's one *named* gap (Part 3 §3 n.11) and a standing promotion candidate under the
-#: schema-evolution path of Part 2 §6 rule 4. It lives here, with the path authority, rather than
-#: in the CIF parser that currently writes it, for two reasons: the layers that must *recognise*
-#: occupancy without knowing anything about CIF — the pre-flight diff, which warns that no target
-#: can represent partial occupancy — cannot import a parser without inverting the import graph;
-#: and when the promotion happens, the key being migrated *from* is a schema fact, so the
-#: migration is written where the schema is.
-OCCUPANCY_CUSTOM_KEY = "cif:occupancy"
+# The occupancy carry-through key's definition lives with the migration that moves it
+# (``migrations._LEGACY_OCCUPANCY_KEY``) — the one schema-layer definition of the ``cif:occupancy``
+# spelling since M35 promoted it to first-class ``atoms.occupancies``. The dead duplicate that used
+# to sit here (``OCCUPANCY_CUSTOM_KEY``) was deleted in M39-S2 (F14); ``tests/schema/`` pins the
+# single-definition property.
 
 
 def is_full_occupancy(value: Any) -> bool:
@@ -87,15 +83,16 @@ def is_full_occupancy(value: Any) -> bool:
     not such a statement, so they are not full: treating silence as fullness would turn the
     source's unknown into an assertion (**P4**).
 
-    It lives beside the key for the same reason the key lives here. What counts as a full site is
-    a fact about ``cif:occupancy`` itself, not a policy of whichever layer happens to ask — and
-    two layers do ask, from opposite ends of the pipeline. The pre-flight diff asks in order to
-    warn that no target can represent a partial site; the CIF parser asks in order to say
-    something *true* in its own warning. A parser cannot import the conversion layer without
-    inverting the import graph, so a second definition would have had to be written next to the
-    first, and the two spellings of "full" would then be free to drift apart — which, on a
-    predicate this small and this load-bearing, would be a silent stoichiometry bug waiting to
-    happen (v0.4 standing rule 4).
+    It lives in ``schema`` for the same reason the key's definition does
+    (``migrations._LEGACY_OCCUPANCY_KEY``): what counts as a full site is a fact about
+    ``cif:occupancy`` itself, not a policy of whichever layer happens to ask — and two layers do
+    ask, from opposite ends of the pipeline. The pre-flight diff asks in order to warn that no
+    target can represent a partial site; the CIF parser asks in order to say something *true* in
+    its own warning. A parser cannot import the conversion layer without inverting the import
+    graph, so a second definition would have had to be written next to the first, and the two
+    spellings of "full" would then be free to drift apart — which, on a predicate this small and
+    this load-bearing, would be a silent stoichiometry bug waiting to happen (v0.4 standing
+    rule 4).
     """
     try:
         return float(value) == 1.0

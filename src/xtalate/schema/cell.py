@@ -4,7 +4,7 @@ These live in ``schema`` because they are facts about the Canonical Model's cell
 one format. "The lengths and angles of a lattice" and "the fractional coordinates of a Cartesian
 position against it" are the same operations whichever grammar states them, and ``schema`` is the
 one layer both ``parsers`` and ``exporters`` may import (Part 1 §5.1) — the same argument
-``schema/paths.py`` already makes for ``OCCUPANCY_CUSTOM_KEY``.
+``schema/paths.py`` already makes for ``is_full_occupancy``.
 
 They were previously three-way duplicated: ``lattice_from_parameters`` in the CIF *parser* and
 ``cell_parameters`` in the CIF *exporter* — a matched pair, in different layers, with no shared

@@ -59,14 +59,17 @@ class Settings(BaseSettings):
     #: Largest upload accepted, in bytes (enforced during streaming in M24 → ``413``).
     max_upload_bytes: int = 100 * 1024 * 1024
 
-    #: Advisory hint on trajectory frames a single job will read, surfaced at ``/v1/limits`` so a
-    #: client can size a request in advance. **Not yet enforced** as a discrete gate: no
-    #: ``FRAME_LIMIT_EXCEEDED`` check exists (M37 Finding F1; enforcement is a v1.1 ticket — see
-    #: ``docs/private/IMPLEMENTATION_PLAN_v1.1.md``). The real per-job bounds are elsewhere and hold
-    #: regardless: worker memory by the frame-chunked streaming core (Part 4 §6 — sub-linear in
-    #: frames), wall-clock by ``job_timeout_seconds``, and input volume by ``max_upload_bytes``
-    #: (``413``). The one residual gap this hint does not close is a *tiny*-structure trajectory
-    #: with an enormous frame count under the byte cap; the v1.1 ticket adds the discrete check.
+    #: Maximum trajectory frames a single job will read, surfaced at ``/v1/limits`` so a client can
+    #: size a request in advance. **Enforced** (since v1.1 M39-S3, closing M37 Finding F1 / D128):
+    #: the inspect/convert job paths count frames as they stream and refuse an over-cap trajectory
+    #: with ``422 FRAME_LIMIT_EXCEEDED`` (the code lives in ``backend/error_codes.py``; the
+    #: envelope's ``details`` carries ``frame_count`` and ``max_frames``) **before the remaining
+    #: frames are
+    #: materialized** — the gate exists precisely for the *tiny*-structure trajectory with an
+    #: enormous frame count under the byte cap, which the streaming core's sub-linear memory (Part 4
+    #: §6) bounds but wall-clock and allocation still scale with. The other per-job bounds hold
+    #: regardless: wall-clock by ``job_timeout_seconds`` and input volume by ``max_upload_bytes``
+    #: (``413``). The library/CLI pass no cap (a local trajectory has none).
     max_frames: int = 100_000
 
     #: Concurrent non-terminal jobs a single caller may hold (enforced in M24 → ``429``).

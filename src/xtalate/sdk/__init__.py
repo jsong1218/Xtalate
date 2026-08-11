@@ -13,11 +13,18 @@ from xtalate.sdk.capabilities import (
     FormatCapabilities,
 )
 from xtalate.sdk.plugins import ExporterPlugin, ParserPlugin
-from xtalate.sdk.results import ParseError, ParseIssue, ParseResult, collapse_frame_issues
+from xtalate.sdk.results import (
+    FrameLimitExceeded,
+    ParseError,
+    ParseIssue,
+    ParseResult,
+    collapse_frame_issues,
+)
 from xtalate.sdk.streaming import (
     FrameStream,
     StreamFrame,
     StreamHeader,
+    enforce_max_frames,
     export_stream,
     materialize,
     parse_as_stream,
@@ -29,6 +36,7 @@ __all__ = [
     "ExporterPlugin",
     "FieldCapability",
     "FormatCapabilities",
+    "FrameLimitExceeded",
     "FrameStream",
     "ParseError",
     "ParseIssue",
@@ -37,6 +45,7 @@ __all__ = [
     "StreamFrame",
     "StreamHeader",
     "collapse_frame_issues",
+    "enforce_max_frames",
     "export_stream",
     "materialize",
     "parse_as_stream",

@@ -75,6 +75,7 @@ from xtalate.schema.paths import DERIVED_PATHS as _DERIVED_PATHS
 from xtalate.sdk import (
     CapabilityLevel,
     ExporterPlugin,
+    FrameLimitExceeded,
     ParseError,
     ParseIssue,
     StreamFrame,
@@ -584,6 +585,7 @@ class ConversionEngine:
         tolerance_profile: str | ToleranceProfile = "default",
         acknowledge_loss: bool = False,
         validate: bool = True,
+        max_frames: int | None = None,
     ) -> ConversionResult:
         """Stream a recovery-free conversion end to end with memory bounded by one frame (M12).
 
@@ -602,6 +604,14 @@ class ConversionEngine:
         (``validation.streaming``) — the expected side re-reads and filters the source on the fly,
         the actual side re-parses the output as a stream — so validation is memory-bounded too and
         the whole path stays sub-linear in frames (M12 deliverable 4).
+
+        ``max_frames`` (optional, default ``None`` = current behaviour) makes the frame cap a real
+        gate (M39-S3, F1): the streamed frame count is checked **as it streams**, and once it
+        exceeds the cap the remaining frames are never read — :class:`FrameLimitExceeded` is raised
+        mid-stream carrying the count-so-far and the cap, and the partial output is discarded like a
+        mid-stream ``ParseError`` (``convert_stream`` returns no ConversionResult on failure). The
+        CLI passes no cap (a local trajectory has none); the HTTP service enforces its
+        ``settings.max_frames`` through the materialized seams and this one.
         """
         if not self.streaming_eligible(source_format_id, target_format_id):
             raise ValueError(
@@ -632,6 +642,11 @@ class ConversionEngine:
                 present_keys = [k for k, v in sf.per_frame_custom.items() if v is not None]
                 acc.observe_frame(sf.frame, present_keys)
                 counters["frames"] += 1
+                # The cap, counted as the frames stream: once the count exceeds max_frames the
+                # remaining frames are never read (mid-stream, before materialization), and the
+                # caller translates the exception (the service: 422 FRAME_LIMIT_EXCEEDED).
+                if max_frames is not None and counters["frames"] > max_frames:
+                    raise FrameLimitExceeded(frame_count=counters["frames"], max_frames=max_frames)
                 yield _filter_stream_frame(sf, write_plan)
 
         # The exporter writes each planned frame as it is yielded — the single streamed pass. A
@@ -645,7 +660,11 @@ class ConversionEngine:
         filtered_header = _filter_stream_header(header, write_plan)
         try:
             exporter.export_stream(filtered_header, _planned_frames(), output)
-        except ParseError:
+        except (ParseError, FrameLimitExceeded):
+            # A mid-stream ParseError (frame k corrupt) or a mid-stream FrameLimitExceeded (the
+            # frame cap fired) leaves frames 0..k-1 already written: drop that partial write and
+            # re-raise — convert_stream returns *no* ConversionResult on failure, and a half-
+            # written output can never masquerade as a completed conversion (M12 deliverable 5).
             _discard_partial_output(output)
             raise
 

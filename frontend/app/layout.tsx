@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { AppHeader } from "@/components/shell/AppHeader";
+import { DemoBanner } from "@/components/shell/DemoBanner";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -35,6 +36,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           >
             Skip to main content
           </a>
+          {/* The public-demo banner (v1.1 M39-S1): rendered only when NEXT_PUBLIC_DEMO_BANNER is
+              set, i.e. only on the hosted-demo image — a self-host never sees it. */}
+          <DemoBanner />
           <AppHeader />
           <div
             id="main-content"

@@ -69,7 +69,13 @@ def _promote_occupancy(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]
     every frame — Part 2 §3.10), so it is written onto every frame's ``atoms`` block; CIF is
     single-structure in practice, so that is one frame, but the general rule is the honest one. An
     object with no such key (every format but pre-1.0 CIF, and any CIF without occupancy) is
-    untouched and the step is a version-stamp-only no-op for it."""
+    untouched and the step is a version-stamp-only no-op for it.
+
+    The promotion is recorded **only if a frame actually received the value** (F15): on a
+    malformed mapping (empty ``frames``, or frames without an ``atoms`` block) the carry-through is
+    left in place and no "Promoted …" note is appended — a note for a value that stayed put would
+    claim a promotion that did not happen. A structurally invalid object still fails the single
+    final ``model_validate`` in ``load_canonical``; ``migrate()`` alone just never lies about it."""
     user_metadata = data.get("user_metadata")
     if not isinstance(user_metadata, dict):
         return data, []
@@ -77,15 +83,27 @@ def _promote_occupancy(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]
     if not isinstance(custom_per_atom, dict) or _LEGACY_OCCUPANCY_KEY not in custom_per_atom:
         return data, []
 
-    occupancy = list(custom_per_atom.pop(_LEGACY_OCCUPANCY_KEY))
-    for frame in data.get("frames", []):
-        atoms = frame.get("atoms")
-        if isinstance(atoms, dict):
-            atoms["occupancies"] = list(occupancy)
-    note = (
-        f"Promoted user_metadata.custom_per_atom['{_LEGACY_OCCUPANCY_KEY}'] to "
-        f"atoms.occupancies for {len(occupancy)} atom(s)."
-    )
+    occupancy = list(custom_per_atom[_LEGACY_OCCUPANCY_KEY])
+    frames = data.get("frames", [])
+    received = [i for i, frame in enumerate(frames) if isinstance(frame.get("atoms"), dict)]
+    if not received:
+        # Nothing received the value: keep the carry-through untouched, record no promotion.
+        return data, []
+    custom_per_atom.pop(_LEGACY_OCCUPANCY_KEY)
+    for i in received:
+        frames[i]["atoms"]["occupancies"] = list(occupancy)
+    if len(received) == len(frames):
+        note = (
+            f"Promoted user_metadata.custom_per_atom['{_LEGACY_OCCUPANCY_KEY}'] to "
+            f"atoms.occupancies for {len(occupancy)} atom(s)."
+        )
+    else:
+        # A mixed mapping: name only the frames that actually received the value.
+        note = (
+            f"Promoted user_metadata.custom_per_atom['{_LEGACY_OCCUPANCY_KEY}'] to "
+            f"atoms.occupancies for {len(occupancy)} atom(s) in frame(s) "
+            f"{', '.join(str(i) for i in received)}."
+        )
     return data, [note]
 
 

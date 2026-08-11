@@ -1,5 +1,9 @@
-# Keep the build context (and so the image) lean and reproducible: the Dockerfile copies exactly
-# pyproject.toml, README.md, src/, backend/, alembic.ini — nothing here belongs in the image.
+# Keep the build context (and so the image) lean and reproducible: the compose Dockerfile copies
+# exactly pyproject.toml, README.md, src/, backend/, alembic.ini — nothing here belongs in the
+# image. The combined hosted-demo image (deploy/demo/Dockerfile, v1.1 M39-S1, re-targeted S1b)
+# needs docs/ in its stage A (the frontend build reads ../docs/openapi.json and the docs corpus),
+# so docs is allowed through here while docs/private/ stays excluded — the private working record
+# is never part of any build context (M39-S1 file-set amendment).
 .git
 .github
 .venv
@@ -20,7 +24,12 @@ build
 tests
 benchmarks
 examples
-docs
+# docs/ is a build input for the hosted-demo image's stage A; docs/private/ must never enter a context.
+docs/private/
+node_modules
+**/node_modules
+**/.next
+.next
 .env
 _xtalate.db
 _xtalate_objects

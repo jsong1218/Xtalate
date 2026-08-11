@@ -33,7 +33,8 @@ _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent / "backend"
 #:   - ``HTTP_ERROR``     — the ``_http_exception_handler`` fallback for an unmapped Starlette code.
 #:   - ``PARSE_ERROR``    — ``jobs/runner.py`` ``_failure_body`` (positional, not ``code=``).
 #:   - ``VALIDATION_UNAVAILABLE`` — ditto, the revalidate-failure branch of ``_failure_body``.
-_DYNAMIC_CODES = {"HTTP_ERROR", "PARSE_ERROR", "VALIDATION_UNAVAILABLE"}
+#:   - ``FRAME_LIMIT_EXCEEDED`` — ditto, the frame-cap branch of ``_failure_body`` (M39-S3, F1).
+_DYNAMIC_CODES = {"HTTP_ERROR", "PARSE_ERROR", "VALIDATION_UNAVAILABLE", "FRAME_LIMIT_EXCEEDED"}
 
 _CODE_LITERAL = re.compile(r'code="([A-Z][A-Z_]*)"')
 

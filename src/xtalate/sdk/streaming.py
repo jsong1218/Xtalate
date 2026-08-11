@@ -50,7 +50,7 @@ from xtalate.schema import (
     TrajectoryMetadata,
     UserMetadata,
 )
-from xtalate.sdk.results import ParseIssue
+from xtalate.sdk.results import FrameLimitExceeded, ParseError, ParseIssue
 
 if TYPE_CHECKING:
     from xtalate.sdk.plugins import ExporterPlugin, ParserPlugin
@@ -216,6 +216,37 @@ def parse_as_stream(parser: ParserPlugin, data: bytes, *, filename: str | None) 
     return stream_of(result.canonical, issues=list(result.issues))
 
 
+def enforce_max_frames(
+    parser: ParserPlugin, data: bytes, *, filename: str | None, max_frames: int
+) -> None:
+    """Count frames as they stream and raise ``FrameLimitExceeded`` the moment the count exceeds
+    ``max_frames`` — before the remaining frames are materialized (M39-S3, the M37 finding-F1
+    gate made real).
+
+    The bounded pre-check the materialized entry points run (``parse_with_recovery``,
+    ``DiscoveryEngine.discover``) so an over-cap trajectory is refused **without ever building the
+    whole CanonicalObject**: the count pass reads frames one at a time through
+    :func:`parse_as_stream` and stops at ``max_frames + 1``. A parser whose declared read
+    ``max_frames`` is a fixed small number (single-structure formats: ``1``) can never exceed the
+    cap and is skipped, so POSCAR/CIF jobs pay nothing. Every trajectory-capable parser streams
+    (extXYZ, plain XYZ, XDATCAR, ASE traj — M12/D56; plain XYZ joined after the M39 review), so an
+    over-cap file is read only up to ``max_frames + 1`` frames for every format the service reads
+    — never materialized first. A ``ParseError`` raised mid-count is swallowed — the real parse
+    that follows reproduces it (and its recovery path) identically; only the frame-count refusal
+    propagates. Count-so-far is the cap + 1 — the count at which the gate fired.
+    """
+    caps = parser.capabilities()
+    if caps.max_frames is not None and caps.max_frames <= max_frames:
+        return
+    stream = parse_as_stream(parser, data, filename=filename)
+    try:
+        for count, _ in enumerate(stream.frames(), start=1):
+            if count > max_frames:
+                raise FrameLimitExceeded(frame_count=count, max_frames=max_frames)
+    except ParseError:
+        return  # the real parse reproduces / recovers this identically — only the cap refuses here
+
+
 def export_stream(
     exporter: ExporterPlugin, header: StreamHeader, frames: Iterator[StreamFrame], out: BinaryIO
 ) -> None:
@@ -233,6 +264,7 @@ __all__ = [
     "FrameStream",
     "StreamFrame",
     "StreamHeader",
+    "enforce_max_frames",
     "export_stream",
     "materialize",
     "parse_as_stream",

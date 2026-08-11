@@ -46,6 +46,26 @@ class ParseError(Exception):
         super().__init__(message or errors[0].message)
 
 
+class FrameLimitExceeded(Exception):
+    """A trajectory's frame count exceeded the caller's ``max_frames`` cap during the read.
+
+    Carries the count-so-far and the cap. Raised **mid-stream** — by the frame-reading seam while
+    frames are still being read, before the remaining frames are materialized (M39-S3, the M37
+    finding-F1 / D128 contract-honesty fix) — so a stated cap is a real gate on worker memory, not
+    an after-the-fact observation. Distinct from :class:`ParseError`: the file itself is fine; the
+    *size of the trajectory* is the refusal. The HTTP service translates it to ``422
+    FRAME_LIMIT_EXCEEDED`` on the failed job (the ``backend/error_codes.py`` authority); the CLI
+    and library callers pass no ``max_frames`` and are unaffected (default ``None``)."""
+
+    def __init__(self, frame_count: int, max_frames: int) -> None:
+        self.frame_count = frame_count
+        self.max_frames = max_frames
+        super().__init__(
+            f"trajectory exceeds the max_frames limit: {frame_count} frames read, "
+            f"limit {max_frames}"
+        )
+
+
 # --- Per-frame issue aggregation (Part 3 §5; the v0.7 review, F9) --------------------------------
 
 _FRAME_LOCATION = re.compile(r"^frame (\d+)$")

@@ -145,13 +145,13 @@ def test_strict_mode_acknowledged_matches_materialized(engine: ConversionEngine)
 
 
 def test_eligibility_gate(engine: ConversionEngine) -> None:
-    # XDATCAR→POSCAR is the streaming frame-selection case; the trajectory pass-through and the
-    # non-streaming source are not.
+    # XDATCAR→POSCAR is the streaming frame-selection case; so is plain XYZ now that its parser
+    # streams (M39 review fix — the M12/M13 streaming core was always the intent for trajectory
+    # formats). The trajectory pass-through and a non-streaming source are not.
     assert engine.frame_selection_streaming_eligible("xdatcar", "poscar") is True
+    assert engine.frame_selection_streaming_eligible("xyz", "poscar") is True  # xyz streams now
     assert engine.frame_selection_streaming_eligible("xdatcar", "extxyz") is False  # not capped
-    assert (
-        engine.frame_selection_streaming_eligible("xyz", "poscar") is False
-    )  # xyz isn't streaming
+    assert engine.frame_selection_streaming_eligible("poscar", "poscar") is False  # poscar doesn't
 
 
 def test_ineligible_pair_is_refused_to_convert(engine: ConversionEngine) -> None:
