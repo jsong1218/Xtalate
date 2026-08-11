@@ -17,16 +17,18 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
-### Added — the Hugging Face Spaces hosted demo (v1.1 M39-S1)
+### Added — the hosted demo (v1.1 M39-S1, re-targeted M39-S1b)
 
-- **A public, ephemeral, anonymous hosted demo** on Hugging Face Spaces: a single container runs the
-  whole stack (Next UI + FastAPI service co-located, Tier-0 mode, no external dependencies), behind
-  one exposed port, with a demo policy of a 25 MB upload cap and short retention, and a
+- **A public, ephemeral, anonymous hosted demo** on a generic Docker host (Render primary, Fly.io
+  the documented alternative): a single container runs the whole stack (Next UI + FastAPI service
+  co-located, Tier-0 mode, no external dependencies), behind one exposed port (the platform's
+  injected `$PORT` on Render), with a demo policy of a 25 MB upload cap and short retention, and a
   `NEXT_PUBLIC_DEMO_BANNER`-flagged banner (off by default) that funnels larger or private work to
   the CLI and self-hosting. Purely additive deployment work — no schema, SDK, `/v1`, CLI, or
-  scientific change; `SCHEMA_VERSION` stays `1.0.0`. Deployment is the maintainer's manual push
-  ([`docs/huggingface-space.md`](docs/huggingface-space.md)); the frontend gains `output:
-  "standalone"` (additive) to support the combined image.
+  scientific change; `SCHEMA_VERSION` stays `1.0.0`. Deployment is the maintainer's manual step
+  ([`docs/hosted-demo.md`](docs/hosted-demo.md)); the frontend gains `output: "standalone"`
+  (additive) to support the combined image. (M39-S1b re-targeted the original Hugging Face Spaces
+  deployment — HF withdrew free Docker Spaces; the image itself is host-neutral.)
 
 ## [1.0.0] — 2026-08-10
 

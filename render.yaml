@@ -1,0 +1,22 @@
+# Render Blueprint — the hosted demo (v1.1 M39-S1b). Render is the primary host for the public
+# demo; Fly.io is the documented alternative (deploy/demo/fly.toml — note Fly has no free tier).
+#
+# The whole demo env is baked into the image (deploy/demo/Dockerfile), so this Blueprint only
+# declares the service: build from the repo root with the demo Dockerfile, free plan, health check
+# through the Next /v1 proxy (which forwards /v1/health to the co-located backend on :8000). Render
+# injects $PORT (e.g. 10000); start.sh binds ${PORT:-3000} and the Next standalone server reads
+# process.env.PORT at runtime, so no env vars need declaring here.
+#
+# Deploying is the maintainer's manual step (docs/private/DECISIONS.md D52): on render.com, New →
+# Blueprint, pick this repo — Render applies this file. No token ever enters the repo.
+#
+# Free-plan notes (see docs/hosted-demo.md): 512 MB RAM / 0.1 CPU; the service spins down after
+# ~15 min idle and cold-starts in ~30-60s; ~5 GB/month bandwidth. Fine for a small demo.
+services:
+  - type: web
+    name: xtalate-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/demo/Dockerfile
+    dockerContext: .
+    healthCheckPath: /v1/health

@@ -7,9 +7,9 @@ running instance, states the backup posture plainly, and lists what to watch in 
 
 The public hosted instance (if one is running) is a small, aggressively private demonstration
 surface — 100 MB cap, short retention. Large-trajectory work is the CLI's and self-hosting's job, and
-there is no size limit when you run it yourself. There is also a **hosted demo** on Hugging Face
-Spaces — ephemeral, anonymous, 25 MB cap — a quick way to try the UI without running anything; see
-[`docs/huggingface-space.md`](huggingface-space.md).
+there is no size limit when you run it yourself. There is also a **hosted demo** on Render —
+ephemeral, anonymous, 25 MB cap — a quick way to try the UI without running anything; see
+[`docs/hosted-demo.md`](hosted-demo.md).
 
 ## What ships, and what you provide
 

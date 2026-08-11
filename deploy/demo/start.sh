@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# start.sh — the Hugging Face Spaces launcher (v1.1 M39-S1).
+# start.sh — the hosted-demo launcher (v1.1 M39-S1, re-targeted S1b).
 #
 # One container, two processes: the FastAPI service on :8000 (Tier-0 defaults, no external
-# dependencies) and the Next.js standalone server on :3000, which the Space exposes as app_port and
-# which proxies same-origin /v1/* to the backend via API_PROXY_TARGET. Minimal and explicit:
-# migrations first, backend in the background, wait for real readiness, then the frontend in the
-# foreground. If either process exits, the script exits (non-zero on failure) so the platform
-# restarts the container — a demo that half-died must not keep serving a broken page.
+# dependencies) and the Next.js standalone server on :3000 — or the platform-injected $PORT (Render
+# sets $PORT, e.g. 10000, and routes external traffic to it) — which proxies same-origin /v1/* to
+# the backend via API_PROXY_TARGET. Minimal and explicit: migrations first, backend in the
+# background, wait for real readiness, then the frontend in the foreground. If either process
+# exits, the script exits (non-zero on failure) so the platform restarts the container — a demo
+# that half-died must not keep serving a broken page.
 #
 # tini is PID 1 (Dockerfile ENTRYPOINT), so signals reach the processes and zombies are reaped.
 set -euo pipefail
@@ -41,8 +42,8 @@ print("[start.sh] backend failed to become ready within 60s", file=sys.stderr)
 sys.exit(1)
 PY
 
-echo "[start.sh] starting frontend (Next standalone on :3000)"
-PORT=3000 HOSTNAME=0.0.0.0 node server.js &
+echo "[start.sh] starting frontend (Next standalone on :${PORT:-3000})"
+PORT="${PORT:-3000}" HOSTNAME=0.0.0.0 node server.js &
 FRONTEND_PID=$!
 
 # Wait for whichever exits first. `wait -n` returns that child's exit status; `set -e` turns a

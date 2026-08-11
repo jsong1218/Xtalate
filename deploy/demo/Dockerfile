@@ -1,18 +1,20 @@
-# Xtalate Hugging Face Spaces demo image (v1.1 M39-S1) — the whole stack in one container.
+# Xtalate hosted-demo image (v1.1 M39-S1, re-targeted S1b) — the whole stack in one container.
 #
-# A Space exposes ONE port (app_port 3000). This image co-locates the two processes behind it:
-# the Next.js UI (standalone build) serves :3000 and proxies same-origin `/v1/*` to the FastAPI
-# service on localhost:8000 via API_PROXY_TARGET — the exact same-origin `/v1` client contract as
-# dev and self-host (next.config.mjs's rewrite), so there is no CORS surface and no hard-coded API
-# origin in client code. The backend runs in its already-default Tier-0 mode — inline job queue,
-# filesystem object store, SQLite (`backend/config.py` defaults) — so the container has **no
-# external dependencies** (no Redis, no Postgres, no MinIO, no separate worker).
+# The hosted demo runs on a generic Docker host: Render is the primary (render.yaml, repo root) and
+# Fly.io is the documented alternative (deploy/demo/fly.toml). The host exposes ONE public port to
+# the Next.js UI (standalone build), which serves :3000 (or the platform-injected $PORT — Render
+# sets $PORT, e.g. 10000; start.sh binds ${PORT:-3000}) and proxies same-origin `/v1/*` to the
+# FastAPI service on localhost:8000 via API_PROXY_TARGET — the exact same-origin `/v1` client
+# contract as dev and self-host (next.config.mjs's rewrite), so there is no CORS surface and no
+# hard-coded API origin in client code. The backend runs in its already-default Tier-0 mode —
+# inline job queue, filesystem object store, SQLite (`backend/config.py` defaults) — so the
+# container has **no external dependencies** (no Redis, no Postgres, no MinIO, no separate worker).
 #
-# Build context = the repo root (the deploy guide / `scripts/sync-hf-space.sh` assemble exactly
-# this tree): `src/`, `backend/`, `frontend/`, `docs/` (the Next build reads `../docs/openapi.json`
-# for the typed client and `../docs/*.md` for the in-app docs site), `alembic.ini`,
-# `pyproject.toml`, and `deploy/`. The repo-root `Dockerfile` (backend-only, used by compose) is
-# untouched — this is the Space's own shape.
+# Build context = the repo root (the deploy guide documents the shape): `src/`, `backend/`,
+# `frontend/`, `docs/` (the Next build reads `../docs/openapi.json` for the typed client and
+# `../docs/*.md` for the in-app docs site), `alembic.ini`, `pyproject.toml`, and `deploy/`. The
+# repo-root `Dockerfile` (backend-only, used by compose) is untouched — this is the demo's own
+# shape.
 
 # --- Stage A: build the frontend standalone bundle ----------------------------------------------
 FROM node:20-slim AS frontend-build
@@ -32,7 +34,7 @@ COPY docs docs
 
 # The frontend env the NEXT BUNDLE COMPILES IN at build time (next.config.mjs is evaluated during
 # `next build`, and NEXT_PUBLIC_ values are inlined — a standalone server does not re-read them at
-# runtime): the /v1 rewrite must target the co-located backend (never the compose service name),
+# runtime): the /v1 rewrite must target the co-located backend (never a compose service name),
 # the proxy body-clone ceiling must sit above the backend's own 25 MiB gate (the D112 rule), and
 # the demo banner must be on. The final stage's ENV block below repeats these for the backend's
 # runtime and for documentation parity — this build-time block is the load-bearing one for Next.
@@ -79,12 +81,12 @@ COPY --from=frontend-build /repo/frontend/.next/standalone/ ./
 COPY --from=frontend-build /repo/frontend/.next/static ./.next/static
 
 # The launcher: migrations → backend (background) → readiness wait → frontend (foreground).
-COPY deploy/huggingface/start.sh ./start.sh
+COPY deploy/demo/start.sh ./start.sh
 RUN chmod +x ./start.sh
 
-# HF container convention: run as a non-root user (UID 1000) with a writable $HOME under which the
-# SQLite database and filesystem object store live — the demo keeps all state under this app dir,
-# which is exactly the ephemeral posture the Space advertises.
+# Generic Docker-host convention: run as a non-root user (UID 1000) with a writable $HOME under
+# which the SQLite database and filesystem object store live — the demo keeps all state under this
+# app dir, which is exactly the ephemeral posture the demo advertises.
 RUN useradd --create-home --uid 1000 user \
     && chown -R user:user /home/user/app
 USER user
@@ -92,8 +94,10 @@ USER user
 # --- The demo environment (all overridable — these are the demo defaults) ----------------------
 # Backend: Tier-0 mode + the demo policy — anonymous (no API keys), a 25 MiB upload cap, short
 # retention, and docs URLs pointed at the GitHub docs so the error envelope's documentation_url and
-# the FILE_TOO_LARGE funnel resolve.
-ENV XTALATE_ENVIRONMENT=huggingface \
+# the FILE_TOO_LARGE funnel resolve. XTALATE_ENVIRONMENT is a free-form label surfaced in logs and
+# /v1/health (backend/config.py never branches scientific behaviour on it) — set to "demo"; the
+# previous "huggingface" value is retired, do not monitor for it.
+ENV XTALATE_ENVIRONMENT=demo \
     XTALATE_QUEUE_BACKEND=inline \
     XTALATE_OBJECT_STORE_BACKEND=filesystem \
     XTALATE_OBJECT_STORE_ROOT=/home/user/app/_objects \

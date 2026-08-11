@@ -1,0 +1,29 @@
+# Fly.io alternative deployment for the hosted demo (v1.1 M39-S1b).
+#
+# NOTE: Fly.io no longer has a free tier — this is a pay-as-you-go alternative, kept as
+# documentation only (docs/hosted-demo.md). Render (render.yaml, repo root) is the default host.
+# You need a Fly account with a payment method and the flyctl CLI:
+#
+#   flyctl launch --dockerfile deploy/demo/Dockerfile
+#   flyctl deploy
+#
+# The demo env is baked into the image; Fly does not inject a PORT, so the container binds its
+# default :3000 and external traffic is routed to it via internal_port below. auto_stop_machines
+# keeps cost near zero when idle (the machine stops; the next request wakes it).
+app = "xtalate-demo"
+
+[build]
+  dockerfile = "deploy/demo/Dockerfile"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = true
+  min_machines_running = 0
+
+  [http_service.checks]
+    grace_period = "120s"
+    interval = "30s"
+
+    [http_service.checks.get]
+      path = "/v1/health"
