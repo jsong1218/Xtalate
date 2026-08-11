@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -121,6 +122,68 @@ def test_the_original_parse_record_is_preserved() -> None:
     ops = [r.operation for r in obj.provenance.history]
     assert ops == ["parse", "migrate"]
     assert obj.provenance.history[0].tool_version == "0.3.0"
+
+
+# --- the promotion note tells the truth (F15) -----------------------------------------------------
+
+
+def test_no_promotion_note_when_no_frame_receives_the_value() -> None:
+    # A malformed plain-dict input (empty frames): the old code popped the carry-through and still
+    # appended "Promoted …" — a recorded promotion that did not happen. The honest fix: no frame
+    # received the value, so no promotion is claimed, and the carry-through is left untouched
+    # (nothing silently dropped); the object still fails the final model_validate if it is truly
+    # invalid, but migrate() alone never lies about it.
+    data = _before()
+    data["frames"] = []
+
+    migrated = migrate(data)
+    record = next(r for r in migrated["provenance"]["history"] if r["operation"] == "migrate")
+    assert record["assumptions"] == ["Migrated canonical schema 0.1.0 → 1.0.0."]
+    # The value stayed put — not silently dropped.
+    assert "cif:occupancy" in migrated["user_metadata"]["custom_per_atom"]
+
+
+def test_no_promotion_note_when_the_frame_has_no_atoms_block() -> None:
+    data = _before()
+    del data["frames"][0]["atoms"]
+
+    migrated = migrate(data)
+    record = next(r for r in migrated["provenance"]["history"] if r["operation"] == "migrate")
+    assert record["assumptions"] == ["Migrated canonical schema 0.1.0 → 1.0.0."]
+    assert "cif:occupancy" in migrated["user_metadata"]["custom_per_atom"]
+
+
+def test_mixed_frames_name_only_the_frames_that_received_the_value() -> None:
+    # Two frames, the second without an atoms block: the promotion is real for frame 0 and the
+    # note names it, never claiming both frames were promoted.
+    data = _before()
+    frame0 = data["frames"][0]
+    data["frames"].append({**copy.deepcopy(frame0), "index": 1})
+    del data["frames"][1]["atoms"]
+
+    migrated = migrate(data)
+    record = next(r for r in migrated["provenance"]["history"] if r["operation"] == "migrate")
+    assert record["assumptions"][1] == (
+        "Promoted user_metadata.custom_per_atom['cif:occupancy'] to atoms.occupancies for "
+        "3 atom(s) in frame(s) 0."
+    )
+    assert migrated["frames"][0]["atoms"]["occupancies"] == [1.0, 0.5, None]
+    assert "occupancies" not in migrated["frames"][1]
+
+
+# --- the single-definition guard (F14) -----------------------------------------------------------
+
+
+def test_the_occupancy_literal_has_exactly_one_definition_in_the_schema_layer() -> None:
+    # F14: the `cif:occupancy` spelling is a schema fact with exactly one definition — the
+    # migration's _LEGACY_OCCUPANCY_KEY. The dead duplicate (paths.py::OCCUPANCY_CUSTOM_KEY) was
+    # deleted in M39-S2; this guard pins the single-definition property so a re-duplicated
+    # constant fails CI instead of silently drifting. Prose mentions in docstrings are allowed;
+    # an *assignment* of the literal is not duplicated.
+    schema_dir = Path(__file__).resolve().parents[2] / "src" / "xtalate" / "schema"
+    sources = "".join(p.read_text(encoding="utf-8") for p in schema_dir.glob("*.py"))
+    assignments = re.findall(r'= "cif:occupancy"', sources)
+    assert assignments == ['= "cif:occupancy"']
 
 
 # --- the version-only path (an object with nothing to move) --------------------------------------
