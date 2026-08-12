@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { TargetPicker } from "./TargetPicker";
 import { writableTargets, type CapabilitiesMap } from "@/lib/capabilities/types";
@@ -73,25 +73,49 @@ describe("TargetPicker (Part 3 §4.3)", () => {
     expect(screen.getByRole("button", { name: "Convert to VASP POSCAR" })).toBeInTheDocument();
   });
 
-  it("the final Convert fires onConvert once, with the chosen target and mode (B2)", () => {
+  it("the final Convert fires onConvert once, with the chosen target and mode (B2)", async () => {
     const onConvert = renderPicker();
     fireEvent.click(screen.getByRole("button", { name: "VASP POSCAR" }));
     expect(screen.getByRole("radio", { name: /permissive/i })).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "Convert to VASP POSCAR" }));
-    fireEvent.click(screen.getByRole("button", { name: "Convert" }));
+    // Wrapped in act: the final Convert resolves onConvert then clears `submitting` in a microtask.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Convert" }));
+    });
     expect(onConvert).toHaveBeenCalledTimes(1);
     expect(onConvert).toHaveBeenCalledWith("poscar", "permissive");
   });
 
-  it("passes strict mode through when the user opts into it", () => {
+  it("passes strict mode through when the user opts into it", async () => {
     const onConvert = renderPicker();
     fireEvent.click(screen.getByRole("button", { name: "VASP POSCAR" }));
     fireEvent.click(screen.getByRole("radio", { name: /strict/i }));
     fireEvent.click(screen.getByRole("button", { name: "Convert to VASP POSCAR" }));
     // The confirm card names the locked-in mode before the final commit.
     expect(screen.getByTestId("convert-confirm")).toHaveTextContent(/Mode: Strict/);
-    fireEvent.click(screen.getByRole("button", { name: "Convert" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Convert" }));
+    });
     expect(onConvert).toHaveBeenCalledTimes(1);
     expect(onConvert).toHaveBeenCalledWith("poscar", "strict");
+  });
+
+  it("disables the final Convert while its submit is in flight, so a double-click cannot record twice (B2)", async () => {
+    let release: () => void = () => {};
+    const onConvert = vi.fn(() => new Promise<void>((resolve) => (release = resolve)));
+    renderPicker(onConvert);
+    fireEvent.click(screen.getByRole("button", { name: "VASP POSCAR" }));
+    fireEvent.click(screen.getByRole("button", { name: "Convert to VASP POSCAR" }));
+    fireEvent.click(screen.getByRole("button", { name: "Convert" }));
+    // While the POST is pending the button reports the in-flight state and is disabled, so a second
+    // click is a no-op — no second /v1/convert, no second record.
+    const converting = screen.getByRole("button", { name: "Converting…" });
+    expect(converting).toBeDisabled();
+    fireEvent.click(converting);
+    expect(onConvert).toHaveBeenCalledTimes(1);
+    // Settle the pending promise so the trailing `submitting` reset flushes inside act.
+    await act(async () => {
+      release();
+    });
   });
 });

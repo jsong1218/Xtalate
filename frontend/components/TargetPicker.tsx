@@ -119,10 +119,14 @@ export function TargetPicker({
   /** Write-capable formats (see `writableTargets`). */
   targets: FormatCapabilities[];
   /** Initiate the conversion — the page POSTs `/v1/convert` and routes to the job (M29). */
-  onConvert: (targetFormatId: string, mode: "permissive" | "strict") => void;
+  onConvert: (targetFormatId: string, mode: "permissive" | "strict") => void | Promise<void>;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<"permissive" | "strict">("permissive");
+  // Set while the final Convert's POST is in flight (B2): the button disables so a second click
+  // cannot submit a second job/record. On success the page routes away (this unmounts); on failure
+  // it clears in the `finally`, and re-opening the confirm resets it either way.
+  const [submitting, setSubmitting] = useState(false);
   // The confirm step (B2): the target + mode snapshotted when the user clicked "Convert to …".
   // While non-null, the picker shows the confirm card instead of the mode toggle + submit button;
   // `onConvert` fires only from that card's final Convert.
@@ -194,7 +198,8 @@ export function TargetPicker({
               Convert to {confirming.target.format_name}?
             </h3>
             <p className="text-sm text-muted">
-              This starts the conversion and records it — nothing is submitted until you confirm.
+              This will record the conversion in your history. Nothing is submitted until you
+              confirm.
             </p>
             {confirmingMode ? (
               <p className="text-xs text-faint">
@@ -208,15 +213,20 @@ export function TargetPicker({
           <div className="flex flex-wrap items-center gap-3">
             <Button
               ref={confirmConvertRef}
+              disabled={submitting}
               onClick={() => {
                 // The final Convert is the commit: the page POSTs /v1/convert and routes to the
                 // job. It is also the user gesture that arms the WebAudio context for the
-                // completion signal (C1) — called synchronously, before any await.
+                // completion signal (C1) — called synchronously, before any await. `submitting`
+                // disables the button so a double-click cannot POST a second job/record (B2).
                 unlockAudio();
-                onConvert(confirming.target.format_id, confirming.mode);
+                setSubmitting(true);
+                Promise.resolve(onConvert(confirming.target.format_id, confirming.mode)).finally(
+                  () => setSubmitting(false),
+                );
               }}
             >
-              Convert
+              {submitting ? "Converting…" : "Convert"}
             </Button>
             <button
               type="button"
@@ -258,7 +268,12 @@ export function TargetPicker({
             </div>
           </fieldset>
 
-          <Button onClick={() => setConfirming({ target: selectedTarget, mode })}>
+          <Button
+            onClick={() => {
+              setSubmitting(false);
+              setConfirming({ target: selectedTarget, mode });
+            }}
+          >
             Convert to {selectedTarget.format_name}
           </Button>
         </div>

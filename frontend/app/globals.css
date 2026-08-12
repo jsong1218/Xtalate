@@ -152,9 +152,9 @@
    * (which have their own chrome) are left alone. This is the whole class, not per-field patches;
    * any component that wants a different treatment still wins via a Tailwind utility.
    */
-  input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
-  textarea,
-  select {
+  :root[data-theme="dark"] input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+  :root[data-theme="dark"] textarea,
+  :root[data-theme="dark"] select {
     color: var(--text-strong);
     background-color: var(--surface);
   }
