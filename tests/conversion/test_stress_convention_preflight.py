@@ -4,11 +4,13 @@ The detection is a **new shape**: stress is a source field that is *present* (pa
 extXYZ custom carry) which the target *could* express as the canonical `electronic.stress` —
 neither the fabricative \"required field absent\" shape nor the reductive \"present field the
 target cannot hold\" shape. It fires only when both hold: the carry is present **and** the
-target declares a non-NONE write capability for `electronic.stress`. S1 proves the wiring
-against a synthetic stress-expressing target (the stand-in for the real target M40-S2's
-exporter flip creates — the branch is capability-driven, so it needs no change then); the
-end-to-end conversion report is exercised through `preview_recovery`, which runs the exact
-recovery prefix of `convert` without needing an exporter to exist.
+target declares a non-NONE write capability for `electronic.stress`. S1 proved the wiring
+against a synthetic stress-expressing target; M40-S2's exporter flip makes the **real** extXYZ
+target stress-expressing, so the branch now fires for it with no change to itself (the
+capability-driven promise). The end-to-end conversion report is exercised through
+`preview_recovery`, which runs the exact recovery prefix of `convert` without exporting; the
+full convert/refusal/validation round-trip lives in
+``test_stress_convention_roundtrip.py``.
 """
 
 from __future__ import annotations
@@ -101,18 +103,31 @@ def test_carry_to_stress_expressing_target_emits_the_scenario() -> None:
     assert _CARRY_PATH not in {e.path for e in diff.preserved}
 
 
-def test_carry_to_capability_none_target_is_an_ordinary_carry() -> None:
-    # No current Phase 1 target expresses stress (extXYZ's write row is NONE until M40-S2), so a
-    # real extXYZ → extXYZ conversion must NOT fire the scenario — the carry is ordinary
-    # custom-per-frame data, preserved by the container's FULL capability.
+def test_real_extxyz_target_fires_the_scenario_after_the_s2_flip() -> None:
+    # M40-S2 flips the extXYZ write declaration to PARTIAL, so the *real* extXYZ target now
+    # expresses stress — the branch is capability-driven and activates with no change to itself
+    # (S1's promise). A real extXYZ → extXYZ conversion of a stress-carry source fires the
+    # scenario and parks the carry in `pending`; the conversion refuses without a preset (the
+    # round-trip suite proves the refusal), so the carry is never silently passed through.
     from xtalate.conversion.preflight import build_preflight
 
     reg = _registry()
     diff = build_preflight(_stress_source(), reg.capability_matrix(), "extxyz")
+    assert any(s.scenario == "ambiguous_stress_convention" for s in diff.unresolved)
+    assert {e.path for e in diff.pending} == {_CARRY_PATH}
+    assert _CARRY_PATH not in {e.path for e in diff.preserved}
+
+
+def test_carry_to_a_none_target_is_an_ordinary_carry() -> None:
+    # A target that still cannot express stress (every other Phase 1 format) must NOT fire the
+    # scenario — the carry is ordinary custom-per-frame data, preserved by the container's FULL
+    # capability and round-tripped verbatim by the exporter's fallback (M40-S2, done means #2).
+    from xtalate.conversion.preflight import build_preflight
+
+    reg = _registry()
+    diff = build_preflight(_stress_source(), reg.capability_matrix(), "poscar")
     assert not any(s.scenario == "ambiguous_stress_convention" for s in diff.unresolved)
-    assert _CARRY_PATH in {e.path for e in diff.preserved}
-    assert diff.pending == []
-    assert "user_metadata.custom_per_frame" in diff.write_plan
+    assert _CARRY_PATH not in {e.path for e in diff.pending}
 
 
 def test_no_carry_to_stress_expressing_target_fires_nothing() -> None:

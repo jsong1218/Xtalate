@@ -75,6 +75,25 @@ class FormatCapabilities(BaseModel):
     # re-prefixes what it reads, so `extxyz:<name>` is exactly the set that survives write → read
     # under its own name. A container declares a list or a pattern, never both.
     writable_custom_key_pattern: dict[str, str] = Field(default_factory=dict)
+    # Canonical path -> the custom key a read parser carries the value under **verbatim** when it
+    # cannot map it to the canonical field (read side; DECISIONS.md D18, D151). extXYZ parks
+    # `stress` in `custom_per_frame["extxyz:stress"]` rather than `electronic.stress` because its
+    # sign convention cannot be reconciled without a source-declared choice. The Validation Engine
+    # uses this to find a planned field's value in the re-parse (the carry) so the post-conversion
+    # diff can compare it in canonical space instead of false-failing on "missing". Empty = the
+    # parser never carries unmapped values for any field (it maps everything it reads).
+    carried_field_keys: dict[str, str] = Field(default_factory=dict)
+    # The sign convention of the `electronic.stress` tensor this exporter writes (write side;
+    # Part 2 §3.7.1, DECISIONS.md D151). The canonical convention is tension-positive; an exporter
+    # whose files carry the opposite (compression-positive, e.g. ASE-native extXYZ) reverses the
+    # normalization on write and declares that here — the machine-readable half of the
+    # `STRESS_SIGN_CONVENTION_CHANGED` warning, letting validation compare the re-parsed carry
+    # back in canonical space. Vocabulary is the `ambiguous_stress_convention` scenario's option
+    # codes (Part 4 §3.3) so terminology stays binding: `tension_positive` = written as-is,
+    # `ase_sign_convention` = written negated. Irrelevant for an exporter that writes no stress.
+    stress_output_convention: Literal["tension_positive", "ase_sign_convention"] = (
+        "tension_positive"
+    )
     native_coordinate_system: Literal["cartesian", "fractional", "both"]
     lossy_notes: list[str] = Field(default_factory=list)  # Format-level caveats -> Warnings.
     # Declared decimal precision per canonical field path (write side) — the machine-readable

@@ -400,6 +400,13 @@ class StreamingValidator:
                 "warn": eff.warn,
                 "fail": eff.fail,
                 "missing": state["missing"],
+                # The batch check's carried-value comparison (D151) can never fire here: the only
+                # way an expected frame carries a populated `electronic.stress` is the
+                # `ambiguous_stress_convention` recovery, and a streamed conversion that needs it
+                # is refused before validation runs. Emitted anyway so streamed and batch reports
+                # are byte-identical on every path (standing rule 3).
+                "compared_via_carry": False,
+                "carry_key": None,
                 # Recorded per path so an offline re-threshold can reproduce this judgement. The
                 # scalar checks carry their bound in `tolerance_applied`; this check judges eight
                 # paths at once, so a single slot cannot hold it and the re-thresholder was

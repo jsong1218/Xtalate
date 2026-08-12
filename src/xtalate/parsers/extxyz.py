@@ -30,7 +30,8 @@ map to their canonical homes; every other ``Properties=`` column carries through
 ``custom_per_frame["extxyz:<key>"]`` (Part 2 §6.1, §3.10). ``stress`` is carried the same way
 rather than mapped to ``electronic.stress``, because ASE's stress *sign convention* cannot be
 reconciled with the canonical tension-positive convention (Part 2 §3.7.1) without a
-source-declared convention the file does not carry — see DECISIONS.md D18.
+source-declared convention the file does not carry — the ``ambiguous_stress_convention``
+recovery (M40) resolves it explicitly, never silently — see DECISIONS.md D18.
 """
 
 from __future__ import annotations
@@ -75,6 +76,9 @@ if TYPE_CHECKING:
 
 FORMAT_ID = "extxyz"
 _KEY_PREFIX = "extxyz:"
+#: The comment-line key ASE stress results are carried under (D18; the exporter's mirror names the
+#: same key). Declared here so the `carried_field_keys` capability and the lossy note cannot drift.
+_STRESS_KEY = f"{_KEY_PREFIX}stress"
 # ASE stores per-frame results (energy/forces/stress/charges/magmoms/…) on a
 # SinglePointCalculator; everything else the source declared lives in atoms.arrays (per-atom
 # columns) or atoms.info (comment key-values). These array names have dedicated canonical
@@ -517,22 +521,36 @@ class ExtxyzParser(ParserPlugin):
                 "electronic.magnetic_moments": FieldCapability(
                     level=partial, notes="Only when a per-atom magmoms column is present."
                 ),
+                "electronic.stress": FieldCapability(
+                    level=partial,
+                    notes="Populated only when the stress sign convention is resolved via the "
+                    "ambiguous_stress_convention recovery; until then stress is carried verbatim "
+                    "in custom_per_frame['extxyz:stress'] (D18, D151).",
+                ),
                 "user_metadata.custom_per_atom": FieldCapability(
                     level=CapabilityLevel.FULL, notes="Arbitrary Properties= columns."
                 ),
                 "user_metadata.custom_per_frame": FieldCapability(
                     level=CapabilityLevel.FULL,
-                    notes="Arbitrary comment-line key-value pairs; carries stress verbatim (D18).",
+                    notes=(
+                        "Arbitrary comment-line key-value pairs; carries stress verbatim until "
+                        "the sign convention is resolved (D18, D151)."
+                    ),
                 ),
             },
             max_frames=None,
             required_fields=[],
             native_coordinate_system="cartesian",
-            # v0.1 carries stress through custom_per_frame rather than mapping electronic.stress,
-            # to avoid a silent sign-convention error (DECISIONS.md D18; Part 2 §3.7.1).
+            # M40: stress is carried through custom_per_frame until the sign convention is
+            # resolved by the ambiguous_stress_convention recovery (D18, Part 2 §3.7.1) — never
+            # mapped silently. `carried_field_keys` names the carry so the Validation Engine can
+            # compare a planned field against the re-parsed value (D151).
+            carried_field_keys={"electronic.stress": _STRESS_KEY},
             lossy_notes=[
-                "stress/virial carried verbatim in user_metadata.custom_per_frame['extxyz:stress'] "
-                "rather than electronic.stress.",
+                "stress/virial carried verbatim in "
+                f"user_metadata.custom_per_frame[{_STRESS_KEY!r}] until its sign convention is "
+                "resolved via the ambiguous_stress_convention recovery; never mapped to "
+                "electronic.stress silently.",
             ],
         )
 
@@ -545,9 +563,10 @@ def _partition_calc(
     ``mapped`` holds the results with a unit- and sign-safe canonical home (energy → eV,
     forces → eV/Å, per-atom ``charges`` → e cation-positive, per-atom ``magmoms`` → μB
     spin-up-positive; all matching Part 2 §3.7.1). ``carried`` holds everything else — ``stress``
-    (whose sign convention cannot be reconciled without a source-declared convention,
-    DECISIONS.md D18) and any unexpected key — routed verbatim to ``custom_per_frame`` so a
-    result ASE parsed is never dropped silently (P1). An unexpected carried key warns.
+    (whose sign convention cannot be reconciled without a source-declared convention; resolved
+    only by the ``ambiguous_stress_convention`` recovery, DECISIONS.md D18/D151) and any
+    unexpected key — routed verbatim to ``custom_per_frame`` so a result ASE parsed is never
+    dropped silently (P1). An unexpected carried key warns.
     """
     mapped: dict[str, Any] = {}
     carried: dict[str, JsonValue] = {}

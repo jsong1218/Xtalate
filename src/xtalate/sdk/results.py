@@ -34,6 +34,26 @@ class ParseResult(BaseModel):
     issues: list[ParseIssue] = Field(default_factory=list)  # Warnings; empty for a clean parse.
 
 
+class ExporterWarning:
+    """A transformation an exporter applies on write, reported by the Conversion Engine as a
+    Conversion Report Warning (Part 4 §1 rule 3, Part 2 §3.7.1; DECISIONS.md D151).
+
+    An exporter may legitimately change representation for a target whose format mandates the
+    opposite convention (Cartesian → fractional, eV/Å³ tension-positive stress → a
+    compression-positive file convention) — the change is fine, the *silence* is not. The
+    exporter declares such transformations via ``ExporterPlugin.export_warnings``; the engine
+    maps each to a ``ReportWarning`` with ``source="export"`` and the stable code the exporter
+    names (e.g. ``STRESS_SIGN_CONVENTION_CHANGED``). Kept a plain dataclass — unlike
+    ``ParseIssue`` it is consumed only by the engine, never serialized in its own right, so the
+    pydantic contract is unnecessary."""
+
+    __slots__ = ("code", "message")
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+
+
 class ParseError(Exception):
     """Raised when no valid CanonicalObject can be produced (§5). Carries ``issues`` with
     at least one error-severity entry."""

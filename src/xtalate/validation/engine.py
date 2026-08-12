@@ -26,6 +26,7 @@ from io import BytesIO
 from typing import Any, Protocol
 
 import numpy as np
+from ase.stress import voigt_6_to_full_3x3_stress
 
 from xtalate._time import utc_now
 from xtalate.capabilities import Registry
@@ -94,6 +95,12 @@ class ValidationEngine:
         precision = require_supported_precision(
             target_format_id, caps.numeric_precision, caps.native_coordinate_system
         )
+        # The target's *read* declaration tells the numeric check where a planned field's value
+        # lives in the re-parse when the parser cannot map it back to the canonical field (D18: the
+        # extXYZ parser carries stress verbatim rather than interpreting it), and the *write*
+        # declaration tells it the convention the exporter wrote — so the carried value can be
+        # reversed to canonical space and compared for real, not false-failed as "missing" (D151).
+        read_caps = parser.capabilities()
 
         reparse_issues: list[ParseIssue] = []
         try:
@@ -126,9 +133,19 @@ class ValidationEngine:
             _check_positions_rmsd(expected, canonical, perm, tolerance, precision),
             _check_lattice(expected, canonical, tolerance, precision),
             _check_frame_count(expected, canonical),
-            _check_numeric_fields(expected, canonical, perm, tolerance, precision),
+            _check_numeric_fields(
+                expected,
+                canonical,
+                perm,
+                tolerance,
+                precision,
+                carried_field_keys=read_caps.carried_field_keys,
+                stress_output_convention=caps.stress_output_convention,
+            ),
             _check_metadata(expected, canonical),
-            _check_absence(canonical, conversion_report),
+            _check_absence(
+                canonical, conversion_report, carried_field_keys=read_caps.carried_field_keys
+            ),
             _check_report_consistency(conversion_report),
         ]
         return self._finalize(
@@ -358,6 +375,9 @@ def _check_numeric_fields(
     perm: list[int] | None,
     tolerance: ToleranceProfile,
     precision: dict[str, int | None],
+    *,
+    carried_field_keys: dict[str, str],
+    stress_output_convention: str,
 ) -> CheckResult:
     n = min(len(expected.frames), len(canonical.frames))
     measured: dict[str, Any] = {}
@@ -372,11 +392,25 @@ def _check_numeric_fields(
         eff = tolerance.effective(quantity, bound)
         field_max = 0.0
         missing = False
+        via_carry = False
+        carry_key = carried_field_keys.get(path)
         for i in range(n):
             ev = exp_vals[i]
             if ev is None:
                 continue
             gv = _field_value(canonical.frames[i], path)
+            # The re-parse may hold the value in the *carry* rather than the canonical field — the
+            # parser deliberately does not map it (D18: the extXYZ parser carries stress verbatim
+            # because its sign convention needs a source-declared choice). A carried value is the
+            # value: find it under the parser's declared carry key, reverse the exporter's declared
+            # output convention back to canonical, and compare for real — the D25-precedent
+            # "execute the check honestly" posture, never a false "missing" corruption verdict on
+            # a conversion that wrote the field exactly as reported (D151).
+            if gv is None and carry_key is not None:
+                carried_row = canonical.user_metadata.custom_per_frame.get(carry_key)
+                if carried_row is not None and i < len(carried_row) and carried_row[i] is not None:
+                    gv = _carried_to_canonical(carried_row[i], path, stress_output_convention)
+                    via_carry = True
             if gv is None:
                 missing = True
                 continue
@@ -397,6 +431,8 @@ def _check_numeric_fields(
             "warn": eff.warn,
             "fail": eff.fail,
             "missing": missing,
+            "compared_via_carry": via_carry,
+            "carry_key": carry_key if via_carry else None,
             # Recorded per path so an offline re-threshold can reproduce this judgement — see the
             # matching note in `validation.streaming`.
             "representational_bound": bound,
@@ -467,19 +503,34 @@ def _check_metadata(expected: CanonicalObject, canonical: CanonicalObject) -> Ch
     )
 
 
-def _check_absence(canonical: CanonicalObject, report: ConversionReportView) -> CheckResult:
+def _check_absence(
+    canonical: CanonicalObject, report: ConversionReportView, *, carried_field_keys: dict[str, str]
+) -> CheckResult:
     # A path that is *also* preserved (e.g. atoms.positions dropped for the non-selected frames but
     # kept for the retained one) is validated by frame_count, not by asserting it absent — asserting
     # positions absent would false-fail. A path that is *also* supplied is likewise exempt: recovery
     # dropped the source original (removed) and fabricated a replacement (supplied), so it *should*
     # reappear in the output — a `mixed` cell whose cell-bearing frame frame_selection drops, then
-    # missing_lattice fills (D51). Only genuinely-removed-and-not-replaced paths are checked here.
+    # missing_lattice fills (D51). The same logic extends (D151) to a removed path that is a
+    # *declared carry key* of the target parser carrying a preserved value: resolving
+    # `ambiguous_stress_convention` retires the `extxyz:stress` carry from the canonical object
+    # (removed) while the value survives as `electronic.stress` (preserved) — but an extXYZ output
+    # writes that stress under the carry key again, so the re-parse necessarily shows it present.
+    # Asserting the carry absent would false-fail a conversion that wrote the value exactly as
+    # reported; its fidelity is verified by numeric_field_fidelity's carried-value comparison.
+    # Only genuinely-removed-and-not-replaced paths are checked here.
     preserved_paths = {e.path for e in report.preserved}
     supplied_paths = {e.path for e in report.supplied}
+    carry_paths = {
+        f"user_metadata.custom_per_frame['{key}']": field
+        for field, key in carried_field_keys.items()
+    }
     to_check = [
         e.path
         for e in report.removed
-        if e.path not in preserved_paths and e.path not in supplied_paths
+        if e.path not in preserved_paths
+        and e.path not in supplied_paths
+        and not (e.path in carry_paths and carry_paths[e.path] in preserved_paths)
     ]
     presence = canonical.field_presence()
     violations = [p for p in to_check if presence.status_of(p) != "absent"]
@@ -540,6 +591,30 @@ def _field_value(frame: Any, path: str) -> Any:
     group, _, name = path.partition(".")
     block = {"dynamics": frame.dynamics, "electronic": frame.electronic}.get(group)
     return getattr(block, name, None) if block is not None else None
+
+
+def _carried_to_canonical(value: Any, path: str, stress_output_convention: str) -> Any:
+    """Reverse a carried value back to canonical space for comparison.
+
+    The carry holds the value exactly as the exporter wrote it — the file's representation in the
+    exporter's **declared** output convention (``stress_output_convention``, D151) — while the
+    expected object is canonical. For ``electronic.stress`` that means undoing both the Voigt-6
+    compression ASE applies on write (via ASE's own ``voigt_6_to_full_3x3_stress``, the exact
+    inverse of the ordering ASE writes — the same normalization the recovery resolver applies,
+    Part 2 §3.7.1) and the sign convention: an exporter declaring ``ase_sign_convention`` writes
+    compression-positive, the inverse of the canonical tension-positive, so the expanded tensor is
+    negated; ``tension_positive`` is written as-is. A ``(3, 3)`` carry (a file that spelled all
+    nine components) is taken as-is. Every other carried path (none in v0.1) compares as-is. The
+    reversal is the documented inverse of a machine-readable declaration — not the parser
+    interpreting the value (D18 stands: the parser still never maps stress on read).
+    """
+    arr = np.asarray(value, dtype=float)
+    if path == "electronic.stress":
+        if arr.shape == (6,):
+            arr = np.asarray(voigt_6_to_full_3x3_stress(arr), dtype=np.float64)
+        if stress_output_convention == "ase_sign_convention":
+            return -arr
+    return arr
 
 
 def _representational_bound(precision: dict[str, int | None], path: str) -> float:

@@ -44,7 +44,11 @@ class Bounds:
 # `lattice_consistency`, the rest from `numeric_field_fidelity` (§2). `masses` is not in the §4.3
 # table (no v0.1 conversion writes it through validation), so it is given the forces/velocities
 # base as the nearest-precision analogue and recorded as DECISIONS.md D25 — never `atom_count`/
-# species/absence, which stay exact regardless (§4.4).
+# species/absence, which stay exact regardless (§4.4). `stress` is a small-magnitude eV/Å³ tensor
+# (typical values ~1e-3–1e-1), so its base is a hundredth of the forces/velocities base — recorded
+# as DECISIONS.md D151 (the D25 per-quantity-base methodology), first exercised by M40-S2's
+# resolved extXYZ round-trip; the §4.3 note scopes it: Voigt↔3×3 expansion is exact, the tolerance
+# covers decimal representation only.
 _BASES: dict[str, Bounds] = {
     "positions": Bounds(1e-5, 1e-3),
     "lattice": Bounds(1e-5, 1e-3),

@@ -6,6 +6,12 @@ exact inverse of the parser's (DECISIONS.md D18), including the velocity unit co
 (canonical Å/fs → ASE internal units) so that ``A → Canonical → A' → Canonical'`` reproduces
 the scientific content exactly. Fields extXYZ cannot express are the Conversion Engine's to
 report as ``removed`` (Part 4); this exporter simply writes what the object holds.
+
+Stress is the one field whose *representation* changes on write (M40-S2): a resolved
+``electronic.stress`` (tension-positive, canonical) is reversed to the compression-positive
+convention ASE-native extXYZ files carry, and that reversal is reported as a
+``STRESS_SIGN_CONVENTION_CHANGED`` warning; an unresolved object's ``extxyz:stress`` carry is
+written verbatim, exactly as before M40.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ from xtalate.schema import CanonicalObject, Frame
 from xtalate.sdk import (
     CapabilityLevel,
     ExporterPlugin,
+    ExporterWarning,
     FieldCapability,
     FormatCapabilities,
     StreamFrame,
@@ -120,15 +127,28 @@ class ExtxyzExporter(ExporterPlugin):
             if _WRITABLE_PER_ATOM_KEY.fullmatch(key):
                 atoms.new_array(_strip(key), np.asarray(values))
 
-        # Per-frame comment key-values (+ stress) for this frame.
-        stress = None
+        # Per-frame comment key-values for this frame. Stress is resolved separately below
+        # (M40-S2); the populated canonical field is preferred, the legacy carry is the fallback.
         for key, value in per_frame_custom.items():
-            if value is None:
+            if value is None or key == _STRESS_KEY:
                 continue
-            if key == _STRESS_KEY:
-                stress = np.asarray(value, dtype=float)
-            else:
-                atoms.info[_strip(key)] = value
+            atoms.info[_strip(key)] = value
+
+        # Stress (Part 2 §3.7.1, M40-S2). A resolved `electronic.stress` is written from the field,
+        # reversing the canonical tension-positive normalization to the exporter's declared target
+        # convention — ASE compression-positive, `stress_output_convention="ase_sign_convention"`
+        # — and reported by `export_warnings`, never silently. An unresolved object (no populated
+        # field) falls back to the legacy `extxyz:stress` carry **verbatim**: an opaque
+        # extXYZ→extXYZ pass-through must round-trip the numbers exactly as they came in. The dual
+        # source prefers the populated field defensively; on a resolved object S1's resolver retires
+        # the carry, so in practice only one source is present (no double-write).
+        stress = None
+        if frame.electronic.stress is not None:
+            stress = -np.asarray(frame.electronic.stress, dtype=float)
+        else:
+            carried = per_frame_custom.get(_STRESS_KEY)
+            if carried is not None:
+                stress = np.asarray(carried, dtype=float)
 
         results: dict[str, Any] = {}
         if frame.electronic.total_energy is not None:
@@ -175,6 +195,14 @@ class ExtxyzExporter(ExporterPlugin):
                 "electronic.magnetic_moments": FieldCapability(
                     level=partial, notes="Written as a per-atom magmoms column."
                 ),
+                "electronic.stress": FieldCapability(
+                    level=partial,
+                    notes="Written only when the stress sign convention is resolved via the "
+                    "ambiguous_stress_convention recovery: from electronic.stress, sign-reversed "
+                    "to the compression-positive convention extXYZ files written through ASE "
+                    "carry (STRESS_SIGN_CONVENTION_CHANGED warning). An unresolved object's "
+                    "extxyz:stress carry is written verbatim.",
+                ),
                 "user_metadata.custom_per_atom": FieldCapability(
                     level=CapabilityLevel.PARTIAL,
                     notes="Written back as Properties= columns, but only under a name extXYZ can "
@@ -198,7 +226,33 @@ class ExtxyzExporter(ExporterPlugin):
             allows_open_boundaries=True,  # extXYZ writes pbc=; an open cell is expressible.
             native_coordinate_system="cartesian",
             lossy_notes=[],
+            # The stress this exporter writes is in ASE's compression-positive convention — the
+            # inverse of the canonical tension-positive (Part 2 §3.7.1) — so the Validation Engine
+            # can compare a re-parsed carry back in canonical space (D151).
+            stress_output_convention="ase_sign_convention",
         )
+
+    def export_warnings(self, canonical: CanonicalObject) -> list[ExporterWarning]:
+        """Report the sign reversal this exporter applies to a populated ``electronic.stress``
+        (Part 2 §3.7.1, M40-S2): writing the canonical tension-positive tensor into an ASE-native
+        extXYZ file means writing the **opposite** sign convention, so the transformation is never
+        silent. Fires once per conversion whenever any frame carries a resolved stress; an
+        unresolved object (only the legacy carry) is written verbatim and warrants no warning."""
+        populated = [f.index for f in canonical.frames if f.electronic.stress is not None]
+        if not populated:
+            return []
+        frames_desc = f"frame(s) {populated}" if len(populated) > 1 else f"frame {populated[0]}"
+        return [
+            ExporterWarning(
+                code="STRESS_SIGN_CONVENTION_CHANGED",
+                message=(
+                    "stress reversed from the canonical tension-positive convention to the "
+                    "compression-positive convention extXYZ files written through ASE carry "
+                    f"({frames_desc}); the output's stress tensor has the opposite sign of the "
+                    "canonical value"
+                ),
+            )
+        ]
 
 
 def _strip(key: str) -> str:
