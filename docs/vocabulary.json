@@ -30,6 +30,10 @@
     "user_metadata.tags"
   ],
   "choice_codes": {
+    "ambiguous_stress_convention": [
+      "ase_sign_convention",
+      "tension_positive"
+    ],
     "constraint_representation": [
       "drop_all",
       "project"
@@ -72,6 +76,7 @@
     "user_metadata.custom_per_frame"
   ],
   "scenario_codes": [
+    "ambiguous_stress_convention",
     "constraint_representation",
     "frame_selection",
     "missing_energy",
@@ -89,6 +94,7 @@
     "constraint_representation",
     "missing_lattice",
     "missing_masses",
-    "missing_velocities"
+    "missing_velocities",
+    "ambiguous_stress_convention"
   ]
 }

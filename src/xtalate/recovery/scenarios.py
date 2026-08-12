@@ -17,6 +17,15 @@ The bright line is deliberately discrete (a three-value enum, not a risk scale) 
 future convenience can make Xtalate invent scientific data or silently choose which real data
 to discard (Part 4 §3.1, "Alternative rejected: a single risk-level scale").
 
+**The interpretive axis (M40) is orthogonal to the three classes.** ``ambiguous_stress_convention``
+classifies as **FABRICATIVE** for mode gating (an explicit choice is required in both strict and
+permissive modes), but it *interprets* genuine source data — the stress tensor is real, only its
+sign convention is being resolved — so it records an ``Assumption`` with **no** ``supplied``
+entry (the value already existed in the source; only its meaning was fixed). The
+``INTERPRETIVE_SCENARIOS`` marker scopes the "fabricative ⇒ ``supplied``" invariant to
+scenarios that genuinely *invent* a value the source never had; it is a separate marker, not a
+fourth hazard tier (Part 4 §3.1's three-value enum stays discrete by design).
+
 **v0.2 scope (M7 — scenario catalog completion).** The full Part 4 §3.3 catalog of eight scenarios
 is registered and hazard-classified here, so classification and the honest-option-list rule are
 complete. Which *choices resolve* depends on whether a trigger exists for the four v0.1 formats and
@@ -95,10 +104,35 @@ SCENARIO_HAZARD: dict[str, HazardClass] = {
     "missing_velocities": HazardClass.FABRICATIVE,
     "missing_masses": HazardClass.FABRICATIVE,
     "missing_energy": HazardClass.FABRICATIVE,
+    # M40: FABRICATIVE for mode gating — an explicit choice is required in *both* strict and
+    # permissive modes, no auto-applied default (Part 4 §3.1–§4). It is nonetheless *interpretive*
+    # (INTERPRETIVE_SCENARIOS below): the stress values are genuine source data, only their sign
+    # convention is resolved, so no `supplied` entry is recorded.
+    "ambiguous_stress_convention": HazardClass.FABRICATIVE,
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
 }
+
+#: Scenarios that *interpret* genuine source data rather than fabricating a value the source
+#: never had (M40, Part 4 §3.1). Classified FABRICATIVE for mode gating, an interpretive
+#: scenario still records an ``Assumption`` — but **no** ``supplied`` entry: the value it
+#: writes into a canonical field already existed in the source, and only its meaning
+#: (e.g. the sign convention of a carried stress tensor) was resolved. The Recovery Engine
+#: consults this marker where the "fabricative ⇒ ``supplied``" invariant is applied, so the
+#: invariant stays scoped to genuinely fabricated fields. Orthogonal to the three hazard
+#: classes — a separate marker, never a fourth enum value.
+INTERPRETIVE_SCENARIOS: frozenset[str] = frozenset({"ambiguous_stress_convention"})
+
+
+def is_interpretive(scenario: str) -> bool:
+    """True iff ``scenario`` is an *interpretive* recovery (M40): it resolves the meaning of a
+    genuine source value (e.g. the sign convention of a carried stress tensor) rather than
+    fabricating a value the source never had, so it records an ``Assumption`` but no
+    ``supplied`` entry. The orthogonal counterpart of the three-way hazard classification
+    (Part 4 §3.1): the classes say *whether an explicit choice is required*; this marker says
+    *whether the written field is created or interpreted*."""
+    return scenario in INTERPRETIVE_SCENARIOS
 
 
 def available_options(
@@ -161,6 +195,14 @@ def available_options(
     if scenario == "missing_masses":
         # M8: IUPAC standard atomic weights (a reported default) or a caller-supplied list.
         return ["standard_masses", "manual_input"]
+    if scenario == "ambiguous_stress_convention":
+        # M40: the two-option core — the source-declared sign convention of a carried extXYZ
+        # stress tensor (ASE's convention is compression-positive, the opposite of the canonical
+        # tension-positive, Part 2 §3.7.1). `virial` is the named cut line: it needs the cell
+        # volume for the virial↔stress volume-scaling relation, so it would be offered only when
+        # the frame volume is available, and it tracks to v1.1.1 — absent from the offered list
+        # until then, so naming it refuses (never offered-then-refused, Part 4 §3.3).
+        return ["ase_sign_convention", "tension_positive"]
     if scenario == "missing_species":
         # Parse-time scenario, resolved in Slice 2: an ordered symbol / type→element map, or the
         # symbols read from a matching reference structure (Part 4 §3.3).

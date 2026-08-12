@@ -78,6 +78,16 @@ _CONSTRAINTS = "dynamics.constraints"
 # `atoms.occupancies` capability — suppresses the warning with no change here (**P6**).
 _OCCUPANCY_PATH = "atoms.occupancies"
 
+# The extXYZ stress carry (M40): the per-frame custom key owned by the extXYZ parser
+# (``_KEY_PREFIX + "stress"`` == ``extxyz:stress``, DECISIONS.md D18) plus its presence-path
+# form. A source that carries it and a target that can express ``electronic.stress`` is the
+# ``ambiguous_stress_convention`` detection shape — a present-but-unmapped carry, neither the
+# fabricative "required field absent" shape nor the reductive "present field the target cannot
+# hold" shape (Part 4 §3.3, M40).
+_STRESS_CARRY_KEY = "extxyz:stress"
+_STRESS_CARRY_PATH = f"user_metadata.custom_per_frame['{_STRESS_CARRY_KEY}']"
+_ELECTRONIC_STRESS = "electronic.stress"
+
 # Opt-in fabricative scenarios: a canonical field the target *can* write but does not *require*, so
 # the pre-flight diff never demands it. Emission is requested by the user supplying a recovery
 # choice for the scenario (Part 4 §3.3, "user requests velocity emission for a target that supports
@@ -195,6 +205,18 @@ def build_preflight_from_presence(
         == CapabilityLevel.PARTIAL
     )
 
+    # The `ambiguous_stress_convention` trigger (M40): a present-but-unmapped carry. Stress is a
+    # source field that is *present* (parked in the extXYZ custom carry) which the target *could*
+    # express as the canonical `electronic.stress` — neither of the two existing detection shapes.
+    # It fires when both hold: the carry is present on the source **and** the target declares a
+    # non-NONE write capability for `electronic.stress` (checked against the capability
+    # declaration, so the branch is correct the moment the extXYZ exporter flips its row —
+    # M40-S2 — with no change here).
+    stress_need_recovery = presence.status_of(_STRESS_CARRY_PATH) != "absent" and (
+        matrix.field_capability(target_format_id, "write", _ELECTRONIC_STRESS).level
+        != CapabilityLevel.NONE
+    )
+
     for entry in presence.entries:
         path = entry.path
         if entry.status not in ("present", "mixed") or path in _DERIVED_PATHS:
@@ -210,6 +232,16 @@ def build_preflight_from_presence(
         # draft and the pre-recovery refusal can still account for it (the optimistic-preserve
         # convention) and satisfy the completeness invariant before a choice is made.
         if container == _CONSTRAINTS and constraints_need_recovery:
+            diff.pending.append(PreservedEntry(path=path, detail=detail))
+            continue
+
+        # The stress carry's fate is decided by the `ambiguous_stress_convention` scenario
+        # (retired into `electronic.stress` on resolution, left as-is on refusal), so it is parked
+        # in `pending` — the optimistic-preserve convention, exactly like `dynamics.constraints`
+        # above — rather than classified against the container (which would predict it preserved
+        # when the resolver then retires it, a report lie; or removed when the target's
+        # custom-container capability is NONE, denying that the value survives interpretation).
+        if path == _STRESS_CARRY_PATH and stress_need_recovery:
             diff.pending.append(PreservedEntry(path=path, detail=detail))
             continue
 
@@ -345,6 +377,26 @@ def build_preflight_from_presence(
                 ),
                 options=_scenario_options("constraint_representation", caps),
                 params={"representable_kinds": list(caps.representable_constraint_kinds)},
+            )
+        )
+    # ambiguous_stress_convention: a carried extXYZ stress channel against a target that can
+    # express `electronic.stress`. The option list is computed here (at detection time, when the
+    # pair is known) and carried on the scenario, so the engine validates against — and the
+    # refusal report echoes — exactly one list (P5). `params` carries the custom-array location
+    # the resolver needs (and any volume a future `virial` option would consult).
+    if stress_need_recovery:
+        diff.unresolved.append(
+            UnresolvedScenario(
+                scenario="ambiguous_stress_convention",
+                path=_ELECTRONIC_STRESS,
+                detail=(
+                    f"source carries extXYZ stress verbatim in "
+                    f"user_metadata.custom_per_frame[{_STRESS_CARRY_KEY!r}]; the target can "
+                    "express electronic.stress, so the stress sign convention must be declared "
+                    "before it is promoted"
+                ),
+                options=available_options("ambiguous_stress_convention"),
+                params={"custom_key": _STRESS_CARRY_KEY},
             )
         )
     return diff

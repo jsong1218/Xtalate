@@ -33,11 +33,13 @@ from typing import Any
 import ase.data
 import numpy as np
 from ase import units as ase_units
+from ase.stress import voigt_6_to_full_3x3_stress
 
 from xtalate.recovery.scenarios import (
     SCENARIO_HAZARD,
     UnresolvedScenario,
     available_options,
+    is_interpretive,
 )
 from xtalate.schema import AtomsBlock, CanonicalObject, Cell, Frame
 from xtalate.schema.elements import atomic_number
@@ -47,13 +49,25 @@ from xtalate.schema.presence import PresenceMap
 # frame), then constraint projection (frame-independent), then the fabricated lattice, then the
 # velocity family. `missing_masses` resolves *before* `missing_velocities` so a chained
 # `maxwell_boltzmann` reads the masses the mass resolver has already written into the object.
+# `ambiguous_stress_convention` is last: the stress interpretation depends on none of the others
+# (it reads the per-frame `extxyz:stress` carry, which `frame_selection` has already sliced to
+# the retained frame either way), so it sits after the dependency chain, where it reads clearly
+# (D150).
 _DEP_ORDER = (
     "frame_selection",
     "constraint_representation",
     "missing_lattice",
     "missing_masses",
     "missing_velocities",
+    "ambiguous_stress_convention",
 )
+
+#: The custom-array key the `ambiguous_stress_convention` resolver interprets when the detected
+#: scenario carries no ``params['custom_key']`` (a directly-constructed scenario). The pre-flight
+#: always passes the key it detected; this default covers hand-built scenarios. The key itself is
+#: owned by the extXYZ parser (``_KEY_PREFIX + "stress"``, DECISIONS.md D18); the recovery layer
+#: does not import the parser, so the literal is restated here.
+_DEFAULT_STRESS_CARRY_KEY = "extxyz:stress"
 
 
 class RecoveryError(ValueError):
@@ -194,6 +208,8 @@ class RecoveryEngine:
                 working, applied = _apply_missing_masses(working, aid, choice, origin, match)
             elif scenario_code == "missing_velocities":
                 working, applied = _apply_missing_velocities(working, aid, choice, origin, match)
+            elif scenario_code == "ambiguous_stress_convention":
+                working, applied = _apply_stress_convention(working, aid, choice, origin, match)
             else:  # missing_lattice
                 working, applied = _apply_missing_lattice(
                     working, aid, choice, origin, match, computed_on_frame=selected_source_index
@@ -975,3 +991,152 @@ def _frame_with_masses(frame: Frame, masses: np.ndarray) -> Frame:
 def _frame_with_velocities(frame: Frame, velocities: np.ndarray) -> Frame:
     new_dynamics = frame.dynamics.model_copy(update={"velocities": velocities})
     return frame.model_copy(update={"dynamics": new_dynamics})
+
+
+def _apply_stress_convention(
+    canonical: CanonicalObject,
+    aid: str,
+    choice: dict[str, Any],
+    origin: str,
+    scenario: UnresolvedScenario,
+) -> tuple[CanonicalObject, AppliedAssumption]:
+    """Resolve the sign convention of a carried extXYZ stress tensor into `electronic.stress`
+    (interpretive, M40, Part 4 §3.3).
+
+    The stress values are **genuine source data** — the tensor exists in the file; only its
+    sign convention is unresolved (ASE's convention is compression-positive, the opposite of
+    the canonical tension-positive, Part 2 §3.7.1; DECISIONS.md D18). So this resolver
+    interprets, never fabricates: per frame it reshapes the carried ``extxyz:stress`` array
+    (Voigt-6 → full 3×3 symmetric, in the (xx,yy,zz,yz,xz,xy) order §3.7.1 states — the order
+    ASE itself writes) and applies the chosen sign normalization to reach the canonical
+    tension-positive eV/Å³ convention: ``tension_positive`` takes the tensor as-is (the source
+    is already tension-positive); ``ase_sign_convention`` negates it. The `extxyz:stress`
+    custom array is then **retired** (popped from ``custom_per_frame``) so the field lives in
+    exactly one place and the exporter never double-writes it.
+
+    One ``Assumption`` is recorded — the interpretation is the user's recorded decision, never
+    Xtalate's (a wrong choice yields a *detectably sign-flipped* tensor, the teeth test) —
+    with **no ``supplied`` entry**: the marker (``INTERPRETIVE_SCENARIOS``) scopes the
+    "fabricative ⇒ ``supplied``" invariant to scenarios that invented their value, and this
+    one did not. The genuine tensor is accounted as ``preserved`` (``electronic.stress``, which
+    also enters the write plan so the exporter writes it) and the retired carry as ``removed``
+    (its raw slot no longer exists) — the honest kept/retired pair, never silent loss (P1)."""
+    # The interpretive bright line (Part 4 §3.1, M40): the engine consults the marker here, at
+    # the point where the "fabricative ⇒ supplied" invariant is applied. A scenario classified
+    # interpretive must record an Assumption without a `supplied` entry; a resolver reaching
+    # this path for a non-interpretive scenario is a classification bug, refused loudly rather
+    # than silently producing a supplied-less fabrication.
+    if not is_interpretive(scenario.scenario):
+        raise RecoveryError(
+            f"ambiguous_stress_convention resolver mis-wired for {scenario.scenario!r}: it is "
+            "not registered in INTERPRETIVE_SCENARIOS"
+        )
+    code = _choice_code(choice, scenario)
+    custom_key = scenario.params.get("custom_key", _DEFAULT_STRESS_CARRY_KEY)
+    carry = canonical.user_metadata.custom_per_frame.get(custom_key)
+    if carry is None:
+        raise RecoveryError(
+            f"ambiguous_stress_convention: the source carries no {custom_key!r} custom array "
+            "to interpret — the scenario should not have fired"
+        )
+
+    negate = code == "ase_sign_convention"
+    new_frames = []
+    populated: list[int] = []
+    for frame in canonical.frames:
+        stress = None
+        value = carry[frame.index] if frame.index < len(carry) else None
+        if value is not None:
+            stress = _stress_to_canonical(np.asarray(value, dtype=float), negate=negate)
+            populated.append(frame.index)
+        new_frames.append(
+            frame.model_copy(
+                update={"electronic": frame.electronic.model_copy(update={"stress": stress})}
+            )
+        )
+    if not populated:
+        raise RecoveryError(
+            f"ambiguous_stress_convention: the {custom_key!r} carry holds no stress value in "
+            "any frame — nothing to interpret"
+        )
+
+    # Retire the custom array so the field lives in exactly one place (S2's exporter prefers
+    # the populated field; a surviving carry would be double-written).
+    um = canonical.user_metadata
+    new_um = um.model_copy(
+        update={
+            "custom_per_frame": {
+                key: value for key, value in um.custom_per_frame.items() if key != custom_key
+            }
+        }
+    )
+    updated = canonical.model_copy(update={"frames": new_frames, "user_metadata": new_um})
+    frames_desc = f"frame(s) {populated}" if len(populated) > 1 else f"frame {populated[0]}"
+    if code == "tension_positive":
+        description = (
+            "Interpreted extXYZ stress as tension-positive per your choice; no sign change "
+            "applied. The source file's stress values are genuine — only their sign convention "
+            "was resolved, never guessed."
+        )
+    else:  # ase_sign_convention
+        description = (
+            "Interpreted extXYZ stress as ASE's sign convention per your choice; sign inverted "
+            "to the canonical tension-positive convention (Part 2 §3.7.1). The source file's "
+            "stress values are genuine — only their sign convention was resolved, never "
+            "guessed."
+        )
+    assumption = AppliedAssumption(
+        id=aid,
+        scenario="ambiguous_stress_convention",
+        choice=code,
+        parameters={"resolved_source_convention": code, "custom_key": custom_key},
+        origin=origin,
+        description=description,
+        # Interpretive: the tensor is genuine source data, so no `supplied` entry (see the
+        # marker guard above).
+        supplied=[],
+        preserved=[
+            PreservedField(
+                path="electronic.stress",
+                detail=(
+                    f"stress interpreted from the source's {custom_key!r} carry per {code!r} "
+                    f"(sign-normalized to tension-positive eV/Å³) for {frames_desc}."
+                ),
+            )
+        ],
+        removed=[
+            FrameDrop(
+                path=f"user_metadata.custom_per_frame['{custom_key}']",
+                reason=(
+                    f"raw {custom_key!r} carry retired: its value was interpreted into "
+                    "electronic.stress under a recorded sign convention "
+                    "(ambiguous_stress_convention)"
+                ),
+                detail=f"retired for {frames_desc}.",
+            )
+        ],
+    )
+    return updated, assumption
+
+
+def _stress_to_canonical(raw: np.ndarray, *, negate: bool) -> np.ndarray:
+    """Normalize a carried stress array to the canonical tension-positive 3×3 (Part 2 §3.7.1).
+
+    A Voigt-6 carry (``(6,)``) is reshaped to the full symmetric 3×3 via ASE's own
+    ``voigt_6_to_full_3x3_stress`` — the exact inverse of the ordering ASE writes, so a
+    round-tripped tensor's components land where the file put them ((xx,yy,zz,yz,xz,xy)). A
+    ``(3, 3)`` carry (a file that spelled all nine components) is taken as-is. ``negate``
+    applies the ``ase_sign_convention`` flip (ASE is compression-positive, so reaching the
+    canonical tension-positive requires the sign change); the magnitude is already eV/Å³ for
+    an ASE-parsed extXYZ tensor, so no unit transform applies. Anything else is refused — an
+    unexpected shape is not a stress tensor the resolver can honestly interpret."""
+    if raw.shape == (6,):
+        tensor = np.asarray(voigt_6_to_full_3x3_stress(raw), dtype=np.float64)
+    elif raw.shape == (3, 3):
+        tensor = raw
+    else:
+        raise RecoveryError(
+            "ambiguous_stress_convention: carried stress has shape "
+            f"{raw.shape}, expected Voigt-6 (6,) or full (3, 3)"
+        )
+    return -tensor if negate else tensor

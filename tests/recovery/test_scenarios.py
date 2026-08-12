@@ -21,6 +21,10 @@ _EXPECTED_CLASSES = {
     "missing_velocities": HazardClass.FABRICATIVE,
     "missing_masses": HazardClass.FABRICATIVE,
     "missing_energy": HazardClass.FABRICATIVE,
+    # M40: FABRICATIVE for mode gating, but interpretive (INTERPRETIVE_SCENARIOS) — an explicit
+    # choice is required in both modes, yet no `supplied` entry is recorded (the stress values are
+    # genuine source data; only their sign convention is resolved).
+    "ambiguous_stress_convention": HazardClass.FABRICATIVE,
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
