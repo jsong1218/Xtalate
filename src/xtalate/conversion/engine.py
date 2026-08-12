@@ -48,6 +48,7 @@ from xtalate.conversion.report import (
     ConversionReport,
     PreservedEntry,
     RemovedEntry,
+    ReportWarning,
     SuppliedEntry,
 )
 from xtalate.recovery import (
@@ -384,9 +385,19 @@ class ConversionEngine:
         exporter = self._registry.get_exporter(target_format_id)
 
         # Warnings echo parse warnings (Part 3 §5 rule 5) alongside capability caveats (already in
-        # diff.warnings). Export-time transformation warnings would be added here if the exporter
-        # changed representation; the v0.1 POSCAR exporter writes canonical Cartesian unchanged.
-        warnings = [*diff.warnings, *_parse_warnings(parse_issues)]
+        # diff.warnings). Export-time transformation warnings come from the exporter itself via the
+        # additive `export_warnings` hook (Part 4 §1 rule 3, Part 2 §3.7.1; D151): the exporter owns
+        # the representation changes it applies — e.g. extXYZ reversing a populated
+        # `electronic.stress` to the compression-positive convention — and the engine reports them
+        # with source="export". The v0.1 POSCAR exporter applies none, so this is usually empty.
+        warnings = [
+            *diff.warnings,
+            *[
+                ReportWarning(code=w.code, message=w.message, source="export")
+                for w in exporter.export_warnings(canonical_out)
+            ],
+            *_parse_warnings(parse_issues),
+        ]
 
         report = self._assemble(
             stage="final",
@@ -598,9 +609,12 @@ class ConversionEngine:
         (Part 4 §2) is asserted over that accumulated presence — so the streamed report is identical
         to what ``convert`` would produce (standing rule 3), proven by the report-equality tests.
 
-        Only ``streaming_eligible`` pairs are accepted; anything that could need a recovery choice
-        raises ``ValueError`` (use ``convert``). When ``validate`` is set and both the source and
-        output streams are seekable, the conversion is validated **frame-pairwise over streams**
+        Only ``streaming_eligible`` pairs are accepted; a *static* fact that could need a recovery
+        choice raises ``ValueError`` (use ``convert``), while a *data-dependent* one — M40-S2's
+        ``ambiguous_stress_convention``, which fires on a source stress carry — is refused with a
+        ``RECOVERY_REQUIRED`` report after the frames are streamed, exactly as the materialized
+        path refuses the same input (standing rule 3). When ``validate`` is set and both the source
+        and output streams are seekable, the conversion is validated **frame-pairwise over streams**
         (``validation.streaming``) — the expected side re-reads and filters the source on the fly,
         the actual side re-parses the output as a stream — so validation is memory-bounded too and
         the whole path stays sub-linear in frames (M12 deliverable 4).
@@ -683,6 +697,49 @@ class ConversionEngine:
         preserved = [*diff.preserved, *diff.pending]
         removed = diff.removed
         warnings = [*diff.warnings, *_parse_warnings(stream.issues)]
+
+        if diff.unresolved:
+            # M40-S2: a *data-dependent* recovery fired mid-stream. `streaming_eligible` rules out
+            # every scenario the static capability facts can trigger, but
+            # `ambiguous_stress_convention` fires on the data itself — a source stress carry **and**
+            # a target that can express `electronic.stress` (extXYZ becomes such a target in
+            # M40-S2). The streaming path cannot resolve a convention choice, so it must refuse
+            # exactly as the materialized `convert` does (standing rule 3: streamed and materialized
+            # reports never diverge) — a silent pass-through of an undeclared sign convention is
+            # the exact hazard M40 exists to kill. The already-written frames are discarded like a
+            # mid-stream error (M12 deliverable 5).
+            _discard_partial_output(output)
+            report = self._assemble(
+                stage="final",
+                status="refused",
+                mode=mode,
+                source_schema_version=presence.schema_version,
+                source_format_id=source_format_id,
+                source_filename=source_filename,
+                source_sha256=source_sha256,
+                target_format_id=target_format_id,
+                target_filename=target_filename,
+                preserved=preserved,
+                removed=removed,
+                warnings=diff.warnings,
+                refusal={
+                    "code": "RECOVERY_REQUIRED",
+                    "message": "conversion needs recovery decisions that were not supplied; "
+                    "provide them as recovery_choices presets (the materialized convert), or "
+                    "choose a target that does not require the missing fields",
+                    "unresolved_scenarios": [
+                        {
+                            "scenario": s.scenario,
+                            "path": s.path,
+                            "detail": s.detail,
+                            "options": s.options,
+                        }
+                        for s in diff.unresolved
+                    ],
+                },
+            )
+            _assert_completeness_presence(report, presence)
+            return ConversionResult(report=report, output=None, canonical_out=None, validation=None)
 
         if mode == "strict" and removed and not acknowledge_loss:
             report = self._assemble(

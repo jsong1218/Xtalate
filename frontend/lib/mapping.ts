@@ -57,6 +57,11 @@ export const SCENARIO_LABELS: Record<string, Labeled> = {
     label: "How constraints are written",
     description: "The target expresses fixed-atom constraints differently from the source.",
   },
+  ambiguous_stress_convention: {
+    label: "Stress sign convention",
+    description:
+      "The file has a stress tensor but does not say whether positive means tension or compression.",
+  },
 };
 
 /**
@@ -103,6 +108,10 @@ export const CHOICE_LABELS: Record<string, Record<string, Labeled>> = {
   constraint_representation: {
     project: { label: "Keep the constraints the target can express" },
     drop_all: { label: "Drop all constraints" },
+  },
+  ambiguous_stress_convention: {
+    ase_sign_convention: { label: "Read it as compression-positive (ASE / VASP convention)" },
+    tension_positive: { label: "Read it as tension-positive (canonical convention)" },
   },
 };
 

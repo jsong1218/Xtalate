@@ -14,6 +14,7 @@ from xtalate.sdk.capabilities import (
 )
 from xtalate.sdk.plugins import ExporterPlugin, ParserPlugin
 from xtalate.sdk.results import (
+    ExporterWarning,
     FrameLimitExceeded,
     ParseError,
     ParseIssue,
@@ -38,6 +39,7 @@ __all__ = [
     "FormatCapabilities",
     "FrameLimitExceeded",
     "FrameStream",
+    "ExporterWarning",
     "ParseError",
     "ParseIssue",
     "ParseResult",

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, BinaryIO
 
 from xtalate.schema import CanonicalObject
 from xtalate.sdk.capabilities import FormatCapabilities
-from xtalate.sdk.results import ParseResult
+from xtalate.sdk.results import ExporterWarning, ParseResult
 
 if TYPE_CHECKING:
     from xtalate.sdk.streaming import FrameStream, StreamFrame, StreamHeader
@@ -106,6 +106,21 @@ class ExporterPlugin(ABC):
         """Write ``canonical`` to ``stream`` in this exporter's native format. Never reads
         native files. Transformations (unit/coordinate/sign) are reported by the Conversion
         Engine, not performed silently."""
+
+    def export_warnings(self, canonical: CanonicalObject) -> list[ExporterWarning]:
+        """Transformations this exporter will apply on :meth:`export`/``export_stream``, reported
+        as Conversion Report Warnings (Part 4 §1 rule 3; DECISIONS.md D151).
+
+        Additive and optional, like ``atom_permutation`` (DECISIONS.md D23) and streaming (D56):
+        the default returns no warnings, so existing/third-party exporters keep working unchanged.
+        An exporter overrides it only when writing can change *representation* — e.g. extXYZ
+        reverses the canonical tension-positive stress to the compression-positive convention its
+        ASE-native files carry, and reports ``STRESS_SIGN_CONVENTION_CHANGED``. The engine calls
+        this once per conversion with the write-plan-filtered object (``canonical′``) and maps the
+        result to ``ReportWarning(source="export")``; the exporter owns the decision, never the
+        engine (the engine cannot know which transformations a foreign exporter applies).
+        """
+        return []
 
     def atom_permutation(self, canonical: CanonicalObject) -> list[int] | None:
         """The atom reordering this exporter applies on write, or ``None`` for no reordering.

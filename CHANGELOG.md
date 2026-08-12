@@ -77,6 +77,21 @@ derives as 18 MB). **A3 — demo retention tightens to uploads 1 h / outputs 1 h
   (additive) to support the combined image. (M39-S1b re-targeted the original Hugging Face Spaces
   deployment — HF withdrew free Docker Spaces; the image itself is host-neutral.)
 
+### Added — extXYZ stress promotion + the `ambiguous_stress_convention` scenario (v1.1 M40)
+
+The M40 round-trip closure: extXYZ stress becomes a **first-class field** instead of an opaque
+carry. On read, a carried stress tensor's sign convention is resolved **only** under the recorded
+`ambiguous_stress_convention` recovery choice (`ase_sign_convention` / `tension_positive`; an
+undeclared convention refuses — `RECOVERY_REQUIRED` — never interpreted). On write, a resolved
+`electronic.stress` is written back to extXYZ reversed to the compression-positive convention the
+format's ASE-native files carry, reported as a `STRESS_SIGN_CONVENTION_CHANGED` Conversion Report
+warning (the Part 2 §3.7.1 exporter contract firing for a real populated field for the first
+time), and an unresolved object's `extxyz:stress` carry still round-trips **verbatim** (no
+regression). The resolved round-trip validates within the D151-recorded stress tolerance base, and
+the streaming path refuses a stress-carry conversion identically to the materialized path
+(standing rule 3). No engine-below-schema, `/v1`, CLI, or frontend change; `SCHEMA_VERSION` stays
+`1.0.0` (the package `1.1.0` bump is M41's).
+
 ## [1.0.0] — 2026-08-10
 
 Schema version: 1.0.0
