@@ -1,0 +1,207 @@
+{
+  "schema_version": "1.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "N",
+          "O"
+        ],
+        "atomic_numbers": [
+          7,
+          8
+        ],
+        "positions": [
+          [
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            2.125,
+            1.0,
+            1.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            6.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            6.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            6.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.25,
+            0.0,
+            0.0
+          ],
+          [
+            -0.25,
+            0.0,
+            0.0
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -14.25,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 1,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "N",
+          "O"
+        ],
+        "atomic_numbers": [
+          7,
+          8
+        ],
+        "positions": [
+          [
+            1.02,
+            1.0,
+            0.98
+          ],
+          [
+            2.125,
+            1.02,
+            1.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            6.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            6.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            6.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.3,
+            0.0,
+            0.0
+          ],
+          [
+            -0.3,
+            0.0,
+            0.0
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -14.31,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": {
+    "timestep": null
+  },
+  "simulation": null,
+  "provenance": {
+    "source_filename": "mlip_labeled.extxyz",
+    "source_format": "extxyz",
+    "source_units": {
+      "positions": "angstrom"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [],
+    "history": [
+      {
+        "timestamp": "<normalised>",
+        "operation": "parse",
+        "source_format": "extxyz",
+        "target_format": null,
+        "tool_version": "<normalised>",
+        "parser_version": "<normalised>",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {},
+    "custom_per_atom": {},
+    "custom_per_frame": {
+      "extxyz:stress": [
+        [
+          1.0,
+          2.0,
+          3.0,
+          0.75,
+          0.25,
+          0.5
+        ],
+        [
+          1.1,
+          2.2,
+          3.3,
+          0.75,
+          0.25,
+          0.5
+        ]
+      ]
+    }
+  }
+}
