@@ -17,6 +17,54 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+## [1.1.0] — 2026-08-12
+
+Schema version: 1.0.0
+
+### Added — the MLIP interchange proof: labeled extXYZ `energy` + `forces` + `stress` round-trip as a governed golden case (v1.1 M41)
+
+The roadmap §2 stopping point, proven end to end and committed under the v0.2 corpus rules: a
+licensed extXYZ fixture carrying per-frame `energy`, per-atom `forces`, and a non-diagonal `stress`
+tensor (`tests/golden/extxyz/mlip-labeled-2frame/`) round-trips extXYZ → Canonical → extXYZ with
+**all three labels first-class** — resolved under the `ambiguous_stress_convention=tension_positive`
+preset, validated within the M40 stress tolerance base, and reported. The no-preset refusal is
+asserted **substantive-report-identical** across `convert` and `convert_stream` — every report field
+byte-identical, each `refusal.message` pinned to its path-appropriate string (the streamed path's
+"(the materialized convert)" guidance is the legitimate divergence MASTER_SPEC Revision 1.40
+records, scoping the M12 standing rule 3 to substantive content). The nightly matrix and the
+report-completeness property test admit the case with **zero suite edits**, and the five formats
+that gained neither field show **no regression**. No `src/`, `/v1`, CLI, or frontend change;
+`SCHEMA_VERSION` stays `1.0.0` (D152).
+
+### Added — extXYZ stress promotion + the `ambiguous_stress_convention` scenario (v1.1 M40)
+
+The M40 round-trip closure: extXYZ stress becomes a **first-class field** instead of an opaque
+carry. On read, a carried stress tensor's sign convention is resolved **only** under the recorded
+`ambiguous_stress_convention` recovery choice (`ase_sign_convention` / `tension_positive`; an
+undeclared convention refuses — `RECOVERY_REQUIRED` — never interpreted). On write, a resolved
+`electronic.stress` is written back to extXYZ reversed to the compression-positive convention the
+format's ASE-native files carry, reported as a `STRESS_SIGN_CONVENTION_CHANGED` Conversion Report
+warning (the Part 2 §3.7.1 exporter contract firing for a real populated field for the first
+time), and an unresolved object's `extxyz:stress` carry still round-trips **verbatim** (no
+regression). The resolved round-trip validates within the D151-recorded stress tolerance base, and
+the streaming path refuses a stress-carry conversion identically to the materialized path
+(standing rule 3). No engine-below-schema, `/v1`, CLI, or frontend change; `SCHEMA_VERSION` stays
+`1.0.0` (the package `1.1.0` bump is M41's).
+
+
+### Added — the hosted demo (v1.1 M39-S1, re-targeted M39-S1b)
+
+- **A public, ephemeral, anonymous hosted demo** on a generic Docker host (Render primary, Fly.io
+  the documented alternative): a single container runs the whole stack (Next UI + FastAPI service
+  co-located, Tier-0 mode, no external dependencies), behind one exposed port (the platform's
+  injected `$PORT` on Render), with a demo policy of a 25 MB upload cap and short retention, and a
+  `NEXT_PUBLIC_DEMO_BANNER`-flagged banner (off by default) that funnels larger or private work to
+  the CLI and self-hosting. Purely additive deployment work — no schema, SDK, `/v1`, CLI, or
+  scientific change; `SCHEMA_VERSION` stays `1.0.0`. Deployment is the maintainer's manual step
+  ([`docs/hosted-demo.md`](docs/hosted-demo.md)); the frontend gains `output: "standalone"`
+  (additive) to support the combined image. (M39-S1b re-targeted the original Hugging Face Spaces
+  deployment — HF withdrew free Docker Spaces; the image itself is host-neutral.)
+
 ### Changed — demo free-tier hardening + Web UI fixes + the completion signal (v1.1 M39-S4)
 
 A demo-facing hardening pass plus two Web UI fixes and a new completion signal, all on the frozen
@@ -63,35 +111,6 @@ derives as 18 MB). **A3 — demo retention tightens to uploads 1 h / outputs 1 h
   terminal bell on stderr when it finishes — a converted file *or* a refusal — only when stderr
   is a TTY, with `--no-bell` and the global `XTALATE_NO_BELL` env var as opt-outs. Both channels
   degrade independently; neither available ⇒ the page's honest completion states are unchanged.
-
-### Added — the hosted demo (v1.1 M39-S1, re-targeted M39-S1b)
-
-- **A public, ephemeral, anonymous hosted demo** on a generic Docker host (Render primary, Fly.io
-  the documented alternative): a single container runs the whole stack (Next UI + FastAPI service
-  co-located, Tier-0 mode, no external dependencies), behind one exposed port (the platform's
-  injected `$PORT` on Render), with a demo policy of a 25 MB upload cap and short retention, and a
-  `NEXT_PUBLIC_DEMO_BANNER`-flagged banner (off by default) that funnels larger or private work to
-  the CLI and self-hosting. Purely additive deployment work — no schema, SDK, `/v1`, CLI, or
-  scientific change; `SCHEMA_VERSION` stays `1.0.0`. Deployment is the maintainer's manual step
-  ([`docs/hosted-demo.md`](docs/hosted-demo.md)); the frontend gains `output: "standalone"`
-  (additive) to support the combined image. (M39-S1b re-targeted the original Hugging Face Spaces
-  deployment — HF withdrew free Docker Spaces; the image itself is host-neutral.)
-
-### Added — extXYZ stress promotion + the `ambiguous_stress_convention` scenario (v1.1 M40)
-
-The M40 round-trip closure: extXYZ stress becomes a **first-class field** instead of an opaque
-carry. On read, a carried stress tensor's sign convention is resolved **only** under the recorded
-`ambiguous_stress_convention` recovery choice (`ase_sign_convention` / `tension_positive`; an
-undeclared convention refuses — `RECOVERY_REQUIRED` — never interpreted). On write, a resolved
-`electronic.stress` is written back to extXYZ reversed to the compression-positive convention the
-format's ASE-native files carry, reported as a `STRESS_SIGN_CONVENTION_CHANGED` Conversion Report
-warning (the Part 2 §3.7.1 exporter contract firing for a real populated field for the first
-time), and an unresolved object's `extxyz:stress` carry still round-trips **verbatim** (no
-regression). The resolved round-trip validates within the D151-recorded stress tolerance base, and
-the streaming path refuses a stress-carry conversion identically to the materialized path
-(standing rule 3). No engine-below-schema, `/v1`, CLI, or frontend change; `SCHEMA_VERSION` stays
-`1.0.0` (the package `1.1.0` bump is M41's).
-
 ## [1.0.0] — 2026-08-10
 
 Schema version: 1.0.0
