@@ -68,6 +68,78 @@ describe("UploadDropzone (Part 7 §2.2)", () => {
     expect(onFile.mock.calls[0][0].name).toBe("mol.xyz");
   });
 
+  it("refuses an over-limit file client-side: no onFile call, the FILE_TOO_LARGE funnel renders",
+    () => {
+      // v1.1 M39-S4 A2: with the live limit known and the file already over it, the drop zone must
+      // not hand the file to the uploader at all — an upload would die at the proxy as an opaque
+      // 500 (the D112 proxy-ceiling rule), never the backend's honest 413. The funnel renders as
+      // if the server had answered, with the code verbatim.
+      const onFile = vi.fn();
+      render(
+        <UploadDropzone
+          maxUploadBytes={1024}
+          status="idle"
+          progress={null}
+          error={null}
+          onFile={onFile}
+        />,
+      );
+      const input = screen.getByLabelText("Choose a file to convert") as HTMLInputElement;
+      const big = new File(["x".repeat(2048)], "too-big.xyz", { type: "text/plain" });
+      fireEvent.change(input, { target: { files: [big] } });
+
+      expect(onFile).not.toHaveBeenCalled();
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+      expect(screen.getByText("FILE_TOO_LARGE")).toBeInTheDocument();
+      expect(screen.getByTestId("size-funnel")).toHaveTextContent(/no size limit/i);
+    });
+
+  it("falls through to the server-gated path when the limit is unknown", () => {
+    // maxUploadBytes === null: nothing to check against — the uploader runs and the server's 413
+    // stays the gate (the A2 pre-check only engages when the live limit is known).
+    const onFile = vi.fn();
+    render(
+      <UploadDropzone
+        maxUploadBytes={null}
+        status="idle"
+        progress={null}
+        error={null}
+        onFile={onFile}
+      />,
+    );
+    const input = screen.getByLabelText("Choose a file to convert") as HTMLInputElement;
+    const big = new File(["x".repeat(2048)], "too-big.xyz", { type: "text/plain" });
+    fireEvent.change(input, { target: { files: [big] } });
+    expect(onFile).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("size-funnel")).not.toBeInTheDocument();
+  });
+
+  it("a compliant selection after a client-side refusal clears the funnel and uploads", () => {
+    const onFile = vi.fn();
+    render(
+      <UploadDropzone
+        maxUploadBytes={1024}
+        status="idle"
+        progress={null}
+        error={null}
+        onFile={onFile}
+      />,
+    );
+    const input = screen.getByLabelText("Choose a file to convert") as HTMLInputElement;
+
+    fireEvent.change(input, {
+      target: { files: [new File(["x".repeat(2048)], "too-big.xyz")] },
+    });
+    expect(screen.getByTestId("size-funnel")).toBeInTheDocument();
+
+    fireEvent.change(input, {
+      target: { files: [new File(["1\nO 0 0 0\n"], "mol.xyz")] },
+    });
+    expect(screen.queryByTestId("size-funnel")).not.toBeInTheDocument();
+    expect(onFile).toHaveBeenCalledTimes(1);
+    expect(onFile.mock.calls[0][0].name).toBe("mol.xyz");
+  });
+
   it("renders real progress as a labelled progressbar, not a fake animation", () => {
     render(
       <UploadDropzone

@@ -35,11 +35,11 @@ COPY docs docs
 # The frontend env the NEXT BUNDLE COMPILES IN at build time (next.config.mjs is evaluated during
 # `next build`, and NEXT_PUBLIC_ values are inlined — a standalone server does not re-read them at
 # runtime): the /v1 rewrite must target the co-located backend (never a compose service name),
-# the proxy body-clone ceiling must sit above the backend's own 25 MiB gate (the D112 rule), and
+# the proxy body-clone ceiling must sit above the backend's own 10 MiB gate (the D112 rule), and
 # the demo banner must be on. The final stage's ENV block below repeats these for the backend's
 # runtime and for documentation parity — this build-time block is the load-bearing one for Next.
 ENV API_PROXY_TARGET=http://localhost:8000 \
-    XTALATE_MAX_UPLOAD_BYTES=26214400 \
+    XTALATE_MAX_UPLOAD_BYTES=10485760 \
     NEXT_PUBLIC_DEMO_BANNER=1
 
 # `prebuild` regenerates the typed client, then `next build` emits the self-contained
@@ -92,9 +92,12 @@ RUN useradd --create-home --uid 1000 user \
 USER user
 
 # --- The demo environment (all overridable — these are the demo defaults) ----------------------
-# Backend: Tier-0 mode + the demo policy — anonymous (no API keys), a 25 MiB upload cap, short
-# retention, and docs URLs pointed at the GitHub docs so the error envelope's documentation_url and
-# the FILE_TOO_LARGE funnel resolve. XTALATE_ENVIRONMENT is a free-form label surfaced in logs and
+# Backend: Tier-0 mode + the demo policy — anonymous (no API keys), a 10 MiB upload cap, short
+# retention (v1.1 M39-S4: uploads/outputs 1 h, reports 1 day — the free box has no persistent
+# disk, so retention only bounds storage within one uptime window; `report_retention_days` is the
+# longer window in days, and 1 day ≥ 1 h holds), and docs URLs pointed at the GitHub docs so the
+# error envelope's documentation_url and the FILE_TOO_LARGE funnel resolve. XTALATE_ENVIRONMENT is a
+# free-form label surfaced in logs and
 # /v1/health (backend/config.py never branches scientific behaviour on it) — set to "demo"; the
 # previous "huggingface" value is retired, do not monitor for it.
 ENV XTALATE_ENVIRONMENT=demo \
@@ -102,9 +105,10 @@ ENV XTALATE_ENVIRONMENT=demo \
     XTALATE_OBJECT_STORE_BACKEND=filesystem \
     XTALATE_OBJECT_STORE_ROOT=/home/user/app/_objects \
     XTALATE_DATABASE_URL=sqlite+pysqlite:////home/user/app/_xtalate.db \
-    XTALATE_MAX_UPLOAD_BYTES=26214400 \
-    XTALATE_UPLOAD_RETENTION_HOURS=6 \
-    XTALATE_OUTPUT_RETENTION_HOURS=6 \
+    XTALATE_MAX_UPLOAD_BYTES=10485760 \
+    XTALATE_UPLOAD_RETENTION_HOURS=1 \
+    XTALATE_OUTPUT_RETENTION_HOURS=1 \
+    XTALATE_REPORT_RETENTION_DAYS=1 \
     XTALATE_API_KEYS= \
     XTALATE_DOCS_BASE_URL=https://github.com/jsong1218/Xtalate/blob/main/docs/errors.md \
     XTALATE_SELF_HOSTING_URL=https://github.com/jsong1218/Xtalate/blob/main/docs/self-hosting.md
@@ -114,7 +118,7 @@ ENV XTALATE_ENVIRONMENT=demo \
 # the values that actually reach the standalone bundle are the stage-A build-time ones above.
 ENV INTERNAL_API_URL=http://localhost:8000 \
     API_PROXY_TARGET=http://localhost:8000 \
-    XTALATE_MAX_UPLOAD_BYTES=26214400 \
+    XTALATE_MAX_UPLOAD_BYTES=10485760 \
     NEXT_PUBLIC_DEMO_BANNER=1
 
 EXPOSE 3000

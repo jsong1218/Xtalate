@@ -17,6 +17,53 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+### Changed — demo free-tier hardening + Web UI fixes + the completion signal (v1.1 M39-S4)
+
+A demo-facing hardening pass plus two Web UI fixes and a new completion signal, all on the frozen
+`1.0.0` schema: **no engine, `/v1`, CLI-contract, or schema change** (the CLI gains one *additive*
+documented flag), so `SCHEMA_VERSION` stays `1.0.0`. The two demo-only values live **only** in the
+`deploy/demo/Dockerfile` env — the shipped app keeps its own defaults (backend 100 MB /
+`report_retention_days=30`; the library + CLI have no cap).
+
+- **A1 — the hosted demo's upload cap drops from 25 MB to 10 MB** (all three
+  `XTALATE_MAX_UPLOAD_BYTES` occurrences incl. the build stage, so the Next proxy ceiling
+derives as 18 MB). **A3 — demo retention tightens to uploads 1 h / outputs 1 h / reports 1 day**
+  (`XTALATE_REPORT_RETENTION_DAYS=1` joins the runtime env; the 1-day ≥ 1-h invariant holds).
+  Both are Render-free-tier posture: the box has no persistent disk, so retention only bounds
+  storage within one uptime window, and a 10 MB cap bounds the inline-queue convert's memory
+  spike. Config-only — no contract or behaviour-shape change, no D-log entry, no MASTER_SPEC
+  revision (stated in the commit body per the Revision 1.27 rule). `docs/hosted-demo.md` and the
+  README/self-hosting pointers now say the new numbers.
+- **A2 — a client-side upload size pre-check (app-wide).** The drop zone refuses a file already
+  over the live `GET /v1/limits` ceiling *before* any bytes leave the browser, through the same
+  `FILE_TOO_LARGE` envelope + self-hosting funnel the server 413 renders — so an oversize file
+  can no longer die at the Next proxy as an opaque 500/`ECONNRESET` (the D112 proxy-ceiling
+  rule). The server 413 stays the backstop for the in-limits window and when the limit is
+  unknown. Config/UX only — no D-log entry.
+- **B1 — form controls are readable in dark mode (app-wide).** A base-layer rule themes bare
+  `input`/`textarea`/`select` color + background with the semantic tokens (scoped to leave
+  buttons, file pickers, and checkboxes/radios alone), and dark mode sets `color-scheme: dark`
+  so native widgets render correctly — fixing the whole class (recovery lattice/list/scalar
+  fields, the format-override select, the tolerance-profile picker) rather than per-field
+  patches. Presentation-only — no D-log entry.
+- **B2 — confirm before record in the convert flow (app-wide).** Clicking a target's Convert now
+  opens an explicit inline confirm step (the recovery-wizard card idiom, not a modal) reusing
+  the pre-flight preview as its content, with a final **Convert** and a **Cancel**;
+  `POST /v1/convert` fires only on the final Convert. Root cause: with the inline queue the
+  convert POST runs the whole conversion synchronously and writes a **completed** record before
+  returning, so an exploratory click committed a history row; completed conversions belong in
+  History (audit, P1), so the fix is not committing exploratory clicks, not hiding records
+  (D147, MASTER_SPEC Revision 1.36). The recovery path is unchanged: confirm → POST →
+  `awaiting_recovery` → decision cards.
+- **C — the completion signal (app-wide; D148, MASTER_SPEC Revision 1.37).** A purely additive
+  UX affordance on both surfaces: the job page's non-terminal → terminal transition fires a
+  **synthesized WebAudio two-note chime** (no audio asset) and a **browser Notification**, on by
+  default with a persisted bell/bell-off mute toggle in the header (permission requested only
+  when the user enables the signal, never on page load); and `xtalate convert` rings the
+  terminal bell on stderr when it finishes — a converted file *or* a refusal — only when stderr
+  is a TTY, with `--no-bell` and the global `XTALATE_NO_BELL` env var as opt-outs. Both channels
+  degrade independently; neither available ⇒ the page's honest completion states are unchanged.
+
 ### Added — the hosted demo (v1.1 M39-S1, re-targeted M39-S1b)
 
 - **A public, ephemeral, anonymous hosted demo** on a generic Docker host (Render primary, Fly.io

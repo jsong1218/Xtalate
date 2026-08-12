@@ -50,7 +50,7 @@ xtalate convert FILE --to FORMAT_ID [-o PATH] [--format FORMAT_ID]
                 [--recover "SCENARIO=CHOICE[,param=value…]"]…
                 [--acknowledge-loss] [--acknowledge-parse-warnings]
                 [--tolerance-profile NAME|FILE]
-                [--report PATH] [--validation-report PATH] [--json]
+                [--report PATH] [--validation-report PATH] [--json] [--no-bell]
 ```
 
 | Flag | Meaning |
@@ -67,10 +67,16 @@ xtalate convert FILE --to FORMAT_ID [-o PATH] [--format FORMAT_ID]
 | `--report PATH` | Write the `ConversionReport` JSON. |
 | `--validation-report PATH` | Write the `ValidationReport` JSON. |
 | `--json` | Print both reports as one JSON object. |
+| `--no-bell` | Do not ring the terminal bell when the conversion finishes. |
 
 A conversion that would need data the source lacks does not guess — it refuses unless you supply the
 value with `--recover`. See the [API reference](./api#12-convert) for the recovery scenarios and
 their choices.
+
+**The completion bell (v1.1 M39-S4).** When `xtalate convert` finishes — with a converted file *or*
+a refusal — the CLI rings the terminal bell (`\a`) on **stderr**, but only when stderr is a terminal
+(a piped or redirected stream never receives control bytes). Opt out per-invocation with `--no-bell`,
+or globally by setting `XTALATE_NO_BELL` (any non-empty value).
 
 ## validate
 

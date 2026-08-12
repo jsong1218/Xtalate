@@ -10,6 +10,7 @@ import { TargetPicker } from "@/components/TargetPicker";
 import { apiClient } from "@/lib/api/client";
 import { capabilitiesQuery } from "@/lib/api/queries";
 import { toErrorEnvelope, useInspection } from "@/lib/api/useInspection";
+import { armCompletionSignal } from "@/lib/notify/completionSignal";
 import { useQuery } from "@tanstack/react-query";
 import { writableTargets, type CapabilitiesMap } from "@/lib/capabilities/types";
 import type { DiscoveryReport, ErrorEnvelope as ErrorEnvelopeModel } from "@/lib/report/types";
@@ -144,6 +145,11 @@ export default function FilePage() {
       setSubmitError(toErrorEnvelope(error, "CONVERT_SUBMIT_FAILED", "Could not start the conversion."));
       return;
     }
+    // Arm this job's completion signal (v1.1 M39-S4, C1): only a job the user just launched may
+    // chime when it finishes, so a later refresh of — or a shared link to — the finished job page
+    // stays silent. Armed here, on the submit that actually starts the job (after the POST
+    // succeeded), and consumed by `useCompletionSignal` on the job's first terminal transition.
+    armCompletionSignal(data.job_id);
     // `file_id` rides along in the query so the job — and, after it, the conversion record — can
     // offer "convert again with different choices". Neither the job envelope nor the conversion
     // record carries the source file id (Part 6 §3.2, §4.4), so the only honest way back to this

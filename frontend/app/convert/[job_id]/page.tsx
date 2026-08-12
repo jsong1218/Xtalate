@@ -12,6 +12,7 @@ import { RefusalPanel } from "@/components/report/RefusalPanel";
 import { buttonClasses } from "@/components/ui/Button";
 import { cancelJob, isTerminalJobState, jobQuery, queryKeys } from "@/lib/api/queries";
 import { toErrorEnvelope } from "@/lib/api/useInspection";
+import { useCompletionSignal } from "@/lib/notify/useCompletionSignal";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AwaitingRecoveryBlock,
@@ -87,6 +88,13 @@ export default function ConversionJobPage() {
   const [cancelling, setCancelling] = useState(false);
 
   const job = useQuery(jobQuery(jobId));
+
+  // The completion signal (v1.1 M39-S4, C1): chime + browser Notification, fired once when this
+  // job makes the non-terminal → terminal transition, honoring the persisted mute toggle. It fires
+  // only for a job the user launched (armed by the Convert submit and consumed here), so a refresh
+  // of — or a shared link to — an already-finished job stays silent. The audio was armed by the
+  // Convert click (`unlockAudio`, TargetPicker) so it plays even when the tab is backgrounded.
+  useCompletionSignal(job.data?.state, jobId);
 
   async function handleCancel() {
     setCancelError(null);

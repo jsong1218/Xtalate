@@ -1,20 +1,23 @@
 import Link from "next/link";
+import { NotifyToggle } from "@/lib/notify/NotifyPreferenceProvider";
 import { ThemeToggle } from "@/lib/theme/ThemeProvider";
 
 /**
  * The app-shell header (pre-M36 frontend-redesign addendum, Slice S2; design spec §4.2).
  *
- * Rendered once from `app/layout.tsx`, so the same navigation and the light/dark toggle sit in the
- * same place on every page — the shell that replaces the old ad-hoc, per-page inline links. Left: the
- * Xtalate wordmark, the universal way home. Middle: the primary destinations. Right: the theme
- * toggle (which reads the ThemeProvider context the layout wraps this in).
+ * Rendered once from `app/layout.tsx`, so the same navigation, the light/dark toggle, and the
+ * completion-signal mute toggle sit in the same place on every page — the shell that replaces the
+ * old ad-hoc, per-page inline links. Left: the Xtalate wordmark, the universal way home. Middle:
+ * the primary destinations. Right: the theme toggle and the notify mute toggle (which read the
+ * providers the layout wraps this in; v1.1 M39-S4 C1 added the bell).
  *
- * A server component — nothing here needs client state (the toggle is the one client island). The nav
- * is `aria-label="Primary"` so it is a distinct landmark from the `/docs` section nav ("Documentation").
+ * A server component — nothing here needs client state (the two toggles are the client islands).
+ * The nav is `aria-label="Primary"` so it is a distinct landmark from the `/docs` section nav
+ * ("Documentation").
  *
- * Layout: the wordmark and toggle never shrink; the nav takes the middle and wraps its own links onto
- * a second line on a narrow screen (`min-w-0 flex-1`), so the bar grows taller rather than forcing the
- * page to scroll sideways.
+ * Layout: the wordmark and the toggles never shrink; the nav takes the middle and wraps its own
+ * links onto a second line on a narrow screen (`min-w-0 flex-1`), so the bar grows taller rather
+ * than forcing the page to scroll sideways.
  */
 
 const PRIMARY_NAV: { href: string; label: string }[] = [
@@ -48,7 +51,8 @@ export function AppHeader() {
             </Link>
           ))}
         </nav>
-        <div className="shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
+          <NotifyToggle />
           <ThemeToggle />
         </div>
       </div>
