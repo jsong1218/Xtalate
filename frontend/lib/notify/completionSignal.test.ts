@@ -82,6 +82,7 @@ class FakeNotification {
 
 beforeEach(() => {
   vi.resetModules();
+  sessionStorage.clear();
   FakeAudioContext.reset();
   FakeNotification.reset();
   vi.stubGlobal("AudioContext", FakeAudioContext);
@@ -186,5 +187,32 @@ describe("signalCompletion", () => {
     expect(FakeAudioContext.instances).toHaveLength(1);
     await vi.waitFor(() => expect(FakeNotification.instances).toHaveLength(1));
     expect(FakeNotification.requestPermission).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("armCompletionSignal / consumeCompletionSignalArm (the Finding-1 launch guard)", () => {
+  it("consumes an armed job exactly once, then reports it unarmed", async () => {
+    const { armCompletionSignal, consumeCompletionSignalArm } = await loadModule();
+    armCompletionSignal("job-1");
+    expect(consumeCompletionSignalArm("job-1")).toBe(true);
+    // A second consume (a reload of the same finished job) finds nothing armed.
+    expect(consumeCompletionSignalArm("job-1")).toBe(false);
+  });
+
+  it("reports an unarmed job as false without disturbing others", async () => {
+    const { armCompletionSignal, consumeCompletionSignalArm } = await loadModule();
+    armCompletionSignal("job-1");
+    // A different id (a shared link to some other finished job) was never armed.
+    expect(consumeCompletionSignalArm("job-2")).toBe(false);
+    // Arming is idempotent and independent, so job-1 still consumes cleanly.
+    armCompletionSignal("job-1");
+    expect(consumeCompletionSignalArm("job-1")).toBe(true);
+  });
+
+  it("tolerates a corrupt storage value as simply unarmed (best-effort, never throws)", async () => {
+    sessionStorage.setItem("xtalate-armed-jobs", "{not json");
+    const { consumeCompletionSignalArm } = await loadModule();
+    expect(() => consumeCompletionSignalArm("job-1")).not.toThrow();
+    expect(consumeCompletionSignalArm("job-1")).toBe(false);
   });
 });

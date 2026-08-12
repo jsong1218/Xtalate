@@ -90,10 +90,10 @@ export default function ConversionJobPage() {
   const job = useQuery(jobQuery(jobId));
 
   // The completion signal (v1.1 M39-S4, C1): chime + browser Notification, fired once when this
-  // job makes the non-terminal → terminal transition, honoring the persisted mute toggle. `state`
-  // is the same envelope the page renders below; a job that mounts already terminal (a shared
-  // link) is not a transition, so it never fires. The audio was armed by the Convert click
-  // (`unlockAudio`, TargetPicker) so it plays even when the tab is backgrounded.
+  // job makes the non-terminal → terminal transition, honoring the persisted mute toggle. It fires
+  // only for a job the user launched (armed by the Convert submit and consumed here), so a refresh
+  // of — or a shared link to — an already-finished job stays silent. The audio was armed by the
+  // Convert click (`unlockAudio`, TargetPicker) so it plays even when the tab is backgrounded.
   useCompletionSignal(job.data?.state, jobId);
 
   async function handleCancel() {

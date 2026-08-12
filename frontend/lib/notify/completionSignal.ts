@@ -134,10 +134,67 @@ export async function notify(title: string, body: string): Promise<void> {
 /**
  * The full completion signal: chime + notification, each degrading independently. Called once by
  * `useCompletionSignal` on the job page's non-terminal → terminal transition, only when the
- * persisted preference is on. Fires on any terminal outcome — completed, refused, failed,
- * cancelled, expired — because the page already shows *which*; the signal only says "it's done."
+ * persisted preference is on *and* the job was armed (see below). Fires on any terminal outcome —
+ * completed, refused, failed, cancelled, expired — because the page already shows *which*; the
+ * signal only says "it's done."
  */
 export function signalCompletion(): void {
   playChime();
   void notify("Xtalate", "Your conversion finished.");
+}
+
+// --- the "armed" set: only a job the user just launched may signal ------------------------------
+
+/**
+ * The job page always loads cold: its poll query starts `undefined` and resolves to the job's real
+ * state, so a *refresh* of — or a *shared link* to — an already-finished job looks byte-for-byte
+ * like a fresh finish (`undefined → terminal`). Under the Tier-0 inline queue the just-submitted
+ * job is *already* terminal by the time the page mounts, so we cannot tell "I just started this"
+ * from "I reopened a done one" by job state alone — the distinguishing fact is out of band.
+ *
+ * So the Convert submit **arms** the returned job id here, and {@link useCompletionSignal} **consumes**
+ * that arm on the job's first terminal transition: the signal fires once, for the conversion the
+ * user actually launched, and a reload or a link-open (never armed, or already consumed) stays
+ * silent. `sessionStorage` (not `localStorage`) scopes the arm to this browser tab, so the same job
+ * URL opened in a new tab is not armed either. Best-effort and non-throwing, like the rest of this
+ * module (private-mode storage failures degrade to "no signal", never a thrown error).
+ */
+const ARMED_STORAGE_KEY = "xtalate-armed-jobs";
+
+function readArmed(): string[] {
+  try {
+    const raw = sessionStorage.getItem(ARMED_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeArmed(ids: string[]): void {
+  try {
+    sessionStorage.setItem(ARMED_STORAGE_KEY, JSON.stringify(ids));
+  } catch {
+    // Persistence is best-effort; a storage failure simply means this finish won't signal.
+  }
+}
+
+/** Arm a job id so its first terminal transition may signal — called from the Convert submit. */
+export function armCompletionSignal(jobId: string): void {
+  if (typeof window === "undefined") return;
+  const armed = readArmed();
+  if (!armed.includes(jobId)) writeArmed([...armed, jobId]);
+}
+
+/**
+ * Consume a job id's arm: returns whether it was armed and clears it, so a given finish can signal
+ * at most once even across remounts. An unarmed id (a reload, a shared link) returns `false`.
+ */
+export function consumeCompletionSignalArm(jobId: string): boolean {
+  if (typeof window === "undefined") return false;
+  const armed = readArmed();
+  if (!armed.includes(jobId)) return false;
+  writeArmed(armed.filter((id) => id !== jobId));
+  return true;
 }
