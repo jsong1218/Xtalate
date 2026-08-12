@@ -44,6 +44,29 @@ test("the theme toggle switches to dark and the choice persists", async ({ page 
 });
 
 /**
+ * The completion-signal mute toggle (v1.1 M39-S4 C1): a bell in the header that mutes the chime +
+ * notification, on by default and persisted across a reload. The sound/notification themselves are
+ * browser-owned surfaces asserted in vitest with mocks; this proves the toggle renders in the live
+ * app and the choice sticks.
+ */
+test("the completion-signal mute toggle renders, defaults on, and persists", async ({ page }) => {
+  await page.goto("/");
+  const toggle = page.getByRole("button", { name: "Mute completion signal" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+  await toggle.click();
+  await expect(page.getByRole("button", { name: "Unmute completion signal" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+
+  // Persisted: a reload comes back muted, and the completion signal still doesn't crash the page.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Unmute completion signal" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Xtalate" })).toBeVisible();
+});
+
+/**
  * The consistent back affordance (addendum S2): an explicit parent destination in the upper-left of
  * every non-landing page, never raw browser-back, so the user is never trapped.
  */

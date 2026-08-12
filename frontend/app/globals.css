@@ -27,6 +27,10 @@
  * not hue alone).
  */
 :root {
+  /* Native form controls (selects, number spinners, checkboxes) render with the UA's light
+     widgets — the flip side of the B1 base rule below, which themes their text/background. */
+  color-scheme: light;
+
   /* Neutral surface chrome (light). Values match the pre-addendum look (white page, slate text). */
   --surface: #ffffff; /* page + panel background            */
   --surface-raised: #f8fafc; /* subtle raised/hover zones (slate-50)   */
@@ -73,6 +77,10 @@
 }
 
 :root[data-theme="dark"] {
+  /* Native form-control widgets (the select dropdown arrow, number spinners, the date/color
+     pickers) render dark, matching the dark surface they sit on (v1.1 M39-S4, B1). */
+  color-scheme: dark;
+
   /* Neutral surface chrome (dark). Page + panels share a dark slate; separation is by border. */
   --surface: #0f172a; /* slate-900 */
   --surface-raised: #1e293b; /* slate-800 */
@@ -132,5 +140,22 @@
   :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+
+  /*
+   * Form controls carry no themed text/background token (v1.1 M39-S4, B1). A form control does not
+   * inherit the page's `color` — it uses the UA default — so bare `input`/`textarea`/`select`
+   * elements render the browser-default dark text on the dark surface: unreadable typed values (the
+   * recovery lattice/list/scalar fields, the format-override select, the tolerance-profile picker).
+   * Theme them with the semantic tokens — high-contrast entered value (`--text-strong`) on the
+   * surface token — scoped so the UA defaults for buttons, file pickers, and checkboxes/radios
+   * (which have their own chrome) are left alone. This is the whole class, not per-field patches;
+   * any component that wants a different treatment still wins via a Tailwind utility.
+   */
+  input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    color: var(--text-strong);
+    background-color: var(--surface);
   }
 }

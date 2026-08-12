@@ -31,8 +31,13 @@ test("upload → inspect → convert → record → download, extXYZ to XYZ", as
   await expect(page.getByText(/Detected\s+Extended XYZ/i)).toBeVisible({ timeout: 30_000 });
 
   // 4. Choose plain XYZ as the target, then commit the conversion (permissive is the default).
+  //    Since v1.1 M39-S4 (B2) the first click opens an explicit confirm step (the pre-flight
+  //    preview, with a final Convert and a Cancel) — the POST /v1/convert fires only on that final
+  //    Convert, so an exploratory click never commits a record.
   await page.getByRole("button", { name: "Plain XYZ", exact: true }).click();
   await page.getByRole("button", { name: /^Convert to Plain XYZ$/ }).click();
+  await expect(page.getByTestId("convert-confirm")).toBeVisible();
+  await page.getByRole("button", { name: /^Convert$/ }).click();
 
   // 5. The live job page. The worker runs the job off the queue, so this polls to completion; when
   //    it lands, the durable record is one link away (the download deliberately lives only there).

@@ -18,7 +18,8 @@ recipe: connecting the repo / deploying is a deliberate human step (no CI, no to
   (no Redis, no separate worker), `filesystem` object store, SQLite — so the container needs
   nothing but itself.
 - **A demo policy, baked in** (all overridable via `ENV` in the image): anonymous mode (no API
-  keys), a **25 MB upload cap**, short retention (uploads/outputs deleted after 6 hours), and docs
+  keys), a **10 MB upload cap**, short retention (uploads/outputs deleted after 1 hour, reports kept
+  1 day), and docs
   URLs pointed at the GitHub docs so the error envelope and the `FILE_TOO_LARGE` funnel resolve.
 - **The demo banner** (`NEXT_PUBLIC_DEMO_BANNER=1`) states the ephemeral posture on every page and
   funnels larger/private work to the CLI and self-hosting. It is off by default — a self-host never
@@ -60,7 +61,7 @@ auto-deploys.
 
 **3. Free-tier expectations (say them plainly).** The Render free plan gives **512 MB RAM / 0.1
 CPU**, spins the service **down after ~15 minutes idle**, and **cold-starts in ~30–60 s** on the
-next request; bandwidth is ~5 GB/month. Fine for a small demo — the 25 MB upload cap and the
+next request; bandwidth is ~5 GB/month. Fine for a small demo — the 10 MB upload cap and the
 `max_frames` frame cap keep any single job bounded on a small box. The demo banner's "ephemeral"
 posture already implies a demo that may sleep; if the cold start ever bothers users, the fix is the
 paid starter plan (no spin-down), not a code change.
@@ -80,7 +81,7 @@ already exists — either delete it and re-create as a Blueprint, or in **Settin
 set **Dockerfile Path** to `./deploy/demo/Dockerfile` and **Docker Build Context Directory** to `.`,
 then redeploy with **"Clear build cache & deploy"**. A correct demo deploy serves the Next UI at `/`
 (which proxies `/v1` to the co-located backend), so the landing page renders, the banner shows the
-25 MB cap, and `/v1/health` answers through the proxy.
+10 MB cap, and `/v1/health` answers through the proxy.
 
 ## Deploying on Fly.io (alternative, documented only)
 
@@ -113,7 +114,7 @@ both say this; keep them in sync if the policy ever changes.
 docker build -f deploy/demo/Dockerfile -t xtalate-demo .
 # The platform-injected-port path (what Render does — prove the $PORT fix):
 docker run --rm -e PORT=10000 -p 10000:10000 xtalate-demo
-#   → open http://localhost:10000 — landing + convert show a 25 MB cap (the dynamic /v1/limits
+#   → open http://localhost:10000 — landing + convert show a 10 MB cap (the dynamic /v1/limits
 #     value), and a real conversion completes end-to-end through the co-located FastAPI via the /v1
 #     proxy, producing a Conversion Report and a downloadable output.
 # The default-port path (what Fly/local do):
@@ -121,6 +122,6 @@ docker run --rm -p 3000:3000 xtalate-demo
 ```
 
 The same code, different caps, proves the numbers are per-environment dynamic: the compose e2e stack
-runs `XTALATE_MAX_UPLOAD_BYTES=1048576` (UI shows 1 MB), the demo image bakes 25 MB, and the
-self-host default is 100 MB — all from one `next.config.mjs`/`backend/config.py`, nothing hard-coded
-in the UI.
+runs `XTALATE_MAX_UPLOAD_BYTES=1048576` (UI shows 1 MB), the demo image bakes 10 MB (uploads/
+outputs kept 1 h, reports 1 day), and the self-host default is 100 MB — all from one
+`next.config.mjs`/`backend/config.py`, nothing hard-coded in the UI.

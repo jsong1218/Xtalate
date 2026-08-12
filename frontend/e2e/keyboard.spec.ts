@@ -49,9 +49,14 @@ test("the conversion can be chosen and started with the keyboard", async ({ page
   await page.keyboard.press("Enter");
   await expect(target).toHaveAttribute("aria-pressed", "true");
 
-  // Start the conversion from the keyboard; the wizard advances to the live job page.
+  // Start the conversion from the keyboard. Since v1.1 M39-S4 (B2) the first Enter opens the
+  // inline confirm step; the final Convert (Enter again) commits the POST /v1/convert and the
+  // wizard advances to the live job page.
   const convert = page.getByRole("button", { name: /^Convert to Plain XYZ$/ });
   await convert.focus();
+  await page.keyboard.press("Enter");
+  const finalConvert = page.getByRole("button", { name: /^Convert$/ });
+  await expect(finalConvert).toBeFocused(); // focus lands on the confirm card's primary action
   await page.keyboard.press("Enter");
   await page.waitForURL("**/convert/**");
 });

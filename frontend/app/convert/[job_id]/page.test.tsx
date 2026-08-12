@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import ConversionJobPage from "./page";
+import { NotifyPreferenceProvider } from "@/lib/notify/NotifyPreferenceProvider";
 import awaitingJob from "@/components/__fixtures__/job.awaiting_recovery.json";
 import cancelledJob from "@/components/__fixtures__/job.cancelled.json";
 import completedJob from "@/components/__fixtures__/job.completed.json";
@@ -43,9 +44,14 @@ vi.mock("@/lib/api/client", () => ({
 function renderWithEnvelope(envelope: unknown) {
   apiGet.mockResolvedValue({ data: envelope, error: undefined });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // The page mounts the completion-signal hook (v1.1 M39-S4 C1), which reads the notify
+  // preference; the fixtures are all terminal-on-mount or non-terminal, so the signal never
+  // fires here (a shared-link terminal job is not a transition).
   return render(
     <QueryClientProvider client={client}>
-      <ConversionJobPage />
+      <NotifyPreferenceProvider>
+        <ConversionJobPage />
+      </NotifyPreferenceProvider>
     </QueryClientProvider>,
   );
 }

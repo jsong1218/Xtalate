@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { LossIcon } from "@/components/loss/icons";
 import { Row } from "@/components/report/Row";
+import { unlockAudio } from "@/lib/notify/completionSignal";
 import type { FormatCapabilities } from "@/lib/capabilities/types";
 import { buildPreflightPreview, type PreflightItem, type PreflightPreview } from "@/lib/preflight";
 import type { DiscoveryReport } from "@/lib/report/types";
@@ -20,6 +21,13 @@ import type { DiscoveryReport } from "@/lib/report/types";
  * The mode toggle defaults to **permissive** (convert and report every loss). **strict** asks the
  * engine to refuse rather than drop anything unacknowledged — surfaced here so the choice is made
  * before submitting, but enforced by the engine, not simulated in the client.
+ *
+ * **Confirm before record (v1.1 M39-S4, B2).** Clicking "Convert to …" opens an explicit inline
+ * confirm step (the recovery-wizard card idiom, not a modal) reusing this target's pre-flight
+ * preview as its content, with a final **Convert** and a **Cancel**. `onConvert` — the caller's
+ * `POST /v1/convert` — fires only on the final Convert; Cancel or navigating away posts nothing, so
+ * an exploratory click never commits a record. The final Convert click also arms the WebAudio
+ * context (`unlockAudio`) for the completion signal (C1) — the gesture the browser requires.
  */
 
 const MODES: { value: "permissive" | "strict"; title: string; caption: string }[] = [
@@ -115,12 +123,28 @@ export function TargetPicker({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<"permissive" | "strict">("permissive");
+  // The confirm step (B2): the target + mode snapshotted when the user clicked "Convert to …".
+  // While non-null, the picker shows the confirm card instead of the mode toggle + submit button;
+  // `onConvert` fires only from that card's final Convert.
+  const [confirming, setConfirming] = useState<{
+    target: FormatCapabilities;
+    mode: "permissive" | "strict";
+  } | null>(null);
 
   const selectedTarget = targets.find((t) => t.format_id === selectedId) ?? null;
   const preview = useMemo(
     () => (selectedTarget ? buildPreflightPreview(discovery, selectedTarget) : null),
     [discovery, selectedTarget],
   );
+
+  const confirmingMode = MODES.find((m) => m.value === confirming?.mode) ?? null;
+  const confirmConvertRef = useRef<HTMLButtonElement>(null);
+
+  // The confirm step is a new step, not a swap under the pointer: move focus to its primary action
+  // (the final Convert) so a keyboard user lands inside it instead of losing focus to <body>.
+  useEffect(() => {
+    if (confirming) confirmConvertRef.current?.focus();
+  }, [confirming]);
 
   return (
     <div className="space-y-5">
@@ -134,7 +158,11 @@ export function TargetPicker({
                 <button
                   type="button"
                   aria-pressed={active}
-                  onClick={() => setSelectedId(t.format_id)}
+                  onClick={() => {
+                    // A new selection abandons any pending confirm — nothing was submitted.
+                    setConfirming(null);
+                    setSelectedId(t.format_id);
+                  }}
                   className={`w-full rounded-md border px-3 py-2 text-left text-sm ${
                     active
                       ? "border-line-strong bg-inverse text-inverse-fg"
@@ -149,9 +177,59 @@ export function TargetPicker({
         </ul>
       </div>
 
-      {preview ? <PreflightOverlay preview={preview} /> : null}
+      {preview && !confirming ? <PreflightOverlay preview={preview} /> : null}
 
-      {selectedTarget ? (
+      {/* The B2 confirm step — an inline card in the wizard's own design language (Part 7 §3.2),
+          never a modal: the pre-flight preview already computed for this target is the confirm
+          content, and the final Convert (which alone POSTs /v1/convert) sits beside a Cancel that
+          simply returns to the picker. Nothing is recorded unless the user commits here. */}
+      {confirming ? (
+        <section
+          aria-label={`Confirm conversion to ${confirming.target.format_name}`}
+          data-testid="convert-confirm"
+          className="space-y-4 rounded-lg border border-line-strong bg-surface p-4"
+        >
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold text-strong">
+              Convert to {confirming.target.format_name}?
+            </h3>
+            <p className="text-sm text-muted">
+              This starts the conversion and records it — nothing is submitted until you confirm.
+            </p>
+            {confirmingMode ? (
+              <p className="text-xs text-faint">
+                Mode: {confirmingMode.title} — {confirmingMode.caption}
+              </p>
+            ) : null}
+          </div>
+
+          {preview ? <PreflightOverlay preview={preview} /> : null}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              ref={confirmConvertRef}
+              onClick={() => {
+                // The final Convert is the commit: the page POSTs /v1/convert and routes to the
+                // job. It is also the user gesture that arms the WebAudio context for the
+                // completion signal (C1) — called synchronously, before any await.
+                unlockAudio();
+                onConvert(confirming.target.format_id, confirming.mode);
+              }}
+            >
+              Convert
+            </Button>
+            <button
+              type="button"
+              onClick={() => setConfirming(null)}
+              className="rounded-md border border-line px-3 py-1.5 text-sm text-body hover:bg-raised"
+            >
+              Cancel
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {selectedTarget && !confirming ? (
         <div className="space-y-4 border-t border-line pt-4">
           <fieldset>
             <legend className="text-sm font-semibold text-strong">If information would be lost</legend>
@@ -180,7 +258,7 @@ export function TargetPicker({
             </div>
           </fieldset>
 
-          <Button onClick={() => onConvert(selectedTarget.format_id, mode)}>
+          <Button onClick={() => setConfirming({ target: selectedTarget, mode })}>
             Convert to {selectedTarget.format_name}
           </Button>
         </div>

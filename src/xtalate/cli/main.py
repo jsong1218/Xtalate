@@ -199,6 +199,7 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
     else:
         _emit_output(args, result, human=not args.json)
 
+    _ring_completion_bell(args)
     return _convert_exit_code(report, result.validation, args.mode)
 
 
@@ -522,6 +523,26 @@ def _resolve_tolerance(value: str | None) -> ToleranceProfile:
         raise _UsageError(f"invalid tolerance-table file {value!r}: {exc}") from exc
 
 
+def _ring_completion_bell(args: argparse.Namespace) -> None:
+    """The completion signal (v1.1 M39-S4, C2): a terminal bell when ``xtalate convert`` finishes.
+
+    Rings **only** when stderr is a TTY — a piped or redirected stream never receives a control
+    byte, so scripts and captured output stay clean — and only when the user has not opted out
+    with ``--no-bell`` or the global ``XTALATE_NO_BELL`` env var (any non-empty value). It fires on
+    either terminal outcome — a converted file **or** a refusal — because "finished" is the
+    signal; the report itself says which. ``inspect``/``validate`` are deliberately out of scope:
+    the maintainer asked for conversion finish.
+    """
+    if args.no_bell:
+        return
+    if os.environ.get("XTALATE_NO_BELL"):
+        return
+    if not sys.stderr.isatty():
+        return
+    sys.stderr.write("\a")
+    sys.stderr.flush()
+
+
 def _convert_exit_code(
     report: ConversionReport, validation: ValidationReport | None, mode: str
 ) -> int:
@@ -632,6 +653,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_convert.add_argument(
         "--json", action="store_true", help="Print both reports as one JSON object."
+    )
+    p_convert.add_argument(
+        "--no-bell",
+        action="store_true",
+        help="Do not ring the terminal bell on completion (XTALATE_NO_BELL disables it globally).",
     )
 
     p_validate = sub.add_parser(
