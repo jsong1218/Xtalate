@@ -98,7 +98,10 @@ def test_non_utf8_input_is_parse_error() -> None:
     # Non-text bytes must fail through the ParseError contract (§5), not a raw UnicodeDecodeError.
     with pytest.raises(ParseError) as exc:
         parse_bytes(_parser(), b"2\n\xff\xfe\nH 0 0 0\nH 1 1 1\n")
-    assert exc.value.issues[0].code == "XYZ_ENCODING_ERROR"
+    issue = exc.value.issues[0]
+    assert issue.code == "XYZ_ENCODING_ERROR"
+    # The streaming reader reports the within-line byte offset (module docstring / _line_reader).
+    assert issue.location == "byte 0 within the line"
 
 
 def test_sniff_recognises_plain_xyz() -> None:
