@@ -28,9 +28,10 @@ the honest statement is a package bump on a frozen schema.
   (`tests/golden/extxyz/mlip-labeled-2frame/`, licensed manifest under the corpus rules) proves
   labeled extXYZ round-trips per-frame `energy`, per-atom `forces`, and `stress` **all first-class**
   under the scenario preset — the roadmap's "speaks the MLIP training lingua franca completely"
-  stopping point — with the materialized and streamed no-preset refusals asserted
-  report-identical. The nightly matrix and the report-completeness property test admit the case with
-  zero suite edits; the other five formats show no regression.
+  stopping point — with the materialized and streamed no-preset refusals asserted identical over every
+  substantive field (each path's `refusal.message` carries its own correct guidance). The nightly matrix
+  and the report-completeness property test admit the case with zero suite edits; the other five formats
+  show no regression.
 - **Also in this release (M39):** a public hosted demo (single-container, ephemeral, anonymous),
   Web UI fixes (dark-mode form controls, a confirm-before-convert step, a completion
   chime/notification), and a CLI terminal-bell completion signal.

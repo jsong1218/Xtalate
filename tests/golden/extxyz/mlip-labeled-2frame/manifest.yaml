@@ -21,5 +21,6 @@ notes: >-
   electronic.stress under the ambiguous_stress_convention recovery choice. The expectation
   therefore holds the UNRESOLVED parse: energy/forces first-class immediately, stress as the
   Voigt-6 (xx,yy,zz,yz,xz,xy) carry per frame. The resolved round-trip itself is asserted by
-  tests/conversion/test_mlip_interchange.py, not by the expectation. Both frames carry every
-  label; the forces column is constant across frames, so no per-frame-column warning fires.
+  tests/conversion/test_mlip_interchange.py, not by the expectation. Both frames declare the
+  same Properties= columns (the forces column is present in every frame; its per-atom values
+  differ), so no per-frame-column warning fires.
