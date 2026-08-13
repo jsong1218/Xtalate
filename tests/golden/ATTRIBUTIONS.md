@@ -79,6 +79,13 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-authored for M3c: a single-frame diatomic (C, O) in a cubic cell exercising the breadth of extXYZ's Properties=/Lattice= grammar. No public spec worked example exists for extXYZ (unlike XYZ §8.1 / POSCAR §8.2), so this fixture is synthetic. Values chosen to survive ASE's 8-decimal write formatting so the identity round-trip is exact.
 
+## `extxyz` / `mlip-labeled-2frame` (golden)
+
+- **Source file:** `mlip_labeled.extxyz`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M41: a two-frame N-O diatomic in a cubic cell carrying the three MLIP training labels — per-frame energy=, per-atom forces= column, and a non-diagonal 3x3 stress= channel — so the round-trip proof exercises all three first-class. Values are short decimals chosen to survive ASE's 8-decimal write formatting, so the interchange round-trip is exact (M40's fixture convention).
+
 ## `poscar` / `nacl-primitive` (golden)
 
 - **Source file:** `POSCAR`

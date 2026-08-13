@@ -226,6 +226,86 @@ Together they are what gives the frozen-SDK stability promise below mechanical t
 > covers the public SDK only — the `_`-prefixed internal surface is not part of the contract — and a
 > breaking change waits for 2.0, with migration notes.
 
+### 5.4 Adding a recovery scenario
+
+Formats are the plugin seam; **recovery scenarios are the core seam** — a scenario changes what the
+engine *refuses* and *offers* for every format, so it lives in `src/xtalate/recovery/` and
+`src/xtalate/conversion/preflight.py`, not in a separate distribution. The catalog is the Part 4
+§3.3 table of `docs/MASTER_SPEC.md` made mechanical: `src/xtalate/recovery/scenarios.py` registers
+every scenario the engine can see and hazard-classifies it, and the pre-flight diff emits an
+unresolved scenario only when its trigger fires for the concrete source/target pair. The worked
+example this section walks through is `ambiguous_stress_convention` — the first scenario added
+after the v1.0 freeze (M40), and the first *interpretive* one. A scenario is five things; the
+scenario's tests
+([`tests/conversion/test_stress_convention_preflight.py`](../tests/conversion/test_stress_convention_preflight.py)
+and [`tests/capabilities/test_stress_capability_rows.py`](../tests/capabilities/test_stress_capability_rows.py))
+are the proof each one landed.
+
+1. **Register it with a hazard class.** `SCENARIO_HAZARD` in `recovery/scenarios.py` maps the
+   scenario code to exactly one of the three hazard classes (Part 4 §3.1). Bulk-reductive scenarios
+   are never registered — they are reported `removed` and proceed in permissive mode — while
+   selective-reductive and fabricative ones require an explicit choice. `ambiguous_stress_convention`
+   registers `FABRICATIVE`: an explicit choice is required in both strict and permissive modes, never
+   an auto-applied default. But it is also **interpretive** — it resolves the *meaning* of genuine
+   source data (the sign convention of a carried stress tensor) rather than creating a value the
+   source never had — so it records an `Assumption` with **no** `supplied` entry. That is a second,
+   orthogonal marker: `INTERPRETIVE_SCENARIOS` (a frozenset) scopes the "fabricative ⇒ `supplied`"
+   invariant to scenarios that genuinely invent a value. A scenario that interprets present data
+   joins the marker; one that fabricates does not.
+2. **Compute its option list.** `available_options()` in the same file returns the honest,
+   *pair-specific* choice codes — computed, never static (Part 4 §3.3): a choice that is not
+   scientifically coherent for the concrete pair, or not implemented in this version, is absent from
+   the offered list rather than offered and then refused. `ambiguous_stress_convention` returns
+   `["ase_sign_convention", "tension_positive"]`; `virial` is the named cut line — it needs the cell
+   volume for the virial↔stress volume-scaling relation — so it is absent (naming it refuses) until
+   v1.1.1. Do **not** document an option you have not built.
+3. **Detect it in the pre-flight diff.** `conversion/preflight.py` emits an `UnresolvedScenario`
+   (the descriptor lives in `recovery/scenarios.py`) carrying the canonical `path` a fabricative
+   resolution would supply, a plain-language `detail`, and the option list computed at detection
+   time — when the pair is known — so the engine validates against, and the refusal report echoes,
+   exactly one list (P5). The `ambiguous_stress_convention` trigger is the *present-but-unmapped
+   carry* shape: it fires only when the source carries
+   `user_metadata.custom_per_frame["extxyz:stress"]` **and** the target declares a non-NONE write
+   capability for `electronic.stress` — checked against the capability declaration, so the branch is
+   correct the moment an exporter flips its row. Until then the carry is parked in the pre-flight's
+   `pending` list (the optimistic-preserve convention), never classified against the container.
+4. **Resolve it in the Recovery Engine.** `recovery/engine.py`'s `RecoveryEngine.resolve` applies
+   the chosen option, validates it against the computed list, records an `AppliedAssumption` (and,
+   for a genuinely fabricative scenario, a `SuppliedField`), and returns the amended object. The
+   resolver also decides what the choice *writes*: resolving `ambiguous_stress_convention` retires
+   the carry into `electronic.stress`, and a later export writes it back sign-reversed to the
+   compression-positive convention its ASE-native files carry, reporting a
+   `STRESS_SIGN_CONVENTION_CHANGED` warning.
+5. **Give it a catalog row and a preset form.** The Part 4 §3.3 table in `docs/MASTER_SPEC.md` is
+   the normative contract — trigger, options (✳ where pair-conditional), and the non-interactive
+   behavior without a preset — and `ambiguous_stress_convention`'s row states `refused`: an
+   undeclared convention is never interpreted, because a sign flip is invisible in the output. The
+   CLI form is the same repeatable `--recover <scenario>=<choice>[,param=value...]` flag every preset
+   takes:
+
+   ```bash
+   xtalate convert in.extxyz --to extxyz -o out.extxyz \
+       --recover ambiguous_stress_convention=tension_positive
+   ```
+
+   Without the preset the conversion **refuses** — exit code 2, a first-class Conversion Report with
+   `status="refused"`, `refusal.code="RECOVERY_REQUIRED"`, and `refusal.unresolved_scenarios`
+   carrying exactly the options a retry may preset. Refusal is the default because it is the only
+   default that neither fabricates data nor silently chooses which real data to discard (Part 4 §3.1).
+
+**What a new scenario does *not* need, and the two honest deferrals.** No Web UI work: until the
+v2.0 per-scenario copy batch, a new scenario renders in the wizard through the generic option list
+and the shared loss vocabulary — functional and honest, with no frontend change
+(`ambiguous_stress_convention` demonstrates exactly this state). No golden case is *required* — but
+the M41 proof
+([`tests/golden/extxyz/mlip-labeled-2frame/`](../tests/golden/extxyz/mlip-labeled-2frame), a governed
+golden case with a licensed manifest) is the template to copy when a scenario is claim-defining: its
+resolved round-trip deserves the same governed proof a format's identity round-trip gets. A
+contributor adding a scenario should expect to touch `src/xtalate/recovery/` +
+`conversion/preflight.py`, the scenario's tests, and the spec row — the whole point of this worked
+example is that the seam is documented end to end, so the community can contribute scenarios the
+way §5.1 lets them contribute formats (roadmap §13 rule 2).
+
 ## 6. Coding conventions (the non-negotiables)
 
 These invariants are what make Xtalate trustworthy. A change that breaks one will not merge, however

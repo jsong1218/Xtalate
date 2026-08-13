@@ -1,0 +1,26 @@
+case: mlip-labeled-2frame
+format_id: extxyz
+source_file: mlip_labeled.extxyz
+expected_canonical: expected.canonical.json
+canonical_schema_version: "1.0.0"
+sha256: "c3cc85cc9d7d76dade656fc3702c282717c8af6c5d2631d4133ba953b40e9377"
+expected_sha256: "b841dfe9f606f1c8aea85b5dcf0eaef3cdf36b127c26fe6333eab8c0e6e1fb82"
+origin:
+  kind: synthetic
+  source: >-
+    Hand-authored for M41: a two-frame N-O diatomic in a cubic cell carrying the three MLIP
+    training labels — per-frame energy=, per-atom forces= column, and a non-diagonal 3x3
+    stress= channel — so the round-trip proof exercises all three first-class. Values are
+    short decimals chosen to survive ASE's 8-decimal write formatting, so the interchange
+    round-trip is exact (M40's fixture convention).
+  license: "Apache-2.0"
+notes: >-
+  The MLIP-interchange golden (M41-S1): the first governed golden case whose round-trip is
+  recovery-resolved rather than an identity — stress is carried verbatim in
+  custom_per_frame['extxyz:stress'] on parse (D18), and only becomes first-class
+  electronic.stress under the ambiguous_stress_convention recovery choice. The expectation
+  therefore holds the UNRESOLVED parse: energy/forces first-class immediately, stress as the
+  Voigt-6 (xx,yy,zz,yz,xz,xy) carry per frame. The resolved round-trip itself is asserted by
+  tests/conversion/test_mlip_interchange.py, not by the expectation. Both frames declare the
+  same Properties= columns (the forces column is present in every frame; its per-atom values
+  differ), so no per-frame-column warning fires.
