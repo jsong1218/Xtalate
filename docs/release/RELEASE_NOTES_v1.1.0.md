@@ -32,6 +32,10 @@ the honest statement is a package bump on a frozen schema.
   substantive field (each path's `refusal.message` carries its own correct guidance). The nightly matrix
   and the report-completeness property test admit the case with zero suite edits; the other five formats
   show no regression.
+- **The advertised `max_frames` cap is now enforced (M39-S3).** `GET /v1/limits`' `max_frames` was
+  previously documented as advisory because no check enforced it; conversions now stream-count frames
+  and refuse an over-cap file with `422 FRAME_LIMIT_EXCEEDED` (with `frame_count`/`max_frames`)
+  *before* materializing — on both the service and the CLI/direct-SDK streaming path.
 - **Also in this release (M39):** a public hosted demo (single-container, ephemeral, anonymous),
   Web UI fixes (dark-mode form controls, a confirm-before-convert step, a completion
   chime/notification), and a CLI terminal-bell completion signal.
