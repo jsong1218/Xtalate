@@ -17,7 +17,7 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
-## [1.1.0] — 2026-08-12
+## [1.1.0] — 2026-08-13
 
 Schema version: 1.0.0
 
@@ -65,6 +65,28 @@ the streaming path refuses a stress-carry conversion identically to the material
   (additive) to support the combined image. (M39-S1b re-targeted the original Hugging Face Spaces
   deployment — HF withdrew free Docker Spaces; the image itself is host-neutral.)
 
+### Changed — F14/F15 schema cleanups (v1.1 M39-S2)
+
+Two v1.0-review carried-in cleanups to the migration layer, both under the frozen `1.0.0` schema.
+**F14** deletes the dead `OCCUPANCY_CUSTOM_KEY` constant so the occupancy custom-key literal has
+exactly one schema-layer definition, with a guard test pinning that. **F15** makes
+`_promote_occupancy` record a promotion only when at least one frame actually received the value —
+a malformed mapping now keeps its carry-through and gets no `Promoted …` note, and a mixed mapping
+names only the frames that received it. `SCHEMA_VERSION` stays `1.0.0`.
+
+### Added — the `max_frames` cap made real: bounded materialization + a `422 FRAME_LIMIT_EXCEEDED` gate (v1.1 M39-S3)
+
+The advertised `GET /v1/limits` `max_frames` cap — documented as *advisory* by the v1.0 review
+because no enforcing check existed — is now enforced, closing that finding. The library gains an
+additive `max_frames` seam on the frame-reading paths: `convert_stream` counts as it streams and
+raises `FrameLimitExceeded` mid-stream (partial output discarded), and `parse_with_recovery`/discovery
+run a bounded streaming count pass so an over-cap file is refused *before* it is materialized. Plain
+XYZ gained a real streaming reader so the count pass streams it too — every trajectory-capable parser
+now streams. The HTTP service passes `settings.max_frames` through every materializing path (inspect,
+convert, recovery preview, reference resolution) and translates the exception to
+`422 FRAME_LIMIT_EXCEEDED` with `frame_count`/`max_frames` details. No schema change;
+`SCHEMA_VERSION` stays `1.0.0`.
+
 ### Changed — demo free-tier hardening + Web UI fixes + the completion signal (v1.1 M39-S4)
 
 A demo-facing hardening pass plus two Web UI fixes and a new completion signal, all on the frozen
@@ -111,6 +133,39 @@ derives as 18 MB). **A3 — demo retention tightens to uploads 1 h / outputs 1 h
   terminal bell on stderr when it finishes — a converted file *or* a refusal — only when stderr
   is a TTY, with `--no-bell` and the global `XTALATE_NO_BELL` env var as opt-outs. Both channels
   degrade independently; neither available ⇒ the page's honest completion states are unchanged.
+
+### Fixed — the v1.1 architectural review
+
+The pre-tag review (folded into 1.1.0 per D64, as every version's review has been): five parallel
+audits — the frame cap + the plain-XYZ streaming rewrite, extXYZ stress read/write/capability, the
+stress-convention recovery/preflight/validation, the MLIP interchange proof + release surface, and
+the frontend/hosted demo — confirmed the v1.1 *code* sound under direct execution. The only findings
+were minor diagnostic/documentation regressions, one completion-signal coverage gap, two
+record-completeness gaps, and one deliberate-scope cross-format inconsistency (ticketed to v1.2);
+no critical or scientific-data-loss defect.
+
+- **Plain-XYZ encoding errors name their location again.** The streaming reader re-raised
+  `XYZ_ENCODING_ERROR` without the within-line byte offset the v1.0 whole-file path carried; the
+  raised issue now reports it in `location`, matching the module docstring's promise (a new test
+  pins it).
+- **Two docstrings stopped overclaiming.** `convert_stream` no longer claims the HTTP service
+  enforces the frame cap through it (the service enforces only through the materialized count-pass
+  seams; `convert_stream`'s own cap serves the CLI/direct-SDK streaming path), and the streaming
+  SDK's "before materializing" memory guarantee is now scoped to parsers that implement
+  `parse_stream` — a trajectory-capable parser (`max_frames=None`) must stream for the cap to bound
+  peak memory.
+- **The dual-source extXYZ stress export warns instead of silently dropping.** When a differing
+  `extxyz:stress` carry coexists with a populated `electronic.stress`, the exporter fires a
+  `STRESS_CARRY_DROPPED` `ExporterWarning` rather than dropping the carry's numbers with no report
+  entry.
+- **Resolve-and-retry arms the completion signal.** A conversion relaunched from a refused record's
+  **Resolve and retry** now arms the chime/notification before navigating, matching the file-page
+  launch — closing the "launched a job and switched away" gap the signal exists for.
+- **ASE `.traj` stress promotion and the 6-number extXYZ Voigt read are ticketed to v1.2.** Two
+  deliberate M40/D18 scope boundaries — the `ambiguous_stress_convention` machinery wired to extXYZ
+  only, and ASE's 9-number-only `stress=` read — are scheduled forward rather than expanded into a
+  release whose clock is running; the data is never lost (verbatim carries).
+
 ## [1.0.0] — 2026-08-10
 
 Schema version: 1.0.0
@@ -1502,7 +1557,8 @@ byte of scientific information kept, dropped, or fabricated.
 - Recovery is preset-only; tolerance profiles are the three named ones (custom tables are later
   seams).
 
-[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/jsong1218/Xtalate/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/jsong1218/Xtalate/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/jsong1218/Xtalate/compare/v0.7.0...v1.0.0
 [0.7.0]: https://github.com/jsong1218/Xtalate/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jsong1218/Xtalate/compare/v0.5.0...v0.6.0

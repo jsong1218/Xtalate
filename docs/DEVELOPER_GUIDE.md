@@ -172,6 +172,16 @@ when the backend might later be replaced by a library, and not otherwise.
    conversion, and validation with **zero changes to Xtalate** — the P6 payoff, and the reason
    `exfmt` shows up in the nightly round-trip matrix (as both source and target) without a core edit.
 
+> **Streaming is how the frame cap bounds memory.** A parser whose declared read `max_frames` is
+> `None` (a trajectory-capable format) **must** implement `parse_stream` for the `max_frames` cap to
+> bound peak memory. The cap's count pass (`enforce_max_frames`, M39-S3) streams frames one at a
+> time through `parse_as_stream` and stops at `max_frames + 1`; a trajectory-capable parser that
+> implements only the whole-file `parse` is materialized **before** the cap can fire, so an over-cap
+> file is still refused correctly but peak memory is not bounded during the count. Single-structure
+> formats (`max_frames=1`) are exempt — the cap skips them, so a whole-file `parse` costs them
+> nothing they would not already pay. Every first-party trajectory format streams (extXYZ, plain
+> XYZ, XDATCAR, ASE `.traj`); a third-party trajectory plugin must do the same to inherit the bound.
+
 ### 5.2 Ship it as an installable plugin (no fork)
 
 A third-party distribution advertises its parser/exporter under Xtalate's entry-point groups;

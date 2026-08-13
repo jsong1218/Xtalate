@@ -207,7 +207,15 @@ def stream_of(obj: CanonicalObject, issues: list[ParseIssue] | None = None) -> F
 def parse_as_stream(parser: ParserPlugin, data: bytes, *, filename: str | None) -> FrameStream:
     """Obtain a ``FrameStream`` for ``data`` from any parser — the streaming one if it implements
     ``parse_stream``, otherwise the whole-file ``parse`` adapted through ``stream_of``. This is the
-    single seam the registry/engine call so that streaming is transparent to the caller."""
+    single seam the registry/engine call so that streaming is transparent to the caller.
+
+    SDK contract (D154): the memory bound this seam exists for only holds when the parser streams.
+    A trajectory-capable parser (declared read ``max_frames=None``) **must** implement
+    ``parse_stream`` for the frame cap to bound peak memory — the whole-file fallback materializes
+    the full object here, *before* ``enforce_max_frames``'s count can fire, so an over-cap file is
+    still refused correctly but peak memory is not bounded during the count. Single-structure
+    formats (``max_frames=1``) are exempt: the cap skips them outright, so a whole-file ``parse``
+    costs them nothing they would not already pay."""
     import io
 
     if parser.supports_streaming():
@@ -228,12 +236,18 @@ def enforce_max_frames(
     whole CanonicalObject**: the count pass reads frames one at a time through
     :func:`parse_as_stream` and stops at ``max_frames + 1``. A parser whose declared read
     ``max_frames`` is a fixed small number (single-structure formats: ``1``) can never exceed the
-    cap and is skipped, so POSCAR/CIF jobs pay nothing. Every trajectory-capable parser streams
-    (extXYZ, plain XYZ, XDATCAR, ASE traj — M12/D56; plain XYZ joined after the M39 review), so an
-    over-cap file is read only up to ``max_frames + 1`` frames for every format the service reads
-    — never materialized first. A ``ParseError`` raised mid-count is swallowed — the real parse
-    that follows reproduces it (and its recovery path) identically; only the frame-count refusal
-    propagates. Count-so-far is the cap + 1 — the count at which the gate fired.
+    cap and is skipped, so POSCAR/CIF jobs pay nothing. The "before materializing" bound holds for
+    parsers that implement ``parse_stream`` — which every first-party trajectory format does
+    (extXYZ, plain XYZ, XDATCAR, ASE traj — M12/D56; plain XYZ joined after the M39 review) — so
+    an over-cap file of those formats is read only up to ``max_frames + 1`` frames, never
+    materialized first. A trajectory-capable parser (``max_frames=None``) that implements only the
+    whole-file ``parse`` is adapted through :func:`parse_as_stream`, which materializes it
+    *before* the cap can fire: such a file is still refused correctly once the count exceeds the
+    cap, but peak memory is not bounded during the count (see the SDK contract note in
+    :func:`parse_as_stream` and the DEVELOPER_GUIDE plugin section). A ``ParseError`` raised
+    mid-count is swallowed — the real parse that follows reproduces it (and its recovery path)
+    identically; only the frame-count refusal propagates. Count-so-far is the cap + 1 — the count
+    at which the gate fired.
     """
     caps = parser.capabilities()
     if caps.max_frames is not None and caps.max_frames <= max_frames:

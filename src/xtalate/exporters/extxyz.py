@@ -26,6 +26,7 @@ from ase import Atoms
 from ase import units as ase_units
 from ase.calculators.singlepoint import SinglePointCalculator
 from ase.io import write as ase_write
+from ase.stress import voigt_6_to_full_3x3_stress
 
 from xtalate.schema import CanonicalObject, Frame
 from xtalate.sdk import (
@@ -233,26 +234,67 @@ class ExtxyzExporter(ExporterPlugin):
         )
 
     def export_warnings(self, canonical: CanonicalObject) -> list[ExporterWarning]:
-        """Report the sign reversal this exporter applies to a populated ``electronic.stress``
-        (Part 2 §3.7.1, M40-S2): writing the canonical tension-positive tensor into an ASE-native
-        extXYZ file means writing the **opposite** sign convention, so the transformation is never
-        silent. Fires once per conversion whenever any frame carries a resolved stress; an
-        unresolved object (only the legacy carry) is written verbatim and warrants no warning."""
+        """Report the stress transformations this exporter applies on write (Part 2 §3.7.1,
+        M40-S2). Two warnings, each firing only when its trigger is present:
+
+        * ``STRESS_SIGN_CONVENTION_CHANGED`` — a populated ``electronic.stress`` is reversed from
+          the canonical tension-positive convention to the compression-positive convention
+          ASE-native extXYZ files carry (never silent).
+        * ``STRESS_CARRY_DROPPED`` — a frame carries **both** a populated ``electronic.stress`` and
+          a *differing* ``extxyz:stress`` carry; the field wins and the carry's numbers are
+          dropped (defensive dual-source guard, M40-S2). Fires only when the dropped numbers
+          actually differ from what was written; an identical carry is redundant, not a loss.
+
+        An unresolved object (only the legacy carry, no populated field) is written verbatim and
+        warrants neither warning."""
+        warnings: list[ExporterWarning] = []
         populated = [f.index for f in canonical.frames if f.electronic.stress is not None]
-        if not populated:
-            return []
-        frames_desc = f"frame(s) {populated}" if len(populated) > 1 else f"frame {populated[0]}"
-        return [
-            ExporterWarning(
-                code="STRESS_SIGN_CONVENTION_CHANGED",
-                message=(
-                    "stress reversed from the canonical tension-positive convention to the "
-                    "compression-positive convention extXYZ files written through ASE carry "
-                    f"({frames_desc}); the output's stress tensor has the opposite sign of the "
-                    "canonical value"
-                ),
+        if populated:
+            frames_desc = f"frame(s) {populated}" if len(populated) > 1 else f"frame {populated[0]}"
+            warnings.append(
+                ExporterWarning(
+                    code="STRESS_SIGN_CONVENTION_CHANGED",
+                    message=(
+                        "stress reversed from the canonical tension-positive convention to the "
+                        "compression-positive convention extXYZ files written through ASE carry "
+                        f"({frames_desc}); the output's stress tensor has the opposite sign of the "
+                        "canonical value"
+                    ),
+                )
             )
-        ]
+        # Dual-source guard (RF-3): when a populated field coexists with a stale carry,
+        # `_atoms_from` writes the field and drops the carry — report a *differing* drop, never
+        # silently. Compare in the space actually written: the field is negated to the output
+        # convention, and the carry is already a compression-positive Voigt-6, expanded back to
+        # 3×3 with ASE's own inverse.
+        carry_values = canonical.user_metadata.custom_per_frame.get(_STRESS_KEY)
+        dropped: list[int] = []
+        if carry_values is not None:
+            for frame in canonical.frames:
+                if frame.electronic.stress is None or frame.index >= len(carry_values):
+                    continue
+                carried = carry_values[frame.index]
+                if carried is None:
+                    continue
+                written = -np.asarray(frame.electronic.stress, dtype=float)
+                carried_full = np.asarray(
+                    voigt_6_to_full_3x3_stress(np.asarray(carried, dtype=float)), dtype=float
+                )
+                if not np.allclose(carried_full, written):
+                    dropped.append(frame.index)
+        if dropped:
+            frames_desc = f"frame(s) {dropped}" if len(dropped) > 1 else f"frame {dropped[0]}"
+            warnings.append(
+                ExporterWarning(
+                    code="STRESS_CARRY_DROPPED",
+                    message=(
+                        f"a populated electronic.stress coexisted with a differing "
+                        f"'extxyz:stress' carry on {frames_desc}; the field was written and the "
+                        "carry's numbers were dropped"
+                    ),
+                )
+            )
+        return warnings
 
 
 def _strip(key: str) -> str:

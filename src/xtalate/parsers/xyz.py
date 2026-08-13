@@ -105,6 +105,7 @@ def _line_reader(stream: BinaryIO) -> Iterator[str]:
             raise _error(
                 "XYZ_ENCODING_ERROR",
                 f"file is not valid UTF-8 text (byte 0x{raw[exc.start]:02x}); xyz is a text format",
+                location=f"byte {exc.start} within the line",
             ) from exc
 
 

@@ -624,8 +624,10 @@ class ConversionEngine:
         exceeds the cap the remaining frames are never read — :class:`FrameLimitExceeded` is raised
         mid-stream carrying the count-so-far and the cap, and the partial output is discarded like a
         mid-stream ``ParseError`` (``convert_stream`` returns no ConversionResult on failure). The
-        CLI passes no cap (a local trajectory has none); the HTTP service enforces its
-        ``settings.max_frames`` through the materialized seams and this one.
+        CLI passes no cap (a local trajectory has none). The HTTP service enforces its
+        ``settings.max_frames`` only through the materialized count-pass seams
+        (``parse_with_recovery`` / ``DiscoveryEngine.discover``); ``convert_stream``'s own cap
+        serves the CLI and the direct-SDK streaming path, which the service does not call.
         """
         if not self.streaming_eligible(source_format_id, target_format_id):
             raise ValueError(

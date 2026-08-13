@@ -171,6 +171,9 @@ def test_dual_source_prefers_the_populated_field(reg: Registry) -> None:
     assert not np.allclose(
         _carry_tensor(reparsed), [[9.0, 7.0, 8.0], [7.0, 6.0, 5.0], [8.0, 5.0, 4.0]]
     )
+    # The dropped carry is not silent: a differing dual source is reported as a warning.
+    warnings = _exporter(reg).export_warnings(both)
+    assert any(w.code == "STRESS_CARRY_DROPPED" for w in warnings)
 
 
 def test_mixed_frames_write_stress_only_where_the_field_is_populated(reg: Registry) -> None:
