@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { submitConvert } from "@/lib/api/queries";
 import { toErrorEnvelope } from "@/lib/api/useInspection";
+import { armCompletionSignal } from "@/lib/notify/completionSignal";
 import type { ConversionRecord, ErrorEnvelope as ErrorEnvelopeModel } from "@/lib/report/types";
 
 /**
@@ -85,6 +86,11 @@ export function ResolveAndRetry({
       );
       return;
     }
+    // Arm this job's completion signal (v1.1 M39-S4, C1; review RF-6): the retry launches a fresh
+    // job, so it must chime on finish exactly like the file page's Convert submit does — a user who
+    // resolves, retries, and switches tabs should still hear the finish. Armed before routing, on
+    // the submit that actually started the job, and consumed on the job's first terminal transition.
+    armCompletionSignal(result.envelope.job_id);
     // The new job carries the file_id forward, exactly as the file page does, so its own record can
     // offer this action again if it too refuses.
     router.push(`/convert/${result.envelope.job_id}?file_id=${encodeURIComponent(fileId as string)}`);

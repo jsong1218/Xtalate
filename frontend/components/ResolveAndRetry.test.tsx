@@ -25,6 +25,11 @@ vi.mock("@/lib/api/queries", () => ({
   submitConvert: (...args: unknown[]) => submitConvert(...args),
 }));
 
+const armCompletionSignal = vi.fn();
+vi.mock("@/lib/notify/completionSignal", () => ({
+  armCompletionSignal: (...args: unknown[]) => armCompletionSignal(...args),
+}));
+
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
@@ -47,6 +52,7 @@ const lossRefusal = {
 
 beforeEach(() => {
   submitConvert.mockReset();
+  armCompletionSignal.mockReset();
   push.mockReset();
 });
 
@@ -71,6 +77,9 @@ describe("ResolveAndRetry", () => {
       toleranceProfile: undefined,
     });
     expect(submitConvert.mock.calls[0]).not.toContain(refused.conversion_id);
+    // The retry launched a fresh job, so it arms that job's completion signal (review RF-6): a user
+    // who resolves, retries, and switches tabs still hears the finish, exactly like the file page.
+    expect(armCompletionSignal).toHaveBeenCalledWith("job-new");
     // The new job carries the file_id forward so its record can offer this action again.
     await waitFor(() =>
       expect(push).toHaveBeenCalledWith("/convert/job-new?file_id=file-123"),
