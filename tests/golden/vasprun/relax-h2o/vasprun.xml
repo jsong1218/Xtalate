@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<vasprun>
+<generator>
+  <i name="program" type="string" >vasp.6.1.2</i>
+  <i name="version" type="string" >6.1.2</i>
+  <i name="subversion" type="string" >16Mar2019 (build Mar 16 2019) complex parallel</i>
+  <i name="platform" type="string" >LinuxGNU</i>
+  <i name="date" type="string" >2026 08 13</i>
+  <i name="time" type="string" >12:00:00</i>
+</generator>
+<incar>
+  <i type="string" name="SYSTEM" >water, synthetic relaxation fixture</i>
+</incar>
+<atominfo>
+  <array name="atomtypes">
+    <dimension>2</dimension>
+    <field> mass </field>
+    <field> Z </field>
+    <field> psp </field>
+    <v> 1.008 1.0 8 </v>
+    <v> 15.999 8.0 8 </v>
+    <set>
+      <rcmax> 3.0 </rcmax>
+    </set>
+  </array>
+  <array name="atoms">
+    <dimension>2</dimension>
+    <field> vasp_x </field>
+    <field> vasp_y </field>
+    <field> vasp_z </field>
+    <field> atom_type </field>
+    <set>
+      <rcmax> 3.0 </rcmax>
+      <c> 0.5000 0.5000 0.5000 2 </c>
+      <c> 0.5000 0.7500 0.5000 1 </c>
+      <c> 0.7500 0.5000 0.5000 1 </c>
+    </set>
+  </array>
+</atominfo>
+<structure name="initialpos" >
+  <crystal>
+    <varray name="basis" >
+      <v> 10.0 0.0 0.0 </v>
+      <v> 0.0 10.0 0.0 </v>
+      <v> 0.0 0.0 10.0 </v>
+    </varray>
+    <i name="volume" > 1000.0 </i>
+    <i name="energy" > 0.0 </i>
+  </crystal>
+  <varray name="positions" mode="direct" >
+    <v> 0.5 0.5 0.5 </v>
+    <v> 0.5 0.75 0.5 </v>
+    <v> 0.75 0.5 0.5 </v>
+  </varray>
+</structure>
+<calculation>
+  <energy>
+    <i name="alpha" type="int" > 0 </i>
+    <i name="e_0_energy" type="float" > -76.3 </i>
+    <i name="e_fr_energy" type="float" > -76.301 </i>
+    <i name="e_wo_entrp" type="float" > -76.3 </i>
+    <i name="eentropy" type="float" > 0.001 </i>
+    <i name="efermi" type="float" > 6.8 </i>
+    <i name="eatom" type="float" > -80.0 </i>
+  </energy>
+  <varray name="forces" >
+    <v> 0.15 -0.1 0.0 </v>
+    <v> -0.05 0.1 0.0 </v>
+    <v> -0.1 0.0 0.0 </v>
+  </varray>
+  <structure>
+    <crystal>
+      <varray name="basis" >
+        <v> 10.0 0.0 0.0 </v>
+        <v> 0.0 10.0 0.0 </v>
+        <v> 0.0 0.0 10.0 </v>
+      </varray>
+      <i name="volume" > 1000.0 </i>
+      <i name="energy" > 0.0 </i>
+    </crystal>
+    <varray name="positions" mode="direct" >
+      <v> 0.5 0.5 0.5 </v>
+      <v> 0.5 0.73 0.5 </v>
+      <v> 0.73 0.5 0.5 </v>
+    </varray>
+  </structure>
+</calculation>
+<calculation>
+  <energy>
+    <i name="alpha" type="int" > 0 </i>
+    <i name="e_0_energy" type="float" > -76.5 </i>
+    <i name="e_fr_energy" type="float" > -76.501 </i>
+    <i name="e_wo_entrp" type="float" > -76.5 </i>
+    <i name="eentropy" type="float" > 0.001 </i>
+    <i name="efermi" type="float" > 6.75 </i>
+    <i name="eatom" type="float" > -80.0 </i>
+  </energy>
+  <varray name="forces" >
+    <v> 0.1 -0.05 0.0 </v>
+    <v> -0.05 0.05 0.0 </v>
+    <v> -0.05 0.0 0.0 </v>
+  </varray>
+  <structure>
+    <crystal>
+      <varray name="basis" >
+        <v> 10.0 0.0 0.0 </v>
+        <v> 0.0 10.0 0.0 </v>
+        <v> 0.0 0.0 10.0 </v>
+      </varray>
+      <i name="volume" > 1000.0 </i>
+      <i name="energy" > 0.0 </i>
+    </crystal>
+    <varray name="positions" mode="direct" >
+      <v> 0.5 0.5 0.5 </v>
+      <v> 0.5 0.74 0.5 </v>
+      <v> 0.74 0.5 0.5 </v>
+    </varray>
+  </structure>
+</calculation>
+<calculation>
+  <energy>
+    <i name="alpha" type="int" > 0 </i>
+    <i name="e_0_energy" type="float" > -76.6 </i>
+    <i name="e_fr_energy" type="float" > -76.601 </i>
+    <i name="e_wo_entrp" type="float" > -76.6 </i>
+    <i name="eentropy" type="float" > 0.001 </i>
+    <i name="efermi" type="float" > 6.72 </i>
+    <i name="eatom" type="float" > -80.0 </i>
+  </energy>
+  <varray name="forces" >
+    <v> 0.05 -0.02 0.0 </v>
+    <v> -0.03 0.02 0.0 </v>
+    <v> -0.02 0.0 0.0 </v>
+  </varray>
+  <structure>
+    <crystal>
+      <varray name="basis" >
+        <v> 10.0 0.0 0.0 </v>
+        <v> 0.0 10.0 0.0 </v>
+        <v> 0.0 0.0 10.0 </v>
+      </varray>
+      <i name="volume" > 1000.0 </i>
+      <i name="energy" > 0.0 </i>
+    </crystal>
+    <varray name="positions" mode="direct" >
+      <v> 0.5 0.5 0.5 </v>
+      <v> 0.5 0.745 0.5 </v>
+      <v> 0.745 0.5 0.5 </v>
+    </varray>
+  </structure>
+</calculation>
+</vasprun>

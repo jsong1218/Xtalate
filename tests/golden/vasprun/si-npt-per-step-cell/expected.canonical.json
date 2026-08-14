@@ -1,0 +1,326 @@
+{
+  "schema_version": "1.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Si",
+          "Si"
+        ],
+        "atomic_numbers": [
+          14,
+          14
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.8,
+            2.8,
+            2.8
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            5.6,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            5.6,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            5.6
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.01,
+            -0.01,
+            0.0
+          ],
+          [
+            -0.01,
+            0.01,
+            0.0
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -35.8,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 1,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Si",
+          "Si"
+        ],
+        "atomic_numbers": [
+          14,
+          14
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            2.9,
+            2.9,
+            2.9
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            5.8,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            5.8,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            5.8
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.02,
+            -0.01,
+            0.0
+          ],
+          [
+            -0.02,
+            0.01,
+            0.0
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -35.9,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 2,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Si",
+          "Si"
+        ],
+        "atomic_numbers": [
+          14,
+          14
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            3.0,
+            3.0,
+            3.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            6.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            6.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            6.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.0,
+            -0.01,
+            0.0
+          ],
+          [
+            0.0,
+            0.01,
+            0.0
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -36.0,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": {
+    "timestep": null
+  },
+  "simulation": {
+    "source_code": "vasp.5.4.4",
+    "calculator": null,
+    "xc_functional": null,
+    "pseudopotentials": null,
+    "thermostat": null,
+    "md_ensemble": null,
+    "temperature": null,
+    "extra": {
+      "vasprun:volume": "175.616",
+      "vasprun:energy": "0.0",
+      "system": "Si, synthetic NpT MD fixture (per-step cells)"
+    }
+  },
+  "provenance": {
+    "source_filename": "vasprun.xml",
+    "source_format": "vasprun",
+    "source_units": {
+      "positions": "fractional",
+      "lattice_vectors": "angstrom"
+    },
+    "original_coordinate_system": "fractional",
+    "parse_notes": [
+      "Direct (fractional) coordinates converted to Cartesian using each step's lattice matrix.",
+      "pbc set to (true,true,true): vasprun.xml carries no PBC declaration and VASP is always fully periodic (format-defined, not assumed).",
+      "electronic.total_energy read from the <energy> block's e_0_energy (VASP's energy extrapolated to zero smearing, the energy(sigma->0) value); other energy-block scalars are carried verbatim in user_metadata.custom_per_frame['vasprun:*'].",
+      "simulation.source_code set to the program string declared in <generator> (verbatim).",
+      "cell.lattice_vectors assembled from the <crystal> basis varray (rows a, b, c).",
+      "Each <calculation>'s own <structure> supplies that step's cell and positions; a step without one reuses the previous step's (the fixed-cell form)."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-08-14T03:39:51Z",
+        "operation": "parse",
+        "source_format": "vasprun",
+        "target_format": null,
+        "tool_version": "1.1.0",
+        "parser_version": "vasprun-parser 1.1.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {},
+    "custom_per_atom": {},
+    "custom_per_frame": {
+      "vasprun:alpha": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "vasprun:e_fr_energy": [
+        -35.81,
+        -35.91,
+        -36.01
+      ],
+      "vasprun:e_wo_entrp": [
+        -35.8,
+        -35.9,
+        -36.0
+      ],
+      "vasprun:eentropy": [
+        0.01,
+        0.01,
+        0.01
+      ],
+      "vasprun:efermi": [
+        6.9,
+        6.88,
+        6.85
+      ],
+      "vasprun:eatom": [
+        -40.0,
+        -40.0,
+        -40.0
+      ],
+      "vasprun:volume": [
+        175.616,
+        195.112,
+        216.0
+      ],
+      "vasprun:energy": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+case: relax-h2o
+format_id: vasprun
+source_file: vasprun.xml
+expected_canonical: expected.canonical.json
+canonical_schema_version: "1.0.0"
+sha256: "7fa8727be1f68d6e77f395b5a143013f97bca1bd93b35b54fd27b47f20f6055c"
+expected_sha256: "ca2939713cd1456cff692261ac31b95a04e239ca8a3ff75a0e13abed5639e159"
+origin:
+  kind: synthetic
+  source: "Hand-written for M42-S2 (classical VASP 6.1 layout, root <vasprun>, H2O in a 10 A cubic box, 3-ionic-step relaxation: each <calculation> carries its own <structure> with mode=\"direct\" positions)"
+  license: "Apache-2.0"
+notes: >-
+  The multi-step relaxation golden: three <calculation> steps, each with an inner <structure>
+  whose positions (direct, mode attribute present) move the H atoms 0.75 -> 0.73 -> 0.74 ->
+  0.745 in the y/z directions, giving Cartesian 7.5, 7.3, 7.4, 7.45 A against the fixed 10 A
+  cell. Energies -76.3/-76.5/-76.6 eV, forces verbatim per step; the per-frame energy-block
+  carries and the per-step structure carries (volume/energy) land in custom_per_frame. A
+  parser that reused the initial structure for every step would silently place every frame at
+  the 7.5 A geometry — the case this golden pins.

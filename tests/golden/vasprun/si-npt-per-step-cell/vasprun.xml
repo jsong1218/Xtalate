@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<vasprun>
+<generator>
+  <i name="program" type="string" >vasp.5.4.4</i>
+  <i name="version" type="string" >5.4.4</i>
+  <i name="subversion" type="string" >18Apr2016 (build Apr 19 2016 15:44:46) complex parallel</i>
+  <i name="platform" type="string" >LinuxGNU</i>
+  <i name="date" type="string" >2026 08 13</i>
+  <i name="time" type="string" >12:00:00</i>
+</generator>
+<incar>
+  <i type="string" name="SYSTEM" >Si, synthetic NpT MD fixture (per-step cells)</i>
+</incar>
+<atominfo>
+  <array name="atomtypes">
+    <dimension>2</dimension>
+    <field> mass </field>
+    <field> Z </field>
+    <field> psp </field>
+    <v> 28.0855 14.0 8 </v>
+    <set>
+      <rcmax> 3.0 </rcmax>
+    </set>
+  </array>
+  <array name="atoms">
+    <dimension>2</dimension>
+    <field> vasp_x </field>
+    <field> vasp_y </field>
+    <field> vasp_z </field>
+    <field> atom_type </field>
+    <set>
+      <rcmax> 3.0 </rcmax>
+      <c> 0.0 0.0 0.0 1 </c>
+      <c> 0.5 0.5 0.5 1 </c>
+    </set>
+  </array>
+</atominfo>
+<structure name="initialpos" >
+  <crystal>
+    <varray name="basis" >
+      <v> 5.6 0.0 0.0 </v>
+      <v> 0.0 5.6 0.0 </v>
+      <v> 0.0 0.0 5.6 </v>
+    </varray>
+    <i name="volume" > 175.616 </i>
+    <i name="energy" > 0.0 </i>
+  </crystal>
+  <varray name="positions" >
+    <v> 0.0 0.0 0.0 </v>
+    <v> 0.5 0.5 0.5 </v>
+  </varray>
+</structure>
+<calculation>
+  <energy>
+    <i name="alpha" type="int" > 0 </i>
+    <i name="e_0_energy" type="float" > -35.8 </i>
+    <i name="e_fr_energy" type="float" > -35.81 </i>
+    <i name="e_wo_entrp" type="float" > -35.8 </i>
+    <i name="eentropy" type="float" > 0.01 </i>
+    <i name="efermi" type="float" > 6.9 </i>
+    <i name="eatom" type="float" > -40.0 </i>
+  </energy>
+  <varray name="forces" >
+    <v> 0.01 -0.01 0.0 </v>
+    <v> -0.01 0.01 0.0 </v>
+  </varray>
+  <structure>
+    <crystal>
+      <varray name="basis" >
+        <v> 5.6 0.0 0.0 </v>
+        <v> 0.0 5.6 0.0 </v>
+        <v> 0.0 0.0 5.6 </v>
+      </varray>
+      <i name="volume" > 175.616 </i>
+      <i name="energy" > 0.0 </i>
+    </crystal>
+    <varray name="positions" >
+      <v> 0.0 0.0 0.0 </v>
+      <v> 0.5 0.5 0.5 </v>
+    </varray>
+  </structure>
+</calculation>
+<calculation>
+  <energy>
+    <i name="alpha" type="int" > 0 </i>
+    <i name="e_0_energy" type="float" > -35.9 </i>
+    <i name="e_fr_energy" type="float" > -35.91 </i>
+    <i name="e_wo_entrp" type="float" > -35.9 </i>
+    <i name="eentropy" type="float" > 0.01 </i>
+    <i name="efermi" type="float" > 6.88 </i>
+    <i name="eatom" type="float" > -40.0 </i>
+  </energy>
+  <varray name="forces" >
+    <v> 0.02 -0.01 0.0 </v>
+    <v> -0.02 0.01 0.0 </v>
+  </varray>
+  <structure>
+    <crystal>
+      <varray name="basis" >
+        <v> 5.8 0.0 0.0 </v>
+        <v> 0.0 5.8 0.0 </v>
+        <v> 0.0 0.0 5.8 </v>
+      </varray>
+      <i name="volume" > 195.112 </i>
+      <i name="energy" > 0.0 </i>
+    </crystal>
+    <varray name="positions" >
+      <v> 0.0 0.0 0.0 </v>
+      <v> 0.5 0.5 0.5 </v>
+    </varray>
+  </structure>
+</calculation>
+<calculation>
+  <energy>
+    <i name="alpha" type="int" > 0 </i>
+    <i name="e_0_energy" type="float" > -36.0 </i>
+    <i name="e_fr_energy" type="float" > -36.01 </i>
+    <i name="e_wo_entrp" type="float" > -36.0 </i>
+    <i name="eentropy" type="float" > 0.01 </i>
+    <i name="efermi" type="float" > 6.85 </i>
+    <i name="eatom" type="float" > -40.0 </i>
+  </energy>
+  <varray name="forces" >
+    <v> 0.0 -0.01 0.0 </v>
+    <v> 0.0 0.01 0.0 </v>
+  </varray>
+  <structure>
+    <crystal>
+      <varray name="basis" >
+        <v> 6.0 0.0 0.0 </v>
+        <v> 0.0 6.0 0.0 </v>
+        <v> 0.0 0.0 6.0 </v>
+      </varray>
+      <i name="volume" > 216.0 </i>
+      <i name="energy" > 0.0 </i>
+    </crystal>
+    <varray name="positions" >
+      <v> 0.0 0.0 0.0 </v>
+      <v> 0.5 0.5 0.5 </v>
+    </varray>
+  </structure>
+</calculation>
+</vasprun>

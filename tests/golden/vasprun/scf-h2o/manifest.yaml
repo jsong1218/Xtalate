@@ -1,0 +1,21 @@
+case: scf-h2o
+format_id: vasprun
+source_file: vasprun.xml
+expected_canonical: expected.canonical.json
+canonical_schema_version: "1.0.0"
+sha256: "0d8ec67a8d7f8849d0ba3ac965cb25a163a7bb23e632add895e0be994bd4dc06"
+expected_sha256: "892d7f311f78a4b941754d10e1b80f459d180bef2e419f91277ef2296327c837"
+origin:
+  kind: synthetic
+  source: "Hand-written for M42-S2 (classical VASP 5.4 layout, root <modeling.vasprun>, H2O in a 10 A cubic box, single-point SCF: one <calculation> with energy + forces and no per-step <structure>)"
+  license: "Apache-2.0"
+notes: >-
+  The single-step SCF golden: one <calculation> step whose geometry is the initial structure
+  carried forward (the fixed-cell, no-inner-structure form). Hand-verifiable: O at direct
+  (0.5, 0.5, 0.5) and H at (0.5, 0.75, 0.5) / (0.75, 0.5, 0.5) times the 10 A lattice give
+  Cartesian (5, 5, 5), (5, 7.5, 5), (7.5, 5, 5); e_0_energy -76.4 eV and the forces are
+  verbatim. The 1-based species indices in the atoms array (2 = O, 1 = H) pair with the
+  atomtypes Z column (8, 1) to derive symbols from the element table. The rec_basis varray
+  in the initial structure exercises the unmapped-array carry to custom_global; the
+  energy-block scalars (e_fr_energy, e_wo_entrp, eentropy, efermi, eatom, alpha) exercise
+  the per-frame carry to custom_per_frame['vasprun:*'].

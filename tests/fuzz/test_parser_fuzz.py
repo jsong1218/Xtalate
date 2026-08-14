@@ -54,6 +54,30 @@ _GENERIC: dict[str, bytes] = {
 # Format-tailored malformations: a plausible header with a broken body, per format. These reach past
 # the sniff/first-line guards into each parser's record-level parsing, where the interesting
 # robustness edges live.
+#: A minimal but well-formed vasprun.xml header (one atom, one species, no closing tag) and one
+#: complete ``<calculation>`` step — building blocks for the vasprun tailored seeds below.
+_VASPRUN_HEAD = (
+    b'<?xml version="1.0" encoding="ISO-8859-1"?>\n<vasprun>\n'
+    b'<generator>\n  <i name="program" type="string" >vasp.5.4.4</i>\n</generator>\n'
+    b'<atominfo>\n  <array name="atomtypes">\n    <dimension>2</dimension>\n'
+    b"    <field> mass </field>\n    <field> Z </field>\n    <field> psp </field>\n"
+    b"    <v> 1.008 1.0 8 </v>\n    <set>\n      <rcmax> 3.0 </rcmax>\n    </set>\n  </array>\n"
+    b'  <array name="atoms">\n    <dimension>2</dimension>\n'
+    b"    <field> vasp_x </field>\n    <field> vasp_y </field>\n    <field> vasp_z </field>\n"
+    b"    <field> atom_type </field>\n    <set>\n      <rcmax> 3.0 </rcmax>\n"
+    b"      <c> 0.0 0.0 0.0 1 </c>\n    </set>\n  </array>\n</atominfo>\n"
+    b'<structure name="initialpos" >\n  <crystal>\n    <varray name="basis" >\n'
+    b"      <v> 4.0 0.0 0.0 </v>\n      <v> 0.0 4.0 0.0 </v>\n      <v> 0.0 0.0 4.0 </v>\n"
+    b"    </varray>\n  </crystal>\n"
+    b'  <varray name="positions" >\n    <v> 0.0 0.0 0.0 </v>\n  </varray>\n</structure>\n'
+)
+
+_VASPRUN_CALC = (
+    b'<calculation>\n  <energy>\n    <i name="e_0_energy" type="float" > -12.5 </i>\n  </energy>\n'
+    b'  <varray name="forces" >\n    <v> 0.1 0.0 0.0 </v>\n    <v> -0.1 0.0 0.0 </v>\n  </varray>\n'
+    b"</calculation>\n"
+)
+
 _TAILORED: dict[str, list[tuple[str, bytes]]] = {
     "xyz": [
         ("count_gt_atoms", b"5\ncomment\nH 0 0 0\nH 1 1 1\n"),
@@ -84,6 +108,28 @@ _TAILORED: dict[str, list[tuple[str, bytes]]] = {
     "ase_traj": [
         ("truncated_pickle", b"\x80\x04\x95\x00\x00garbage"),
         ("text_as_traj", b"- Trajectory\nnot really\n"),
+    ],
+    "vasprun": [
+        ("no_calculation_steps", _VASPRUN_HEAD + b"</vasprun>\n"),
+        (
+            "unclosed_root",
+            b'<vasprun>\n<generator>\n  <i name="program" type="string" >vasp.5.4.4</i>\n'
+            b"</generator>\n",
+        ),
+        (
+            "truncated_mid_calculation",
+            _VASPRUN_HEAD
+            + _VASPRUN_CALC
+            + b'<calculation>\n<energy>\n<i name="e_0_energy" type="float" > -13.0 </i>\n',
+        ),
+        (
+            "nonnumeric_energy",
+            _VASPRUN_HEAD
+            + b'<calculation>\n<energy>\n<i name="e_0_energy" type="float" > NOTANUMBER </i>\n'
+            + b"</energy>\n"
+            + b'<varray name="forces" >\n<v> 0.1 0.0 0.0 </v>\n<v> -0.1 0.0 0.0 </v>\n'
+            + b"</varray>\n</calculation>\n</vasprun>\n",
+        ),
     ],
 }
 

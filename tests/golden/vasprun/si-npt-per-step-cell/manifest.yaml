@@ -1,0 +1,21 @@
+case: si-npt-per-step-cell
+format_id: vasprun
+source_file: vasprun.xml
+expected_canonical: expected.canonical.json
+canonical_schema_version: "1.0.0"
+sha256: "bec1196f872dc66d16e07e8d584c7a211330b6a3ed4f51d1b436114214e83f93"
+expected_sha256: "f0c90d8b677968647c4f295e55c80be1c5edfc41bb84ecbe6c94283d9b10d26b"
+origin:
+  kind: synthetic
+  source: "Hand-written for M42-S2 (classical VASP 5.4 layout, root <vasprun>, Si with 2 atoms, 3-step NpT MD: each <calculation> carries its own <structure> with a growing cubic cell 5.6 -> 5.8 -> 6.0 A)"
+  license: "Apache-2.0"
+notes: >-
+  The NpT-with-per-step-cells golden, and the format's distinctive canonical feature: VASP
+  restates the cell inside every <calculation>'s <structure> when it varies, so Frame.cell
+  legitimately differs frame to frame. The cell grows 5.6 -> 5.8 -> 6.0 A while the direct
+  coordinates hold constant, which is precisely the case that catches a parser reusing the
+  initial lattice: the identical direct coordinates (0.5, 0.5, 0.5) must yield *different*
+  Cartesian positions (2.8 -> 2.9 -> 3.0 A). Every expected value is exact in float64
+  (0.5 x a halves an exponent) and was hand-derived; the per-frame volumes 175.616 / 195.112 /
+  216.0 are 5.6^3 / 5.8^3 / 6.0^3. This fixture is extended in M42-S3 with <varray
+  name="stress"> blocks for the kBar -> eV/A^3 stress mapping.

@@ -93,6 +93,27 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** MASTER_SPEC Part 2 §8.2 worked example (VASP-5 POSCAR, Direct coords, NaCl-like)
 
+## `vasprun` / `relax-h2o` (golden)
+
+- **Source file:** `vasprun.xml`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M42-S2 (classical VASP 6.1 layout, root <vasprun>, H2O in a 10 A cubic box, 3-ionic-step relaxation: each <calculation> carries its own <structure> with mode="direct" positions)
+
+## `vasprun` / `scf-h2o` (golden)
+
+- **Source file:** `vasprun.xml`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M42-S2 (classical VASP 5.4 layout, root <modeling.vasprun>, H2O in a 10 A cubic box, single-point SCF: one <calculation> with energy + forces and no per-step <structure>)
+
+## `vasprun` / `si-npt-per-step-cell` (golden)
+
+- **Source file:** `vasprun.xml`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M42-S2 (classical VASP 5.4 layout, root <vasprun>, Si with 2 atoms, 3-step NpT MD: each <calculation> carries its own <structure> with a growing cubic cell 5.6 -> 5.8 -> 6.0 A)
+
 ## `xdatcar` / `nacl-md-fixed-cell` (golden)
 
 - **Source file:** `XDATCAR`
