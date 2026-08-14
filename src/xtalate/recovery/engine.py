@@ -44,14 +44,15 @@ from xtalate.recovery.scenarios import (
 from xtalate.schema import AtomsBlock, CanonicalObject, Cell, Frame
 from xtalate.schema.elements import atomic_number
 from xtalate.schema.presence import PresenceMap
+from xtalate.sdk.stress_carries import STRESS_CARRY_KEYS
 
 # Resolution order (Part 4 §3.3): frame_selection first (a bounding box is computed on the chosen
 # frame), then constraint projection (frame-independent), then the fabricated lattice, then the
 # velocity family. `missing_masses` resolves *before* `missing_velocities` so a chained
 # `maxwell_boltzmann` reads the masses the mass resolver has already written into the object.
 # `ambiguous_stress_convention` is last: the stress interpretation depends on none of the others
-# (it reads the per-frame `extxyz:stress` carry, which `frame_selection` has already sliced to
-# the retained frame either way), so it sits after the dependency chain, where it reads clearly
+# (it reads the per-frame stress carry, which `frame_selection` has already sliced to the
+# retained frame either way), so it sits after the dependency chain, where it reads clearly
 # (D150).
 _DEP_ORDER = (
     "frame_selection",
@@ -65,9 +66,11 @@ _DEP_ORDER = (
 #: The custom-array key the `ambiguous_stress_convention` resolver interprets when the detected
 #: scenario carries no ``params['custom_key']`` (a directly-constructed scenario). The pre-flight
 #: always passes the key it detected; this default covers hand-built scenarios. The key itself is
-#: owned by the extXYZ parser (``_KEY_PREFIX + "stress"``, DECISIONS.md D18); the recovery layer
-#: does not import the parser, so the literal is restated here.
+#: the original D18 carry, the first entry of the shared stress-carry-key set (D163) — the
+#: recovery layer does not import parsers, so the set is owned in the SDK and restated here via
+#: the guard below rather than a bare literal.
 _DEFAULT_STRESS_CARRY_KEY = "extxyz:stress"
+assert _DEFAULT_STRESS_CARRY_KEY in STRESS_CARRY_KEYS  # registry-first key (D18)
 
 
 class RecoveryError(ValueError):
@@ -1000,23 +1003,24 @@ def _apply_stress_convention(
     origin: str,
     scenario: UnresolvedScenario,
 ) -> tuple[CanonicalObject, AppliedAssumption]:
-    """Resolve the sign convention of a carried extXYZ stress tensor into `electronic.stress`
-    (interpretive, M40, Part 4 §3.3).
+    """Resolve the sign convention of a carried stress tensor into `electronic.stress`
+    (interpretive, M40/M42-S5, Part 4 §3.3).
 
     The stress values are **genuine source data** — the tensor exists in the file; only its
     sign convention is unresolved (ASE's convention is compression-positive, the opposite of
     the canonical tension-positive, Part 2 §3.7.1; DECISIONS.md D18). So this resolver
-    interprets, never fabricates: per frame it reshapes the carried ``extxyz:stress`` array
-    (Voigt-6 → full 3×3 symmetric, in the (xx,yy,zz,yz,xz,xy) order §3.7.1 states — the order
-    ASE itself writes) and applies the chosen sign normalization to reach the canonical
-    tension-positive eV/Å³ convention: ``tension_positive`` takes the tensor as-is (the source
-    is already tension-positive); ``ase_sign_convention`` negates it. The `extxyz:stress`
-    custom array is then **retired** (popped from ``custom_per_frame``) so the field lives in
-    exactly one place and the exporter never double-writes it.
+    interprets, never fabricates: per frame it reshapes the carried array — named by
+    ``params['custom_key']``, any key of the shared stress-carry set (D163) — (Voigt-6 → full
+    3×3 symmetric, in the (xx,yy,zz,yz,xz,xy) order §3.7.1 states — the order ASE itself
+    writes) and applies the chosen sign normalization to reach the canonical tension-positive
+    eV/Å³ convention: ``tension_positive`` takes the tensor as-is (the source is already
+    tension-positive); ``ase_sign_convention`` negates it. The custom array is then **retired**
+    (popped from ``custom_per_frame``) so the field lives in exactly one place and the exporter
+    never double-writes it.
 
     One ``Assumption`` is recorded — the interpretation is the user's recorded decision, never
-    Xtalate's (a wrong choice yields a *detectably sign-flipped* tensor, the teeth test) —
-    with **no ``supplied`` entry**: the marker (``INTERPRETIVE_SCENARIOS``) scopes the
+    Xtalate's (a wrong choice yields a *detectably sign-flipped* tensor, the teeth test) — with
+    **no ``supplied`` entry**: the marker (``INTERPRETIVE_SCENARIOS``) scopes the
     "fabricative ⇒ ``supplied``" invariant to scenarios that invented their value, and this
     one did not. The genuine tensor is accounted as ``preserved`` (``electronic.stress``, which
     also enters the write plan so the exporter writes it) and the retired carry as ``removed``
@@ -1033,6 +1037,10 @@ def _apply_stress_convention(
         )
     code = _choice_code(choice, scenario)
     custom_key = scenario.params.get("custom_key", _DEFAULT_STRESS_CARRY_KEY)
+    # RF-9: the Assumption names the *actual* source format, never a literal — derived from the
+    # carried key via the shared stress-carry set (D163); an unknown key falls back to its
+    # ``<format>:`` prefix rather than guessing.
+    format_name = STRESS_CARRY_KEYS.get(custom_key, custom_key.split(":", 1)[0])
     carry = canonical.user_metadata.custom_per_frame.get(custom_key)
     if carry is None:
         raise RecoveryError(
@@ -1074,15 +1082,15 @@ def _apply_stress_convention(
     frames_desc = f"frame(s) {populated}" if len(populated) > 1 else f"frame {populated[0]}"
     if code == "tension_positive":
         description = (
-            "Interpreted extXYZ stress as tension-positive per your choice; no sign change "
-            "applied. The source file's stress values are genuine — only their sign convention "
-            "was resolved, never guessed."
+            f"Interpreted {format_name} stress as tension-positive per your choice; no sign "
+            "change applied. The source file's stress values are genuine — only their sign "
+            "convention was resolved, never guessed."
         )
     else:  # ase_sign_convention
         description = (
-            "Interpreted extXYZ stress as ASE's sign convention per your choice; sign inverted "
-            "to the canonical tension-positive convention (Part 2 §3.7.1). The source file's "
-            "stress values are genuine — only their sign convention was resolved, never "
+            f"Interpreted {format_name} stress as ASE's sign convention per your choice; sign "
+            "inverted to the canonical tension-positive convention (Part 2 §3.7.1). The source "
+            "file's stress values are genuine — only their sign convention was resolved, never "
             "guessed."
         )
     assumption = AppliedAssumption(

@@ -17,6 +17,59 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+### Added — the stress spelling is settled: extXYZ reads a 6-number Voigt `stress=`, and the `.traj` stress carry joins the `ambiguous_stress_convention` recovery (v1.2 M42-S4/S5; D162/D163)
+
+Two v1.1-review carry-ins land. **RF-4:** an extXYZ comment `stress=` carrying the **6-number
+(Voigt) spelling** now reads — expanded Voigt-6 → full 3×3 via ASE's own
+`voigt_6_to_full_3x3_stress` (ASE ordering, deliberately not VASP's) and carried under
+`custom_per_frame["extxyz:stress"]` exactly like the 9-number path; a malformed value (neither
+6 nor 9 numbers, or non-numeric) still refuses `EXTXYZ_PARSE_ERROR`, now naming the frame.
+**RF-8/RF-9:** the M40 stress promise extends to a second real Phase-1 pair — an ASE `.traj`
+carrying stress under `custom_per_frame["ase_traj:stress"]` (D18) now **refuses without a
+preset** and resolves to first-class `electronic.stress` under one, through the *same*
+`ambiguous_stress_convention` scenario (one scenario over the shared stress-carry-key set, not
+two); the recorded `Assumption` names the **actual source format** ("ASE `.traj`", never a
+hardcoded "extXYZ"). The `ase_traj` `electronic.stress` capability rows flip NONE → PARTIAL on
+read and write with the scenario note; the exporter writes a resolved field back through ASE's
+calculator-results channel under the declared `ase_sign_convention` (with the
+`STRESS_SIGN_CONVENTION_CHANGED` warning) and falls back to the verbatim carry, and a resolved
+`.traj → .traj` round-trip validates within the existing M40 stress tolerance base (no
+`ase_traj`-specific base invented). No `src/` schema or `/v1`/CLI-flag shape change;
+`SCHEMA_VERSION` stays `1.0.0` (D158; the package bump is M45's).
+
+### Added — vasprun.xml reads label-complete: the first read-only format, with VASP stress first-class (v1.2 M42-S2/S3; D160/D161)
+
+vasprun.xml, VASP's XML output file, is the first DFT-*output* format to ship — registered
+**parser-only** through Revision 1.43's seam, so it is always a *source*, never a conversion
+target. The reader is streaming-first (stdlib `xml.etree.ElementTree.iterparse`: header and
+metadata eager, `<calculation>` blocks yielded lazily one ionic step at a time), mapping per-step
+positions × cell, `electronic.total_energy` = VASP's extrapolated zero-smearing energy
+(`e_0_energy`, the other energy-block scalars **carried**, never substituted), forces verbatim,
+and `simulation.source_code`; all field mapping lives in the shared `xtalate/parsers/_vasp/`
+core that M43's OUTCAR reader reuses. **VASP stress is first-class:** the file's declared
+convention (kBar, compression-positive) is mapped deterministically at the parser boundary —
+sign flip and division by the exact factor 1602.1766208 kBar per eV/Å³, recorded in
+`parse_notes`/`source_units`, plus the VASP Voigt-ordering helper (deliberately not ASE's, for
+M43's 6-component OUTCAR line) — and `ambiguous_stress_convention` does **not** fire for a VASP
+source (asking for a choice the file has declared is a false choice). A stress-less run reads
+`electronic.stress = None`, never a fabricated zero tensor (P3). New format-prefixed `VASPRUN_*`
+error codes (`VASPRUN_EMPTY` / `VASPRUN_MALFORMED_XML` / `VASPRUN_TRUNCATED` /
+`VASPRUN_UNSUPPORTED_LAYOUT` / `VASPRUN_MISSING_BLOCK` / `VASPRUN_MIXED_COORDINATE_MODE` /
+warning `VASPRUN_UNMAPPED_TAG_CARRIED`), each obeying the §5 error contract. No schema or
+`/v1`/CLI-flag shape change; `SCHEMA_VERSION` stays `1.0.0` (D158).
+
+### Added — parser-only formats are first-class: a format may read without ever being a conversion target (v1.2 M42-S1; D158/D159)
+
+DFT-*output* formats (vasprun.xml, OUTCAR) are never conversion *targets* — a code's output is
+a source. A `ParserPlugin` may now register with **no** paired `ExporterPlugin`; such a format
+is absent from every conversion-target enumeration (targets derive from `exporters()`), so
+`convert --to <parser-only-fmt>` refuses with the established unknown/unavailable-target error
+— never a new code (D159). The Capability Matrix is keyed by `(format, direction)`, so a
+parser-only format holds a read row and **no** write row — the honest "reads, never writes"
+declaration surfaced in `xtalate capabilities` as read-only/parser-only. No schema or
+`/v1`/CLI-flag shape change; `SCHEMA_VERSION` stays `1.0.0` (D158; the v1.2 plan's stale
+"assumed inputs `1.1.0`" premise is repaired — the `1.2.0` package bump is M45's).
+
 ## [1.1.0] — 2026-08-13
 
 Schema version: 1.0.0
