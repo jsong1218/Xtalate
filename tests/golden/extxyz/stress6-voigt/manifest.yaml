@@ -1,0 +1,22 @@
+case: stress6-voigt
+format_id: extxyz
+source_file: h2_stress6.extxyz
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 06f53c6aa4c0ea3353497f748e614aff121ef1d8dd13c37183127f92f78c1819
+expected_sha256: 642f167f5932a27dbf2646bb40de32c265a60c4aec2f4a2691ba360df7fafce2
+origin:
+  kind: synthetic
+  source: "Hand-authored for M42-S4 (RF-4): H2 in a 4 A cubic cell carrying energy=,\
+    \ a per-atom forces= column, and a 6-number Voigt stress= (ASE order xx,yy,zz,yz,xz,xy)\
+    \ \u2014 the spelling ASE's extXYZ reader refuses outright without the parser's\
+    \ 6-number expansion."
+  license: Apache-2.0
+notes: "The RF-4 golden (M42-S4, D162): a 6-number Voigt stress= reads where it previously\
+  \ refused (EXTXYZ_PARSE_ERROR). Like every extXYZ stress channel the expectation\
+  \ holds the UNRESOLVED parse \u2014 energy/forces first-class, stress carried verbatim\
+  \ in custom_per_frame['extxyz:stress'] as the Voigt-6 (xx,yy,zz,yz,xz,xy) values\
+  \ [1 2 3 4 5 6], identical to the carry a semantically-equal 9-number file produces,\
+  \ and only resolved to first-class electronic.stress under the ambiguous_stress_convention\
+  \ recovery choice (asserted by tests/recovery/test_extxyz_stress_voigt6.py, not\
+  \ by the expectation)."

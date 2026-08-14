@@ -1,0 +1,123 @@
+{
+  "schema_version": "1.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "H",
+          "H"
+        ],
+        "atomic_numbers": [
+          1,
+          1
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.5,
+            0.5,
+            0.5
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            4.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            4.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            4.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.1,
+            0.0,
+            0.0
+          ],
+          [
+            -0.1,
+            0.0,
+            0.0
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -5.0,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": null,
+  "provenance": {
+    "source_filename": "h2_stress6.extxyz",
+    "source_format": "extxyz",
+    "source_units": {
+      "positions": "angstrom"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "pbc not declared for a lattice-bearing frame; set to (true,true,true) per the extXYZ convention that a Lattice implies full periodicity (recorded, not assumed)."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-08-14T04:11:11Z",
+        "operation": "parse",
+        "source_format": "extxyz",
+        "target_format": null,
+        "tool_version": "1.1.0",
+        "parser_version": "extxyz-parser 1.1.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {},
+    "custom_per_atom": {},
+    "custom_per_frame": {
+      "extxyz:stress": [
+        [
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ]
+      ]
+    }
+  }
+}

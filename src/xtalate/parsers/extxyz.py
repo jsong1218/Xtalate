@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO
 import numpy as np
 from ase import units as ase_units
 from ase.io import read as ase_read
+from ase.stress import voigt_6_to_full_3x3_stress
 from pydantic import JsonValue
 
 from xtalate.parsers._common import build_provenance, decode_text
@@ -141,6 +142,93 @@ def _frame_comment_lines(lines: list[str]) -> list[str]:
     return comments
 
 
+#: The comment-line keys ASE treats as special 3×3 matrices (``SPECIAL_3_3_KEYS``).
+_VOIGT6_KEYS = ("stress", "virial")
+
+#: A quoted or bracketed ``stress=``/``virial=`` value on an extXYZ comment line (RF-4; D162).
+#: ASE's extXYZ reader only accepts the 9-number full-tensor spelling, so a 6-number Voigt
+#: value must be expanded to that spelling *before* ASE sees the comment line.
+_VOIGT6_VALUE_RE = re.compile(r"(?P<key>stress|virial)\s*=\s*(?P<quote>\"[^\"]*\"|\[[^\]]*\])")
+_NUMBER_TOKEN_RE = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+
+
+def _expand_voigt6_stress_line(comment: str, frame_index: int) -> str:
+    """Rewrite a 6-number Voigt ``stress=``/``virial=`` comment value to ASE's 9-number
+    spelling, in place (RF-4, DECISIONS.md D162).
+
+    A 6-number value is a Voigt-6 tensor; it is expanded to the full 3×3 via ASE's own
+    ``voigt_6_to_full_3x3_stress`` (ASE Voigt order ``[xx, yy, zz, yz, xz, xy]`` — **not**
+    VASP's order from M42-S3, whose reuse would silently transpose the off-diagonal
+    components) and re-spelled in the 9-number column-major form ASE's reader reshapes, so
+    ASE produces the identical 3×3 it would from the semantically-equal 9-number file. The
+    read value still lands under ``custom_per_frame['extxyz:stress']`` exactly as the
+    9-number path does — RF-4 is about *reading the 6-number spelling*, not about resolving
+    its sign convention, which remains ``ambiguous_stress_convention``'s job (D18/D151).
+
+    A value that is neither 6 nor 9 numbers (or non-numeric) refuses ``EXTXYZ_PARSE_ERROR``
+    **naming the frame and comment key** — replacing ASE's frame-less wrap for this case
+    (RF-A1-style location honesty).
+    """
+    if _VOIGT6_VALUE_RE.search(comment) is None:
+        return comment  # no stress=/virial= key; leave the line untouched
+
+    def _rewrite(match: re.Match[str]) -> str:
+        key = match.group("key")
+        quote = match.group("quote")
+        inner = quote[1:-1]
+        tokens = _NUMBER_TOKEN_RE.findall(inner)
+        if len(tokens) == 9:
+            return match.group(0)  # already the full-tensor spelling ASE reads
+        if len(tokens) != 6:
+            raise _error(
+                "EXTXYZ_PARSE_ERROR",
+                f"frame {frame_index} comment key {key!r} holds {len(tokens)} numbers, not "
+                "the 6-number Voigt or 9-number full-tensor spelling",
+                location=f"frame {frame_index}",
+            )
+        values = np.asarray(tokens, dtype=float)
+        full = voigt_6_to_full_3x3_stress(values)
+        # ASE reshapes the 9 numbers column-major (order='F'), so the flat spelling must be
+        # the transpose's row-major flatten to reconstruct the identical matrix.
+        nine = full.T.flatten()
+        spelled = " ".join(f"{x:.17g}" for x in nine)
+        # Preserve the key and the value's quoting/bracketing style.
+        if quote.startswith("["):
+            return f"{key}=[{spelled}]"
+        return f'{key}="{spelled}"'
+
+    return _VOIGT6_VALUE_RE.sub(_rewrite, comment)
+
+
+def _expand_voigt6_stress_in_text(text: str) -> str:
+    """Apply :func:`_expand_voigt6_stress_line` to every frame's comment line in a whole
+    extXYZ text (the materialized ``parse`` path), preserving each line's original ending.
+    """
+    lines = text.splitlines(keepends=True)
+    if not lines:
+        return text
+    out = list(lines)
+    i = 0
+    n = len(lines)
+    frame = 0
+    while i < n:
+        if lines[i].strip() == "":
+            i += 1
+            continue
+        try:
+            count = int(lines[i].strip())
+        except ValueError:
+            break  # not a count line; let ASE produce the authoritative error
+        if count <= 0 or i + 1 >= n:
+            break
+        line = lines[i + 1]
+        nl = "\n" if not line.endswith("\n") else ""
+        out[i + 1] = _expand_voigt6_stress_line(line, frame) + nl
+        i += 2 + count
+        frame += 1
+    return "".join(out)
+
+
 class ExtxyzParser(ParserPlugin):
     format_id = FORMAT_ID
     format_name = "Extended XYZ"
@@ -169,6 +257,11 @@ class ExtxyzParser(ParserPlugin):
         text = decode_text(stream.read(), format_id=FORMAT_ID)
         if text.strip() == "":
             raise _error("EXTXYZ_EMPTY", "file contains no frames")
+        # RF-4 (D162): expand any 6-number Voigt stress=/virial= comment values to ASE's
+        # 9-number spelling before ASE reads the text, so the file no longer refuses
+        # outright; a malformed value refuses here naming the frame instead of ASE's
+        # frame-less wrap.
+        text = _expand_voigt6_stress_in_text(text)
         raw_comments = _frame_comment_lines(text.splitlines())
         try:
             images = ase_read(io.StringIO(text), format="extxyz", index=":")
@@ -645,6 +738,9 @@ def _iter_extxyz_blocks(stream: BinaryIO) -> Iterator[tuple[str, str]]:
                 "file ended before the comment line of a frame",
                 location=f"frame {index}",
             )
+        # RF-4 (D162): the streaming path applies the same 6-number Voigt expansion the
+        # materialized parse does, so both code paths read the 6-number spelling identically.
+        comment = _expand_voigt6_stress_line(comment, index)
         atom_lines: list[str] = []
         for _ in range(count):
             atom_line = _readline()
