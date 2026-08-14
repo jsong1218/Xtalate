@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { AppHeader } from "@/components/shell/AppHeader";
 import { DemoBanner } from "@/components/shell/DemoBanner";
+import { DemoPrivacyGate } from "@/components/shell/DemoPrivacyGate";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -36,6 +37,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           >
             Skip to main content
           </a>
+          {/* The public-demo privacy gate (v1.2): a blocking, must-acknowledge interstitial shown
+              once per browser on the hosted demo (same NEXT_PUBLIC_DEMO_BANNER flag), so nobody
+              uploads sensitive data to the shared, anonymous instance unaware. A self-host, which
+              never sets the flag, renders nothing. */}
+          <DemoPrivacyGate />
           {/* The public-demo banner (v1.1 M39-S1): rendered only when NEXT_PUBLIC_DEMO_BANNER is
               set, i.e. only on the hosted-demo image — a self-host never sees it. */}
           <DemoBanner />
