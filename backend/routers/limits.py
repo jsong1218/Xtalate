@@ -18,6 +18,12 @@ router = APIRouter()
 
 @router.get("/limits", response_model=LimitsResponse, tags=["limits"])
 def limits(settings: Settings = Depends(get_settings)) -> LimitsResponse:
+    # The report window is advertised in whichever unit is actually active — hours when a sub-day
+    # override is set (the demo), else days — so exactly one field is non-null (both null =
+    # indefinite). A client renders the non-null one; the number it shows is the window the reads
+    # and the sweep enforce.
+    report_hours = settings.report_retention_hours
+    report_days = None if report_hours is not None else settings.report_retention_days
     return LimitsResponse(
         max_upload_bytes=settings.max_upload_bytes,
         max_frames=settings.max_frames,
@@ -26,5 +32,6 @@ def limits(settings: Settings = Depends(get_settings)) -> LimitsResponse:
         upload_retention_hours=settings.upload_retention_hours,
         output_retention_hours=settings.output_retention_hours,
         awaiting_recovery_ttl_minutes=settings.awaiting_recovery_ttl_minutes,
-        report_retention_days=settings.report_retention_days,
+        report_retention_days=report_days,
+        report_retention_hours=report_hours,
     )

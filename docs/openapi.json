@@ -578,6 +578,17 @@
             ],
             "title": "Report Retention Days"
           },
+          "report_retention_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Retention Hours"
+          },
           "upload_retention_hours": {
             "title": "Upload Retention Hours",
             "type": "integer"
@@ -591,7 +602,8 @@
           "upload_retention_hours",
           "output_retention_hours",
           "awaiting_recovery_ttl_minutes",
-          "report_retention_days"
+          "report_retention_days",
+          "report_retention_hours"
         ],
         "title": "LimitsResponse",
         "type": "object"
@@ -1058,7 +1070,7 @@
     },
     "/v1/history": {
       "get": {
-        "description": "A page of conversion summaries, newest first (Part 6 \u00a74.4).\n\nFetches one row beyond the page to decide whether a ``next_cursor`` is owed, then projects each\nconversion to a :class:`HistoryItem` \u2014 the source/target endpoints and ``summary_counts`` from\nits conversion report (fetched for the whole page in one query), and ``file_id`` only for the\nconversions whose source upload is still live (also one query).",
+        "description": "A page of conversion summaries, newest first (Part 6 \u00a74.4).\n\nFetches one row beyond the page to decide whether a ``next_cursor`` is owed, then projects each\nconversion to a :class:`HistoryItem` \u2014 the source/target endpoints and ``summary_counts`` from\nits conversion report (fetched for the whole page in one query), and ``file_id`` only for the\nconversions whose source upload is still live (also one query).\n\nRecords past the report-retention window are dropped here the same way a single-record read\n``404``s (:func:`report_retention_expired`): because the listing is newest-first, expired\nrecords are always a suffix, so filtering yields a clean live prefix. Once the fetched window\ncontains an expired row, everything older is expired too \u2014 no ``next_cursor`` is owed past it.",
         "operationId": "get_history_v1_history_get",
         "parameters": [
           {

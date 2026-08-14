@@ -178,6 +178,53 @@ def test_report_retention_indefinite_is_a_noop(
     assert repository.get_conversion(old) is not None
 
 
+def test_report_retention_horizon_is_enforced_lazily_on_reads(
+    client: TestClient, repository: Repository
+) -> None:
+    # The lazy read-horizon (the twin of the byte 410) — report_retention_days is 7 in the test
+    # settings, so a record older than the window reads as gone *without* the sweep having run. That
+    # is what makes the demo's 1-hour window real even though the free box runs no cron. The record
+    # row still exists (the sweep is what deletes it); it is simply not served past the horizon.
+    object_store = client.app.state.object_store  # type: ignore[attr-defined]
+    old = _seed_conversion(repository, object_store, created_at=utcnow() - timedelta(days=10))
+    recent = _seed_conversion(repository, object_store, created_at=utcnow())
+
+    # Single-record read: 404 for the expired one, 200 for the fresh one — no sweep was called.
+    assert client.get(f"/v1/conversions/{old}").status_code == 404
+    assert client.get(f"/v1/conversions/{recent}").status_code == 200
+    assert repository.get_conversion(old) is not None  # not deleted, just not served
+
+    # History drops the expired record but keeps the fresh one.
+    ids = [item["conversion_id"] for item in client.get("/v1/history").json()["items"]]
+    assert old not in ids
+    assert recent in ids
+
+    # The download and revalidate paths honor the same horizon (both 404 CONVERSION_NOT_FOUND).
+    assert client.get(f"/v1/download/{old}").status_code == 404
+    revalidate = client.post(
+        "/v1/validate", json={"conversion_id": old, "tolerance_profile": "strict"}
+    )
+    assert revalidate.status_code == 404
+
+
+def test_report_retention_expired_helper_covers_the_units() -> None:
+    # The lazy horizon as a pure function: hours override days, and indefinite (None) never expires.
+    from backend.config import Settings as _Settings
+    from backend.db.models import Conversion
+    from backend.records import report_retention_expired
+
+    now = utcnow()
+    two_hours_old = Conversion(created_at=now - timedelta(hours=2))
+    fresh = Conversion(created_at=now - timedelta(minutes=5))
+
+    hours = _Settings(_env_file=None, report_retention_hours=1)  # type: ignore[call-arg]
+    assert report_retention_expired(two_hours_old, hours, now=now) is True  # past the 1 h window
+    assert report_retention_expired(fresh, hours, now=now) is False  # within it
+
+    indefinite = _Settings(_env_file=None, report_retention_days=None)  # type: ignore[call-arg]
+    assert report_retention_expired(two_hours_old, indefinite, now=now) is False  # never expires
+
+
 # --- reports-outlive-bytes (the integration promise) --------------------------------------------
 
 

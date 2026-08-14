@@ -47,6 +47,7 @@ from backend.models import (
     RecoveryResumeRequest,
     RevalidateRequest,
 )
+from backend.records import report_retention_expired
 from backend.security import enforce_active_job_limit
 from backend.storage import ObjectStore
 from xtalate.capabilities import Registry
@@ -218,6 +219,7 @@ def validate(
     repository: Repository = Depends(get_repository),
     object_store: ObjectStore = Depends(get_object_store),
     job_queue: JobQueue = Depends(get_job_queue),
+    settings: Settings = Depends(get_settings),
 ) -> JobEnvelope:
     """Re-threshold a stored conversion under a new tolerance profile (Part 6 §2, Part 5 §4.5).
 
@@ -225,7 +227,7 @@ def validate(
     ``404`` if the conversion record is unknown (or has passed report retention).
     """
     conversion = repository.get_conversion(body.conversion_id)
-    if conversion is None:
+    if conversion is None or report_retention_expired(conversion, settings):
         raise ApiError(
             status_code=status.HTTP_404_NOT_FOUND,
             code="CONVERSION_NOT_FOUND",

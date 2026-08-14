@@ -20,7 +20,7 @@ without a background process being part of the no-services tier.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from backend.db import utcnow
@@ -34,15 +34,17 @@ if TYPE_CHECKING:
 def sweep_reports(
     repository: Repository, settings: Settings, *, now: datetime | None = None
 ) -> list[str]:
-    """Delete every conversion record past ``report_retention_days``, returning the ids deleted.
+    """Delete every conversion record past the report-retention window, returning the ids deleted.
 
-    A ``None`` ``report_retention_days`` is indefinite retention — the sweep does nothing. ``now``
-    is injectable so a test drives the cutoff deterministically; it defaults to :func:`utcnow`.
+    The window is ``settings.report_retention_window`` (hours override days); ``None`` is indefinite
+    retention — the sweep does nothing. ``now`` is injectable so a test drives the cutoff
+    deterministically; it defaults to :func:`utcnow`.
     """
-    if settings.report_retention_days is None:
+    window = settings.report_retention_window
+    if window is None:
         return []
     when = now or utcnow()
-    cutoff = when - timedelta(days=settings.report_retention_days)
+    cutoff = when - window
     deleted = repository.delete_conversions_created_before(cutoff)
     if deleted:
         # A batch sweep, not a single job: job_id="-" marks the log line as not job-scoped. Only the

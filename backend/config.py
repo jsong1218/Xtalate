@@ -16,6 +16,7 @@ a hosted-instance policy, which is v1.0 work.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -93,6 +94,16 @@ class Settings(BaseSettings):
     #: windows; Revision 1.5). ``None`` = indefinite, the self-hosted default posture.
     report_retention_days: int | None = 30
 
+    #: Sub-day override for the report window, in **hours**. When set it *wins* over
+    #: ``report_retention_days`` (so ``report_retention_window`` is hours, not days) — the hosted
+    #: demo sets ``1`` because a shared, anonymous instance should not keep another visitor's
+    #: conversion record + report readable for a whole day. ``None`` (the self-host default) falls
+    #: back to the days window above. Enforced two ways, so the window is real even on Tier 0 where
+    #: no cron drives the sweep: lazily on every record read (a conversion past the window reads as
+    #: ``404`` / drops out of history, exactly like an expired output byte reads as ``410``) and by
+    #: the periodic :func:`~backend.jobs.retention.sweep_reports` where a scheduler runs one.
+    report_retention_hours: int | None = None
+
     # --- auth (v0.5 scope: anonymous self-hosted mode + optional static keys; Part 6 §4) ---------
     #: Optional static API key(s), comma-separated (``XTALATE_API_KEYS="k1,k2"``). **Empty = the
     #: anonymous self-hosted default**: no key required, history is instance-wide (Part 6 §4). When
@@ -106,6 +117,20 @@ class Settings(BaseSettings):
     def api_key_set(self) -> frozenset[str]:
         """The configured static API keys as a set (empty = anonymous mode). Comma-separated env."""
         return frozenset(k.strip() for k in self.api_keys.split(",") if k.strip())
+
+    @property
+    def report_retention_window(self) -> timedelta | None:
+        """The report-retention window as a :class:`~datetime.timedelta`, or ``None`` (indefinite).
+
+        Hours override days (``report_retention_hours`` wins when set), so the demo's 1-hour window
+        and the self-host's 30-day one are the *same* knob read one way. ``None`` means neither is
+        set — indefinite retention, the sweep and the lazy read-horizon both become no-ops.
+        """
+        if self.report_retention_hours is not None:
+            return timedelta(hours=self.report_retention_hours)
+        if self.report_retention_days is not None:
+            return timedelta(days=self.report_retention_days)
+        return None
 
     # --- database (v0.5 M21 slice 3) ------------------------------------------------------------
     #: SQLAlchemy URL. SQLite (Tier 0, no services) is the default; Tier 1 sets a PostgreSQL URL

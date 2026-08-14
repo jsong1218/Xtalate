@@ -37,6 +37,7 @@ def test_limits_surface_is_config_driven(client: TestClient) -> None:
         "upload_retention_hours",
         "output_retention_hours",
         "awaiting_recovery_ttl_minutes",
+        "report_retention_hours",
     ):
         assert field in body
 

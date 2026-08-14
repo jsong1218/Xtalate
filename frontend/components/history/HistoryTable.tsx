@@ -24,6 +24,7 @@ export function HistoryTable() {
   const retention: RetentionPolicy | null = limits.data
     ? {
         uploadHours: limits.data.upload_retention_hours,
+        reportHours: limits.data.report_retention_hours,
         reportDays: limits.data.report_retention_days,
       }
     : null;

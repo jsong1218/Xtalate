@@ -20,7 +20,7 @@ describe("DeleteFileControl (Part 6 §4.3, delete-with-retention)", () => {
     render(
       <DeleteFileControl
         fileId="file-1"
-        retention={{ uploadHours: 24, reportDays: 30 }}
+        retention={{ uploadHours: 24, reportHours: null, reportDays: 30 }}
         onDeleted={vi.fn()}
       />,
     );
@@ -30,6 +30,21 @@ describe("DeleteFileControl (Part 6 §4.3, delete-with-retention)", () => {
     expect(screen.getByText(/report stays readable/i)).toBeInTheDocument();
     expect(screen.getByText(/30 days/i)).toBeInTheDocument();
     expect(deleteFile).not.toHaveBeenCalled();
+  });
+
+  it("names a sub-day report window in hours (the hosted-demo posture)", () => {
+    render(
+      <DeleteFileControl
+        fileId="file-1"
+        retention={{ uploadHours: 1, reportHours: 1, reportDays: null }}
+        onDeleted={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /delete file/i }));
+
+    // Hours win over days: the demo's 1-hour window is stated as hours, never a stale "days".
+    expect(screen.getByText(/reports for 1 h/i)).toBeInTheDocument();
+    expect(screen.queryByText(/days/i)).not.toBeInTheDocument();
   });
 
   it("cancels without deleting", () => {
@@ -46,7 +61,7 @@ describe("DeleteFileControl (Part 6 §4.3, delete-with-retention)", () => {
     render(
       <DeleteFileControl
         fileId="file-7"
-        retention={{ uploadHours: 24, reportDays: 30 }}
+        retention={{ uploadHours: 24, reportHours: null, reportDays: 30 }}
         onDeleted={onDeleted}
       />,
     );
@@ -63,7 +78,7 @@ describe("DeleteFileControl (Part 6 §4.3, delete-with-retention)", () => {
     render(
       <DeleteFileControl
         fileId="file-7"
-        retention={{ uploadHours: 24, reportDays: 30 }}
+        retention={{ uploadHours: 24, reportHours: null, reportDays: 30 }}
         onDeleted={onDeleted}
       />,
     );
