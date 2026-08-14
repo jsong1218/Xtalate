@@ -147,8 +147,13 @@ _VOIGT6_KEYS = ("stress", "virial")
 
 #: A quoted or bracketed ``stress=``/``virial=`` value on an extXYZ comment line (RF-4; D162).
 #: ASE's extXYZ reader only accepts the 9-number full-tensor spelling, so a 6-number Voigt
-#: value must be expanded to that spelling *before* ASE sees the comment line.
-_VOIGT6_VALUE_RE = re.compile(r"(?P<key>stress|virial)\s*=\s*(?P<quote>\"[^\"]*\"|\[[^\]]*\])")
+#: value must be expanded to that spelling *before* ASE sees the comment line. The key is
+#: bounded on the left by ``(?<![\w])`` so **only** the exact ``stress``/``virial`` keys match:
+#: without it a custom key ending in one of them (``cauchy_stress=``, ``residual_virial=``) would
+#: have its 6-number value silently rewritten to 9 and carried mutated, a silent-loss defect (P1).
+_VOIGT6_VALUE_RE = re.compile(
+    r"(?<![\w])(?P<key>" + "|".join(_VOIGT6_KEYS) + r")\s*=\s*(?P<quote>\"[^\"]*\"|\[[^\]]*\])"
+)
 _NUMBER_TOKEN_RE = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
 
 

@@ -108,3 +108,17 @@ def test_six_number_stress_never_leaks_a_non_parse_error() -> None:
     ):
         with pytest.raises(ParseError):
             ExtxyzParser().parse(io.BytesIO(bad), filename="x.xyz")
+
+
+@pytest.mark.parametrize("key", ["cauchy_stress", "residual_virial", "my_stress", "prev_virial"])
+def test_custom_key_ending_in_stress_or_virial_is_not_rewritten(key: str) -> None:
+    # The Voigt-6 expansion must fire only for the *exact* `stress`/`virial` keys, never a
+    # custom comment key that merely ends in one of them: rewriting such a key's 6-number value
+    # to 9 would silently mutate a carried field with no warning — a P1 silent-loss defect.
+    data = (
+        f'1\nProperties=species:S:1:pos:R:3 {key}="1 2 3 4 5 6" pbc="T T T"\nH 0 0 0\n'
+    ).encode()
+    obj = _parse(data)
+    carried = obj.user_metadata.custom_per_frame[f"extxyz:{key}"]
+    # Carried verbatim — the six source numbers, unexpanded and unreordered.
+    assert np.asarray(carried).ravel().tolist() == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
