@@ -10,7 +10,7 @@ faithful stand-in for one a real convert wrote.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from fastapi.testclient import TestClient
@@ -250,7 +250,9 @@ def test_conversion_record_past_horizon_is_unavailable(
 def test_history_summarizes_conversions_newest_first(
     client: TestClient, repository: Repository
 ) -> None:
-    base = datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC)
+    # Anchored to now (not a fixed calendar date) so the records stay inside the report-retention
+    # window the lazy read-horizon enforces — this test is about ordering, not expiry.
+    base = utcnow() - timedelta(minutes=10)
     oldest = _seed_conversion(repository, created_at=base)
     newest = _seed_conversion(
         repository,
@@ -275,7 +277,8 @@ def test_history_summarizes_conversions_newest_first(
 
 
 def test_history_paginates_with_a_cursor(client: TestClient, repository: Repository) -> None:
-    base = datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC)
+    # Anchored to now so all three rows stay within the report-retention window (see above).
+    base = utcnow() - timedelta(minutes=10)
     ids = [_seed_conversion(repository, created_at=base + timedelta(minutes=i)) for i in range(3)]
     newest_first = list(reversed(ids))
 

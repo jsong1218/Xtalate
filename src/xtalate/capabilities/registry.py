@@ -9,6 +9,16 @@ and the interfaces are identical, so the switch later is a loading change, not a
 At registration the plugin's ``capabilities()`` declaration is validated against the
 canonical schema paths and its wildcards expanded (§4.1): "the registry rejects
 declarations with unknown paths ... which keeps the matrix and the schema from drifting."
+
+**Parser-only formats (read-only, v1.2 M42-S1, D159).** A ``ParserPlugin`` may register
+with **no** paired ``ExporterPlugin`` — the parser-only seam every DFT-*output* format needs
+(outputs of a code are never conversion targets). The matrix is keyed by
+``(format_id, direction)``, so such a format naturally holds a read row and **no** write
+row, and every conversion-target enumeration is derived from ``exporters()`` — a parser-only
+id is included as a *source* and automatically absent as a *target*, so ``convert --to
+<parser-only-fmt>`` refuses with the same unknown/unavailable-target error as an
+unregistered id. Nothing downstream may assume a parser has a same-id exporter (round-trip
+harnesses derive their targets from ``exporters()`` for exactly this reason).
 """
 
 from __future__ import annotations
@@ -102,6 +112,10 @@ class Registry:
         self._declarations: dict[tuple[str, str], FormatCapabilities] = {}
 
     def register_parser(self, parser: ParserPlugin) -> None:
+        # A parser may register with no paired exporter (a read-only/parser-only format,
+        # D159): the matrix row is read-side only, and such a format is never a conversion
+        # target because targets are derived from ``exporters()``. The duplicate guard
+        # below is per-direction, so a format may register both sides independently.
         if parser.format_id in self._parsers:
             raise ValueError(f"a parser is already registered for format {parser.format_id!r}")
         caps = _validate_and_expand(

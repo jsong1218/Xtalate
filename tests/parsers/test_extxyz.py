@@ -21,6 +21,7 @@ from xtalate.parsers.extxyz import ExtxyzParser
 from xtalate.sdk import ParseError
 
 GOLDEN = Path(__file__).parent.parent / "golden" / "extxyz" / "co-in-cell"
+GOLDEN_STRESS6 = Path(__file__).parent.parent / "golden" / "extxyz" / "stress6-voigt"
 
 
 def _parser() -> ExtxyzParser:
@@ -35,6 +36,21 @@ def test_golden_co_in_cell() -> None:
     result = parse_bytes(_parser(), source, filename="sample.extxyz")
     assert result.issues == []
     assert_matches_golden(result.canonical, (GOLDEN / "expected.canonical.json").read_text())
+
+
+def test_golden_stress6_voigt() -> None:
+    # RF-4 (M42-S4, D162): a 6-number Voigt stress= reads — the expectation holds the
+    # UNRESOLVED parse (stress carried under extxyz:stress, never mapped silently).
+    source = (GOLDEN_STRESS6 / "h2_stress6.extxyz").read_bytes()
+    result = parse_bytes(_parser(), source, filename="h2_stress6.extxyz")
+    assert result.issues == []
+    expected = (GOLDEN_STRESS6 / "expected.canonical.json").read_text()
+    assert_matches_golden(result.canonical, expected)
+    # The 6-number spelling reads the *identical* carry a semantically-equal 9-number file does.
+    nine = source.replace(b'stress="1 2 3 4 5 6"', b'stress="1 6 5 6 2 4 5 4 3"')
+    assert parse_bytes(_parser(), nine, filename="h2_stress6.extxyz").canonical.model_dump(
+        mode="json"
+    ) == result.canonical.model_dump(mode="json")
 
 
 # --- default-laundering suite (the point of an ASE-backed parser) ---------------------

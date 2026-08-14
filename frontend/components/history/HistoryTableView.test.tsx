@@ -25,7 +25,7 @@ function renderView(overrides: Partial<Parameters<typeof HistoryTableView>[0]> =
       hasMore={true}
       onLoadMore={vi.fn()}
       loadingMore={false}
-      retention={{ uploadHours: 24, reportDays: 30 }}
+      retention={{ uploadHours: 24, reportHours: null, reportDays: 30 }}
       onFileDeleted={vi.fn()}
       {...overrides}
     />,

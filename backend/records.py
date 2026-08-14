@@ -12,12 +12,14 @@ the download path, at ``open`` (:class:`~backend.storage.objects.ObjectNotFound`
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from backend.db import as_utc, utcnow
 from backend.models import DownloadInfo
 
 if TYPE_CHECKING:
+    from backend.config import Settings
     from backend.db.models import Conversion
     from backend.db.repository import Repository
     from backend.storage import ObjectStore
@@ -49,6 +51,31 @@ def output_bytes_expired(conversion: Conversion) -> bool:
         return True
     expires_at = as_utc(conversion.output_expires_at)
     return expires_at is not None and expires_at < utcnow()
+
+
+def report_retention_expired(
+    conversion: Conversion, settings: Settings, *, now: datetime | None = None
+) -> bool:
+    """Whether a conversion record has passed its report-retention window (read it as gone).
+
+    The record-level twin of :func:`output_bytes_expired`: a lazy, storage-agnostic horizon over the
+    record's own ``created_at``, so the configured window bounds how long a conversion + its reports
+    stay readable **even on Tier 0**, where no cron drives
+    :func:`~backend.jobs.retention.sweep_reports`. A read of an expired record answers
+    ``404 CONVERSION_NOT_FOUND`` (and it drops out of history) —
+    the same "it's gone, honestly" posture the byte path takes with ``410``, and exactly what the
+    conversions/downloads/revalidate docstrings already promise ("or has passed report retention").
+
+    ``None`` window = indefinite retention → never expired. ``now`` is injectable for deterministic
+    tests; it defaults to :func:`utcnow`.
+    """
+    window = settings.report_retention_window
+    if window is None:
+        return False
+    created = as_utc(conversion.created_at)
+    if created is None:  # pragma: no cover - created_at is non-null in the schema.
+        return False
+    return created < (now or utcnow()) - window
 
 
 def download_filename(conversion: Conversion, repository: Repository) -> str:

@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "H",
+          "H",
+          "O"
+        ],
+        "atomic_numbers": [
+          1,
+          1,
+          8
+        ],
+        "positions": [
+          [
+            5.0,
+            5.0,
+            5.0
+          ],
+          [
+            5.0,
+            7.5,
+            5.0
+          ],
+          [
+            7.5,
+            5.0,
+            5.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            10.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.2,
+            -0.1,
+            0.0
+          ],
+          [
+            -0.1,
+            0.05,
+            0.0
+          ],
+          [
+            -0.1,
+            0.0,
+            0.05
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -76.4,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": {
+    "source_code": "vasp.5.4.4",
+    "calculator": null,
+    "xc_functional": null,
+    "pseudopotentials": null,
+    "thermostat": null,
+    "md_ensemble": null,
+    "temperature": null,
+    "extra": {
+      "vasprun:volume": "1000.0",
+      "vasprun:energy": "0.0",
+      "system": "water, synthetic SCF fixture"
+    }
+  },
+  "provenance": {
+    "source_filename": "vasprun.xml",
+    "source_format": "vasprun",
+    "source_units": {
+      "positions": "fractional",
+      "lattice_vectors": "angstrom",
+      "stress": "kbar"
+    },
+    "original_coordinate_system": "fractional",
+    "parse_notes": [
+      "Direct (fractional) coordinates converted to Cartesian using each step's lattice matrix.",
+      "pbc set to (true,true,true): vasprun.xml carries no PBC declaration and VASP is always fully periodic (format-defined, not assumed).",
+      "electronic.total_energy read from the <energy> block's e_0_energy (VASP's energy extrapolated to zero smearing, the energy(sigma->0) value); other energy-block scalars are carried verbatim in user_metadata.custom_per_frame['vasprun:*'].",
+      "simulation.source_code set to the program string declared in <generator> (verbatim).",
+      "cell.lattice_vectors assembled from the <crystal> basis varray (rows a, b, c).",
+      "Each <calculation>'s own <structure> supplies that step's cell and positions; a step without one reuses the previous step's (the fixed-cell form).",
+      "electronic.stress mapped from VASP's kBar tensor when a <calculation> carries a <varray name=\"stress\">: VASP reports pressure (compression-positive) in kBar, so the tensor is sign-flipped to canonical tension-positive and divided by the exact factor 1602.1766208 kBar per eV/Å³ (D161). A step without a stress block leaves electronic.stress None (P3 — absence is never defaulted)."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-08-14T04:03:01Z",
+        "operation": "parse",
+        "source_format": "vasprun",
+        "target_format": null,
+        "tool_version": "1.1.0",
+        "parser_version": "vasprun-parser 1.1.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {
+      "vasprun:rec_basis": [
+        [
+          0.1,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.1,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.1
+        ]
+      ]
+    },
+    "custom_per_atom": {},
+    "custom_per_frame": {
+      "vasprun:alpha": [
+        0.0
+      ],
+      "vasprun:e_fr_energy": [
+        -76.401
+      ],
+      "vasprun:e_wo_entrp": [
+        -76.4
+      ],
+      "vasprun:eentropy": [
+        0.001
+      ],
+      "vasprun:efermi": [
+        7.0
+      ],
+      "vasprun:eatom": [
+        -80.0
+      ]
+    }
+  }
+}

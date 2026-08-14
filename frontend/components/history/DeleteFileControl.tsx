@@ -7,6 +7,9 @@ import { deleteFile } from "@/lib/api/queries";
 /** The instance's retention windows, in the plain units the confirmation states (Part 6 §5). */
 export interface RetentionPolicy {
   uploadHours: number;
+  //  The report window in the unit the instance actually uses: `reportHours` when a sub-day override
+  //  is active (the hosted demo, 1 h), else `reportDays`. Both null = indefinite retention.
+  reportHours: number | null;
   reportDays: number | null;
 }
 
@@ -24,10 +27,13 @@ export interface RetentionPolicy {
 function retentionSentence(retention: RetentionPolicy | null): string {
   const base = "This deletes the uploaded source file now. Its conversion report stays readable.";
   if (retention === null) return base;
+  // Hours override days (the demo's sub-day window); both null = indefinite retention.
   const reports =
-    retention.reportDays === null
-      ? "reports are kept indefinitely"
-      : `reports for ${retention.reportDays} days`;
+    retention.reportHours !== null
+      ? `reports for ${retention.reportHours} h`
+      : retention.reportDays === null
+        ? "reports are kept indefinitely"
+        : `reports for ${retention.reportDays} days`;
   return `${base} Otherwise, this instance keeps uploads for ${retention.uploadHours} h and ${reports}.`;
 }
 

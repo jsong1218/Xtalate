@@ -33,10 +33,11 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 
+from backend.config import Settings
 from backend.db import Repository
-from backend.deps import get_object_store, get_repository
+from backend.deps import get_object_store, get_repository, get_settings
 from backend.errors import ApiError
-from backend.records import download_filename, output_bytes_expired
+from backend.records import download_filename, output_bytes_expired, report_retention_expired
 from backend.storage import ObjectStore
 from backend.storage.objects import ObjectNotFound
 
@@ -55,10 +56,11 @@ def download(
     ),
     repository: Repository = Depends(get_repository),
     object_store: ObjectStore = Depends(get_object_store),
+    settings: Settings = Depends(get_settings),
 ) -> StreamingResponse:
     """Stream a conversion's output bytes, guarded by the not-found / ack / expiry gates above."""
     conversion = repository.get_conversion(conversion_id)
-    if conversion is None:
+    if conversion is None or report_retention_expired(conversion, settings):
         raise ApiError(
             status_code=status.HTTP_404_NOT_FOUND,
             code="CONVERSION_NOT_FOUND",

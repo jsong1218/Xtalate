@@ -175,8 +175,16 @@ class LimitsResponse(BaseModel):
     upload_retention_hours: int
     output_retention_hours: int
     awaiting_recovery_ttl_minutes: int
-    #: ``None`` = indefinite retention (self-hosted default).
+    #: The report window as **days** — populated only when no sub-day override is active. ``None``
+    #: means either an ``report_retention_hours`` override is in force (read that instead) or, when
+    #: ``report_retention_hours`` is *also* ``None``, indefinite retention (self-hosted default).
     report_retention_days: int | None
+    #: The report window as **hours**, set only when a sub-day override is configured (the hosted
+    #: demo uses 1). Exactly one of ``report_retention_hours`` / ``report_retention_days`` is
+    #: non-null unless retention is indefinite, in which case both are ``None``. Additive field
+    #: (v1.2) — an older client that reads only ``report_retention_days`` still sees a correct
+    #: (``None`` = "not in days") value.
+    report_retention_hours: int | None
 
 
 class DownloadInfo(BaseModel):

@@ -86,12 +86,40 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-authored for M41: a two-frame N-O diatomic in a cubic cell carrying the three MLIP training labels — per-frame energy=, per-atom forces= column, and a non-diagonal 3x3 stress= channel — so the round-trip proof exercises all three first-class. Values are short decimals chosen to survive ASE's 8-decimal write formatting, so the interchange round-trip is exact (M40's fixture convention).
 
+## `extxyz` / `stress6-voigt` (golden)
+
+- **Source file:** `h2_stress6.extxyz`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M42-S4 (RF-4): H2 in a 4 A cubic cell carrying energy=, a per-atom forces= column, and a 6-number Voigt stress= (ASE order xx,yy,zz,yz,xz,xy) — the spelling ASE's extXYZ reader refuses outright without the parser's 6-number expansion.
+
 ## `poscar` / `nacl-primitive` (golden)
 
 - **Source file:** `POSCAR`
 - **Origin:** synthetic
 - **License:** Apache-2.0
 - **Source:** MASTER_SPEC Part 2 §8.2 worked example (VASP-5 POSCAR, Direct coords, NaCl-like)
+
+## `vasprun` / `relax-h2o` (golden)
+
+- **Source file:** `vasprun.xml`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M42-S2 (classical VASP 6.1 layout, root <vasprun>, H2O in a 10 A cubic box, 3-ionic-step relaxation: each <calculation> carries its own <structure> with mode="direct" positions)
+
+## `vasprun` / `scf-h2o` (golden)
+
+- **Source file:** `vasprun.xml`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M42-S2 (classical VASP 5.4 layout, root <modeling.vasprun>, H2O in a 10 A cubic box, single-point SCF: one <calculation> with energy + forces and no per-step <structure>)
+
+## `vasprun` / `si-npt-per-step-cell` (golden)
+
+- **Source file:** `vasprun.xml`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M42-S2 (classical VASP 5.4 layout, root <vasprun>, Si with 2 atoms, 3-step NpT MD: each <calculation> carries its own <structure> with a growing cubic cell 5.6 -> 5.8 -> 6.0 A)
 
 ## `xdatcar` / `nacl-md-fixed-cell` (golden)
 

@@ -387,6 +387,12 @@ class AseTrajParser(ParserPlugin):
                 "electronic.magnetic_moments": FieldCapability(
                     level=partial, notes="From initial_magmoms array or calculator magmoms."
                 ),
+                "electronic.stress": FieldCapability(
+                    level=partial,
+                    notes="Populated only when the stress sign convention is resolved via the "
+                    "ambiguous_stress_convention recovery; until then stress is carried verbatim "
+                    "in custom_per_frame['ase_traj:stress'] (D18, D151; M42-S5).",
+                ),
                 "user_metadata.custom_per_atom": FieldCapability(
                     level=CapabilityLevel.FULL, notes="Arbitrary per-atom arrays."
                 ),
@@ -398,6 +404,11 @@ class AseTrajParser(ParserPlugin):
             max_frames=None,  # a trajectory: unbounded frame count
             required_fields=[],  # read side: absence is honoured, not required
             native_coordinate_system="cartesian",
+            # M42-S5 (D163): stress is carried through custom_per_frame until the sign
+            # convention is resolved by the ambiguous_stress_convention recovery (D18, Part 2
+            # §3.7.1) — never mapped silently. `carried_field_keys` names the carry so the
+            # Validation Engine can compare a planned field against the re-parsed value (D151).
+            carried_field_keys={"electronic.stress": _STRESS_KEY},
             lossy_notes=[
                 "stress carried verbatim in user_metadata.custom_per_frame['ase_traj:stress'] "
                 "rather than electronic.stress (sign convention).",

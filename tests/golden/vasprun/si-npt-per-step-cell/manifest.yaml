@@ -1,0 +1,46 @@
+case: si-npt-per-step-cell
+format_id: vasprun
+source_file: vasprun.xml
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: b1f80f91c0380913213b907577e9126656839511f5b8f0e66dad60264d98b7b2
+expected_sha256: 1ccdc781300d7b68d6dca9e2d176484163152445e0baaac159a013bc743b26c5
+origin:
+  kind: synthetic
+  source: 'Hand-written for M42-S2 (classical VASP 5.4 layout, root <vasprun>, Si
+    with 2 atoms, 3-step NpT MD: each <calculation> carries its own <structure> with
+    a growing cubic cell 5.6 -> 5.8 -> 6.0 A)'
+  license: Apache-2.0
+notes: 'The NpT-with-per-step-cells golden, and the format''s distinctive canonical
+  feature: VASP
+
+  restates the cell inside every <calculation>''s <structure> when it varies, so Frame.cell
+
+  legitimately differs frame to frame. The cell grows 5.6 -> 5.8 -> 6.0 A while the
+  direct
+
+  coordinates hold constant, which is precisely the case that catches a parser reusing
+  the
+
+  initial lattice: the identical direct coordinates (0.5, 0.5, 0.5) must yield *different*
+
+  Cartesian positions (2.8 -> 2.9 -> 3.0 A). Every expected value is exact in float64
+  (0.5 x a
+
+  halves an exponent) and was hand-derived; the per-frame volumes 175.616 / 195.112
+  / 216.0 are
+
+  5.6^3 / 5.8^3 / 6.0^3. Each step also carries a <varray name="stress"> (the M42-S3
+
+  extension): step 1 hydrostatic +1602.1766208 kBar -> -1.0 tension on the diagonal;
+  step 2
+
+  (1602.1766208, 801.0883104, 0 / 801.0883104, 3204.3532416, 0 / 0, 0, 160.21766208)
+  kBar ->
+
+  (-1.0, -0.5, 0 / -0.5, -2.0, 0 / 0, 0, -0.1) eV/A^3; step 3 isotropic +160.21766208
+  kBar ->
+
+  -0.1 on the diagonal. All values divide the kBar input by the exact factor 1602.1766208
+
+  kBar/eV/A^3 with the compression->tension sign flip (D161).'

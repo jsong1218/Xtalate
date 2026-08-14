@@ -93,9 +93,11 @@ USER user
 
 # --- The demo environment (all overridable — these are the demo defaults) ----------------------
 # Backend: Tier-0 mode + the demo policy — anonymous (no API keys), a 10 MiB upload cap, short
-# retention (v1.1 M39-S4: uploads/outputs 1 h, reports 1 day — the free box has no persistent
-# disk, so retention only bounds storage within one uptime window; `report_retention_days` is the
-# longer window in days, and 1 day ≥ 1 h holds), and docs URLs pointed at the GitHub docs so the
+# retention (v1.2: uploads/outputs 1 h and the conversion record + reports 1 h too, via the sub-day
+# `XTALATE_REPORT_RETENTION_HOURS` override — a shared, anonymous instance should not keep one
+# visitor's record + report readable for a whole day. This is enforced lazily on every record read
+# (a conversion past 1 h reads as 404 / drops out of the shared history), so the window is real even
+# though the free box runs no cron to drive the sweep), and docs URLs pointed at the GitHub docs so the
 # error envelope's documentation_url and the FILE_TOO_LARGE funnel resolve. XTALATE_ENVIRONMENT is a
 # free-form label surfaced in logs and
 # /v1/health (backend/config.py never branches scientific behaviour on it) — set to "demo"; the
@@ -108,7 +110,7 @@ ENV XTALATE_ENVIRONMENT=demo \
     XTALATE_MAX_UPLOAD_BYTES=10485760 \
     XTALATE_UPLOAD_RETENTION_HOURS=1 \
     XTALATE_OUTPUT_RETENTION_HOURS=1 \
-    XTALATE_REPORT_RETENTION_DAYS=1 \
+    XTALATE_REPORT_RETENTION_HOURS=1 \
     XTALATE_API_KEYS= \
     XTALATE_DOCS_BASE_URL=https://github.com/jsong1218/Xtalate/blob/main/docs/errors.md \
     XTALATE_SELF_HOSTING_URL=https://github.com/jsong1218/Xtalate/blob/main/docs/self-hosting.md

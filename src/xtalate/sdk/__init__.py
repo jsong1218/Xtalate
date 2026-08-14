@@ -31,6 +31,7 @@ from xtalate.sdk.streaming import (
     parse_as_stream,
     stream_of,
 )
+from xtalate.sdk.stress_carries import STRESS_CARRY_KEYS
 
 __all__ = [
     "CapabilityLevel",
@@ -44,6 +45,7 @@ __all__ = [
     "ParseIssue",
     "ParseResult",
     "ParserPlugin",
+    "STRESS_CARRY_KEYS",
     "StreamFrame",
     "StreamHeader",
     "collapse_frame_issues",

@@ -15,6 +15,7 @@ from xtalate.parsers.ase_traj import AseTrajParser, make_ase_traj_parser
 from xtalate.parsers.cif import CifParser, make_cif_parser
 from xtalate.parsers.extxyz import ExtxyzParser
 from xtalate.parsers.poscar import PoscarParser, make_contcar_parser, make_poscar_parser
+from xtalate.parsers.vasprun import VasprunParser, make_vasprun_parser
 from xtalate.parsers.xdatcar import XdatcarParser, make_xdatcar_parser
 from xtalate.parsers.xyz import XyzParser
 from xtalate.sdk import ParserPlugin
@@ -24,6 +25,7 @@ __all__ = [
     "CifParser",
     "ExtxyzParser",
     "PoscarParser",
+    "VasprunParser",
     "XdatcarParser",
     "XyzParser",
     "builtin_parsers",
@@ -31,13 +33,16 @@ __all__ = [
     "make_cif_parser",
     "make_contcar_parser",
     "make_poscar_parser",
+    "make_vasprun_parser",
     "make_xdatcar_parser",
 ]
 
 
 def builtin_parsers() -> list[ParserPlugin]:
     """The parsers shipped so far (v0.1: M3a XYZ, M3b POSCAR/CONTCAR, M3c extXYZ; v0.3: M13
-    XDATCAR, M14 ASE trajectory; v0.4: M17 CIF, read side only until M19 adds the exporter)."""
+    XDATCAR, M14 ASE trajectory; v0.4: M17 CIF, read side only until M19 adds the exporter;
+    v1.2 M42-S2: vasprun, the first **parser-only** format — a DFT output, never a conversion
+    target (D159), so it has no entry in ``builtin_exporters``."""
     return [
         XyzParser(),
         ExtxyzParser(),
@@ -46,4 +51,5 @@ def builtin_parsers() -> list[ParserPlugin]:
         make_xdatcar_parser(),
         make_ase_traj_parser(),
         make_cif_parser(),
+        make_vasprun_parser(),
     ]

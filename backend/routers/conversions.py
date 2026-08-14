@@ -23,15 +23,16 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, Query, status
 
+from backend.config import Settings
 from backend.db import Repository
-from backend.deps import get_object_store, get_repository
+from backend.deps import get_object_store, get_repository, get_settings
 from backend.errors import ApiError
 from backend.models import (
     ConversionRecordResponse,
     HistoryItem,
     HistoryResponse,
 )
-from backend.records import build_download_info
+from backend.records import build_download_info, report_retention_expired
 from backend.storage import ObjectStore
 
 if TYPE_CHECKING:
@@ -56,10 +57,11 @@ def get_conversion_record(
     conversion_id: str,
     repository: Repository = Depends(get_repository),
     object_store: ObjectStore = Depends(get_object_store),
+    settings: Settings = Depends(get_settings),
 ) -> ConversionRecordResponse:
     """The durable record for one conversion — both reports verbatim, byte availability computed."""
     conversion = repository.get_conversion(conversion_id)
-    if conversion is None:
+    if conversion is None or report_retention_expired(conversion, settings):
         raise ApiError(
             status_code=status.HTTP_404_NOT_FOUND,
             code="CONVERSION_NOT_FOUND",
@@ -95,6 +97,7 @@ def get_history(
         description="Opaque next-page cursor from a previous response's next_cursor.",
     ),
     repository: Repository = Depends(get_repository),
+    settings: Settings = Depends(get_settings),
 ) -> HistoryResponse:
     """A page of conversion summaries, newest first (Part 6 §4.4).
 
@@ -102,11 +105,19 @@ def get_history(
     conversion to a :class:`HistoryItem` — the source/target endpoints and ``summary_counts`` from
     its conversion report (fetched for the whole page in one query), and ``file_id`` only for the
     conversions whose source upload is still live (also one query).
+
+    Records past the report-retention window are dropped here the same way a single-record read
+    ``404``s (:func:`report_retention_expired`): because the listing is newest-first, expired
+    records are always a suffix, so filtering yields a clean live prefix. Once the fetched window
+    contains an expired row, everything older is expired too — no ``next_cursor`` is owed past it.
     """
     before = _decode_cursor(cursor) if cursor is not None else None
     rows = repository.list_conversions(limit=limit + 1, before=before)
-    page = list(rows[:limit])
-    next_cursor = _encode_cursor(page[-1]) if len(rows) > limit and page else None
+    live = [c for c in rows if not report_retention_expired(c, settings)]
+    page = list(live[:limit])
+    # A next_cursor is owed only when the +1 sentinel row is itself live (len(live) > limit); if any
+    # row was filtered as expired, len(live) <= limit and the page is the last one.
+    next_cursor = _encode_cursor(page[-1]) if len(live) > limit and page else None
 
     reports = repository.get_conversion_reports([c.conversion_id for c in page])
     live_files = repository.live_upload_ids(

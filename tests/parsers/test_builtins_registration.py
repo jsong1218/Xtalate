@@ -53,10 +53,11 @@ def test_builtins_register_without_error() -> None:
         "xdatcar",
         "ase_traj",
         "cif",
+        "vasprun",
     }
-    # Symmetric since M19 slice 3: every format Xtalate reads it can also write. The two
-    # assertions stay separate because that symmetry is a fact about the current format set, not
-    # a property of the registry — a read-only format is legitimate and was the case until now.
+    # Asymmetric since M42 slice 2: vasprun is the first parser-only format (D159) — Xtalate
+    # reads it but does not write it. The two assertions stay separate because read-only formats
+    # are legitimate, they are just no longer the only kind.
     assert {e.format_id for e in reg.exporters()} == {
         "xyz",
         "extxyz",
