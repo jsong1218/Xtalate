@@ -17,6 +17,7 @@ from xtalate import __version__ as xtalate_version
 from xtalate.capabilities import Registry
 from xtalate.cli import render
 from xtalate.cli.main import main
+from xtalate.conversion import ConversionEngine
 from xtalate.parsers import builtin_parsers
 from xtalate.parsers.vasprun import FORMAT_ID, make_vasprun_parser
 from xtalate.registry import default_registry
@@ -80,7 +81,11 @@ _TAIL = """
 
 
 def _calculation(
-    *, energy: float = -12.5, inner_structure: bool = False, mode: str | None = None
+    *,
+    energy: float = -12.5,
+    inner_structure: bool = False,
+    mode: str | None = None,
+    stress: str | None = None,
 ) -> str:
     struct = ""
     if inner_structure:
@@ -99,6 +104,13 @@ def _calculation(
       <v> 0.75 0.75 0.75 </v>
     </varray>
   </structure>"""
+    stress_block = (
+        f"""
+  <varray name="stress" >{stress}
+  </varray>"""
+        if stress is not None
+        else ""
+    )
     return f"""
 <calculation>
   <energy>
@@ -109,7 +121,7 @@ def _calculation(
   <varray name="forces" >
     <v> 0.1 0.0 0.0 </v>
     <v> -0.1 0.0 0.0 </v>
-  </varray>{struct}
+  </varray>{stress_block}{struct}
 </calculation>"""
 
 
@@ -223,15 +235,103 @@ def test_cli_refuses_vasprun_as_a_conversion_target() -> None:
         main(["convert", str(_GOLDEN), "--to", "vasprun"])
 
 
-def test_stress_row_is_none_until_s3() -> None:
-    # S2 does not map stress (S3 does): the declared row reads NONE, and the parser never
-    # fabricates a zero tensor (P3).
+def test_stress_row_is_first_class_since_s3() -> None:
+    # S3 promotes electronic.stress to FULL: the mapping is deterministic (VASP declares its
+    # convention — D161), and an absent stress block reads None, never a zero tensor (P3).
     caps = PARSER.capabilities()
-    assert caps.fields.get("electronic.stress") is None  # undeclared → NONE by default
+    assert caps.fields["electronic.stress"].level is CapabilityLevel.FULL
     matrix = default_registry().capability_matrix()
     assert matrix.field_capability("vasprun", "read", "electronic.stress").level is (
-        CapabilityLevel.NONE
+        CapabilityLevel.FULL
     )
+
+
+# --- the VASP stress mapping (D161) --------------------------------------------------
+
+
+_K_BAR = 1602.1766208  # the exact kBar per eV/Å³ factor, shared with the core
+
+
+def test_stress_maps_kbar_compression_positive_to_tension_positive_ev_a3() -> None:
+    # A known *compressive* state (positive diagonal in kBar) must read *negative* tension
+    # in canonical eV/Å³ — the sign flip pinned, not assumed (D161).
+    rows = f"""
+    <v> {_K_BAR} 0.0 0.0 </v>
+    <v> 0.0 {_K_BAR} 0.0 </v>
+    <v> 0.0 0.0 {_K_BAR} </v>"""
+    obj = _parse(_file(_calculation(stress=rows))).canonical
+    stress = obj.frames[0].electronic.stress
+    assert stress is not None
+    assert stress.tolist() == [[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]]
+
+
+def test_stress_exact_factor_and_off_diagonal_sign() -> None:
+    rows = f"""
+    <v> {_K_BAR} {_K_BAR / 2} 0.0 </v>
+    <v> {_K_BAR / 2} {2 * _K_BAR} 0.0 </v>
+    <v> 0.0 0.0 {_K_BAR / 10} </v>"""
+    obj = _parse(_file(_calculation(stress=rows))).canonical
+    stress = obj.frames[0].electronic.stress
+    assert stress is not None
+    assert stress.tolist() == [
+        [-1.0, -0.5, 0.0],
+        [-0.5, -2.0, 0.0],
+        [0.0, 0.0, -0.1],
+    ]
+
+
+def test_stressless_calculation_reads_none_not_zero() -> None:
+    # P3: absence is information — an SCF run without a stress block reads None, never a
+    # fabricated zero tensor (D161).
+    obj = _parse(_file(_calculation())).canonical
+    assert obj.frames[0].electronic.stress is None
+
+
+def test_stress_per_step_is_independent() -> None:
+    rows = f"""
+    <v> {_K_BAR} 0.0 0.0 </v>
+    <v> 0.0 {_K_BAR} 0.0 </v>
+    <v> 0.0 0.0 {_K_BAR} </v>"""
+    data = _file(_calculation(stress=rows), _calculation(energy=-13.0))
+    obj = _parse(data).canonical
+    assert obj.frames[0].electronic.stress is not None
+    assert obj.frames[1].electronic.stress is None  # the second step carries no stress block
+
+
+def test_stress_mapping_is_recorded_in_parse_notes_and_source_units() -> None:
+    rows = f"""
+    <v> {_K_BAR} 0.0 0.0 </v>
+    <v> 0.0 {_K_BAR} 0.0 </v>
+    <v> 0.0 0.0 {_K_BAR} </v>"""
+    obj = _parse(_file(_calculation(stress=rows))).canonical
+    notes = obj.provenance.parse_notes
+    assert any("kBar" in n and "tension-positive" in n for n in notes)
+    assert obj.provenance.source_units.get("stress") == "kbar"
+
+
+def test_malformed_stress_block_is_a_parse_error() -> None:
+    # A stress varray with the wrong shape is a ParseError under the §5 contract, never a
+    # partial or defaulted tensor.
+    data = _file(_calculation(stress="\n    <v> 1.0 0.0 </v>\n    <v> 0.0 1.0 </v>\n"))
+    with pytest.raises(ParseError) as excinfo:
+        _parse(data)
+    assert excinfo.value.issues[0].code == "VASPRUN_MALFORMED_XML"
+
+
+def test_ambiguous_stress_convention_does_not_fire_for_vasp() -> None:
+    # Done-means #4: VASP declares its convention, so the conversion completes with **no**
+    # unresolved scenario — the convention is mapped at the parser boundary, never asked
+    # (v1.1's ambiguous_stress_convention exists for *undeclared* conventions like extXYZ's).
+    rows = f"""
+    <v> {_K_BAR} 0.0 0.0 </v>
+    <v> 0.0 {_K_BAR} 0.0 </v>
+    <v> 0.0 0.0 {_K_BAR} </v>"""
+    obj = _parse(_file(_calculation(stress=rows))).canonical
+    res = ConversionEngine(default_registry()).convert(
+        obj, source_format_id="vasprun", target_format_id="extxyz"
+    )
+    assert res.report.status == "completed"
+    assert res.report.refusal is None  # no ambiguous_stress_convention, no other refusal
 
 
 # --- the VASPRUN_* error contract (D160) --------------------------------------------

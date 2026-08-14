@@ -68,6 +68,11 @@
     <v> -0.05 0.1 0.0 </v>
     <v> -0.1 0.0 0.0 </v>
   </varray>
+  <varray name="stress" >
+    <v> 1602.1766208 0 0 </v>
+    <v> 0 1602.1766208 0 </v>
+    <v> 0 0 1602.1766208 </v>
+  </varray>
   <structure>
     <crystal>
       <varray name="basis" >
@@ -100,6 +105,11 @@
     <v> -0.05 0.05 0.0 </v>
     <v> -0.05 0.0 0.0 </v>
   </varray>
+  <varray name="stress" >
+    <v> 1602.1766208 801.0883104 0 </v>
+    <v> 801.0883104 3204.3532416 0 </v>
+    <v> 0 0 160.21766208 </v>
+  </varray>
   <structure>
     <crystal>
       <varray name="basis" >
@@ -131,6 +141,11 @@
     <v> 0.05 -0.02 0.0 </v>
     <v> -0.03 0.02 0.0 </v>
     <v> -0.02 0.0 0.0 </v>
+  </varray>
+  <varray name="stress" >
+    <v> 0 801.0883104 160.21766208 </v>
+    <v> 801.0883104 0 0 </v>
+    <v> 160.21766208 0 0 </v>
   </varray>
   <structure>
     <crystal>

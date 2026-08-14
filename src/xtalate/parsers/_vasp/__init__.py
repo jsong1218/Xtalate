@@ -20,14 +20,17 @@ The core owns the mapping *decisions* so they are pinned in exactly one place:
 * **Species** — derived from the ``atominfo`` species table's atomic numbers (Z), in
   declared species order, one symbol per atom.
 
-The stress transform is deliberately **absent** here — it lands in M42-S3 as a core
-addition (kBar → eV/Å³, sign flip, VASP Voigt ordering), so this slice's core is
-stress-free and complete on its own.
+**Stress (M42-S3)** — VASP declares its convention, so the mapping is deterministic and
+recorded, never asked: the kBar tensor is sign-flipped (VASP is compression-positive,
+canonical tension-positive) and divided by the exact factor ``K_BAR_PER_EV_A3``; the
+VASP Voigt-6 → 3×3 helper uses VASP ordering ``[XX, YY, ZZ, XY, YZ, ZX]`` and is
+**deliberately not** ASE's ordering (the off-diagonal transpose hazard, D161).
 """
 
 from __future__ import annotations
 
 from xtalate.parsers._vasp.labels import (
+    K_BAR_PER_EV_A3,
     TOTAL_ENERGY_TAG,
     build_cell,
     coordinate_parse_note,
@@ -37,11 +40,15 @@ from xtalate.parsers._vasp.labels import (
     parse_notes_for,
     positions,
     source_code_parse_note,
+    stress_from_vasp_kbar,
+    stress_parse_note,
+    stress_voigt6_vasp_to_full,
     symbols_from_species,
     total_energy,
 )
 
 __all__ = [
+    "K_BAR_PER_EV_A3",
     "TOTAL_ENERGY_TAG",
     "build_cell",
     "coordinate_parse_note",
@@ -51,6 +58,9 @@ __all__ = [
     "parse_notes_for",
     "positions",
     "source_code_parse_note",
+    "stress_from_vasp_kbar",
+    "stress_parse_note",
+    "stress_voigt6_vasp_to_full",
     "symbols_from_species",
     "total_energy",
 ]

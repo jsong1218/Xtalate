@@ -64,6 +64,7 @@ from xtalate.parsers._vasp import (
     forces,
     parse_notes_for,
     positions,
+    stress_from_vasp_kbar,
     symbols_from_species,
     total_energy,
 )
@@ -370,6 +371,27 @@ def _read_forces(calc: ET.Element, frame_index: int) -> np.ndarray:
     return forces(_varray_rows(varray))
 
 
+def _read_stress(calc: ET.Element, frame_index: int) -> np.ndarray | None:
+    """The step's ``electronic.stress`` — the ``<varray name="stress">`` tensor mapped
+    deterministically (kBar, compression-positive → tension-positive eV/Å³, D161).
+
+    ``None`` when the step carries no stress block: absence is information (many SCF-only
+    runs have no stress unless ISIF requested it) and is **never** defaulted to a zero
+    tensor (P3).
+    """
+    varray = next((v for v in calc.findall("varray") if v.get("name") == "stress"), None)
+    if varray is None:
+        return None
+    rows = _varray_rows(varray)
+    if len(rows) != 3 or any(len(row) != 3 for row in rows):
+        raise _error(
+            "VASPRUN_MALFORMED_XML",
+            f'<varray name="stress"> must hold exactly 3 rows of 3 components, found {rows!r}',
+            location=f"frame {frame_index}",
+        )
+    return stress_from_vasp_kbar(rows)
+
+
 @dataclass
 class _Header:
     """Everything parsed eagerly before the first frame: object-level metadata and the
@@ -532,6 +554,7 @@ def _build_frame(
     """
     total, energy_carries = _read_energy(calc, frame_index)
     force_rows = _read_forces(calc, frame_index)
+    stress_tensor = _read_stress(calc, frame_index)
     structure = calc.find("structure")
     step_carries: dict[str, Any] = {}
     if structure is not None:
@@ -588,7 +611,10 @@ def _build_frame(
         atoms=AtomsBlock(symbols=list(state.symbols), positions=positions_cart),
         cell=build_cell(state.lattice),
         dynamics=Dynamics(forces=force_rows),
-        electronic=Electronic(total_energy=total_energy(total)),
+        electronic=Electronic(
+            total_energy=total_energy(total),
+            stress=stress_tensor,
+        ),
     )
     return StreamFrame(frame=frame, per_frame_custom=per_frame_custom)
 
@@ -699,6 +725,14 @@ class VasprunParser(ParserPlugin):
                     notes="e_0_energy — VASP's energy extrapolated to zero smearing "
                     "(the energy(sigma->0) value of OUTCAR).",
                 ),
+                "electronic.stress": FieldCapability(
+                    level=full.level,
+                    notes="Deterministic mapping (D161): VASP declares its convention, so the "
+                    "kBar compression-positive tensor is sign-flipped to canonical "
+                    "tension-positive eV/Å³ and divided by the exact factor 1602.1766208; "
+                    "recorded in parse_notes. A step without a stress block reads None "
+                    "(P3 — never a defaulted zero tensor).",
+                ),
                 "simulation.extra": FieldCapability(
                     level=partial,
                     notes="Declared program string → simulation.source_code; SYSTEM → "
@@ -736,6 +770,7 @@ def _build_stream_header(header: _Header, filename: str | None) -> StreamHeader:
             source_units={
                 "positions": "angstrom" if is_cartesian else "fractional",
                 "lattice_vectors": "angstrom",
+                "stress": "kbar",
             },
             parse_notes=parse_notes_for(header.mode),
         ),

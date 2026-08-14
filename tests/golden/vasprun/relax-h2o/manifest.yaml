@@ -2,18 +2,28 @@ case: relax-h2o
 format_id: vasprun
 source_file: vasprun.xml
 expected_canonical: expected.canonical.json
-canonical_schema_version: "1.0.0"
-sha256: "7fa8727be1f68d6e77f395b5a143013f97bca1bd93b35b54fd27b47f20f6055c"
-expected_sha256: "ca2939713cd1456cff692261ac31b95a04e239ca8a3ff75a0e13abed5639e159"
+canonical_schema_version: 1.0.0
+sha256: cab7424dba4f1587836cb2f0c8e6be83a8ca9ce1f256251e4baa19e74b3c65f1
+expected_sha256: 07825f09df93935e7cf189a8fcb913f6d14154944b44f6d0bba4a4ff24977416
 origin:
   kind: synthetic
-  source: "Hand-written for M42-S2 (classical VASP 6.1 layout, root <vasprun>, H2O in a 10 A cubic box, 3-ionic-step relaxation: each <calculation> carries its own <structure> with mode=\"direct\" positions)"
-  license: "Apache-2.0"
-notes: >-
-  The multi-step relaxation golden: three <calculation> steps, each with an inner <structure>
-  whose positions (direct, mode attribute present) move the H atoms 0.75 -> 0.73 -> 0.74 ->
-  0.745 in the y/z directions, giving Cartesian 7.5, 7.3, 7.4, 7.45 A against the fixed 10 A
-  cell. Energies -76.3/-76.5/-76.6 eV, forces verbatim per step; the per-frame energy-block
-  carries and the per-step structure carries (volume/energy) land in custom_per_frame. A
-  parser that reused the initial structure for every step would silently place every frame at
-  the 7.5 A geometry — the case this golden pins.
+  source: 'Hand-written for M42-S2 (classical VASP 6.1 layout, root <vasprun>, H2O
+    in a 10 A cubic box, 3-ionic-step relaxation: each <calculation> carries its own
+    <structure> with mode="direct" positions)'
+  license: Apache-2.0
+notes: "The multi-step relaxation golden \u2014 extended in M42-S3 to be the ISIF-with-stress\n\
+  relax case: each step carries a <varray name=\"stress\"> in kBar, mapped deterministically\
+  \ to\ncanonical tension-positive eV/A^3 (sign-flipped, divided by the exact factor\
+  \ 1602.1766208 \u2014\nD161). The hand-computed expectations: step 1 hydrostatic\
+  \ +1602.1766208 kBar on the diagonal\n(compression) reads -1.0 tension on the diagonal;\
+  \ step 2 (1602.1766208, 801.0883104, 0 /\n801.0883104, 3204.3532416, 0 / 0, 0, 160.21766208)\
+  \ kBar reads (-1.0, -0.5, 0 / -0.5, -2.0, 0 /\n0, 0, -0.1) eV/A^3; step 3 (0, 801.0883104,\
+  \ 160.21766208 / 801.0883104, 0, 0 / 160.21766208,\n0, 0) reads (0, -0.5, -0.1 /\
+  \ -0.5, 0, 0 / -0.1, 0, 0) eV/A^3. The three <calculation> steps\neach carry an\
+  \ inner <structure> whose positions (direct, mode attribute present) move the H\n\
+  atoms 0.75 -> 0.73 -> 0.74 -> 0.745 in the y/z directions, giving Cartesian 7.5,\
+  \ 7.3, 7.4,\n7.45 A against the fixed 10 A cell. Energies -76.3/-76.5/-76.6 eV,\
+  \ forces verbatim per step;\nthe per-frame energy-block carries and the per-step\
+  \ structure carries (volume/energy) land in\ncustom_per_frame. A parser that reused\
+  \ the initial structure for every step would silently\nplace every frame at the\
+  \ 7.5 A geometry \u2014 the case this golden pins."

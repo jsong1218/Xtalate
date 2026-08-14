@@ -29,6 +29,11 @@ _RowSeq: TypeAlias = Sequence[Sequence[float]] | np.ndarray
 #: reader carries it (and the other energy-block scalars) verbatim instead.
 TOTAL_ENERGY_TAG = "e_0_energy"
 
+#: The exact kBar → eV/Å³ factor: 1 eV/Å³ = 1602.1766208 kBar (1 eV = 1.6021766208e-19 J,
+#: 1 Å = 1e-10 m, 1 kBar = 1e8 Pa). Pinned by a hand-computed fixture — a wrong factor would
+#: be a silent scale error at MLIP scale (D161).
+K_BAR_PER_EV_A3 = 1602.1766208
+
 _PBC_NOTE = (
     "pbc set to (true,true,true): vasprun.xml carries no PBC declaration and VASP is always "
     "fully periodic (format-defined, not assumed)."
@@ -50,6 +55,13 @@ _STEP_CELL_NOTE = (
     "Each <calculation>'s own <structure> supplies that step's cell and positions; a step "
     "without one reuses the previous step's (the fixed-cell form)."
 )
+_STRESS_NOTE = (
+    "electronic.stress mapped from VASP's kBar tensor when a <calculation> carries a "
+    '<varray name="stress">: VASP reports pressure (compression-positive) in kBar, so the '
+    "tensor is sign-flipped to canonical tension-positive and divided by the exact factor "
+    f"{K_BAR_PER_EV_A3} kBar per eV/Å³ (D161). A step without a stress block leaves "
+    "electronic.stress None (P3 — absence is never defaulted)."
+)
 
 #: The canonical notes for a fully-populated vasprun.xml parse, in a stable order — assembled
 #: here (not in the reader) so the mapping layer owns the prose a conversion will record.
@@ -60,6 +72,7 @@ _NOTES_DIRECT = [
     _SOURCE_CODE_NOTE,
     _CELL_NOTE,
     _STEP_CELL_NOTE,
+    _STRESS_NOTE,
 ]
 _NOTES_CARTESIAN = [
     _CARTESIAN_NOTE,
@@ -68,6 +81,7 @@ _NOTES_CARTESIAN = [
     _SOURCE_CODE_NOTE,
     _CELL_NOTE,
     _STEP_CELL_NOTE,
+    _STRESS_NOTE,
 ]
 
 
@@ -87,6 +101,10 @@ def energy_parse_note() -> str:
 
 def source_code_parse_note() -> str:
     return _SOURCE_CODE_NOTE
+
+
+def stress_parse_note() -> str:
+    return _STRESS_NOTE
 
 
 def pbc_parse_note() -> str:
@@ -157,6 +175,39 @@ def total_energy(e_0: float) -> float:
     """Canonical ``electronic.total_energy`` in eV: VASP's ``e_0_energy`` (extrapolated to
     zero smearing). The value is stored verbatim — VASP already writes canonical eV."""
     return float(e_0)
+
+
+def stress_from_vasp_kbar(stress_kbar: _RowSeq) -> np.ndarray:
+    """Canonical tension-positive ``electronic.stress`` (eV/Å³, full symmetric 3×3).
+
+    VASP writes its stress tensor in **kBar, compression-positive** (pressure); canonical is
+    **tension-positive** eV/Å³ (Part 2 §3.7.1). The mapping is deterministic — VASP declares
+    its convention, so it is computed and recorded, never asked (no
+    ``ambiguous_stress_convention`` for a VASP source, D161).
+    """
+    out: np.ndarray = -np.asarray(stress_kbar, dtype=float) / K_BAR_PER_EV_A3
+    return out
+
+
+def stress_voigt6_vasp_to_full(voigt6: Sequence[float]) -> np.ndarray:
+    """The symmetric 3×3 tensor from VASP's 6-component Voigt line, **VASP ordering**
+    ``[XX, YY, ZZ, XY, YZ, ZX]`` (the OUTCAR ``in kB`` stress line; M43's reader reuses this).
+
+    Deliberately **not** ASE's ``voigt_6_to_full_3x3_stress`` ordering
+    (``[xx, yy, zz, yz, xz, xy]``): coupling the two orderings would silently **transpose the
+    off-diagonal stress components** — the exact silent-bug hazard D161 names. This helper is
+    ordering-only; the caller applies the kBar→eV/Å³ unit + compression→tension sign flip via
+    :func:`stress_from_vasp_kbar`.
+    """
+    xx, yy, zz, xy, yz, zx = voigt6
+    return np.asarray(
+        [
+            [xx, xy, zx],
+            [xy, yy, yz],
+            [zx, yz, zz],
+        ],
+        dtype=float,
+    )
 
 
 def forces(raw: _RowSeq) -> np.ndarray:
