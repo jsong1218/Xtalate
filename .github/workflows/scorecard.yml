@@ -1,0 +1,73 @@
+# OpenSSF Scorecard — supply-chain security posture (v1.2).
+#
+# Scorecard scores the repository against a set of security heuristics (pinned dependencies,
+# branch protection, token permissions, dangerous workflow patterns, published releases, …) and
+# writes the findings to GitHub's code-scanning surface as SARIF, so a regression shows up as a
+# code-scanning alert on the default branch. It runs on push to `main` and weekly (so a finding
+# that appears from an upstream change, e.g. a new advisory, is caught even without a push), plus
+# a manual trigger.
+#
+# Unlike ci.yml / main.yml / nightly.yml — which pin actions by moving tag for a solo maintainer's
+# convenience — this workflow pins every action by full commit SHA (with the version in a comment).
+# Pinning by hash is itself one of the checks Scorecard rewards, and this is the one workflow where
+# an unpinned supply-chain action would undercut the very thing being measured. The SHAs below are
+# the ones OpenSSF pins in its own scorecard-analysis workflow; bump them (and the comment) together
+# when updating.
+#
+# NOTE for the maintainer: the SARIF upload needs GitHub code scanning enabled for the repo (free on
+# public repositories). `publish_results: true` publishes the score to the OpenSSF API, which is what
+# powers the Scorecard badge — remove it if a public score is not wanted.
+
+name: scorecard
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, Monday 03:27 UTC — off-peak, and independent of any push.
+    - cron: "27 3 * * 1"
+  workflow_dispatch:
+
+# Least privilege by default; the analysis job elevates only the two scopes it needs.
+permissions: read-all
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      # Upload the SARIF result to the code-scanning dashboard.
+      security-events: write
+      # Publish the score to the OpenSSF API (badge) via keyless OIDC.
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard analysis
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      # Keep the raw SARIF as a short-lived artifact so a run's findings are inspectable even
+      # before the code-scanning ingest completes.
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        with:
+          sarif_file: results.sarif
