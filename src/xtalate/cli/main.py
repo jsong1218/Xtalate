@@ -325,6 +325,10 @@ def _cmd_validate(args: argparse.Namespace, registry: Registry) -> int:
 
 def _cmd_capabilities(args: argparse.Namespace, registry: Registry) -> int:
     matrix = registry.capability_matrix()
+    # The source/target split is deliberate (D159): the union admits a parser-only format
+    # as a *source* (its read row renders; see render_capabilities) while it stays absent
+    # from every exporter-derived target enumeration — a parser-only format is never a
+    # conversion target, so it never appears as a `--to` option or a write row here.
     format_ids = {p.format_id for p in registry.parsers()} | {
         e.format_id for e in registry.exporters()
     }

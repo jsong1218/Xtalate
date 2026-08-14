@@ -109,7 +109,18 @@ def render_capabilities(declarations: dict[str, dict[str, FormatCapabilities]]) 
         for direction in ("read", "write"):
             caps = directions.get(direction)
             if caps is None:
-                lines.append(f"  {direction}: (not registered)")
+                # A parser-only format (a read row, no write row — D159) has an honest
+                # one-line statement, not a bare "not registered" that implies the side
+                # merely went unregistered: it declares a read side and no write side
+                # exists, so it is never a conversion target. (The symmetric write-only
+                # case is not produced by any current format but renders plainly.)
+                if direction == "write" and "read" in directions:
+                    lines.append(
+                        "  write: (not registered — read-only/parser-only format; "
+                        "never a conversion target)"
+                    )
+                else:
+                    lines.append(f"  {direction}: (not registered)")
                 continue
             frames = "unlimited" if caps.max_frames is None else str(caps.max_frames)
             lines.append(
