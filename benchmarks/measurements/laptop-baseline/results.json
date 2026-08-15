@@ -52,6 +52,84 @@
     ]
   },
   {
+    "name": "parse_vasprun_10k",
+    "scale": "full",
+    "wall_seconds": 5.855531999986852,
+    "peak_rss_bytes": 199327744,
+    "metrics": {
+      "frames": 10000.0,
+      "atoms": 100.0
+    },
+    "budgets": [
+      {
+        "metric": "wall_seconds",
+        "limit": 30.0,
+        "unit": "s",
+        "value": 5.855531999986852,
+        "within_budget": true
+      },
+      {
+        "metric": "peak_rss_bytes",
+        "limit": 2147483648,
+        "unit": "bytes",
+        "value": 199327744,
+        "within_budget": true
+      }
+    ]
+  },
+  {
+    "name": "parse_outcar_10k",
+    "scale": "full",
+    "wall_seconds": 4.047757249994902,
+    "peak_rss_bytes": 182452224,
+    "metrics": {
+      "frames": 10000.0,
+      "atoms": 100.0
+    },
+    "budgets": [
+      {
+        "metric": "wall_seconds",
+        "limit": 30.0,
+        "unit": "s",
+        "value": 4.047757249994902,
+        "within_budget": true
+      },
+      {
+        "metric": "peak_rss_bytes",
+        "limit": 2147483648,
+        "unit": "bytes",
+        "value": 182452224,
+        "within_budget": true
+      }
+    ]
+  },
+  {
+    "name": "convert_outcar_to_extxyz_10k",
+    "scale": "full",
+    "wall_seconds": 18.133126667002216,
+    "peak_rss_bytes": 114163712,
+    "metrics": {
+      "frames": 10000.0,
+      "atoms": 100.0
+    },
+    "budgets": [
+      {
+        "metric": "wall_seconds",
+        "limit": 90.0,
+        "unit": "s",
+        "value": 18.133126667002216,
+        "within_budget": true
+      },
+      {
+        "metric": "peak_rss_bytes",
+        "limit": 2147483648,
+        "unit": "bytes",
+        "value": 114163712,
+        "within_budget": true
+      }
+    ]
+  },
+  {
     "name": "convert_extxyz_roundtrip_1k",
     "scale": "full",
     "wall_seconds": 13.15726462501334,
