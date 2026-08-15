@@ -41,7 +41,10 @@ recognized-but-unmapped diagnostic scalar carried verbatim, P1), ``OUTCAR_UNRECO
 parseable VASP version banner, or a banner for a major version outside the recognized 5.x/6.x set —
 the layout is refused, never a partial parse, P1; D165), and ``OUTCAR_INCONSISTENT_STEP`` (a step's
 ``POSITION … TOTAL-FORCE`` table carries more atoms than the header declares — refused, never
-silently truncated, P3; D165). ``OUTCAR_TRUNCATED`` lands in S3 (truncation recovery).
+silently truncated, P3; D165), and ``OUTCAR_TRUNCATED`` (a torn write mid-stream — the file ends
+mid-step after the energy/stress lines, or inside the force table — raised with
+``recovery_hint="truncate_at_last_valid_frame"`` and resolved by the shared
+``truncate_corrupt_tail`` scenario, never silently dropped, P1/P4; D166).
 
 **Version-drift discipline (S2, D165).** Block-locating keys off the stable anchor substrings
 (``TOTAL-FORCE``, ``energy(sigma->0)``, ``in kB``, ``direct lattice vectors``, the ``vasp.<major>``
@@ -101,6 +104,10 @@ CONVENTIONAL_NAME = "OUTCAR"
 
 _CARRY_KEY_PREFIX = "outcar:"
 _ENERGY_WO_ENTROPY_KEY = "energy_without_entropy"
+#: The recoverable torn-tail hint (Part 4 §3.3): a run killed mid-write leaves the already-read
+#: ionic steps as good science behind a corrupt tail, so the reader marks the error and the caller
+#: chooses whether to keep the prefix.
+_TRUNCATE_HINT = "truncate_at_last_valid_frame"
 
 # A single float token, including VASP's exponent forms (-0.12345678E+02).
 _FLOAT = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
@@ -165,8 +172,24 @@ _PARSE_NOTES = [
 ]
 
 
-def _error(code: str, message: str, *, location: str | None = None) -> ParseError:
-    return ParseError([ParseIssue(severity="error", code=code, message=message, location=location)])
+def _error(
+    code: str,
+    message: str,
+    *,
+    location: str | None = None,
+    hint: str | None = None,
+) -> ParseError:
+    return ParseError(
+        [
+            ParseIssue(
+                severity="error",
+                code=code,
+                message=message,
+                location=location,
+                recovery_hint=hint,
+            )
+        ]
+    )
 
 
 def _carry_warning(key: str, *, location: str) -> ParseIssue:
@@ -226,35 +249,41 @@ def _parse_nions(line: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _read_lattice(lines: Iterator[str], *, where: str) -> np.ndarray:
+def _read_lattice(lines: Iterator[str], *, where: str, hint: str | None = None) -> np.ndarray:
     """The 3×3 lattice from the three rows after a ``direct lattice vectors`` header line.
 
     VASP prints each row as 6 numbers — the direct vectors followed by the reciprocal ones — so the
-    first three columns are the lattice rows a, b, c.
+    first three columns are the lattice rows a, b, c. A *per-step* (NpT) block torn mid-write is a
+    recoverable torn tail (``hint`` set → ``OUTCAR_TRUNCATED``); the header's own block is not (no
+    valid prefix to keep → ``OUTCAR_MISSING_BLOCK``).
     """
+    code = "OUTCAR_TRUNCATED" if hint is not None else "OUTCAR_MISSING_BLOCK"
     rows: list[list[float]] = []
     for _k in range(3):
         line = next(lines, None)
         if line is None:
             raise _error(
-                "OUTCAR_MISSING_BLOCK",
+                code,
                 f"file ended inside the direct lattice vectors block ({where})",
                 location=where,
+                hint=hint,
             )
         parts = line.split()
         if len(parts) < 6:
             raise _error(
-                "OUTCAR_MISSING_BLOCK",
+                code,
                 f"lattice row has fewer than 6 components ({where}): {line.strip()!r}",
                 location=where,
+                hint=hint,
             )
         try:
             rows.append([float(parts[0]), float(parts[1]), float(parts[2])])
         except ValueError as exc:
             raise _error(
-                "OUTCAR_MISSING_BLOCK",
+                code,
                 f"non-numeric lattice row ({where}): {line.strip()!r}",
                 location=where,
+                hint=hint,
             ) from exc
     return np.asarray(rows, dtype=float)
 
@@ -386,8 +415,9 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _Pending | None]
         elif "in kB" in line:
             pending_stress = _parse_stress(line, 0)
     if pending_energy is not None or pending_stress is not None:
-        # A step began (its energy/stress lines) but no POSITION/TOTAL-FORCE table followed — a torn
-        # write, never a silently empty parse (S3 refines this into OUTCAR_TRUNCATED + recovery).
+        # A step began (its energy/stress lines) but no POSITION/TOTAL-FORCE table header was ever
+        # written — a torn write with *no* complete step to keep, so it stays a plain refusal (the
+        # xdatcar 'opening header running out' counterpart, not a recoverable torn tail).
         raise _error(
             "OUTCAR_MISSING_BLOCK",
             "file ends mid-step (a torn write) with an energy/stress line but no "
@@ -485,11 +515,12 @@ def _read_force_rows(
     """The ``n_atoms`` rows of the ``POSITION … TOTAL-FORCE`` table (``x y z fx fy fz``).
 
     A block that ends before its rows complete, or a row that is not 6 numeric components, is a
-    ``ParseError`` — never a silently shortened table (P2) and never a defaulted force (P3). After
-    the declared ``n_atoms`` rows the table must terminate (a ``---`` rule or end-of-file); a
-    further 6-component row means the table carries **more atoms than the header declares** — a
-    structural inconsistency refused as ``OUTCAR_INCONSISTENT_STEP`` (S2), never silently truncated
-    to the shorter (P3).
+    **recoverable** ``ParseError`` — ``OUTCAR_TRUNCATED`` with
+    ``recovery_hint="truncate_at_last_valid_frame"`` (a run killed mid-write) — never a silently
+    shortened table (P2) and never a defaulted force (P3). After the declared ``n_atoms`` rows the
+    table must terminate (a ``---`` rule or end-of-file); a further 6-component row means the table
+    carries **more atoms than the header declares** — a structural inconsistency refused as
+    ``OUTCAR_INCONSISTENT_STEP`` (S2), never silently truncated to the shorter (P3).
 
     Returns ``(rows, handback)``: ``handback`` is a consumed non-terminator, non-row line the caller
     must reprocess (the only way to peek without a pushback stream); it is ``None`` on the normal
@@ -500,26 +531,29 @@ def _read_force_rows(
         line = _next_data_line(lines)
         if line is None:
             raise _error(
-                "OUTCAR_MISSING_BLOCK",
+                "OUTCAR_TRUNCATED",
                 f"ionic step {frame_index}: the POSITION/TOTAL-FORCE table ended after {a} of "
-                f"{n_atoms} atoms",
+                f"{n_atoms} atoms — the file appears truncated mid-table",
                 location=f"frame {frame_index}",
+                hint=_TRUNCATE_HINT,
             )
         parts = line.split()
         if len(parts) != 6:
             raise _error(
-                "OUTCAR_MISSING_BLOCK",
+                "OUTCAR_TRUNCATED",
                 f"ionic step {frame_index}: force row {a + 1} has {len(parts)} components, "
                 f"expected 6 (x y z fx fy fz): {line.strip()!r}",
                 location=f"frame {frame_index}",
+                hint=_TRUNCATE_HINT,
             )
         try:
             rows.append([float(p) for p in parts])
         except ValueError as exc:
             raise _error(
-                "OUTCAR_MISSING_BLOCK",
+                "OUTCAR_TRUNCATED",
                 f"ionic step {frame_index}: non-numeric force row: {line.strip()!r}",
                 location=f"frame {frame_index}",
+                hint=_TRUNCATE_HINT,
             ) from exc
     after = _next_nonblank_raw(lines)
     if after is None or _SEPARATOR_RE.match(after):
@@ -582,8 +616,8 @@ def _scan_to_next_frame(
     ``first_line`` is a line the force-table reader already consumed and handed back (a peek without
     a pushback stream); it is processed before any new line is read. Returns ``(pending, lattice,
     found)``. Reaching end-of-file *after* a step began (an energy or stress line with no table) is
-    a torn write — a ``ParseError``, never a silently dropped partial step (S3 refines this into
-    ``OUTCAR_TRUNCATED`` + truncation recovery).
+    a recoverable torn write — ``OUTCAR_TRUNCATED`` with
+    ``recovery_hint="truncate_at_last_valid_frame"`` — never a silently dropped partial step.
     """
     pending_energy: float | None = None
     pending_carry: float | None = None
@@ -596,10 +630,11 @@ def _scan_to_next_frame(
         if line is None:
             if saw_step:
                 raise _error(
-                    "OUTCAR_MISSING_BLOCK",
+                    "OUTCAR_TRUNCATED",
                     f"ionic step {frame_index}: file ends mid-step after its energy/stress lines "
-                    "(a torn write) with no POSITION/TOTAL-FORCE table (P3: never a partial frame)",
+                    "(a torn write) with no POSITION/TOTAL-FORCE table (never a partial frame)",
                     location=f"frame {frame_index}",
+                    hint=_TRUNCATE_HINT,
                 )
             return _Pending(None, None, None), lattice, False
         if "TOTAL-FORCE" in line:
@@ -611,7 +646,7 @@ def _scan_to_next_frame(
             pending_stress = _parse_stress(line, frame_index)
             saw_step = True
         elif "direct lattice vectors" in line:
-            lattice = _read_lattice(lines, where=f"frame {frame_index}")
+            lattice = _read_lattice(lines, where=f"frame {frame_index}", hint=_TRUNCATE_HINT)
             saw_step = True
         line = None
 
@@ -682,8 +717,48 @@ class OutcarParser(ParserPlugin):
     def supports_streaming(self) -> bool:
         return True
 
-    def parse_stream(self, stream: BinaryIO, *, filename: str | None) -> FrameStream:
-        """Header-eager, step-lazy OUTCAR parse (M43-S1; Part 3 §2)."""
+    def parse_recover(
+        self,
+        stream: BinaryIO,
+        *,
+        filename: str | None,
+        hint: str,
+        choice: str,
+        parameters: dict[str, object],
+    ) -> ParseResult:
+        """Recover an OUTCAR whose tail is a torn write by keeping the valid prefix
+        (``truncate_at_last_valid_frame`` → ``truncate``, Part 4 §3.3; v1.2 M43-S3, D166).
+
+        The characteristic OUTCAR failure: a run killed while writing ionic step *k*, so steps
+        0..k-1 are perfectly good science behind a corrupt tail. Only ``truncate`` reaches here —
+        ``abort`` is the caller declining to recover, handled in the orchestration
+        (``conversion.parse_recovery``) — and only the ``truncate_at_last_valid_frame`` hint is
+        handled. Re-reads through the *same* streaming path in truncate mode, so the kept prefix is
+        read by exactly the code that reads an intact file, and the truncation is recorded as a
+        warning ``ParseIssue`` — the dropped tail is never silent (P1).
+        """
+        if hint != _TRUNCATE_HINT:
+            raise NotImplementedError(f"outcar parse_recover does not handle hint {hint!r}")
+        if choice != "truncate":
+            raise NotImplementedError(
+                f"outcar parse_recover applies only the 'truncate' choice (got {choice!r})"
+            )
+        frame_stream = self.parse_stream(stream, filename=filename, truncate=True)
+        canonical, issues = materialize(frame_stream)
+        return ParseResult(canonical=canonical, issues=issues)
+
+    def parse_stream(
+        self, stream: BinaryIO, *, filename: str | None, truncate: bool = False
+    ) -> FrameStream:
+        """Header-eager, step-lazy OUTCAR parse (M43-S1/S3; Part 3 §2).
+
+        ``truncate`` is the internal switch ``parse_recover`` sets to apply the caller's
+        ``truncate_at_last_valid_frame`` choice: a recoverable error mid-stream then *ends* the
+        stream at the last good step (recording an ``OUTCAR_TRUNCATED`` warning) instead of
+        propagating. It is not part of the ``ParserPlugin.parse_stream`` contract — callers reach it
+        through ``parse_recover``, so the default read stays the honest one that refuses a corrupt
+        file.
+        """
         head = stream.read(4096)
         if not head.strip():
             raise _error("OUTCAR_EMPTY", "file is empty")
@@ -697,9 +772,40 @@ class OutcarParser(ParserPlugin):
                 "file contains no ionic-step block (no POSITION/TOTAL-FORCE table)",
             )
         stream_header = _build_stream_header(header, filename)
-        return FrameStream(
-            stream_header, _steps(lines, header, first_pending, issues), issues=issues
-        )
+
+        def _frames() -> Iterator[StreamFrame]:
+            yielded = 0
+            try:
+                for frame in _steps(lines, header, first_pending, issues):
+                    yielded += 1
+                    yield frame
+            except ParseError as exc:
+                # Truncate mode: a *recoverable* mid-stream error ends the stream at the last good
+                # step instead of propagating. Two guards keep this honest: only errors the parser
+                # itself marked recoverable are swallowed — a structurally wrong file (an
+                # OUTCAR_INCONSISTENT_STEP) still raises, because that is not a torn tail — and the
+                # truncation is recorded as a warning so the dropped tail is never silent (P1).
+                issue = exc.issues[0]
+                if not (truncate and issue.recovery_hint == _TRUNCATE_HINT):
+                    raise
+                if yielded == 0:
+                    # Truncating to nothing is not a recovery: there is no valid prefix to keep, so
+                    # the honest answer is the original error — never an empty frame list that would
+                    # escape the §5 contract into a raw pydantic error.
+                    raise
+                issues.append(
+                    ParseIssue(
+                        severity="warning",
+                        code="OUTCAR_TRUNCATED",
+                        message=(
+                            "kept the valid ionic steps and discarded the corrupt tail "
+                            f"({issue.code}: {issue.message})"
+                        ),
+                        location=issue.location,
+                    )
+                )
+
+        return FrameStream(stream_header, _frames(), issues=issues)
 
     def capabilities(self) -> FormatCapabilities:
         full = FieldCapability(level=CapabilityLevel.FULL)
