@@ -100,3 +100,24 @@ def test_comparable_subspace_answers_for_a_new_format() -> None:
     # fall in the comparable subspace against any format that also round-trips them fully.
     subspace = _matrix.comparable_subspace(matrix, "xyz", _DUMMY)
     assert subspace == {"atoms.positions", "atoms.symbols"}
+
+
+def test_parser_only_vasp_formats_are_sources_never_targets() -> None:
+    """The M44-S3 guard: the parser-only VASP-output formats enrol in the matrix as *sources* and
+    never appear as a conversion *target* in any enumerated pair (the D159 seam — a parser + golden
+    but no exporter keeps them off the target axis automatically)."""
+    registry = default_registry()
+    sources = set(_matrix.readable_sources(registry))
+    targets = set(_matrix.writeable_targets(registry))
+
+    for fmt in ("vasprun", "outcar"):
+        assert fmt in sources, f"{fmt} must be a registered parser (a matrix source)"
+        assert fmt not in targets, f"{fmt} must never be a conversion target (parser-only)"
+
+    pairs = _matrix.two_hop_pairs(registry)
+    assert any(src in ("vasprun", "outcar") for src, _ in pairs), (
+        "the VASP-output formats must enrol as round-trip sources"
+    )
+    assert all(target not in ("vasprun", "outcar") for _, target in pairs), (
+        "neither VASP-output format may appear as a round-trip target"
+    )

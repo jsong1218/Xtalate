@@ -17,6 +17,16 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+### Added — VASP-output formats join the standing test surface, and the duplicate-source policy is enforced (v1.2 M44-S3; D170)
+
+`vasprun` and `outcar` now enrol in the nightly round-trip matrix as **sources only** (never
+targets — the parser-only seam, D159) and in the report-completeness property sweep, with a
+label-presence assertion (per-frame energy + per-atom forces + first-class stress) for the
+fully-labeled fixtures. The duplicate-source policy is pinned: Xtalate converts the **one** file it
+is given and never cross-reads a sibling vasprun.xml/OUTCAR — silent multi-file assembly is
+undeclared input (P1), and the rejected cross-file-reconciliation alternative is recorded. No
+`src/` change; `SCHEMA_VERSION` stays `1.0.0`.
+
 ### Added — the flagship VASP → extXYZ conversion, proven end to end and at 10⁴ scale (v1.2 M44-S2; D169)
 
 The roadmap §3 stopping point is made runnable: `examples/convert_outcar_to_extxyz.py` drives the

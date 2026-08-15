@@ -56,6 +56,13 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     # M14: the rich CO trajectory enrols ase_traj as a source — the one fixture that flows
     # velocities + forces + a fixed_atoms constraint together through the whole matrix (P6).
     "ase_traj": ("ase_traj/co-relax-3frame", "relax.traj"),
+    # M44: the two parser-only VASP-output formats enrol as *sources* — a parser + golden but no
+    # exporter, so the D159 seam keeps them out of the target axis automatically. Their fixtures are
+    # label-complete (energy + forces + first-class stress), so every hop out of them exercises the
+    # MLIP label triple through the matrix; the not-a-target guard (test_matrix_enumeration) pins
+    # that neither ever appears as a conversion target.
+    "vasprun": ("vasprun/relax-h2o", "vasprun.xml"),
+    "outcar": ("outcar/relax-h2o", "OUTCAR"),
     # M19: the P 1 hexagonal anchor enrols cif as a source — the one fixture whose *native*
     # coordinates are fractional against a non-orthogonal cell (gamma = 120), so every hop out of
     # it exercises the fractional→Cartesian boundary against a lattice where a sign or transpose
