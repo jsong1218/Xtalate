@@ -1,0 +1,236 @@
+{
+  "schema_version": "1.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "H",
+          "H",
+          "O"
+        ],
+        "atomic_numbers": [
+          1,
+          1,
+          8
+        ],
+        "positions": [
+          [
+            5.0,
+            7.5,
+            5.0
+          ],
+          [
+            7.5,
+            5.0,
+            5.0
+          ],
+          [
+            5.0,
+            5.0,
+            5.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            10.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.2,
+            -0.1,
+            0.0
+          ],
+          [
+            -0.1,
+            0.05,
+            0.0
+          ],
+          [
+            -0.1,
+            0.0,
+            0.05
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -76.4,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 1,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "H",
+          "H",
+          "O"
+        ],
+        "atomic_numbers": [
+          1,
+          1,
+          8
+        ],
+        "positions": [
+          [
+            5.0,
+            7.3,
+            5.0
+          ],
+          [
+            7.3,
+            5.0,
+            5.0
+          ],
+          [
+            5.0,
+            5.0,
+            5.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            10.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.1,
+            -0.05,
+            0.0
+          ],
+          [
+            -0.05,
+            0.02,
+            0.0
+          ],
+          [
+            -0.05,
+            0.0,
+            0.02
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -76.41,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": {
+    "timestep": null
+  },
+  "simulation": {
+    "source_code": "vasp.6.3.2 08Feb23 (build Aug 08 2023 12:00:00) complex",
+    "calculator": null,
+    "xc_functional": null,
+    "pseudopotentials": null,
+    "thermostat": null,
+    "md_ensemble": null,
+    "temperature": null,
+    "extra": {}
+  },
+  "provenance": {
+    "source_filename": "OUTCAR",
+    "source_format": "outcar",
+    "source_units": {
+      "positions": "angstrom",
+      "lattice_vectors": "angstrom",
+      "stress": "kbar"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "Cartesian positions (angstrom) read as-is from the POSITION \u2026 TOTAL-FORCE table (OUTCAR writes Cartesian, unlike vasprun.xml's direct coordinates).",
+      "pbc set to (true,true,true): OUTCAR carries no PBC declaration and VASP is always fully periodic (format-defined, not assumed).",
+      "electronic.total_energy read from energy(sigma->0) \u2014 VASP's energy extrapolated to zero smearing (the e_0_energy of vasprun.xml); the energy-without-entropy scalar is carried verbatim in user_metadata.custom_per_frame['outcar:energy_without_entropy'].",
+      "simulation.source_code set to the VASP version banner (verbatim).",
+      "cell.lattice_vectors assembled from the direct lattice vectors block (rows a, b, c).",
+      "Each ionic step's own direct lattice vectors block (when present) supplies that step's cell; a step without one reuses the running cell (the fixed-cell form).",
+      "electronic.stress mapped from the 'in kB' Voigt-6 stress line: VASP reports pressure (compression-positive) in kBar, so the tensor is sign-flipped to canonical tension-positive and divided by the exact factor 1602.1766208 kBar per eV/\u00c5\u00b3 (D161). The 'in kB' line carries the same sign as vasprun.xml's <varray name=\"stress\"> (pinned by the OUTCAR\u2194vasprun cross-check), so no additional sign correction is applied. A step without a stress line leaves electronic.stress None (P3 \u2014 absence is never defaulted)."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-08-15T05:06:22Z",
+        "operation": "parse",
+        "source_format": "outcar",
+        "target_format": null,
+        "tool_version": "1.1.0",
+        "parser_version": "outcar-parser 1.1.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {},
+    "custom_per_atom": {},
+    "custom_per_frame": {
+      "outcar:energy_without_entropy": [
+        -76.4,
+        -76.41
+      ]
+    }
+  }
+}

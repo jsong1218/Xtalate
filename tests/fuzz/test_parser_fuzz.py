@@ -78,6 +78,18 @@ _VASPRUN_CALC = (
     b"</calculation>\n"
 )
 
+#: A minimal-but-parseable OUTCAR header (one H atom, 10 A cubic cell) — the building block for the
+#: OUTCAR tailored seeds below.
+_OUTCAR_HEAD = (
+    b" vasp.6.3.2 08Feb23\n\n"
+    b"  VRHFIN =H: 1s1\n"
+    b"  ions per type = 1\n\n"
+    b"  direct lattice vectors\n"
+    b"  10 0 0 0.1 0 0\n"
+    b"  0 10 0 0 0.1 0\n"
+    b"  0 0 10 0 0 0.1\n\n"
+)
+
 _TAILORED: dict[str, list[tuple[str, bytes]]] = {
     "xyz": [
         ("count_gt_atoms", b"5\ncomment\nH 0 0 0\nH 1 1 1\n"),
@@ -129,6 +141,22 @@ _TAILORED: dict[str, list[tuple[str, bytes]]] = {
             + b"</energy>\n"
             + b'<varray name="forces" >\n<v> 0.1 0.0 0.0 </v>\n<v> -0.1 0.0 0.0 </v>\n'
             + b"</varray>\n</calculation>\n</vasprun>\n",
+        ),
+    ],
+    "outcar": [
+        ("no_force_table", _OUTCAR_HEAD + b"  energy(sigma->0) = -1.0\n"),
+        (
+            "nonnumeric_force_row",
+            _OUTCAR_HEAD
+            + b"  energy(sigma->0) = -1.0\n\n"
+            + b"  POSITION  TOTAL-FORCE (eV/Angst)\n  ---\n  x y z fx fy fz\n",
+        ),
+        (
+            "nions_mismatch",
+            _OUTCAR_HEAD
+            + b"  NIONS = 2\n"
+            + b"  energy(sigma->0) = -1.0\n\n"
+            + b"  POSITION  TOTAL-FORCE (eV/Angst)\n  ---\n  0 0 0 0 0 0\n",
         ),
     ],
 }

@@ -1,0 +1,12 @@
+case: relax-h2o
+format_id: outcar
+source_file: OUTCAR
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 6dab068b5bf9afd382c26243db09ef226b0292605724364efe30e4685a045b04
+expected_sha256: 6844021cfdd92dd34421c0ab5b323a96308b6524d763962c0c71dbfbe764a8ab
+origin:
+  kind: synthetic
+  source: 'Hand-written for M43-S1 (classical VASP 6.3.2 OUTCAR layout): relax-h2o.'
+  license: Apache-2.0
+notes: "The flagship single-layout relaxation golden (VASP 6.x): 3 ionic steps of H2O (H x2, O x1) in a fixed 10 A cubic cell. Hand-verifiable: species H,O from VRHFIN =H:/=O: with ions per type = 2 1 gives [H, H, O]; Cartesian positions read as-is (H at (5, 7.5/7.3/7.4, 5) per step — a parser that re-ran the fractional->Cartesian multiply would corrupt them); energy(sigma->0) = -76.4/-76.41/-76.42; forces verbatim. The 'in kB' line is 1602.1766208 x [1, 2, 0.5, 0.25, 0.125, 0.0625] (the exact kBar factor), so the mapped tension-positive stress is -[1, 2, 0.5] on the diagonal with XY=-0.25, YZ=-0.125, ZX=-0.0625 — pinning both the compression->tension sign flip AND the VASP Voigt ordering [XX,YY,ZZ,XY,YZ,ZX] in a governed golden. energy without entropy (= energy(sigma->0)) is carried verbatim under outcar:energy_without_entropy."
