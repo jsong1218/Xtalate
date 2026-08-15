@@ -16,10 +16,15 @@ not the file — the property M44 will measure at 10⁴ steps.
 **Format facts handled at parse time and recorded, never guessed (Part 3 §5 rule 3):**
 
 * **The frame is keyed on the ``POSITION … TOTAL-FORCE`` table** — one per ionic step, never in the
-  header. Within a step (the canonical VASP 5.x/6.x order) the ``energy(sigma->0)`` line is followed
-  by the ``in kB`` stress line and then the table, so the energy/stress seen before a table belong
-  to that table's step (buffered in a ``_Pending`` until the table completes). A table with no
-  preceding ``energy(sigma->0)`` line is a ``ParseError`` (P3 — never a defaulted energy).
+  header. The real VASP 5.x/6.x intra-step order is ``in kB`` stress (and, for NpT, the step's
+  ``direct lattice vectors`` block) *before* the table, and the ``FREE ENERGIE OF THE ION-ELECTRON
+  SYSTEM`` summary carrying ``energy(sigma->0)`` *after* it (VASP computes and prints the forces,
+  then the electronic-energy summary). So the stress/cell that precede a table are buffered for
+  that table's step, the table is read, then the reader scans *forward* to the step's
+  ``energy(sigma->0)`` — which lands before the next step's ``TOTAL-FORCE`` — and only then emits
+  the frame. A table whose step carries no ``energy(sigma->0)`` at all is a ``ParseError`` (P3 —
+  never a defaulted energy): ``OUTCAR_MISSING_BLOCK`` when another step plainly follows, or the
+  recoverable ``OUTCAR_TRUNCATED`` when the file simply ends after the forces (a torn write).
 * **Positions are Cartesian (Å)** — read from the ``POSITION … TOTAL-FORCE`` table columns as-is
   (``mode=\"cartesian\"``), never re-run through the fractional→Cartesian lattice multiply.
   vasprun.xml positions are direct (fractional); the two readers land the same Cartesian positions
@@ -362,23 +367,25 @@ def _finalize_header(
 
 
 @dataclass
-class _Pending:
-    """The step fields seen so far for the next frame. Energy is required (P3); stress optional."""
+class _PreTable:
+    """The step fields that precede a ``POSITION … TOTAL-FORCE`` table in real VASP order: the
+    ``in kB`` stress and (for NpT) the step's own cell, which is threaded separately. The
+    ``energy(sigma->0)`` is *not* here — it follows the table and is read forward from it
+    (``_read_step_energy``)."""
 
-    energy: float | None
-    carry: float | None
     stress: np.ndarray | None
 
 
-def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _Pending | None]:
+def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _PreTable | None]:
     """Scan the header eagerly and stop at the first ``POSITION … TOTAL-FORCE`` header line.
 
     Returns ``(None, None)`` when the file ends with no ionic-step table **after** a recognized
     version banner (the caller raises ``OUTCAR_EMPTY`` — a recognized header with zero steps). A
     file that ends with no version banner at all is refused here as ``OUTCAR_UNRECOGNIZED_LAYOUT``
-    (S2): it is not an OUTCAR layout the reader recognizes. The first step's ``energy(sigma->0)``
-    and ``in kB`` lines appear *before* its table (the canonical VASP order), so they are captured
-    into the returned ``_Pending`` for the step loop — one pass, no re-reading.
+    (S2): it is not an OUTCAR layout the reader recognizes. In real VASP order the first step's
+    ``in kB`` stress and (NpT) own ``direct lattice vectors`` block appear *before* its table, so
+    they are captured for the step loop; its ``energy(sigma->0)`` appears *after* the table and is
+    read there, not here.
     """
     version: str | None = None
     major: int | None = None
@@ -386,13 +393,12 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _Pending | None]
     counts: list[int] | None = None
     nions: int | None = None
     lattice: np.ndarray | None = None
-    pending_energy: float | None = None
-    pending_carry: float | None = None
     pending_stress: np.ndarray | None = None
+    saw_step_signal = False
     for line in lines:
         if "TOTAL-FORCE" in line:
             header = _finalize_header(version, major, species, counts, nions, lattice)
-            return header, _Pending(pending_energy, pending_carry, pending_stress)
+            return header, _PreTable(pending_stress)
         if version is None and "vasp." in line:
             match = _VERSION_RE.search(line)
             if match:
@@ -410,18 +416,22 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _Pending | None]
             nions = _parse_nions(line)
         if "direct lattice vectors" in line:
             lattice = _read_lattice(lines, where="header")
-        elif "energy(sigma->0)" in line:
-            pending_energy, pending_carry = _parse_energy_line(line, 0)
         elif "in kB" in line:
             pending_stress = _parse_stress(line, 0)
-    if pending_energy is not None or pending_stress is not None:
-        # A step began (its energy/stress lines) but no POSITION/TOTAL-FORCE table header was ever
-        # written — a torn write with *no* complete step to keep, so it stays a plain refusal (the
+            saw_step_signal = True
+        elif "energy(sigma->0)" in line:
+            # In real VASP order the energy summary follows the table; an energy line seen before
+            # any table means a step began (its summary was written) but its force table is absent
+            # — a torn/mangled step with no frame to keep (handled at EOF just below).
+            saw_step_signal = True
+    if saw_step_signal:
+        # A step began (a stress or energy line) but no POSITION/TOTAL-FORCE table header was ever
+        # read — a torn write with *no* complete step to keep, so it stays a plain refusal (the
         # xdatcar 'opening header running out' counterpart, not a recoverable torn tail).
         raise _error(
             "OUTCAR_MISSING_BLOCK",
-            "file ends mid-step (a torn write) with an energy/stress line but no "
-            "POSITION/TOTAL-FORCE table (P3: never a partial frame)",
+            "file ends mid-step (a torn write) with step content but no POSITION/TOTAL-FORCE "
+            "table (P3: never a partial frame)",
             location="frame 0",
         )
     if version is None:
@@ -604,80 +614,97 @@ def _build_frame(
     return StreamFrame(frame=frame, per_frame_custom=per_frame_custom)
 
 
-def _scan_to_next_frame(
-    lines: Iterator[str],
-    lattice: np.ndarray,
-    frame_index: int,
-    first_line: str | None = None,
-) -> tuple[_Pending, np.ndarray, bool]:
-    """Scan forward for the next ``POSITION … TOTAL-FORCE`` header, accumulating that step's
-    energy/stress/own-cell along the way.
+def _read_step_energy(
+    lines: Iterator[str], frame_index: int, first_line: str | None
+) -> tuple[float | None, float | None, bool]:
+    """Scan forward from just past a step's force table to that step's ``energy(sigma->0)``.
 
-    ``first_line`` is a line the force-table reader already consumed and handed back (a peek without
-    a pushback stream); it is processed before any new line is read. Returns ``(pending, lattice,
-    found)``. Reaching end-of-file *after* a step began (an energy or stress line with no table) is
-    a recoverable torn write — ``OUTCAR_TRUNCATED`` with
-    ``recovery_hint="truncate_at_last_valid_frame"`` — never a silently dropped partial step.
+    Real VASP prints the ``FREE ENERGIE OF THE ION-ELECTRON SYSTEM`` summary (carrying
+    ``energy(sigma->0)``) *after* the ``POSITION … TOTAL-FORCE`` table and before the next step
+    begins, so this reads forward from the table. Returns ``(energy, carry, hit_next_table)``:
+
+    * ``(energy, carry, False)`` once the step's ``energy(sigma->0)`` is found — the common path,
+      returning *before* the next step's stress/cell so those stay for ``_scan_to_next_table``;
+    * ``(None, None, True)`` if the next step's ``TOTAL-FORCE`` table is reached first — the step
+      has a force table but no energy summary though the file continues (the caller raises
+      ``OUTCAR_MISSING_BLOCK`` — never a defaulted energy, P3);
+    * ``(None, None, False)`` at end-of-file with no energy — a torn write after the forces (the
+      caller raises the recoverable ``OUTCAR_TRUNCATED``).
+
+    ``first_line`` is the peeked line the force-table reader handed back (usually ``None``).
     """
-    pending_energy: float | None = None
-    pending_carry: float | None = None
-    pending_stress: np.ndarray | None = None
-    saw_step = False
     line = first_line
     while True:
         if line is None:
             line = next(lines, None)
         if line is None:
-            if saw_step:
-                raise _error(
-                    "OUTCAR_TRUNCATED",
-                    f"ionic step {frame_index}: file ends mid-step after its energy/stress lines "
-                    "(a torn write) with no POSITION/TOTAL-FORCE table (never a partial frame)",
-                    location=f"frame {frame_index}",
-                    hint=_TRUNCATE_HINT,
-                )
-            return _Pending(None, None, None), lattice, False
+            return None, None, False
         if "TOTAL-FORCE" in line:
-            return _Pending(pending_energy, pending_carry, pending_stress), lattice, True
+            return None, None, True
         if "energy(sigma->0)" in line:
-            pending_energy, pending_carry = _parse_energy_line(line, frame_index)
-            saw_step = True
-        elif "in kB" in line:
-            pending_stress = _parse_stress(line, frame_index)
-            saw_step = True
-        elif "direct lattice vectors" in line:
-            lattice = _read_lattice(lines, where=f"frame {frame_index}", hint=_TRUNCATE_HINT)
-            saw_step = True
+            energy, carry = _parse_energy_line(line, frame_index)
+            return energy, carry, False
         line = None
+
+
+def _scan_to_next_table(
+    lines: Iterator[str], lattice: np.ndarray, next_frame_index: int
+) -> tuple[_PreTable, np.ndarray, bool]:
+    """Scan from just past a step's ``energy(sigma->0)`` to the next step's ``TOTAL-FORCE`` header,
+    capturing that next step's pre-table ``in kB`` stress and (NpT) own ``direct lattice vectors``
+    cell along the way.
+
+    Returns ``(pre_table, lattice, found)``; ``found`` is ``False`` at end-of-file (no further
+    step). A ``direct lattice vectors`` block torn mid-write here is a recoverable torn tail
+    (``OUTCAR_TRUNCATED``): the current frame has already been emitted, so truncate-mode keeps it.
+    """
+    pending_stress: np.ndarray | None = None
+    for line in lines:
+        if "TOTAL-FORCE" in line:
+            return _PreTable(pending_stress), lattice, True
+        if "in kB" in line:
+            pending_stress = _parse_stress(line, next_frame_index)
+        elif "direct lattice vectors" in line:
+            lattice = _read_lattice(lines, where=f"frame {next_frame_index}", hint=_TRUNCATE_HINT)
+    return _PreTable(pending_stress), lattice, False
 
 
 def _steps(
     lines: Iterator[str],
     header: _Header,
-    first_pending: _Pending,
+    first_pre: _PreTable,
     issues: list[ParseIssue],
 ) -> Iterator[StreamFrame]:
-    """Yield one ``StreamFrame`` per ``POSITION … TOTAL-FORCE`` table, lazily, one step resident."""
+    """Yield one ``StreamFrame`` per ``POSITION … TOTAL-FORCE`` table, lazily, one step resident.
+
+    Real VASP order per step: the pre-table stress/cell (``pre``), the force table, then the
+    ``energy(sigma->0)`` summary. Each frame is emitted only once its own energy is read — the
+    energy is *never* borrowed from a neighbouring step.
+    """
     lattice = header.lattice
-    pending = first_pending
+    pre = first_pre
     frame_index = 0
     while True:
         rows, handback = _read_force_rows(lines, header.n_atoms, frame_index)
-        energy = pending.energy
+        energy, carry, hit_next_table = _read_step_energy(lines, frame_index, handback)
         if energy is None:
+            if hit_next_table:
+                raise _error(
+                    "OUTCAR_MISSING_BLOCK",
+                    f"ionic step {frame_index}: the POSITION/TOTAL-FORCE table has no following "
+                    "energy(sigma->0) summary before the next step (P3: never a defaulted energy)",
+                    location=f"frame {frame_index}",
+                )
             raise _error(
-                "OUTCAR_MISSING_BLOCK",
-                f"ionic step {frame_index}: no energy(sigma->0) line before its "
-                "POSITION/TOTAL-FORCE table (P3: never a defaulted energy)",
+                "OUTCAR_TRUNCATED",
+                f"ionic step {frame_index}: file ends after the force table with no "
+                "energy(sigma->0) summary — the file appears truncated after the forces",
                 location=f"frame {frame_index}",
+                hint=_TRUNCATE_HINT,
             )
-        yield _build_frame(
-            header, rows, lattice, energy, pending.carry, pending.stress, issues, frame_index
-        )
+        yield _build_frame(header, rows, lattice, energy, carry, pre.stress, issues, frame_index)
         frame_index += 1
-        pending, lattice, found = _scan_to_next_frame(
-            lines, lattice, frame_index, first_line=handback
-        )
+        pre, lattice, found = _scan_to_next_table(lines, lattice, frame_index)
         if not found:
             return
 
@@ -765,8 +792,8 @@ class OutcarParser(ParserPlugin):
         stream.seek(0)
         lines = _line_reader(stream)
         issues: list[ParseIssue] = []
-        header, first_pending = _read_header(lines)
-        if header is None or first_pending is None:
+        header, first_pre = _read_header(lines)
+        if header is None or first_pre is None:
             raise _error(
                 "OUTCAR_EMPTY",
                 "file contains no ionic-step block (no POSITION/TOTAL-FORCE table)",
@@ -776,7 +803,7 @@ class OutcarParser(ParserPlugin):
         def _frames() -> Iterator[StreamFrame]:
             yielded = 0
             try:
-                for frame in _steps(lines, header, first_pending, issues):
+                for frame in _steps(lines, header, first_pre, issues):
                     yielded += 1
                     yield frame
             except ParseError as exc:

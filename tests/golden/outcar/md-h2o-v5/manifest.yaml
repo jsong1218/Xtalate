@@ -3,7 +3,7 @@ format_id: outcar
 source_file: OUTCAR
 expected_canonical: expected.canonical.json
 canonical_schema_version: 1.0.0
-sha256: 715e13dbdd7909cf644a81ccaa17c32f10a9cf6bd740a605729e1ec78701dc4c
+sha256: 3a65e5cbb80505ac65b260021a7796034fd83bc371b045e782febf75dc66d05c
 expected_sha256: 53798cce7109bffe95c38798f24e8b005a76fb0b867b8da1f3a826e16f0664aa
 origin:
   kind: synthetic

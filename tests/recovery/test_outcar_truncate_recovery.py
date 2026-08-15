@@ -45,10 +45,9 @@ _HEADER = """\
 
 
 def _step(n: int, energy: float) -> str:
+    # Real VASP order: the POSITION/TOTAL-FORCE table, then the energy(sigma->0) summary.
     return f"""\
  ---------------------------------- Iteration {n}( {n}) ---------------------------------
-
-    energy  without entropy=       {energy:.8f}  energy(sigma->0) =       {energy:.8f}
 
   -----------------------------------------------------------------------------
     POSITION                                       TOTAL-FORCE (eV/Angst)
@@ -58,22 +57,34 @@ def _step(n: int, energy: float) -> str:
       5.00000000   5.00000000   5.00000000   -0.10000000  0.00000000  0.05000000
   -----------------------------------------------------------------------------
      total drift:                                0.00000000   0.00000000   0.00000000
+
+  FREE ENERGIE OF THE ION-ELECTRON SYSTEM (eV)
+    energy  without entropy=       {energy:.8f}  energy(sigma->0) =       {energy:.8f}
+"""
+
+
+def _step_table_only(n: int) -> str:
+    # A step whose force table is complete but whose energy(sigma->0) summary was never written —
+    # the run died in the gap after the forces, before the FREE ENERGIE block (real VASP order).
+    return f"""\
+ ---------------------------------- Iteration {n}( {n}) ---------------------------------
+
+  -----------------------------------------------------------------------------
+    POSITION                                       TOTAL-FORCE (eV/Angst)
+  -----------------------------------------------------------------------------
+      5.00000000   7.40000000   5.00000000   0.01000000  -0.01000000  0.00000000
+      7.40000000   5.00000000   5.00000000   -0.01000000  0.00500000  0.00000000
+      5.00000000   5.00000000   5.00000000   -0.01000000  0.00000000  0.00500000
+  -----------------------------------------------------------------------------
+     total drift:                                0.00000000   0.00000000   0.00000000
 """
 
 
 _GOOD = _step(1, -76.4) + _step(2, -76.41)
 
-#: Step 3's energy line was written, then the process died before the force table.
-TORN_ENERGY = (
-    _HEADER
-    + _GOOD
-    + """\
- ----------------------------------- Iteration   3(   3)  ---------------------------------------
-
-    energy  without entropy=       -76.42000000  energy(sigma->0) =       -76.42000000
-
-"""
-)
+#: Step 3's force table was written in full, then the process died before its energy(sigma->0)
+#: summary — the torn-after-table shape (a complete VASP step always ends with the summary).
+TORN_AFTER_TABLE = _HEADER + _GOOD + _step_table_only(3)
 
 #: Step 3's force table stopped after one of its three rows.
 TORN_TABLE = (
@@ -81,8 +92,6 @@ TORN_TABLE = (
     + _GOOD
     + """\
  ----------------------------------- Iteration   3(   3)  ---------------------------------------
-
-    energy  without entropy=       -76.42000000  energy(sigma->0) =       -76.42000000
 
   -----------------------------------------------------------------------------
     POSITION                                       TOTAL-FORCE (eV/Angst)
@@ -126,11 +135,13 @@ def _recover(data: str, choices: dict[str, dict[str, object]] | None = None) -> 
 
 
 @pytest.mark.parametrize(
-    ("name", "data"), [("torn_energy", TORN_ENERGY), ("torn_table", TORN_TABLE)]
+    ("name", "data"),
+    [("torn_after_table", TORN_AFTER_TABLE), ("torn_table", TORN_TABLE)],
 )
 def test_every_torn_write_shape_is_recoverable(name: str, data: str) -> None:
-    """A process killed mid-write can stop after the energy line or inside the force table. Both
-    are the same event, so both carry the recoverable hint."""
+    """A process killed mid-write can stop after a complete force table but before its
+    energy(sigma->0) summary, or partway through the force table itself. Both are the same event —
+    a torn tail behind good steps — so both carry the recoverable hint."""
     assert _recover(data).canonical.frame_count == 2
 
 

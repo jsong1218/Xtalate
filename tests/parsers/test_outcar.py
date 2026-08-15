@@ -62,11 +62,8 @@ def _step(
     pos = positions if positions is not None else _DEFAULT_POSITIONS
     frc = forces if forces is not None else _DEFAULT_FORCES
     lines: list[str] = []
-    lines.append("  FREE ENERGIE OF THE ION-ELECTRON SYSTEM (eV)")
-    lines.append(
-        f"    energy  without entropy=       {energy:.8f}  energy(sigma->0) =       {energy:.8f}"
-    )
-    lines.append("")
+    # Real VASP intra-step order: stress and (NpT) the step's own cell precede the
+    # POSITION/TOTAL-FORCE table; the energy(sigma->0) summary follows it.
     if stress is not None:
         lines.append("  FORCE on cell =-STRESS in cart. coord.  units (eV):")
         lines.append("    in kB         " + " ".join(f"{v:.10f}" for v in stress))
@@ -87,6 +84,11 @@ def _step(
     lines.append("  -----------------------------------------------------------------------------")
     lines.append(
         "     total drift:                                0.00000000   0.00000000   0.00000000"
+    )
+    lines.append("")
+    lines.append("  FREE ENERGIE OF THE ION-ELECTRON SYSTEM (eV)")
+    lines.append(
+        f"    energy  without entropy=       {energy:.8f}  energy(sigma->0) =       {energy:.8f}"
     )
     lines.append("")
     return "\n".join(lines)
@@ -382,8 +384,26 @@ def test_missing_lattice_is_a_parse_error() -> None:
     assert excinfo.value.issues[0].code == "OUTCAR_MISSING_BLOCK"
 
 
-def test_missing_energy_line_is_a_parse_error_not_a_defaulted_energy() -> None:
-    # A recognized step (a POSITION/TOTAL-FORCE table) with no energy(sigma->0) line before it.
+def test_step_with_no_energy_summary_before_the_next_step_is_a_missing_block() -> None:
+    # In real VASP order the energy(sigma->0) summary *follows* the force table. A step whose table
+    # is complete but which has no energy summary before the *next* step's table began is a
+    # structural gap in the middle of the file — refused as OUTCAR_MISSING_BLOCK, never a defaulted
+    # energy (P3) and not a torn tail (the file plainly continues).
+    step = _step().replace(
+        "    energy  without entropy=       -76.40000000  energy(sigma->0) =       -76.40000000\n",
+        "",
+    )
+    with pytest.raises(ParseError) as excinfo:
+        _parse(_file(step, _step(energy=-13.0)))
+    issue = excinfo.value.issues[0]
+    assert issue.code == "OUTCAR_MISSING_BLOCK"
+    assert "energy(sigma->0)" in issue.message
+
+
+def test_final_step_with_no_energy_summary_at_eof_is_a_truncated_torn_tail() -> None:
+    # The same missing summary, but at end-of-file: a run killed after writing the forces but before
+    # the energy summary. Indistinguishable from a torn tail (a complete VASP step always ends with
+    # the summary), so it is the recoverable OUTCAR_TRUNCATED — never a defaulted energy (P3).
     step = _step().replace(
         "    energy  without entropy=       -76.40000000  energy(sigma->0) =       -76.40000000\n",
         "",
@@ -391,8 +411,8 @@ def test_missing_energy_line_is_a_parse_error_not_a_defaulted_energy() -> None:
     with pytest.raises(ParseError) as excinfo:
         _parse(_file(step))
     issue = excinfo.value.issues[0]
-    assert issue.code == "OUTCAR_MISSING_BLOCK"
-    assert "energy(sigma->0)" in issue.message
+    assert issue.code == "OUTCAR_TRUNCATED"
+    assert issue.recovery_hint == "truncate_at_last_valid_frame"
 
 
 def test_missing_force_table_is_a_parse_error_not_a_partial_frame() -> None:

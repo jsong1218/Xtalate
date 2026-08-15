@@ -110,19 +110,11 @@ def render_outcar(run: Run, *, layout: str = "6x") -> str:
     for n, step in enumerate(run.steps, start=1):
         lines.append(f"{f' Iteration {n}({n}) ':-^80}")
         lines.append("")
-        if v5:
-            lines.append(
-                f"    energy without entropy= {step.energy:.8f} "
-                f"energy(sigma->0) = {step.energy:.8f}"
-            )
-        else:
-            lines.append(
-                f"    energy  without entropy=       {step.energy:.8f}"
-                f"  energy(sigma->0) =       {step.energy:.8f}"
-            )
-        lines.append("")
+        # Real VASP intra-step order: stress and (NpT) the step's own cell precede the
+        # POSITION/TOTAL-FORCE table; the energy(sigma->0) summary follows it.
         if step.stress is not None:
             voigt = _voigt6_kbar(step.stress)
+            lines.append("  FORCE on cell =-STRESS in cart. coord.  units (eV):")
             if v5:
                 lines.append("    in kB   " + "   ".join(f"{v:.10E}" for v in voigt))
             else:
@@ -148,6 +140,18 @@ def render_outcar(run: Run, *, layout: str = "6x") -> str:
         lines.append(
             "     total drift:                                0.00000000   0.00000000   0.00000000"
         )
+        lines.append("")
+        lines.append("  FREE ENERGIE OF THE ION-ELECTRON SYSTEM (eV)")
+        if v5:
+            lines.append(
+                f"    energy without entropy= {step.energy:.8f} "
+                f"energy(sigma->0) = {step.energy:.8f}"
+            )
+        else:
+            lines.append(
+                f"    energy  without entropy=       {step.energy:.8f}"
+                f"  energy(sigma->0) =       {step.energy:.8f}"
+            )
         lines.append("")
     return "\n".join(lines)
 
