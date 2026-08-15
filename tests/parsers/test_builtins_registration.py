@@ -54,10 +54,11 @@ def test_builtins_register_without_error() -> None:
         "ase_traj",
         "cif",
         "vasprun",
+        "outcar",
     }
     # Asymmetric since M42 slice 2: vasprun is the first parser-only format (D159) — Xtalate
-    # reads it but does not write it. The two assertions stay separate because read-only formats
-    # are legitimate, they are just no longer the only kind.
+    # reads it but does not write it; OUTCAR (M43) is the second. The two assertions stay separate
+    # because read-only formats are legitimate, they are just no longer the only kind.
     assert {e.format_id for e in reg.exporters()} == {
         "xyz",
         "extxyz",

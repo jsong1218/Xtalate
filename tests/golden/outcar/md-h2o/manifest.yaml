@@ -1,0 +1,12 @@
+case: md-h2o
+format_id: outcar
+source_file: OUTCAR
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: b46f9399e36040e3d5be8374a9c24c07b6953104f394cd6d38885186a03268e7
+expected_sha256: 73e468f88339867436c7912679a36bce8fe1028040f3afd1bbf1fa04341a7f3f
+origin:
+  kind: synthetic
+  source: 'Hand-written for M43-S1 (classical VASP 6.3.2 OUTCAR layout): md-h2o.'
+  license: Apache-2.0
+notes: "The MD golden (VASP 6.x): 2 ionic steps, fixed 10 A cubic cell, NO stress block — pins the P3 absence case: a stress-less run must read electronic.stress = None, never a defaulted zero tensor (the M43 counterpart of the vasprun SCF golden). Positions/forces/energy hand-verified as in relax-h2o (first two steps)."

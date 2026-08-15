@@ -1,0 +1,19 @@
+case: npt-h2o-v5
+format_id: outcar
+source_file: OUTCAR
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: f4bd5adb75b0c285edf7092ec6d7d1a341d824f6f9198215df7a7ea8eca08e87
+expected_sha256: 82e8e97987aa0ea3c47b84c36b001287ecb9d01c3897e0ce28385f4ec8c42f98
+origin:
+  kind: synthetic
+  source: 'Hand-written for M43-S2 (classical VASP 5.4.4 OUTCAR layout): npt-h2o.'
+  license: Apache-2.0
+notes: >-
+  The VASP 5.x second-layout golden (M43-S2): the same hand-verified H2O run as the
+  npt-h2o 6.x golden, re-spelled in the 5.4.4 layout with the documented 5.x<->6.x
+  whitespace/column/label drift (narrower 7-decimal fixed columns, scientific-notation
+  'in kB', tightened energy/ions/NIONS lines, 5.x-era POTCAR/VRHFIN wording). A
+  fixed-column parser that assumed the 6.x widths would mis-split these rows; the
+  anchor-string + str.split() reader maps them to the identical canonical values, so
+  the two layouts agree with vasprun.xml (the S2 go/no-go gate).

@@ -14,7 +14,7 @@ from typing import TypeAlias
 import numpy as np
 
 from xtalate.schema import Cell
-from xtalate.schema.elements import SYMBOL_TO_Z
+from xtalate.schema.elements import SYMBOL_TO_Z, is_valid_symbol
 
 #: A reader may hand the core lists or ndarrays; both are "parsed VASP values".
 _RowSeq: TypeAlias = Sequence[Sequence[float]] | np.ndarray
@@ -135,6 +135,25 @@ def _symbol_for_z(z: int) -> str:
         if zz == z:
             return symbol
     raise KeyError(f"no element symbol for atomic number {z!r}")
+
+
+def symbols_from_symbol_counts(species: Sequence[tuple[str, int]]) -> list[str]:
+    """The per-atom symbol list from declared ``(symbol, count)`` species — OUTCAR's form (M43).
+
+    OUTCAR states its species as element **symbols** (from the POTCAR ``VRHFIN =X:`` lines) with
+    per-species counts (``ions per type``), not as atomic numbers the way vasprun.xml's
+    ``atomtypes`` Z column does (D160). The symbols are validated against the element table (the
+    single source, ``SYMBOL_TO_Z``) and expanded in declared species order — one symbol per atom,
+    the canonical constant-``N`` ``atoms.symbols`` list. An unknown symbol raises ``KeyError`` for
+    the reader to turn into the parse-error contract (never a guessed placeholder — the same
+    missing-species discipline as XDATCAR's species line).
+    """
+    symbols: list[str] = []
+    for symbol, count in species:
+        if not is_valid_symbol(symbol):
+            raise KeyError(f"unknown element symbol {symbol!r}")
+        symbols.extend([symbol] * int(count))
+    return symbols
 
 
 def lattice_vectors(rows: _RowSeq) -> np.ndarray:

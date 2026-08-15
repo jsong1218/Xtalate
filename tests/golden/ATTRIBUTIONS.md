@@ -93,6 +93,48 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-authored for M42-S4 (RF-4): H2 in a 4 A cubic cell carrying energy=, a per-atom forces= column, and a 6-number Voigt stress= (ASE order xx,yy,zz,yz,xz,xy) — the spelling ASE's extXYZ reader refuses outright without the parser's 6-number expansion.
 
+## `outcar` / `md-h2o` (golden)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M43-S1 (classical VASP 6.3.2 OUTCAR layout): md-h2o.
+
+## `outcar` / `md-h2o-v5` (golden)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M43-S2 (classical VASP 5.4.4 OUTCAR layout): md-h2o.
+
+## `outcar` / `npt-h2o` (golden)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M43-S1 (classical VASP 6.3.2 OUTCAR layout): npt-h2o.
+
+## `outcar` / `npt-h2o-v5` (golden)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M43-S2 (classical VASP 5.4.4 OUTCAR layout): npt-h2o.
+
+## `outcar` / `relax-h2o` (golden)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M43-S1 (classical VASP 6.3.2 OUTCAR layout): relax-h2o.
+
+## `outcar` / `relax-h2o-v5` (golden)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M43-S2 (classical VASP 5.4.4 OUTCAR layout): relax-h2o.
+
 ## `poscar` / `nacl-primitive` (golden)
 
 - **Source file:** `POSCAR`

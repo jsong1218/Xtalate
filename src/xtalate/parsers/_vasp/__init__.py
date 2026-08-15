@@ -44,6 +44,7 @@ from xtalate.parsers._vasp.labels import (
     stress_parse_note,
     stress_voigt6_vasp_to_full,
     symbols_from_species,
+    symbols_from_symbol_counts,
     total_energy,
 )
 
@@ -62,5 +63,6 @@ __all__ = [
     "stress_parse_note",
     "stress_voigt6_vasp_to_full",
     "symbols_from_species",
+    "symbols_from_symbol_counts",
     "total_energy",
 ]
