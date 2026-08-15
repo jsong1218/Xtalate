@@ -1,0 +1,19 @@
+case: relax-h2o-v5
+format_id: outcar
+source_file: OUTCAR
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 2a8e8ad84df2d58302b8eeb0b51c9b8d4e3ef4302390b0e11eac64f7bfb8ee38
+expected_sha256: 444d482130fa3f23221625ad612ef1f8479bd8be1c45876e3660ba1fb7ced485
+origin:
+  kind: synthetic
+  source: 'Hand-written for M43-S2 (classical VASP 5.4.4 OUTCAR layout): relax-h2o.'
+  license: Apache-2.0
+notes: >-
+  The VASP 5.x second-layout golden (M43-S2): the same hand-verified H2O run as the
+  relax-h2o 6.x golden, re-spelled in the 5.4.4 layout with the documented 5.x<->6.x
+  whitespace/column/label drift (narrower 7-decimal fixed columns, scientific-notation
+  'in kB', tightened energy/ions/NIONS lines, 5.x-era POTCAR/VRHFIN wording). A
+  fixed-column parser that assumed the 6.x widths would mis-split these rows; the
+  anchor-string + str.split() reader maps them to the identical canonical values, so
+  the two layouts agree with vasprun.xml (the S2 go/no-go gate).

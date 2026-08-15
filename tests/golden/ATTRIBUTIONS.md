@@ -100,6 +100,13 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-written for M43-S1 (classical VASP 6.3.2 OUTCAR layout): md-h2o.
 
+## `outcar` / `md-h2o-v5` (golden)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M43-S2 (classical VASP 5.4.4 OUTCAR layout): md-h2o.
+
 ## `outcar` / `npt-h2o` (golden)
 
 - **Source file:** `OUTCAR`
@@ -107,12 +114,26 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-written for M43-S1 (classical VASP 6.3.2 OUTCAR layout): npt-h2o.
 
+## `outcar` / `npt-h2o-v5` (golden)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M43-S2 (classical VASP 5.4.4 OUTCAR layout): npt-h2o.
+
 ## `outcar` / `relax-h2o` (golden)
 
 - **Source file:** `OUTCAR`
 - **Origin:** synthetic
 - **License:** Apache-2.0
 - **Source:** Hand-written for M43-S1 (classical VASP 6.3.2 OUTCAR layout): relax-h2o.
+
+## `outcar` / `relax-h2o-v5` (golden)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M43-S2 (classical VASP 5.4.4 OUTCAR layout): relax-h2o.
 
 ## `poscar` / `nacl-primitive` (golden)
 

@@ -76,34 +76,60 @@ def _direct(positions: list[list[float]], lattice: list[list[float]]) -> list[li
     return [[float(v) for v in row] for row in result]
 
 
-def render_outcar(run: Run) -> str:
-    """The run as a VASP 6.x OUTCAR log (Cartesian positions, 'in kB' Voigt-6 stress)."""
-    lines: list[str] = []
-    lines.append(f" {run.program} 08Feb23 (build Aug 08 2023 12:00:00) complex")
-    lines.append("")
+def render_outcar(run: Run, *, layout: str = "6x") -> str:
+    """The run as a VASP OUTCAR log (Cartesian positions, 'in kB' Voigt-6 stress).
+
+    ``layout`` is ``"6x"`` (the VASP 6.3.2 spelling, S1) or ``"5x"`` (the VASP 5.4.4 spelling, S2):
+    the **same** run re-spelled with the documented 5.x↔6.x whitespace/column/label drift — narrower
+    7-decimal fixed columns, a scientific-notation ``in kB`` line, a tightened energy line, and the
+    5.x-era banner/POTCAR wording. The two spellings must map back to the same canonical values (the
+    S2 go/no-go gate), so both are fed to the OUTCAR reader and asserted against vasprun.xml.
+    """
+    v5 = layout == "5x"
+    lines: list[str] = [
+        (
+            " vasp.5.4.4 18May18 (build May 18 2018 12:00:00) complex"
+            if v5
+            else f" {run.program} 08Feb23 (build Aug 08 2023 12:00:00) complex"
+        ),
+        "",
+    ]
     for symbol, _count in run.species:
-        lines.append(f"  POTCAR:    PAW_PBE {symbol} 15Jun2001")
-        lines.append(f"    VRHFIN ={symbol}: 1s1")
+        lines.append(f"  POTCAR:    PAW_PBE {symbol} " + ("08Apr2002" if v5 else "15Jun2001"))
+        lines.append(f"    VRHFIN ={symbol}: " + ("s" if v5 else "1s1"))
     lines.append("")
-    lines.append("  ions per type =               " + "   ".join(str(c) for _s, c in run.species))
+    lines.append(
+        "  ions per type =   2  1"
+        if v5
+        else "  ions per type =               " + "   ".join(str(c) for _s, c in run.species)
+    )
     lines.append("")
-    lines.append(f"  NIONS =       {len(run.symbols)}")
+    lines.append(f"  NIONS =   {len(run.symbols)}" if v5 else f"  NIONS =       {len(run.symbols)}")
     lines.append("")
-    _lattice_block(lines, run.steps[0].lattice)
+    _lattice_block(lines, run.steps[0].lattice, v5=v5)
     for n, step in enumerate(run.steps, start=1):
         lines.append(f"{f' Iteration {n}({n}) ':-^80}")
         lines.append("")
-        lines.append(
-            f"    energy  without entropy=       {step.energy:.8f}"
-            f"  energy(sigma->0) =       {step.energy:.8f}"
-        )
+        if v5:
+            lines.append(
+                f"    energy without entropy= {step.energy:.8f} "
+                f"energy(sigma->0) = {step.energy:.8f}"
+            )
+        else:
+            lines.append(
+                f"    energy  without entropy=       {step.energy:.8f}"
+                f"  energy(sigma->0) =       {step.energy:.8f}"
+            )
         lines.append("")
         if step.stress is not None:
             voigt = _voigt6_kbar(step.stress)
-            lines.append("    in kB         " + " ".join(f"{v:.10f}" for v in voigt))
+            if v5:
+                lines.append("    in kB   " + "   ".join(f"{v:.10E}" for v in voigt))
+            else:
+                lines.append("    in kB         " + " ".join(f"{v:.10f}" for v in voigt))
             lines.append("")
         if step.lattice != run.steps[0].lattice:
-            _lattice_block(lines, step.lattice)
+            _lattice_block(lines, step.lattice, v5=v5)
         lines.append(
             "  -----------------------------------------------------------------------------"
         )
@@ -112,7 +138,10 @@ def render_outcar(run: Run) -> str:
             "  -----------------------------------------------------------------------------"
         )
         for (x, y, z), (fx, fy, fz) in zip(step.positions, step.forces, strict=True):
-            lines.append(f"      {x:.8f}   {y:.8f}   {z:.8f}   {fx:.8f}  {fy:.8f}  {fz:.8f}")
+            if v5:
+                lines.append(f"    {x: .7f}  {y: .7f}  {z: .7f}  {fx: .7f}  {fy: .7f}  {fz: .7f}")
+            else:
+                lines.append(f"      {x:.8f}   {y:.8f}   {z:.8f}   {fx:.8f}  {fy:.8f}  {fz:.8f}")
         lines.append(
             "  -----------------------------------------------------------------------------"
         )
@@ -123,14 +152,20 @@ def render_outcar(run: Run) -> str:
     return "\n".join(lines)
 
 
-def _lattice_block(lines: list[str], lattice: list[list[float]]) -> None:
+def _lattice_block(lines: list[str], lattice: list[list[float]], *, v5: bool = False) -> None:
     lines.append("  direct lattice vectors                 reciprocal lattice vectors")
     inv = np.linalg.inv(np.asarray(lattice))
     for row, rec_row in zip(lattice, inv.T, strict=True):
-        lines.append(
-            f"     {row[0]:.10f}  {row[1]:.10f}  {row[2]:.10f}     "
-            f"{rec_row[0]:.10f}  {rec_row[1]:.10f}  {rec_row[2]:.10f}"
-        )
+        if v5:
+            lines.append(
+                f"    {row[0]: .7f}  {row[1]: .7f}  {row[2]: .7f}  "
+                f"{rec_row[0]: .7f}  {rec_row[1]: .7f}  {rec_row[2]: .7f}"
+            )
+        else:
+            lines.append(
+                f"     {row[0]:.10f}  {row[1]:.10f}  {row[2]:.10f}     "
+                f"{rec_row[0]:.10f}  {rec_row[1]:.10f}  {rec_row[2]:.10f}"
+            )
     lines.append("")
 
 

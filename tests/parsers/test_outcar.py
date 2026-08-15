@@ -304,13 +304,68 @@ def test_no_step_table_is_outcar_empty() -> None:
     assert excinfo.value.issues[0].code == "OUTCAR_EMPTY"
 
 
-def test_missing_version_banner_is_a_parse_error() -> None:
+def test_vasp5_banner_reads_as_a_recognized_layout() -> None:
+    # The 5.x banner is a recognized major layout (S2): it parses, and the declared program is
+    # carried verbatim — the version-drift discipline recognizes both majors, never re-derives.
+    head = _HEAD.replace(
+        "vasp.6.3.2 08Feb23 (build Aug 08 2023 12:00:00) complex",
+        "vasp.5.4.4 18May18 (build May 18 2018 12:00:00) complex",
+    )
+    obj = _parse(_file(_step(), head=head)).canonical
+    assert obj.simulation is not None
+    assert obj.simulation.source_code == "vasp.5.4.4 18May18 (build May 18 2018 12:00:00) complex"
+    assert obj.frames[0].atoms.symbols == ["H", "H", "O"]
+
+
+def test_missing_version_banner_is_an_unrecognized_layout() -> None:
+    # A header with no parseable vasp.<major>.<minor> banner is refused as an unrecognized layout
+    # (S2, D165) — never a best-effort partial parse (P1). This refines S1's assignment, where a
+    # mangled banner was OUTCAR_MISSING_BLOCK.
     head = _HEAD.replace(
         "vasp.6.3.2 08Feb23 (build Aug 08 2023 12:00:00) complex", "some other program"
     )
     with pytest.raises(ParseError) as excinfo:
         _parse(_file(_step(), head=head))
-    assert excinfo.value.issues[0].code == "OUTCAR_MISSING_BLOCK"
+    issue = excinfo.value.issues[0]
+    assert issue.code == "OUTCAR_UNRECOGNIZED_LAYOUT"
+    assert "version banner" in issue.message
+
+
+def test_foreign_file_is_unrecognized_layout_not_empty() -> None:
+    # A non-OUTCAR file with content is not 'empty' — it is a layout the reader does not
+    # recognize, refused rather than misread.
+    with pytest.raises(ParseError) as excinfo:
+        _parse(b"this is not an OUTCAR log at all\n")
+    assert excinfo.value.issues[0].code == "OUTCAR_UNRECOGNIZED_LAYOUT"
+
+
+def test_unrecognized_major_version_is_refused_not_misread() -> None:
+    # VASP-version breadth beyond 5.x/6.x refuses with a contribution call (S2 cut line) — never
+    # read as if it were a known layout.
+    head = _HEAD.replace("vasp.6.3.2", "vasp.7.0.0")
+    with pytest.raises(ParseError) as excinfo:
+        _parse(_file(_step(), head=head))
+    issue = excinfo.value.issues[0]
+    assert issue.code == "OUTCAR_UNRECOGNIZED_LAYOUT"
+    assert "7.x" in issue.message
+
+
+def test_step_with_more_atoms_than_declared_is_inconsistent_step() -> None:
+    # NIONS = 3, but one step's POSITION/TOTAL-FORCE table carries a 4th data row — the table
+    # disagrees with the header, a structural inconsistency refused, never silently truncated (P3).
+    extra_row = "      5.00000000   7.30000000   5.00000000   0.10000000  -0.05000000  0.00000000\n"
+    step = _step().replace(
+        "  -----------------------------------------------------------------------------\n"
+        "     total drift:",
+        extra_row
+        + "  -----------------------------------------------------------------------------\n"
+        "     total drift:",
+    )
+    with pytest.raises(ParseError) as excinfo:
+        _parse(_file(step))
+    issue = excinfo.value.issues[0]
+    assert issue.code == "OUTCAR_INCONSISTENT_STEP"
+    assert "more than the declared 3 atoms" in issue.message
 
 
 def test_missing_species_is_a_parse_error() -> None:

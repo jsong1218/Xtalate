@@ -33,14 +33,23 @@ not the file — the property M44 will measure at 10⁴ steps.
   ``_StepState`` pattern).
 * **``pbc = (T,T,T)``** by format definition, as a ``parse_notes`` entry.
 
-**Error contract (Part 3 §5; the base ``OUTCAR_*`` code set of D164).** ``OUTCAR_EMPTY`` (empty
-file or no ionic-step block at all), ``OUTCAR_MISSING_BLOCK`` (an expected block — the version
-banner, the species list, the initial lattice, the ``energy(sigma->0)`` line, the force table — is
-absent in an otherwise-recognized context: a ``ParseError``, never a defaulted field, P3), and the
-warning ``OUTCAR_UNMAPPED_LINE_CARRIED`` (a recognized-but-unmapped diagnostic scalar carried
-verbatim, P1). ``OUTCAR_UNRECOGNIZED_LAYOUT`` / ``OUTCAR_INCONSISTENT_STEP`` land in S2 (the
-version-drift refusal discipline) and ``OUTCAR_TRUNCATED`` in S3 (truncation recovery) — the codes
-exist where the behaviour lands, not all at once.
+**Error contract (Part 3 §5; D164 + D165).** ``OUTCAR_EMPTY`` (empty file or no ionic-step block
+at all), ``OUTCAR_MISSING_BLOCK`` (an expected block — the species list, the initial lattice, the
+``energy(sigma->0)`` line, the force table — is absent in an otherwise-recognized context: a
+``ParseError``, never a defaulted field, P3), the warning ``OUTCAR_UNMAPPED_LINE_CARRIED`` (a
+recognized-but-unmapped diagnostic scalar carried verbatim, P1), ``OUTCAR_UNRECOGNIZED_LAYOUT`` (no
+parseable VASP version banner, or a banner for a major version outside the recognized 5.x/6.x set —
+the layout is refused, never a partial parse, P1; D165), and ``OUTCAR_INCONSISTENT_STEP`` (a step's
+``POSITION … TOTAL-FORCE`` table carries more atoms than the header declares — refused, never
+silently truncated, P3; D165). ``OUTCAR_TRUNCATED`` lands in S3 (truncation recovery).
+
+**Version-drift discipline (S2, D165).** Block-locating keys off the stable anchor substrings
+(``TOTAL-FORCE``, ``energy(sigma->0)``, ``in kB``, ``direct lattice vectors``, the ``vasp.<major>``
+banner, ``ions per type``) and column-splits on whitespace (``str.split()``) — never fixed byte
+columns, which is exactly the fragility the 5.x↔6.x whitespace/column/label drift exploits. The
+version banner's **major** component is the layout-recognition discriminator: majors 5 and 6 are
+recognized and read; any other major (or no banner) is refused as ``OUTCAR_UNRECOGNIZED_LAYOUT``
+rather than best-effort partial-parsed — a silently wrong force block poisons a training set.
 """
 
 from __future__ import annotations
@@ -96,9 +105,14 @@ _ENERGY_WO_ENTROPY_KEY = "energy_without_entropy"
 # A single float token, including VASP's exponent forms (-0.12345678E+02).
 _FLOAT = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
 
-#: The version banner (` vasp.6.3.2 08Feb23 (build …)`) — the first such line is the declared
-#: program.
-_VERSION_RE = re.compile(r"\bvasp\.\d+\.\d+")
+#: The version banner (` vasp.6.3.2 08Feb23 …` / ` vasp.5.4.4 18May18 …`) — the first such line is
+#: the declared program, and its **major** component (group 1) is the layout-recognition
+#: discriminator (S2): only majors 5 and 6 are recognized; anything else is refused, never misread.
+_VERSION_RE = re.compile(r"\bvasp\.(\d+)\.(\d+)")
+#: The recognized VASP major layouts (S2, D165). A banner for any other major — or no banner at
+#: all — is refused as ``OUTCAR_UNRECOGNIZED_LAYOUT``: the version-drift refusal discipline, never a
+#: best-effort partial parse.
+_RECOGNIZED_MAJORS = frozenset({5, 6})
 #: POTCAR species symbols, from `VRHFIN =X:` (one per species, in declared order). The bare element
 #: symbol is the reliable source — the POTCAR `TITEL`/`POTCAR:` titles can carry `_pv`/`_sv`
 #: suffixes.
@@ -247,10 +261,12 @@ def _read_lattice(lines: Iterator[str], *, where: str) -> np.ndarray:
 
 @dataclass
 class _Header:
-    """Everything parsed eagerly before the first ionic step: the declared program, the per-atom
-    symbols (hence the atom count), and the initial lattice that fixed-cell steps reuse."""
+    """Everything parsed eagerly before the first ionic step: the declared program (with its
+    recognized major layout), the per-atom symbols (hence the atom count), and the initial lattice
+    that fixed-cell steps reuse."""
 
-    version: str | None
+    version: str
+    major: int
     symbols: list[str]
     n_atoms: int
     lattice: np.ndarray
@@ -258,6 +274,7 @@ class _Header:
 
 def _finalize_header(
     version: str | None,
+    major: int | None,
     species: list[str],
     counts: list[int] | None,
     nions: int | None,
@@ -265,15 +282,26 @@ def _finalize_header(
 ) -> _Header:
     """Validate the eagerly-scanned header and build the ``_Header``.
 
-    A missing expected header block — no version banner, no species list, no initial lattice — is a
-    ``ParseError`` under the §5 contract, never a defaulted field (P3). ``NIONS`` is a cross-check
-    against the species counts, not the source of the count (the symbols come from the declared
-    species, so the count must match them).
+    The version banner is the layout-recognition discriminator (S2, D165): no parseable banner, or
+    a banner for a major outside the recognized 5.x/6.x set, is refused as
+    ``OUTCAR_UNRECOGNIZED_LAYOUT`` — never a partial parse (P1). A *recognized* header missing an
+    expected block (no species list, no initial lattice) is a ``ParseError`` under the §5 contract,
+    never a defaulted field (P3). ``NIONS`` is a cross-check against the species counts, not the
+    source of the count (the symbols come from the declared species, so the count must match them).
     """
-    if version is None:
+    if version is None or major is None:
         raise _error(
-            "OUTCAR_MISSING_BLOCK",
-            "no VASP version banner (vasp.<major>.<minor>) found before the first ionic step",
+            "OUTCAR_UNRECOGNIZED_LAYOUT",
+            "no parseable VASP version banner (vasp.<major>.<minor>) found before the first ionic "
+            "step — the OUTCAR layout cannot be recognized, so the file is refused rather than "
+            "misread (P1); a corpus contribution for the unrecognized layout is welcome",
+        )
+    if major not in _RECOGNIZED_MAJORS:
+        raise _error(
+            "OUTCAR_UNRECOGNIZED_LAYOUT",
+            f"VASP {major}.x OUTCAR layout is not recognized (recognized majors: "
+            f"{sorted(_RECOGNIZED_MAJORS)}) — refused rather than misread (P1); please contribute "
+            "a fixture for this layout",
         )
     if not species or counts is None or len(species) != len(counts):
         raise _error(
@@ -301,7 +329,7 @@ def _finalize_header(
             "OUTCAR_MISSING_BLOCK",
             "no direct lattice vectors block found in the header",
         )
-    return _Header(version=version, symbols=symbols, n_atoms=n_atoms, lattice=lattice)
+    return _Header(version=version, major=major, symbols=symbols, n_atoms=n_atoms, lattice=lattice)
 
 
 @dataclass
@@ -316,12 +344,15 @@ class _Pending:
 def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _Pending | None]:
     """Scan the header eagerly and stop at the first ``POSITION … TOTAL-FORCE`` header line.
 
-    Returns ``(None, None)`` when the file ends with no ionic-step table (the caller raises
-    ``OUTCAR_EMPTY``). The first step's ``energy(sigma->0)`` and ``in kB`` lines appear *before*
-    its table (the canonical VASP order), so they are captured into the returned ``_Pending`` for
-    the step loop — one pass, no re-reading.
+    Returns ``(None, None)`` when the file ends with no ionic-step table **after** a recognized
+    version banner (the caller raises ``OUTCAR_EMPTY`` — a recognized header with zero steps). A
+    file that ends with no version banner at all is refused here as ``OUTCAR_UNRECOGNIZED_LAYOUT``
+    (S2): it is not an OUTCAR layout the reader recognizes. The first step's ``energy(sigma->0)``
+    and ``in kB`` lines appear *before* its table (the canonical VASP order), so they are captured
+    into the returned ``_Pending`` for the step loop — one pass, no re-reading.
     """
     version: str | None = None
+    major: int | None = None
     species: list[str] = []
     counts: list[int] | None = None
     nions: int | None = None
@@ -331,11 +362,13 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _Pending | None]
     pending_stress: np.ndarray | None = None
     for line in lines:
         if "TOTAL-FORCE" in line:
-            header = _finalize_header(version, species, counts, nions, lattice)
+            header = _finalize_header(version, major, species, counts, nions, lattice)
             return header, _Pending(pending_energy, pending_carry, pending_stress)
         if version is None and "vasp." in line:
-            if _VERSION_RE.search(line):
+            match = _VERSION_RE.search(line)
+            if match:
                 version = line.strip()
+                major = int(match.group(1))
         if "VRHFIN" in line:
             symbol = _species_from_vrhfin(line)
             if symbol is not None:
@@ -360,6 +393,12 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _Pending | None]
             "file ends mid-step (a torn write) with an energy/stress line but no "
             "POSITION/TOTAL-FORCE table (P3: never a partial frame)",
             location="frame 0",
+        )
+    if version is None:
+        raise _error(
+            "OUTCAR_UNRECOGNIZED_LAYOUT",
+            "file ends with no VASP version banner and no ionic-step table — not a recognized "
+            "OUTCAR layout; refusing rather than misreading it (P1)",
         )
     return None, None
 
@@ -428,11 +467,33 @@ def _next_data_line(lines: Iterator[str]) -> str | None:
     return None
 
 
-def _read_force_rows(lines: Iterator[str], n_atoms: int, frame_index: int) -> np.ndarray:
+def _next_nonblank_raw(lines: Iterator[str]) -> str | None:
+    """The next non-blank line, **not** skipping dash separators.
+
+    The peek that lets the force-table reader tell a terminating ``---`` rule from a stray extra
+    row — ``_next_data_line`` would skip the separator and hide the boundary.
+    """
+    for line in lines:
+        if line.strip():
+            return line
+    return None
+
+
+def _read_force_rows(
+    lines: Iterator[str], n_atoms: int, frame_index: int
+) -> tuple[np.ndarray, str | None]:
     """The ``n_atoms`` rows of the ``POSITION … TOTAL-FORCE`` table (``x y z fx fy fz``).
 
     A block that ends before its rows complete, or a row that is not 6 numeric components, is a
-    ``ParseError`` — never a silently shortened table (P2) and never a defaulted force (P3).
+    ``ParseError`` — never a silently shortened table (P2) and never a defaulted force (P3). After
+    the declared ``n_atoms`` rows the table must terminate (a ``---`` rule or end-of-file); a
+    further 6-component row means the table carries **more atoms than the header declares** — a
+    structural inconsistency refused as ``OUTCAR_INCONSISTENT_STEP`` (S2), never silently truncated
+    to the shorter (P3).
+
+    Returns ``(rows, handback)``: ``handback`` is a consumed non-terminator, non-row line the caller
+    must reprocess (the only way to peek without a pushback stream); it is ``None`` on the normal
+    terminator path.
     """
     rows: list[list[float]] = []
     for a in range(n_atoms):
@@ -460,7 +521,24 @@ def _read_force_rows(lines: Iterator[str], n_atoms: int, frame_index: int) -> np
                 f"ionic step {frame_index}: non-numeric force row: {line.strip()!r}",
                 location=f"frame {frame_index}",
             ) from exc
-    return np.asarray(rows, dtype=float)
+    after = _next_nonblank_raw(lines)
+    if after is None or _SEPARATOR_RE.match(after):
+        return np.asarray(rows, dtype=float), None
+    parts = after.split()
+    if len(parts) == 6:
+        try:
+            [float(p) for p in parts]
+        except ValueError:
+            pass
+        else:
+            raise _error(
+                "OUTCAR_INCONSISTENT_STEP",
+                f"ionic step {frame_index}: the POSITION/TOTAL-FORCE table has more than the "
+                f"declared {n_atoms} atoms (an extra 6-component row); a structural inconsistency "
+                "is refused, never silently truncated (P3)",
+                location=f"frame {frame_index}",
+            )
+    return np.asarray(rows, dtype=float), after
 
 
 def _build_frame(
@@ -493,21 +571,28 @@ def _build_frame(
 
 
 def _scan_to_next_frame(
-    lines: Iterator[str], lattice: np.ndarray, frame_index: int
+    lines: Iterator[str],
+    lattice: np.ndarray,
+    frame_index: int,
+    first_line: str | None = None,
 ) -> tuple[_Pending, np.ndarray, bool]:
     """Scan forward for the next ``POSITION … TOTAL-FORCE`` header, accumulating that step's
     energy/stress/own-cell along the way.
 
-    Returns ``(pending, lattice, found)``. Reaching end-of-file *after* a step began (an energy or
-    stress line with no table) is a torn write — a ``ParseError``, never a silently dropped partial
-    step (S3 refines this into ``OUTCAR_TRUNCATED`` + truncation recovery).
+    ``first_line`` is a line the force-table reader already consumed and handed back (a peek without
+    a pushback stream); it is processed before any new line is read. Returns ``(pending, lattice,
+    found)``. Reaching end-of-file *after* a step began (an energy or stress line with no table) is
+    a torn write — a ``ParseError``, never a silently dropped partial step (S3 refines this into
+    ``OUTCAR_TRUNCATED`` + truncation recovery).
     """
     pending_energy: float | None = None
     pending_carry: float | None = None
     pending_stress: np.ndarray | None = None
     saw_step = False
+    line = first_line
     while True:
-        line = next(lines, None)
+        if line is None:
+            line = next(lines, None)
         if line is None:
             if saw_step:
                 raise _error(
@@ -528,6 +613,7 @@ def _scan_to_next_frame(
         elif "direct lattice vectors" in line:
             lattice = _read_lattice(lines, where=f"frame {frame_index}")
             saw_step = True
+        line = None
 
 
 def _steps(
@@ -541,7 +627,7 @@ def _steps(
     pending = first_pending
     frame_index = 0
     while True:
-        rows = _read_force_rows(lines, header.n_atoms, frame_index)
+        rows, handback = _read_force_rows(lines, header.n_atoms, frame_index)
         energy = pending.energy
         if energy is None:
             raise _error(
@@ -554,7 +640,9 @@ def _steps(
             header, rows, lattice, energy, pending.carry, pending.stress, issues, frame_index
         )
         frame_index += 1
-        pending, lattice, found = _scan_to_next_frame(lines, lattice, frame_index)
+        pending, lattice, found = _scan_to_next_frame(
+            lines, lattice, frame_index, first_line=handback
+        )
         if not found:
             return
 

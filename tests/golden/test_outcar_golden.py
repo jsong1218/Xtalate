@@ -19,13 +19,13 @@ from pathlib import Path
 
 import pytest
 
-from tests._format_helpers import assert_matches_golden
+from tests._format_helpers import assert_matches_golden, scientific_dump
 from xtalate.parsers.outcar import make_outcar_parser
 from xtalate.sdk import ParseResult
 from xtalate.sdk.streaming import materialize
 
 GOLDEN = Path(__file__).parent / "outcar"
-CASES = ["relax-h2o", "md-h2o", "npt-h2o"]
+CASES = ["relax-h2o", "md-h2o", "npt-h2o", "relax-h2o-v5", "md-h2o-v5", "npt-h2o-v5"]
 
 
 def _source(case: str) -> bytes:
@@ -98,3 +98,20 @@ def test_relax_golden_pins_the_vasp_voigt_off_diagonal_ordering() -> None:
         [-0.25, -2.0, -0.125],
         [-0.0625, -0.125, -0.5],
     ]
+
+
+@pytest.mark.parametrize(
+    ("v6", "v5"),
+    [("relax-h2o", "relax-h2o-v5"), ("md-h2o", "md-h2o-v5"), ("npt-h2o", "npt-h2o-v5")],
+)
+def test_v5_layout_goldens_read_the_same_run_as_v6(v6: str, v5: str) -> None:
+    """The S2 go/no-go gate, pinned in the governed corpus: the VASP 5.x spelling of each run must
+    read to the *identical* canonical values as its hand-verified 6.x golden (every position,
+    energy, force, stress and cell) — only the declared program string (the version banner)
+    legitimately differs, and the wall-clock parse history is excluded."""
+    a = scientific_dump(_parse(v6).canonical)
+    b = scientific_dump(_parse(v5).canonical)
+    assert a["simulation"]["source_code"] != b["simulation"]["source_code"]
+    a["simulation"]["source_code"] = None
+    b["simulation"]["source_code"] = None
+    assert a == b, f"{v5} diverged from {v6} (source_code aside)"
