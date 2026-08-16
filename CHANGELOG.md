@@ -17,6 +17,33 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+## [1.2.0] — 2026-08-15
+
+Schema version: 1.0.0
+
+### Added — VASP real-world hardening: the wild corpus admits the two read-only formats with a pair-agreement oracle (v1.2 M45-S2; D172)
+
+The real-world corpus (`tests/wild/`) now admits `vasprun`/`outcar` cases: the CIF stoichiometry
+oracle is format-gated to `format_id: cif` (VASP output declares no composition of its own), and a
+VASP case is governed by its exact `issue_codes` + `frame_count` and — when it declares a `pair:` —
+by the **OUTCAR↔vasprun pair-agreement oracle** (energy/forces/stress/cell/positions must agree;
+`electronic.magnetic_moments` is excluded as an OUTCAR-only field, so the oracle asserts the honest
+asymmetry). Seven authored-realistic VASP 5.x/6.x fixtures ship (SCF / relaxation / a spin-polarized
+pair / NpT-MD with per-step cells / a killed-truncated run / a layout-drift VASP 4.x refusal),
+self-licensed Apache-2.0, and `docs/DEVELOPER_GUIDE.md` §5.5 stands up the contribution call for
+real community-contributed files. No `src/` change; `SCHEMA_VERSION` stays `1.0.0`.
+
+### Added — OUTCAR magnetic moments become first-class `electronic.magnetic_moments` (v1.2 M45-S1; D171)
+
+A spin-polarized OUTCAR's per-ion moments — the `magnetization (x)` table's `tot` column — now map
+first-class to `electronic.magnetic_moments` (μB, collinear, spin-up-positive), closing a latent P1
+gap in which the table was silently skipped. The mapping lives in the shared `_vasp` core + the
+OUTCAR reader only; vasprun.xml carries no per-ion magnetization block, so a spin-polarized vasprun
+legitimately leaves the field `None` (documented correct absence, not a gap). A recognized-but-
+malformed magnetization block refuses (`OUTCAR_UNRECOGNIZED_LAYOUT` / `OUTCAR_INCONSISTENT_STEP`),
+never partial-parses or defaults a zero; the non-collinear `(y)/(z)` tables are carried verbatim
+(mapping deferred to v1.2.1). `SCHEMA_VERSION` stays `1.0.0`.
+
 ### Added — VASP-output formats join the standing test surface, and the duplicate-source policy is enforced (v1.2 M44-S3; D170)
 
 `vasprun` and `outcar` now enrol in the nightly round-trip matrix as **sources only** (never

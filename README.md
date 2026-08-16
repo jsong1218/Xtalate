@@ -22,9 +22,18 @@ The scientific logic lives in the engine and nowhere else; the service and the U
 
 ## Formats
 
-Seven formats, every one **read *and* written**, so every pair among them converts (the nightly suite runs the full 7 × 7 matrix):
+The **seven Phase-1 formats** are every one **read *and* written**, so every pair among them
+converts (the nightly suite runs the full 7 × 7 matrix):
 
 **XYZ** · **extended XYZ** (ASE-backed) · **POSCAR** · **CONTCAR** (incl. the velocity block, Cartesian + Direct) · **XDATCAR** · **ASE `.traj`** · **CIF**.
+
+**Plus two read-only VASP-output formats — `vasprun.xml` and `OUTCAR` — as parser-only sources.**
+A code's output is a conversion *source*, never a *target*: both formats are registered with a
+parser and **no** exporter, so they appear read-only in `xtalate capabilities` and there is no
+`convert --to vasprun` (or `--to outcar`). The flagship MLIP conversion reads either one into a
+label-complete training file — per-frame energy, per-atom forces, first-class tension-positive
+stress, and (from OUTCAR) first-class per-atom magnetic moments — via
+`xtalate convert OUTCAR --to extxyz` (equally `vasprun.xml --to extxyz`).
 
 **CIF is treated as real crystallography.** Cell parameters become lattice vectors, fractional coordinates become Cartesian at the parser boundary, and symmetry is expanded **from the operations the file declares** — parsed as exact affine maps over rationals, with sites on a symmetry element merged on a physical 0.05 Å threshold. A file that names a space group but declares *no* operations is **refused**, never read as a partial structure. Site occupancy is a first-class canonical field (`atoms.occupancies`); a target that cannot represent a partial occupancy says so in the report rather than dropping it silently. The exporter writes every atom explicitly under an identity symmetry loop with no space-group symbol — the coordinates it emits are the already-expanded cell, and any symbol above them would assert a setting they no longer encode.
 

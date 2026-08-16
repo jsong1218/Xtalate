@@ -182,6 +182,21 @@ when the backend might later be replaced by a library, and not otherwise.
 > nothing they would not already pay. Every first-party trajectory format streams (extXYZ, plain
 > XYZ, XDATCAR, ASE `.traj`); a third-party trajectory plugin must do the same to inherit the bound.
 
+### 5.1.1 The parser-only variant (a code's output is a source, never a target)
+
+Everything above assumes a format with a parser **and** an exporter. A DFT-*output* format is
+different: `vasprun.xml` and `OUTCAR` are what VASP writes, so they are conversion **sources** that
+can never be a **target** — nobody converts *into* a code's log. Such a format registers a
+`ParserPlugin` with **no** paired `ExporterPlugin` (the D159 seam). That one omission does the rest:
+the format holds a read capability row and **no** write row, so it is absent from every
+conversion-target enumeration (targets derive from `exporters()`), shows read-only in
+`xtalate capabilities`, and `convert --to vasprun` refuses with the ordinary unknown/unavailable
+target error — never a new code. The in-tree precedents to copy are
+[`src/xtalate/parsers/vasprun.py`](../src/xtalate/parsers/vasprun.py) and
+[`outcar.py`](../src/xtalate/parsers/outcar.py): streaming-first readers over the shared `_vasp`
+mapping core, each declaring its read capabilities honestly — including `NONE` for a field the
+format genuinely cannot carry (vasprun's `electronic.magnetic_moments`, which only OUTCAR reads).
+
 ### 5.2 Ship it as an installable plugin (no fork)
 
 A third-party distribution advertises its parser/exporter under Xtalate's entry-point groups;
