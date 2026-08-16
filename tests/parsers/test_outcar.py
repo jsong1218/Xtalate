@@ -64,8 +64,11 @@ def _step(
     pos = positions if positions is not None else _DEFAULT_POSITIONS
     frc = forces if forces is not None else _DEFAULT_FORCES
     lines: list[str] = []
-    # Real VASP intra-step order: stress and (NpT) the step's own cell precede the
-    # POSITION/TOTAL-FORCE table; the energy(sigma->0) summary follows it.
+    # Real VASP intra-step order: after electronic convergence the per-ion magnetization table
+    # (LORBIT≥10) is printed, then the stress and (NpT) the step's own cell, then the
+    # POSITION/TOTAL-FORCE table; the energy(sigma->0) summary follows it (D171).
+    if magmoms is not None:
+        _magmom_block(lines, magmoms)
     if stress is not None:
         lines.append("  FORCE on cell =-STRESS in cart. coord.  units (eV):")
         lines.append("    in kB         " + " ".join(f"{v:.10f}" for v in stress))
@@ -92,15 +95,14 @@ def _step(
     lines.append(
         f"    energy  without entropy=       {energy:.8f}  energy(sigma->0) =       {energy:.8f}"
     )
-    if magmoms is not None:
-        _magmom_block(lines, magmoms)
     lines.append("")
     return "\n".join(lines)
 
 
 def _magmom_block(lines: list[str], magmoms: list[float]) -> None:
-    """A collinear ``magnetization (x)`` table after the energy summary (real VASP order, the
-    ASE-verified layout): the per-ion ``tot`` column is the scalar moment."""
+    """A collinear ``magnetization (x)`` table in the step's pre-table region — before the
+    stress/force table, in real VASP order (D171, the ASE-verified layout): the per-ion ``tot``
+    column is the scalar moment."""
     total = sum(magmoms)
     lines.append("")
     lines.append(f" number of electron       {total:10.7f} magnetization       {total:10.7f}")
@@ -280,13 +282,11 @@ def test_magnetic_moments_extra_row_refuses() -> None:
 
 def test_noncollinear_magnetization_carries_verbatim_not_mapped() -> None:
     # The (x)/(y)/(z) tables are a moment vector per ion, which the scalar field cannot hold: the
-    # field stays None and the three tables are carried verbatim with a named warning (v1.2.1).
+    # field stays None and the three tables are carried verbatim with a named warning (v1.2.1). In
+    # real VASP order the tables sit in the step's pre-table region, before the force table (D171).
     base = _step()
-    marker = (
-        "  FREE ENERGIE OF THE ION-ELECTRON SYSTEM (eV)\n"
-        "    energy  without entropy=       -76.40000000  energy(sigma->0) =       -76.40000000\n"
-    )
-    step = base.replace(marker, marker + "\n" + _nc_magmom_tables() + "\n")
+    marker = "    POSITION                                       TOTAL-FORCE (eV/Angst)"
+    step = base.replace(marker, _nc_magmom_tables() + "\n" + marker)
     result = _parse(_file(step))
     obj = result.canonical
     assert obj.frames[0].electronic.magnetic_moments is None

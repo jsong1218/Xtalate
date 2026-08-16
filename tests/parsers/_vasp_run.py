@@ -113,8 +113,11 @@ def render_outcar(run: Run, *, layout: str = "6x") -> str:
     for n, step in enumerate(run.steps, start=1):
         lines.append(f"{f' Iteration {n}({n}) ':-^80}")
         lines.append("")
-        # Real VASP intra-step order: stress and (NpT) the step's own cell precede the
-        # POSITION/TOTAL-FORCE table; the energy(sigma->0) summary follows it.
+        # Real VASP intra-step order: after electronic convergence VASP prints the per-ion
+        # magnetization table (LORBIT≥10), then the stress and (NpT) the step's own cell, then the
+        # POSITION/TOTAL-FORCE table; the energy(sigma->0) summary follows it (D171).
+        if step.magmoms is not None:
+            _magnetization_block(lines, step.magmoms)
         if step.stress is not None:
             voigt = _voigt6_kbar(step.stress)
             lines.append("  FORCE on cell =-STRESS in cart. coord.  units (eV):")
@@ -155,8 +158,6 @@ def render_outcar(run: Run, *, layout: str = "6x") -> str:
                 f"    energy  without entropy=       {step.energy:.8f}"
                 f"  energy(sigma->0) =       {step.energy:.8f}"
             )
-        if step.magmoms is not None:
-            _magnetization_block(lines, step.magmoms)
         lines.append("")
     return "\n".join(lines)
 
@@ -164,7 +165,8 @@ def render_outcar(run: Run, *, layout: str = "6x") -> str:
 def _magnetization_block(lines: list[str], magmoms: list[float]) -> None:
     """The OUTCAR collinear ``magnetization (x)`` table for one step (the ASE-verified layout:
     header, ``# of ion … tot`` column line, then one row per ion whose trailing ``tot`` is the
-    per-ion scalar moment). Written *after* the energy summary, in real VASP order."""
+    per-ion scalar moment). Written in the step's pre-table region — after electronic convergence
+    and *before* the stress/force table — in real VASP order (D171)."""
     total = sum(magmoms)
     lines.append("")
     lines.append(f" number of electron       {total:10.7f} magnetization       {total:10.7f}")
