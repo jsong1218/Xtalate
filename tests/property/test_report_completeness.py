@@ -136,6 +136,26 @@ def test_completeness_catches_untraceable_supplied() -> None:
     assert violations, "a supplied entry with no backing Assumption must be caught (P4)"
 
 
+@pytest.mark.parametrize("source_fmt", ["vasprun", "outcar"])
+def test_fully_labeled_vasp_fixtures_preserve_the_label_triple(source_fmt: str) -> None:
+    """The M44-S3 label-presence assertion: a fully-labeled VASP-output fixture (per-frame energy,
+    per-atom forces, first-class stress) converted to extXYZ preserves all three — the MLIP label
+    triple the flagship conversion exists to produce. Pinned on the *unmutated* golden so the
+    assertion is about the real, label-complete VASP case, not a mutation."""
+    base = next(o for cid, _f, o in _CASES if cid == f"{source_fmt}:base")
+    result = _ENGINE.convert(
+        base,
+        source_format_id=source_fmt,
+        target_format_id="extxyz",
+        mode="permissive",
+        recovery_choices=FIXED_PRESETS,
+        tolerance_profile=_STRICT,
+    )
+    preserved = {entry.path for entry in result.report.preserved}
+    for label in ("electronic.total_energy", "dynamics.forces", "electronic.stress"):
+        assert label in preserved, f"{source_fmt} -> extxyz dropped the MLIP label {label}"
+
+
 def test_stage1_lattice_is_non_vacuous() -> None:
     """Guard against a silently vacuous property suite: the stage-1 lattice must, across its
     ``(mutant, target)`` pairs, actually exercise both properties — some conversions removing

@@ -39,6 +39,11 @@ _GOLDEN_JSON: dict[str, str] = {
     "xyz": "xyz/water-traj/expected.canonical.json",
     "poscar": "poscar/nacl-primitive/expected.canonical.json",
     "extxyz": "extxyz/co-in-cell/expected.canonical.json",
+    # M44: the parser-only VASP-output formats join the sweep — their relax-h2o goldens are
+    # label-complete (energy + forces + first-class stress), so the deterministic optional-field
+    # lattice now drives VASP-output objects too (P6, a dict entry, not a rebuild).
+    "vasprun": "vasprun/relax-h2o/expected.canonical.json",
+    "outcar": "outcar/relax-h2o/expected.canonical.json",
 }
 
 

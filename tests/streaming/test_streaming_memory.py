@@ -30,6 +30,8 @@ from pathlib import Path
 from tests.streaming._generators import (
     write_ase_traj_trajectory,
     write_extxyz_trajectory,
+    write_outcar_trajectory,
+    write_vasprun_trajectory,
     write_xdatcar_trajectory,
 )
 from xtalate.registry import default_registry
@@ -143,4 +145,32 @@ def test_ase_traj_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
     material_peak = _peak_traced_bytes(
         lambda: _materialize(src, out_material, "ase_traj", "extxyz")
     )
+    _assert_sublinear(stream_peak, material_peak, out_stream, out_material)
+
+
+def test_vasprun_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
+    """The M44 VASP-output gate (vasprun.xml half): a generated multi-frame vasprun.xml — the
+    first parser-only DFT-output format — must stream to extXYZ with peak memory bounded by one
+    ``<calculation>``, not the 10⁴-configuration scale MD vasprun.xml files reach. Same contrast
+    as the XDATCAR proof, driven through the ``iterparse`` streaming parser (M42; D56 at scale)."""
+    src = write_vasprun_trajectory(tmp_path / "vasprun.xml", n_frames=_N_FRAMES, n_atoms=_N_ATOMS)
+    out_stream = tmp_path / "vasprun_stream.xyz"
+    out_material = tmp_path / "vasprun_material.xyz"
+
+    stream_peak = _peak_traced_bytes(lambda: _stream(src, out_stream, "vasprun", "extxyz"))
+    material_peak = _peak_traced_bytes(lambda: _materialize(src, out_material, "vasprun", "extxyz"))
+    _assert_sublinear(stream_peak, material_peak, out_stream, out_material)
+
+
+def test_outcar_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
+    """The M44 VASP-output gate (OUTCAR half): a generated multi-frame OUTCAR — the second
+    parser-only DFT-output format, a line-scanned log — must stream to extXYZ with peak memory
+    bounded by one ionic step, not the frame count. Same contrast as the XDATCAR proof, driven
+    through the header-eager / step-lazy streaming parser (M43; D56 at scale)."""
+    src = write_outcar_trajectory(tmp_path / "OUTCAR", n_frames=_N_FRAMES, n_atoms=_N_ATOMS)
+    out_stream = tmp_path / "outcar_stream.xyz"
+    out_material = tmp_path / "outcar_material.xyz"
+
+    stream_peak = _peak_traced_bytes(lambda: _stream(src, out_stream, "outcar", "extxyz"))
+    material_peak = _peak_traced_bytes(lambda: _materialize(src, out_material, "outcar", "extxyz"))
     _assert_sublinear(stream_peak, material_peak, out_stream, out_material)

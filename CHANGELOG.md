@@ -17,6 +17,39 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+### Added — VASP-output formats join the standing test surface, and the duplicate-source policy is enforced (v1.2 M44-S3; D170)
+
+`vasprun` and `outcar` now enrol in the nightly round-trip matrix as **sources only** (never
+targets — the parser-only seam, D159) and in the report-completeness property sweep, with a
+label-presence assertion (per-frame energy + per-atom forces + first-class stress) for the
+fully-labeled fixtures. The duplicate-source policy is pinned: Xtalate converts the **one** file it
+is given and never cross-reads a sibling vasprun.xml/OUTCAR — silent multi-file assembly is
+undeclared input (P1), and the rejected cross-file-reconciliation alternative is recorded. No
+`src/` change; `SCHEMA_VERSION` stays `1.0.0`.
+
+### Added — the flagship VASP → extXYZ conversion, proven end to end and at 10⁴ scale (v1.2 M44-S2; D169)
+
+The roadmap §3 stopping point is made runnable: `examples/convert_outcar_to_extxyz.py` drives the
+highest-demand MLIP conversion — a VASP OUTCAR into a label-complete training file — through the
+ordinary pipeline and prints the Conversion Report (per-frame energy, per-atom forces, first-class
+tension-positive stress preserved) *and* the Validation Report, then the extXYZ bytes; `vasprun.xml
+--to extxyz` is identical in shape (both feed the shared `_vasp` core). The VASP-output streaming
+gate (`test_streaming_memory.py`) now proves a generated vasprun.xml and OUTCAR each stream to
+extXYZ with a `tracemalloc` peak a small fraction of the materialized path **and byte-identical
+output** (standing rule 3), and three measured-not-gated 10⁴ benchmark rows (`parse_vasprun_10k`,
+`parse_outcar_10k`, `convert_outcar_to_extxyz_10k`) record the full-scale figures alongside
+XDATCAR's. No `src/` change; `SCHEMA_VERSION` stays `1.0.0` (the `1.2.0` package bump is M45's).
+
+### Fixed — streaming validation now compares the extXYZ stress carry, matching batch (v1.2 M44-S1; D168)
+
+A first-class-`electronic.stress` source streamed to extXYZ (the M44 flagship command) false-failed
+`numeric_field_fidelity` with stress `missing: true` and exited 3, because the streaming validator
+stubbed the D151 carried-field comparison the materialized engine has had since M40. The streaming
+validator now reads the value under the parser's declared `carried_field_keys` carry, reverses the
+exporter's declared `stress_output_convention` via the shared `_carried_to_canonical`, and compares
+for real — identical to the batch verdict, restoring the streamed==batch invariant (M12 standing
+rule 3). No schema/SDK-ABC/`/v1`/CLI-flag change; `SCHEMA_VERSION` stays `1.0.0`.
+
 ### Added — OUTCAR reads label-complete as the second read-only VASP-output format, with version-drift resilience and torn-tail recovery (v1.2 M43-S1/S2/S3; D164–D166)
 
 OUTCAR, VASP's per-run log, joins vasprun.xml as a **parser-only** format (always a *source*, never a conversion target — a code's output is a source). The reader is streaming-first and header-eager / ionic-step-lazy, and its field mapping reuses the shared `_vasp` core verbatim so the two VASP readers cannot diverge (D160): Cartesian positions read as-is, per-step `cell.lattice_vectors` from each step's own `direct lattice vectors` block (the NpT form), `electronic.total_energy` = `energy(sigma->0)` (the same quantity as vasprun.xml's `e_0_energy`, with `energy without entropy` carried verbatim), `dynamics.forces` verbatim, and `simulation.source_code` = the version banner. The `in kB` Voigt-6 stress line carries the *same* compression-positive kBar sign as vasprun.xml's stress varray and maps through the shared `stress_from_vasp_kbar(stress_voigt6_vasp_to_full(...))` — pinned by the OUTCAR↔vasprun cross-check (standing rule 4), never assumed. **Version drift is the central concern:** block location keys off stable anchor substrings with whitespace-split column reads (never fixed byte columns), so both VASP 5.x and 6.x layouts read to identical canonical values; an unrecognized layout (`OUTCAR_UNRECOGNIZED_LAYOUT`) or an atom-count-inconsistent step (`OUTCAR_INCONSISTENT_STEP`) is **refused**, never partial-parsed. A killed job's torn tail refuses without a preset and, under the reused `truncate_corrupt_tail=truncate` choice, keeps the valid prefix with the dropped tail recorded as an `OUTCAR_TRUNCATED` warning — no new recovery scenario. New format-prefixed `OUTCAR_*` codes (`OUTCAR_EMPTY` / `OUTCAR_MISSING_BLOCK` / `OUTCAR_UNRECOGNIZED_LAYOUT` / `OUTCAR_INCONSISTENT_STEP` / `OUTCAR_TRUNCATED` / `OUTCAR_ENCODING_ERROR` + warning `OUTCAR_UNMAPPED_LINE_CARRIED`). No schema, SDK-ABC, `/v1`, or CLI-flag shape change; `SCHEMA_VERSION` stays `1.0.0` (D158; the `1.2.0` package bump is M45's).

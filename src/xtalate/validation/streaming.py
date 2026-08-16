@@ -33,6 +33,7 @@ from xtalate.validation._shared import RANK as _RANK
 from xtalate.validation._shared import require_supported_precision
 from xtalate.validation.engine import (
     ConversionReportView,
+    _carried_to_canonical,
     _content_matches_values,
     _field_value,
     _permuted,
@@ -54,11 +55,23 @@ class StreamingValidator:
     check functions exactly, so ``finalize`` reconstructs their ``CheckResult`` byte for byte."""
 
     def __init__(
-        self, tolerance: ToleranceProfile, precision: dict[str, int | None], perm: list[int] | None
+        self,
+        tolerance: ToleranceProfile,
+        precision: dict[str, int | None],
+        perm: list[int] | None,
+        carried_field_keys: dict[str, str] | None = None,
+        stress_output_convention: str = "tension_positive",
     ) -> None:
         self._tol = tolerance
         self._precision = precision
         self._perm = perm
+        # The target's *read* declaration (the parser's carried_field_keys) names where a planned
+        # field's value lives in the re-parse when the parser cannot map it to the canonical field
+        # (D18); the *write* declaration (the exporter's stress_output_convention) tells the check
+        # the convention the exporter wrote, so a carried value can be reversed to canonical space
+        # and compared for real — the D151 batch comparison, mirrored (D168). Empty = never fired.
+        self._carried_field_keys = carried_field_keys if carried_field_keys is not None else {}
+        self._stress_output_convention = stress_output_convention
         self._n = 0  # frame pairs compared
 
         # atom_count
@@ -88,7 +101,15 @@ class StreamingValidator:
 
         # numeric_field_fidelity — per path running max + missing flag + any-expected flag
         self._num: dict[str, dict[str, Any]] = {
-            path: {"field_max": 0.0, "missing": False, "any": False, "quantity": q, "kind": k}
+            path: {
+                "field_max": 0.0,
+                "missing": False,
+                "any": False,
+                "quantity": q,
+                "kind": k,
+                "compared_via_carry": False,
+                "carry_key": None,
+            }
             for path, q, k in _NUMERIC_FIELDS
         }
 
@@ -119,7 +140,7 @@ class StreamingValidator:
         self._fold_species(ef, af)
         self._fold_positions(ef, af)
         self._fold_lattice(i, ef, af)
-        self._fold_numeric(ef, af)
+        self._fold_numeric(ef, af, actual.per_frame_custom)
         self._n += 1
 
     def observe_expected_tail(self, expected: StreamFrame) -> None:
@@ -183,13 +204,28 @@ class StreamingValidator:
         if self._lat_pbc_exp != self._lat_pbc_got:
             self._lat_pbc_mismatch = True
 
-    def _fold_numeric(self, ef: Frame, af: Frame) -> None:
+    def _fold_numeric(self, ef: Frame, af: Frame, per_frame_custom: dict[str, Any]) -> None:
         for path, state in self._num.items():
             ev = _field_value(ef, path)
             if ev is None:
                 continue
             state["any"] = True
             gv = _field_value(af, path)
+            # The re-parse may hold the value in the *carry* rather than the canonical field — the
+            # parser deliberately does not map it (D18: the extXYZ parser carries stress verbatim
+            # because its sign convention needs a source-declared choice). A carried value is the
+            # value: find it under the parser's declared carry key, reverse the exporter's declared
+            # output convention back to canonical, and compare for real — the D151 batch check's
+            # "execute the check honestly" posture, never a false "missing" corruption verdict on
+            # a conversion that wrote the field exactly as reported (D168).
+            if gv is None:
+                carry_key = self._carried_field_keys.get(path)
+                if carry_key is not None:
+                    carried = per_frame_custom.get(carry_key)
+                    if carried is not None:
+                        gv = _carried_to_canonical(carried, path, self._stress_output_convention)
+                        state["compared_via_carry"] = True
+                        state["carry_key"] = carry_key
             if gv is None:
                 state["missing"] = True
                 continue
@@ -400,13 +436,13 @@ class StreamingValidator:
                 "warn": eff.warn,
                 "fail": eff.fail,
                 "missing": state["missing"],
-                # The batch check's carried-value comparison (D151) can never fire here: the only
-                # way an expected frame carries a populated `electronic.stress` is the
-                # `ambiguous_stress_convention` recovery, and a streamed conversion that needs it
-                # is refused before validation runs. Emitted anyway so streamed and batch reports
-                # are byte-identical on every path (standing rule 3).
-                "compared_via_carry": False,
-                "carry_key": None,
+                # The D151 batch comparison is mirrored here (D168): a first-class
+                # `electronic.stress` source streamed to extXYZ re-parses with the stress under the
+                # parser's declared carry key, so the check reads it there, reverses the exporter's
+                # declared output convention, and compares for real — identical to the batch
+                # verdict (standing rule 3).
+                "compared_via_carry": state["compared_via_carry"],
+                "carry_key": state["carry_key"],
                 # Recorded per path so an offline re-threshold can reproduce this judgement. The
                 # scalar checks carry their bound in `tolerance_applied`; this check judges eight
                 # paths at once, so a single slot cannot hold it and the re-thresholder was
@@ -563,7 +599,19 @@ def validate_stream(
     precision = require_supported_precision(
         target_format_id, caps.numeric_precision, caps.native_coordinate_system
     )
-    validator = StreamingValidator(tolerance, precision, perm=None)
+    # Mirror the batch engine's caps plumbing (engine.py `validate`): the target's *read*
+    # declaration (parser.carried_field_keys) names the carry a re-parse holds a planned field
+    # under, and the *write* declaration (exporter.stress_output_convention) the convention to
+    # reverse — so a first-class-stress source streamed → extXYZ validates via the carry, not a
+    # false "missing" (D151, D168).
+    read_caps = parser.capabilities()
+    validator = StreamingValidator(
+        tolerance,
+        precision,
+        perm=None,
+        carried_field_keys=read_caps.carried_field_keys,
+        stress_output_convention=caps.stress_output_convention,
+    )
     try:
         if parser.supports_streaming():
             actual = parser.parse_stream(output_stream, filename=None)
