@@ -83,9 +83,29 @@
       },
       "electronic": {
         "total_energy": -76.4,
-        "stress": null,
+        "stress": [
+          [
+            -1.0,
+            -0.25,
+            -0.0625
+          ],
+          [
+            -0.25,
+            -2.0,
+            -0.125
+          ],
+          [
+            -0.0625,
+            -0.125,
+            -0.5
+          ]
+        ],
         "charges": null,
-        "magnetic_moments": null,
+        "magnetic_moments": [
+          0.1,
+          0.1,
+          0.8
+        ],
         "total_spin": null
       }
     },
@@ -171,9 +191,137 @@
       },
       "electronic": {
         "total_energy": -76.41,
-        "stress": null,
+        "stress": [
+          [
+            -1.0,
+            -0.25,
+            -0.0625
+          ],
+          [
+            -0.25,
+            -2.0,
+            -0.125
+          ],
+          [
+            -0.0625,
+            -0.125,
+            -0.5
+          ]
+        ],
         "charges": null,
-        "magnetic_moments": null,
+        "magnetic_moments": [
+          0.11,
+          0.09,
+          0.79
+        ],
+        "total_spin": null
+      }
+    },
+    {
+      "index": 2,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "H",
+          "H",
+          "O"
+        ],
+        "atomic_numbers": [
+          1,
+          1,
+          8
+        ],
+        "positions": [
+          [
+            5.0,
+            7.4,
+            5.0
+          ],
+          [
+            7.4,
+            5.0,
+            5.0
+          ],
+          [
+            5.0,
+            5.0,
+            5.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            10.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.01,
+            -0.01,
+            0.0
+          ],
+          [
+            -0.01,
+            0.005,
+            0.0
+          ],
+          [
+            -0.01,
+            0.0,
+            0.005
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -76.42,
+        "stress": [
+          [
+            -1.0,
+            -0.25,
+            -0.0625
+          ],
+          [
+            -0.25,
+            -2.0,
+            -0.125
+          ],
+          [
+            -0.0625,
+            -0.125,
+            -0.5
+          ]
+        ],
+        "charges": null,
+        "magnetic_moments": [
+          0.12,
+          0.08,
+          0.78
+        ],
         "total_spin": null
       }
     }
@@ -182,7 +330,7 @@
     "timestep": null
   },
   "simulation": {
-    "source_code": "vasp.5.4.4 18May18 (build May 18 2018 12:00:00) complex",
+    "source_code": "vasp.6.3.2 08Feb23 (build Aug 08 2023 12:00:00) complex",
     "calculator": null,
     "xc_functional": null,
     "pseudopotentials": null,
@@ -212,7 +360,7 @@
     ],
     "history": [
       {
-        "timestamp": "2026-08-15T05:50:09Z",
+        "timestamp": "2026-08-16T04:57:50Z",
         "operation": "parse",
         "source_format": "outcar",
         "target_format": null,
@@ -230,7 +378,8 @@
     "custom_per_frame": {
       "outcar:energy_without_entropy": [
         -76.4,
-        -76.41
+        -76.41,
+        -76.42
       ]
     }
   }

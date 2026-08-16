@@ -1,0 +1,12 @@
+case: spin-h2o
+format_id: outcar
+source_file: OUTCAR
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: ac47f52a3787e779c23fe3b5c126c96f137365fe7158e49ff85368005d55e2f7
+expected_sha256: 986294161a6843e2d1b518819135a741f4570754df908dd4b7cff202aa7d6a91
+origin:
+  kind: synthetic
+  source: 'Hand-written for M45-S1 (classical VASP 6.3.2 OUTCAR layout): spin-h2o.'
+  license: Apache-2.0
+notes: "The spin-polarized golden (VASP 6.x, M45-S1): the relax-h2o bytes generalized with a real-order 'magnetization (x)' block after each energy summary (the ASE-verified layout — header, '# of ion  s  p  d  tot' column line, then one row per ion whose trailing 'tot' is the per-ion scalar moment). Hand-verifiable: the per-ion 'tot' moments are 0.1/0.1/0.8, 0.11/0.09/0.79, 0.12/0.08/0.78 μB per step (H, H, O), so electronic.magnetic_moments maps exactly those, spin-up-positive and verbatim; the s/p/d orbital-projection columns are never mapped. This is the M43-P1 gap closed — before S1 this table was silently skipped. The moments are an OUTCAR-only artifact: vasprun.xml carries no per-ion magnetization block, so the spin-polarized vasprun read of this run would leave electronic.magnetic_moments None (correct absence, P3)."

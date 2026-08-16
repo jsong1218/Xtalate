@@ -135,6 +135,13 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-written for M43-S2 (classical VASP 5.4.4 OUTCAR layout): relax-h2o.
 
+## `outcar` / `spin-h2o` (golden)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M45-S1 (classical VASP 6.3.2 OUTCAR layout): spin-h2o.
+
 ## `poscar` / `nacl-primitive` (golden)
 
 - **Source file:** `POSCAR`

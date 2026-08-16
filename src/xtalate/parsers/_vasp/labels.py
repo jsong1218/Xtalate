@@ -62,6 +62,15 @@ _STRESS_NOTE = (
     f"{K_BAR_PER_EV_A3} kBar per eV/Å³ (D161). A step without a stress block leaves "
     "electronic.stress None (P3 — absence is never defaulted)."
 )
+_MAGNETIC_MOMENTS_NOTE = (
+    "electronic.magnetic_moments read from the OUTCAR 'magnetization (x)' table's per-ion "
+    "'tot' column — collinear scalar moments in μB, spin-up-positive (VASP already writes the "
+    "canonical convention, so the values are stored verbatim, D171). This is an OUTCAR-only "
+    "artifact: vasprun.xml carries no per-ion magnetization block, so a vasprun read "
+    "legitimately leaves the field None. A run without a magnetization block reads None (P3 — "
+    "absence is never defaulted); the non-collinear (y)/(z) tables are a moment vector per ion "
+    "and are carried verbatim, never mapped into the scalar field."
+)
 
 #: The canonical notes for a fully-populated vasprun.xml parse, in a stable order — assembled
 #: here (not in the reader) so the mapping layer owns the prose a conversion will record.
@@ -105,6 +114,10 @@ def source_code_parse_note() -> str:
 
 def stress_parse_note() -> str:
     return _STRESS_NOTE
+
+
+def magnetic_moments_parse_note() -> str:
+    return _MAGNETIC_MOMENTS_NOTE
 
 
 def pbc_parse_note() -> str:
@@ -231,4 +244,18 @@ def stress_voigt6_vasp_to_full(voigt6: Sequence[float]) -> np.ndarray:
 
 def forces(raw: _RowSeq) -> np.ndarray:
     """Canonical ``dynamics.forces`` in eV/Å, verbatim (VASP already writes canonical units)."""
+    return np.asarray(raw, dtype=float)
+
+
+def magnetic_moments(raw: Sequence[float] | np.ndarray) -> np.ndarray:
+    """Canonical ``electronic.magnetic_moments`` (μB, per-atom, spin-up-positive).
+
+    VASP's ``magnetization (x)`` table ``tot`` column is already the per-ion **collinear**
+    scalar moment in μB with spin-up positive (the integrated spin-up-minus-spin-down
+    density), so the values are stored verbatim — the same "mapped, never guessed" discipline
+    as forces (the format declares the convention). Only the collinear ``(x)`` ``tot`` column
+    maps here (D171): the non-collinear ``(y)/(z)`` tables are a moment **vector** per ion,
+    which the scalar ``ArrayN`` field cannot hold — a reader carries those verbatim instead
+    of mis-mapping them (P3).
+    """
     return np.asarray(raw, dtype=float)

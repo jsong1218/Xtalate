@@ -25,7 +25,7 @@ from xtalate.sdk import ParseResult
 from xtalate.sdk.streaming import materialize
 
 GOLDEN = Path(__file__).parent / "outcar"
-CASES = ["relax-h2o", "md-h2o", "npt-h2o", "relax-h2o-v5", "md-h2o-v5", "npt-h2o-v5"]
+CASES = ["relax-h2o", "md-h2o", "npt-h2o", "spin-h2o", "relax-h2o-v5", "md-h2o-v5", "npt-h2o-v5"]
 
 
 def _source(case: str) -> bytes:
@@ -84,6 +84,20 @@ def test_md_golden_pins_stress_absence_not_a_zero_tensor() -> None:
     tensor (P3) — the OUTCAR counterpart of the vasprun SCF golden."""
     obj = _parse("md-h2o").canonical
     assert all(frame.electronic.stress is None for frame in obj.frames)
+
+
+def test_spin_golden_pins_the_magnetization_tot_column() -> None:
+    """The spin-polarized golden (M45-S1): the 'magnetization (x)' table's per-ion 'tot' column
+    maps first-class to electronic.magnetic_moments — the M43 latent P1 gap closed. A parser that
+    still silently skipped the table (or scraped the wrong column) would fail here."""
+    obj = _parse("spin-h2o").canonical
+    moments = [frame.electronic.magnetic_moments for frame in obj.frames]
+    assert all(m is not None for m in moments)
+    assert [m.tolist() for m in moments if m is not None] == [
+        [0.1, 0.1, 0.8],
+        [0.11, 0.09, 0.79],
+        [0.12, 0.08, 0.78],
+    ]
 
 
 def test_relax_golden_pins_the_vasp_voigt_off_diagonal_ordering() -> None:

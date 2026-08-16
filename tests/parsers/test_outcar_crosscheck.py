@@ -96,3 +96,17 @@ def test_stress_absence_agrees_between_the_two_readers() -> None:
         vasprun = _parse_vasprun()
         assert outcar.frames[1].electronic.stress is None
         assert vasprun.frames[1].electronic.stress is None
+
+
+def test_magnetic_moments_are_outcar_only() -> None:
+    """The honest asymmetry (D171): a spin-polarized OUTCAR maps the per-ion ``tot`` moments,
+    while the same run's vasprun.xml leaves them ``None`` — vasprun.xml has no per-ion
+    magnetization block, so asserting agreement on magmoms would be a fake green. OUTCAR maps;
+    vasprun documents absence."""
+    outcar = _parse_outcar("6x")
+    vasprun = _parse_vasprun()
+    expected = [[0.1, 0.1, 0.8], [0.11, 0.09, 0.79], [0.12, 0.08, 0.78]]
+    for frame, want in zip(outcar.frames, expected, strict=True):
+        assert frame.electronic.magnetic_moments is not None
+        np.testing.assert_allclose(frame.electronic.magnetic_moments, want)
+    assert all(frame.electronic.magnetic_moments is None for frame in vasprun.frames)

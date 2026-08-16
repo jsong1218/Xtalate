@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from xtalate import __version__ as xtalate_version
@@ -58,6 +59,7 @@ def _step(
     positions: list[tuple[float, float, float]] | None = None,
     forces: list[tuple[float, float, float]] | None = None,
     lattice: list[tuple[float, float, float]] | None = None,
+    magmoms: list[float] | None = None,
 ) -> str:
     pos = positions if positions is not None else _DEFAULT_POSITIONS
     frc = forces if forces is not None else _DEFAULT_FORCES
@@ -90,8 +92,30 @@ def _step(
     lines.append(
         f"    energy  without entropy=       {energy:.8f}  energy(sigma->0) =       {energy:.8f}"
     )
+    if magmoms is not None:
+        _magmom_block(lines, magmoms)
     lines.append("")
     return "\n".join(lines)
+
+
+def _magmom_block(lines: list[str], magmoms: list[float]) -> None:
+    """A collinear ``magnetization (x)`` table after the energy summary (real VASP order, the
+    ASE-verified layout): the per-ion ``tot`` column is the scalar moment."""
+    total = sum(magmoms)
+    lines.append("")
+    lines.append(f" number of electron       {total:10.7f} magnetization       {total:10.7f}")
+    lines.append(f" augmentation part        {total:10.7f} magnetization       {total:10.7f}")
+    lines.append("")
+    lines.append("------------------------------  --------------------------------------------")
+    lines.append(" magnetization (x)")
+    lines.append("")
+    lines.append("# of ion       s       p       d       tot")
+    lines.append("------------------------------------------")
+    for n, moment in enumerate(magmoms, start=1):
+        lines.append(f"    {n}     0.000   0.000   0.000   {moment:.3f}")
+    lines.append("--------------------------------------------------")
+    lines.append(f"tot         0.000   0.000   0.000   {total:.3f}")
+    lines.append("")
 
 
 def _file(*steps: str, head: str = _HEAD) -> bytes:
@@ -203,6 +227,119 @@ def test_stress_mapping_is_recorded_in_parse_notes_and_source_units() -> None:
     notes = obj.provenance.parse_notes
     assert any("'in kB'" in n and "tension-positive" in n for n in notes)
     assert obj.provenance.source_units.get("stress") == "kbar"
+
+
+# --- the magnetic-moments mapping (D171) ------------------------------------------
+
+
+def test_magnetic_moments_map_the_tot_column() -> None:
+    # The 'magnetization (x)' table's per-ion 'tot' column is the collinear scalar moment; the
+    # s/p/d columns are orbital projections, never mapped. Stored verbatim (μB, spin-up-positive
+    # — VASP already writes the canonical convention).
+    obj = _parse(_file(_step(magmoms=[0.1, 0.1, 0.8]))).canonical
+    moments = obj.frames[0].electronic.magnetic_moments
+    assert moments is not None
+    assert moments.tolist() == [0.1, 0.1, 0.8]
+
+
+def test_magnetic_moments_are_per_step() -> None:
+    data = _file(_step(magmoms=[0.1, 0.1, 0.8]), _step(energy=-13.0, magmoms=[0.2, 0.2, 0.6]))
+    obj = _parse(data).canonical
+    first = obj.frames[0].electronic.magnetic_moments
+    second = obj.frames[1].electronic.magnetic_moments
+    assert first is not None
+    assert second is not None
+    assert first.tolist() == [0.1, 0.1, 0.8]
+    assert second.tolist() == [0.2, 0.2, 0.6]
+
+
+def test_spinless_step_reads_none_not_zero() -> None:
+    # A run with no magnetization block is a non-spin-polarized run: the field is None — correct
+    # absence (P3), never a defaulted zero array.
+    obj = _parse(_file(_step())).canonical
+    assert obj.frames[0].electronic.magnetic_moments is None
+
+
+def test_magnetic_moments_fewer_rows_than_nions_refuses() -> None:
+    # A magnetization block with fewer rows than NIONS is a structural inconsistency, refused —
+    # never a silent partial parse or a defaulted zero (P3).
+    with pytest.raises(ParseError) as excinfo:
+        _parse(_file(_step(magmoms=[0.1, 0.1])))  # only 2 rows for NIONS = 3
+    assert excinfo.value.issues[0].code == "OUTCAR_INCONSISTENT_STEP"
+
+
+def test_magnetic_moments_extra_row_refuses() -> None:
+    step = _step(magmoms=[0.1, 0.1, 0.8]).replace(
+        "    3     0.000   0.000   0.000   0.800",
+        "    3     0.000   0.000   0.000   0.800\n    4     0.000   0.000   0.000   0.050",
+    )
+    with pytest.raises(ParseError) as excinfo:
+        _parse(_file(step))
+    assert excinfo.value.issues[0].code == "OUTCAR_INCONSISTENT_STEP"
+
+
+def test_noncollinear_magnetization_carries_verbatim_not_mapped() -> None:
+    # The (x)/(y)/(z) tables are a moment vector per ion, which the scalar field cannot hold: the
+    # field stays None and the three tables are carried verbatim with a named warning (v1.2.1).
+    base = _step()
+    marker = (
+        "  FREE ENERGIE OF THE ION-ELECTRON SYSTEM (eV)\n"
+        "    energy  without entropy=       -76.40000000  energy(sigma->0) =       -76.40000000\n"
+    )
+    step = base.replace(marker, marker + "\n" + _nc_magmom_tables() + "\n")
+    result = _parse(_file(step))
+    obj = result.canonical
+    assert obj.frames[0].electronic.magnetic_moments is None
+    carried = np.asarray(
+        obj.user_metadata.custom_per_frame["outcar:magnetization_vector"], dtype=float
+    )
+    # One entry per frame; frame 0's value is [x_rows, y_rows, z_rows] of [ion, s, p, d, tot].
+    tables = carried[0]
+    assert tables[:, :, 4].tolist() == [
+        [0.2, 0.3, 0.5],  # x tot column, carried verbatim
+        [0.01, 0.02, 0.03],  # y
+        [0.001, 0.002, 0.003],  # z
+    ]
+    assert "OUTCAR_UNMAPPED_LINE_CARRIED" in {i.code for i in result.issues}
+
+
+def _nc_magmom_tables() -> str:
+    """The (x)/(y)/(z) magnetization tables for the non-collinear carry test."""
+
+    def table(axis: str, tots: list[float]) -> str:
+        rows = [f"    {n}     0.000   0.000   0.000   {t:.3f}" for n, t in enumerate(tots, 1)]
+        return "\n".join(
+            [
+                "------------------------------  --------------------------------------------",
+                f" magnetization ({axis})",
+                "",
+                "# of ion       s       p       d       tot",
+                "------------------------------------------",
+                *rows,
+                "--------------------------------------------------",
+                f"tot         0.000   0.000   0.000   {sum(tots):.3f}",
+            ]
+        )
+
+    return "\n\n".join(
+        [
+            table("x", [0.2, 0.3, 0.5]),
+            table("y", [0.01, 0.02, 0.03]),
+            table("z", [0.001, 0.002, 0.003]),
+        ]
+    )
+
+
+def test_magnetic_moments_capability_is_full() -> None:
+    caps = PARSER.capabilities()
+    assert caps.fields["electronic.magnetic_moments"].level is CapabilityLevel.FULL
+
+
+def test_magnetic_moments_mapping_is_recorded_in_parse_notes() -> None:
+    obj = _parse(_file(_step(magmoms=[0.1, 0.1, 0.8]))).canonical
+    assert any(
+        "'magnetization (x)'" in n and "spin-up-positive" in n for n in obj.provenance.parse_notes
+    )
 
 
 # --- per-step cells (NpT) ----------------------------------------------------------
