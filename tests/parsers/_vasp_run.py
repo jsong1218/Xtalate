@@ -36,6 +36,9 @@ class Step:
     stress: list[list[float]] | None  # canonical tension-positive eV/Å³ (symmetric 3×3)
     positions: list[list[float]]  # Cartesian Å
     lattice: list[list[float]]  # rows a, b, c (Å)
+    # Per-ion collinear scalar moments (μB, spin-up-positive), or None for a non-spin-polarized
+    # step. An OUTCAR-only artifact — the vasprun.xml renderer never writes them (D171).
+    magmoms: list[float] | None = None
 
 
 @dataclass(frozen=True)
@@ -110,8 +113,11 @@ def render_outcar(run: Run, *, layout: str = "6x") -> str:
     for n, step in enumerate(run.steps, start=1):
         lines.append(f"{f' Iteration {n}({n}) ':-^80}")
         lines.append("")
-        # Real VASP intra-step order: stress and (NpT) the step's own cell precede the
-        # POSITION/TOTAL-FORCE table; the energy(sigma->0) summary follows it.
+        # Real VASP intra-step order: after electronic convergence VASP prints the per-ion
+        # magnetization table (LORBIT≥10), then the stress and (NpT) the step's own cell, then the
+        # POSITION/TOTAL-FORCE table; the energy(sigma->0) summary follows it (D171).
+        if step.magmoms is not None:
+            _magnetization_block(lines, step.magmoms)
         if step.stress is not None:
             voigt = _voigt6_kbar(step.stress)
             lines.append("  FORCE on cell =-STRESS in cart. coord.  units (eV):")
@@ -154,6 +160,28 @@ def render_outcar(run: Run, *, layout: str = "6x") -> str:
             )
         lines.append("")
     return "\n".join(lines)
+
+
+def _magnetization_block(lines: list[str], magmoms: list[float]) -> None:
+    """The OUTCAR collinear ``magnetization (x)`` table for one step (the ASE-verified layout:
+    header, ``# of ion … tot`` column line, then one row per ion whose trailing ``tot`` is the
+    per-ion scalar moment). Written in the step's pre-table region — after electronic convergence
+    and *before* the stress/force table — in real VASP order (D171)."""
+    total = sum(magmoms)
+    lines.append("")
+    lines.append(f" number of electron       {total:10.7f} magnetization       {total:10.7f}")
+    lines.append(f" augmentation part        {total:10.7f} magnetization       {total:10.7f}")
+    lines.append("")
+    lines.append("------------------------------  --------------------------------------------")
+    lines.append(" magnetization (x)")
+    lines.append("")
+    lines.append("# of ion       s       p       d       tot")
+    lines.append("------------------------------------------")
+    for n, moment in enumerate(magmoms, start=1):
+        lines.append(f"    {n}     0.000   0.000   0.000   {moment:.3f}")
+    lines.append("--------------------------------------------------")
+    lines.append(f"tot         0.000   0.000   0.000   {total:.3f}")
+    lines.append("")
 
 
 def _lattice_block(lines: list[str], lattice: list[list[float]], *, v5: bool = False) -> None:
@@ -255,6 +283,7 @@ H2O_RUN = Run(
             stress=[[-1.0, -0.25, -0.0625], [-0.25, -2.0, -0.125], [-0.0625, -0.125, -0.5]],
             positions=[[5.0, 7.5, 5.0], [7.5, 5.0, 5.0], [5.0, 5.0, 5.0]],
             lattice=[[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
+            magmoms=[0.1, 0.1, 0.8],
         ),
         Step(
             energy=-76.41,
@@ -262,6 +291,7 @@ H2O_RUN = Run(
             stress=None,
             positions=[[5.0, 7.3, 5.0], [7.3, 5.0, 5.0], [5.0, 5.0, 5.0]],
             lattice=[[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
+            magmoms=[0.11, 0.09, 0.79],
         ),
         Step(
             energy=-76.42,
@@ -269,6 +299,7 @@ H2O_RUN = Run(
             stress=[[-1.0, -0.25, -0.0625], [-0.25, -2.0, -0.125], [-0.0625, -0.125, -0.5]],
             positions=[[5.0, 7.4, 5.0], [7.4, 5.0, 5.0], [5.0, 5.0, 5.0]],
             lattice=[[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
+            magmoms=[0.12, 0.08, 0.78],
         ),
     ],
 )

@@ -135,6 +135,13 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-written for M43-S2 (classical VASP 5.4.4 OUTCAR layout): relax-h2o.
 
+## `outcar` / `spin-h2o` (golden)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M45-S1 (classical VASP 6.3.2 OUTCAR layout): spin-h2o.
+
 ## `poscar` / `nacl-primitive` (golden)
 
 - **Source file:** `POSCAR`
@@ -270,3 +277,52 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** CC0-1.0
 - **Source:** Crystallography Open Database entry 4000034
 - **URL:** https://www.crystallography.net/cod/4000034.cif
+
+## `outcar` / `killed-truncated-v5` (wild)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic VASP 5.4.4 OUTCAR truncated mid-run (killed before the final energy summary; M45-S2).
+
+## `outcar` / `layout-drift-v4` (wild)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic OUTCAR with a VASP 4.6.28 version banner — outside the reader's 5.x/6.x range (M45-S2).
+
+## `outcar` / `md-npt-h2o-v5` (wild)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic VASP 5.4.4 NpT-MD OUTCAR with per-step cells (M45-S2).
+
+## `outcar` / `relax-h2o-v6` (wild)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic VASP 6.3.2 ionic-relaxation OUTCAR, modelled on the relax-h2o golden bytes (M45-S2).
+
+## `outcar` / `scf-h2o-v6` (wild)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic VASP 6.3.2 single-point OUTCAR, modelled on the relax-h2o golden bytes (M45-S2).
+
+## `outcar` / `spin-h2o-v6` (wild)
+
+- **Source file:** `OUTCAR`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic spin-polarized VASP 6.3.2 OUTCAR (paired with spin-h2o-v6-vasprun; M45-S2).
+
+## `vasprun` / `spin-h2o-v6-vasprun` (wild)
+
+- **Source file:** `vasprun.xml`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic spin-polarized VASP 6.3.2 vasprun.xml (paired with spin-h2o-v6; M45-S2).

@@ -337,13 +337,14 @@
     },
     "original_coordinate_system": "cartesian",
     "parse_notes": [
-      "Cartesian positions (angstrom) read as-is from the POSITION … TOTAL-FORCE table (OUTCAR writes Cartesian, unlike vasprun.xml's direct coordinates).",
+      "Cartesian positions (angstrom) read as-is from the POSITION \u2026 TOTAL-FORCE table (OUTCAR writes Cartesian, unlike vasprun.xml's direct coordinates).",
       "pbc set to (true,true,true): OUTCAR carries no PBC declaration and VASP is always fully periodic (format-defined, not assumed).",
-      "electronic.total_energy read from energy(sigma->0) — VASP's energy extrapolated to zero smearing (the e_0_energy of vasprun.xml); the energy-without-entropy scalar is carried verbatim in user_metadata.custom_per_frame['outcar:energy_without_entropy'].",
+      "electronic.total_energy read from energy(sigma->0) \u2014 VASP's energy extrapolated to zero smearing (the e_0_energy of vasprun.xml); the energy-without-entropy scalar is carried verbatim in user_metadata.custom_per_frame['outcar:energy_without_entropy'].",
       "simulation.source_code set to the VASP version banner (verbatim).",
       "cell.lattice_vectors assembled from the direct lattice vectors block (rows a, b, c).",
       "Each ionic step's own direct lattice vectors block (when present) supplies that step's cell; a step without one reuses the running cell (the fixed-cell form).",
-      "electronic.stress mapped from the 'in kB' Voigt-6 stress line: VASP reports pressure (compression-positive) in kBar, so the tensor is sign-flipped to canonical tension-positive and divided by the exact factor 1602.1766208 kBar per eV/Å³ (D161). The 'in kB' line carries the same sign as vasprun.xml's <varray name=\"stress\"> (pinned by the OUTCAR↔vasprun cross-check), so no additional sign correction is applied. A step without a stress line leaves electronic.stress None (P3 — absence is never defaulted)."
+      "electronic.stress mapped from the 'in kB' Voigt-6 stress line: VASP reports pressure (compression-positive) in kBar, so the tensor is sign-flipped to canonical tension-positive and divided by the exact factor 1602.1766208 kBar per eV/\u00c5\u00b3 (D161). The 'in kB' line carries the same sign as vasprun.xml's <varray name=\"stress\"> (pinned by the OUTCAR\u2194vasprun cross-check), so no additional sign correction is applied. A step without a stress line leaves electronic.stress None (P3 \u2014 absence is never defaulted).",
+      "electronic.magnetic_moments read from the OUTCAR 'magnetization (x)' table's per-ion 'tot' column \u2014 collinear scalar moments in \u03bcB, spin-up-positive (VASP already writes the canonical convention, so the values are stored verbatim, D171). This is an OUTCAR-only artifact: vasprun.xml carries no per-ion magnetization block, so a vasprun read legitimately leaves the field None. A run without a magnetization block reads None (P3 \u2014 absence is never defaulted); the non-collinear (y)/(z) tables are a moment vector per ion and are carried verbatim, never mapped into the scalar field."
     ],
     "history": [
       {

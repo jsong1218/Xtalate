@@ -32,6 +32,12 @@ cleared so peak memory tracks the resident step, not the file — vasprun.xml re
   (VASP's energy extrapolated to zero smearing, the ``energy(sigma->0)`` value of OUTCAR),
   not the free energy ``e_fr_energy`` (D160; see the core). Every other energy-block scalar
   is carried verbatim per frame (never dropped, **P1**).
+* **Magnetic moments are absent by format** — vasprun.xml's per-step schema carries
+  ``structure``/``forces``/``stress``/``energy``/``time`` and **no** per-ion magnetization block
+  (verified against ASE 3.29, pymatgen, and the VASP wiki, 2026-08), so a spin-polarized
+  vasprun.xml legitimately leaves ``electronic.magnetic_moments`` ``None`` — an OUTCAR-only
+  feature (M45-S1, D171), not a gap to fill here. The existing
+  ``VASPRUN_UNMAPPED_TAG_CARRIED`` net still catches any surprise future varray verbatim.
 * **Per-step cells (NpT).** Each ``<calculation>``'s own ``<structure>`` supplies that step's
   cell and positions; a step without one reuses the previous step's — the fixed-cell form.
 

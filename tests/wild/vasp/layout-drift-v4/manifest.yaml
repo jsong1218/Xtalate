@@ -1,0 +1,23 @@
+case: layout-drift-v4
+format_id: outcar
+source_file: OUTCAR
+sha256: "d44e368b855d57f996614bd36af698df29124560bfc62d70e9ce090364ad12e8"
+origin:
+  kind: synthetic
+  source: "Authored-realistic OUTCAR with a VASP 4.6.28 version banner — outside the reader's 5.x/6.x range (M45-S2)."
+  license: "Apache-2.0"
+expectation:
+  parse_error: OUTCAR_UNRECOGNIZED_LAYOUT
+findings:
+  - >-
+    The deferred half of the layout-drift dimension (D165 cut line, R1): the VASP-version
+    breadth is deliberately 5.x/6.x, and a 4.x banner is refused as OUTCAR_UNRECOGNIZED_LAYOUT
+    with a corpus-contribution call — never read as if it were a known layout, and never a
+    best-effort partial parse (P1). The corpus pins the refusal so it stays honest; if VASP 4.x
+    support is ever added, this case's expectation flips from `parse_error` to the real
+    issue-code set (and the file would then be promoted to a regression golden).
+notes: >-
+  The layout-drift dimension, deferred rather than handled: a genuine-looking OUTCAR whose only
+  fault is a version banner outside the recognized 5.x/6.x range. Every other byte is a
+  known-good 6.x step, so the refusal is attributable to the banner alone — the file proves the
+  version gate fires, not that the reader is generally fragile.

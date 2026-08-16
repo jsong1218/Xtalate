@@ -33,6 +33,17 @@ not the file — the property M44 will measure at 10⁴ steps.
   zero smearing, the same physical quantity as vasprun.xml's ``e_0_energy`` — the core's
   ``TOTAL_ENERGY_TAG`` decision). The ``energy without entropy`` scalar on the same line is carried
   verbatim per frame (never dropped, **P1**; never substituted for the total energy).
+* **Magnetic moments (M45-S1, D171)** — ``electronic.magnetic_moments`` maps the ``magnetization
+  (x)`` table's per-ion ``tot`` column (collinear scalar μB, spin-up-positive). This is an
+  **OUTCAR-only** artifact — vasprun.xml carries no per-ion magnetization block. Real VASP prints
+  the per-ion ``total charge``/``magnetization (x)`` tables (LORBIT≥10) after the step's
+  electronic convergence and *before* its ``POSITION … TOTAL-FORCE`` table — the same
+  pre-table region as the ``in kB`` stress — so the block is read there and attached to the
+  frame whose force table follows (ASE's OUTCAR chunk boundary is the step's final
+  ``FREE ENERGIE`` summary, which the table precedes). A run without the block reads ``None``
+  (correct absence, P3); a recognized-but-malformed block refuses
+  (``OUTCAR_UNRECOGNIZED_LAYOUT``/``OUTCAR_INCONSISTENT_STEP``), never a partial parse or a
+  defaulted zero (P3); the non-collinear ``(y)/(z)`` tables are carried verbatim (v1.2.1).
 * **Per-step cells (NpT).** A step's own ``direct lattice vectors`` block (when present) supplies
   that step's cell; a step without one reuses the running cell — the fixed-cell form (vasprun's
   ``_StepState`` pattern).
@@ -65,7 +76,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 import numpy as np
 
@@ -73,6 +84,8 @@ from xtalate.parsers._common import build_provenance
 from xtalate.parsers._vasp import (
     build_cell,
     forces,
+    magnetic_moments,
+    magnetic_moments_parse_note,
     positions,
     stress_from_vasp_kbar,
     stress_voigt6_vasp_to_full,
@@ -109,6 +122,9 @@ CONVENTIONAL_NAME = "OUTCAR"
 
 _CARRY_KEY_PREFIX = "outcar:"
 _ENERGY_WO_ENTROPY_KEY = "energy_without_entropy"
+#: The non-collinear (x)/(y)/(z) magnetization tables, carried verbatim per frame under this key
+#: until v1.2.1 gives the vector moments a canonical shape (the scalar field cannot hold them).
+_MAGMOM_VECTOR_KEY = "magnetization_vector"
 #: The recoverable torn-tail hint (Part 4 §3.3): a run killed mid-write leaves the already-read
 #: ionic steps as good science behind a corrupt tail, so the reader marks the error and the caller
 #: chooses whether to keep the prefix.
@@ -134,6 +150,10 @@ _NIONS_RE = re.compile(r"NIONS\s*=\s*(\d+)")
 _SIGMA0_RE = re.compile(rf"energy\(sigma->0\)\s*=\s*({_FLOAT})")
 _WO_ENTROPY_RE = re.compile(rf"energy\s+without\s+entropy\s*=\s*({_FLOAT})")
 _STRESS_RE = re.compile(r"\bin\s+kB\b\s+(.*)")
+#: The `magnetization (x)`/`(y)`/`(z)` table headers — the stable anchor for the per-ion moment
+#: tables (D171). Only the collinear `(x)` table maps to the scalar field; `(y)`/`(z)` mark the
+#: non-collinear vector form (v1.2.1).
+_MAGMOM_HEADER_RE = re.compile(r"magnetization\s*\(([xyz])\)")
 #: A table frame — a run of only whitespace and dashes (``-----…``), which VASP draws around its
 #: tabular blocks (the POSITION/TOTAL-FORCE table is framed by two).
 _SEPARATOR_RE = re.compile(r"^[\s-]*$")
@@ -165,6 +185,7 @@ _STRESS_NOTE = (
     "cross-check), so no additional sign correction is applied. A step without a stress line "
     "leaves electronic.stress None (P3 — absence is never defaulted)."
 )
+_MAGNETIC_MOMENTS_NOTE = magnetic_moments_parse_note()
 
 _PARSE_NOTES = [
     _POSITIONS_NOTE,
@@ -174,6 +195,7 @@ _PARSE_NOTES = [
     _CELL_NOTE,
     _STEP_CELL_NOTE,
     _STRESS_NOTE,
+    _MAGNETIC_MOMENTS_NOTE,
 ]
 
 
@@ -306,6 +328,24 @@ class _Header:
     lattice: np.ndarray
 
 
+def _header_n_atoms(nions: int | None, counts: list[int] | None) -> int:
+    """The ion count needed to read a pre-table ``magnetization (x)`` block in the first step,
+    before the header is finalized: the declared ``ions per type`` sum (authoritative) or ``NIONS``
+    as a fallback. Both are printed in the static header, ahead of any ionic step, so at least one
+    is known by the time a magnetization table appears; if neither is, the block cannot be sized
+    and the file is refused rather than misread (P1)."""
+    if counts:
+        return sum(counts)
+    if nions is not None:
+        return nions
+    raise _error(
+        "OUTCAR_MISSING_BLOCK",
+        "a magnetization table appears before the ion count (NIONS / 'ions per type') is known — "
+        "the block cannot be sized, so the file is refused rather than misread (P1)",
+        location="frame 0",
+    )
+
+
 def _finalize_header(
     version: str | None,
     major: int | None,
@@ -369,23 +409,28 @@ def _finalize_header(
 @dataclass
 class _PreTable:
     """The step fields that precede a ``POSITION … TOTAL-FORCE`` table in real VASP order: the
-    ``in kB`` stress and (for NpT) the step's own cell, which is threaded separately. The
-    ``energy(sigma->0)`` is *not* here — it follows the table and is read forward from it
+    ``in kB`` stress, the per-ion ``magnetization (x)`` moments (LORBIT≥10, D171) or the
+    non-collinear vector carry, and (for NpT) the step's own cell, which is threaded separately.
+    The ``energy(sigma->0)`` is *not* here — it follows the table and is read forward from it
     (``_read_step_energy``)."""
 
     stress: np.ndarray | None
+    magmoms: np.ndarray | None = None
+    magmom_carry: dict[str, Any] | None = None
 
 
-def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _PreTable | None]:
+def _read_header(
+    lines: Iterator[str], issues: list[ParseIssue]
+) -> tuple[_Header | None, _PreTable | None]:
     """Scan the header eagerly and stop at the first ``POSITION … TOTAL-FORCE`` header line.
 
     Returns ``(None, None)`` when the file ends with no ionic-step table **after** a recognized
     version banner (the caller raises ``OUTCAR_EMPTY`` — a recognized header with zero steps). A
     file that ends with no version banner at all is refused here as ``OUTCAR_UNRECOGNIZED_LAYOUT``
     (S2): it is not an OUTCAR layout the reader recognizes. In real VASP order the first step's
-    ``in kB`` stress and (NpT) own ``direct lattice vectors`` block appear *before* its table, so
-    they are captured for the step loop; its ``energy(sigma->0)`` appears *after* the table and is
-    read there, not here.
+    ``in kB`` stress, its (LORBIT≥10) ``magnetization (x)`` table, and (NpT) own ``direct lattice
+    vectors`` block appear *before* its table, so they are captured for the step loop; its
+    ``energy(sigma->0)`` appears *after* the table and is read there, not here.
     """
     version: str | None = None
     major: int | None = None
@@ -394,11 +439,18 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _PreTable | None
     nions: int | None = None
     lattice: np.ndarray | None = None
     pending_stress: np.ndarray | None = None
+    magmoms: np.ndarray | None = None
+    magmom_carry: dict[str, Any] | None = None
     saw_step_signal = False
-    for line in lines:
+    line: str | None = None
+    while True:
+        if line is None:
+            line = next(lines, None)
+        if line is None:
+            break
         if "TOTAL-FORCE" in line:
             header = _finalize_header(version, major, species, counts, nions, lattice)
-            return header, _PreTable(pending_stress)
+            return header, _PreTable(pending_stress, magmoms, magmom_carry)
         if version is None and "vasp." in line:
             match = _VERSION_RE.search(line)
             if match:
@@ -416,6 +468,11 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _PreTable | None
             nions = _parse_nions(line)
         if "direct lattice vectors" in line:
             lattice = _read_lattice(lines, where="header")
+        elif "magnetization (" in line:
+            n_atoms = _header_n_atoms(nions, counts)
+            magmoms, magmom_carry, line = _read_magnetization(line, lines, n_atoms, 0, issues)
+            saw_step_signal = True
+            continue
         elif "in kB" in line:
             pending_stress = _parse_stress(line, 0)
             saw_step_signal = True
@@ -424,6 +481,7 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, _PreTable | None
             # any table means a step began (its summary was written) but its force table is absent
             # — a torn/mangled step with no frame to keep (handled at EOF just below).
             saw_step_signal = True
+        line = None
     if saw_step_signal:
         # A step began (a stress or energy line) but no POSITION/TOTAL-FORCE table header was ever
         # read — a torn write with *no* complete step to keep, so it stays a plain refusal (the
@@ -497,6 +555,186 @@ def _parse_stress(line: str, frame_index: int) -> np.ndarray:
             location=f"frame {frame_index}",
         ) from exc
     return stress_from_vasp_kbar(stress_voigt6_vasp_to_full(voigt6))
+
+
+def _noncollinear_magmom_warning(location: str) -> ParseIssue:
+    """The non-collinear vector-moment carry: the (x)/(y)/(z) tables have no canonical scalar
+    home, so they are carried verbatim under ``outcar:magnetization_vector`` with a named
+    warning — never mis-mapped into the scalar ``electronic.magnetic_moments`` array (v1.2.1)."""
+    return ParseIssue(
+        severity="warning",
+        code="OUTCAR_UNMAPPED_LINE_CARRIED",
+        message=(
+            "non-collinear magnetization (the (x)/(y)/(z) tables) is a moment vector per ion, "
+            "which the scalar electronic.magnetic_moments field cannot hold; carried verbatim in "
+            f"user_metadata.custom_per_frame['{_CARRY_KEY_PREFIX}{_MAGMOM_VECTOR_KEY}'] "
+            "(mapping deferred to v1.2.1)"
+        ),
+        location=location,
+    )
+
+
+def _read_magmom_rows(
+    lines: Iterator[str], n_atoms: int, frame_index: int, axis: str
+) -> list[list[float]]:
+    """The ``n_atoms`` rows of one ``magnetization (<axis>)`` table (after its ``# of ion … tot``
+    column header), returned as ``[ion, s, p, d, tot]`` rows — the trailing ``tot`` column is the
+    per-ion scalar moment.
+
+    A recognized-but-malformed block refuses rather than partial-parses (P3): a missing/foreign
+    column header is ``OUTCAR_UNRECOGNIZED_LAYOUT``; a wrong row count or a non-numeric row is
+    ``OUTCAR_INCONSISTENT_STEP`` — never a silent partial parse and never a defaulted zero.
+    """
+    header_line = _next_data_line(lines)
+    if header_line is None:
+        raise _error(
+            "OUTCAR_UNRECOGNIZED_LAYOUT",
+            f"ionic step {frame_index}: 'magnetization ({axis})' has no '# of ion … tot' column "
+            "header — the block layout is not recognized (P1)",
+            location=f"frame {frame_index}",
+        )
+    header_parts = header_line.split()
+    if not header_parts or "ion" not in header_parts or header_parts[-1] != "tot":
+        raise _error(
+            "OUTCAR_UNRECOGNIZED_LAYOUT",
+            f"ionic step {frame_index}: 'magnetization ({axis})' column header is not the "
+            f"recognized '# of ion … tot' form: {header_line.strip()!r}",
+            location=f"frame {frame_index}",
+        )
+    rows: list[list[float]] = []
+    for a in range(n_atoms):
+        line = _next_data_line(lines)
+        if line is None:
+            raise _error(
+                "OUTCAR_INCONSISTENT_STEP",
+                f"ionic step {frame_index}: the 'magnetization ({axis})' table ended after {a} "
+                f"of the declared {n_atoms} ions — refused, never a partial parse (P3)",
+                location=f"frame {frame_index}",
+            )
+        if line.startswith("tot") or line.startswith("#"):
+            raise _error(
+                "OUTCAR_INCONSISTENT_STEP",
+                f"ionic step {frame_index}: the 'magnetization ({axis})' table carries fewer "
+                f"than the declared {n_atoms} ion rows (its terminator arrived after {a})",
+                location=f"frame {frame_index}",
+            )
+        parts = line.split()
+        if len(parts) < 5:
+            raise _error(
+                "OUTCAR_INCONSISTENT_STEP",
+                f"ionic step {frame_index}: magnetization row {a + 1} has {len(parts)} "
+                f"components, expected at least 5 (ion s p d tot): {line.strip()!r}",
+                location=f"frame {frame_index}",
+            )
+        try:
+            rows.append([float(p) for p in parts])
+        except ValueError as exc:
+            raise _error(
+                "OUTCAR_INCONSISTENT_STEP",
+                f"ionic step {frame_index}: non-numeric magnetization row: {line.strip()!r}",
+                location=f"frame {frame_index}",
+            ) from exc
+    after = _next_nonblank_raw(lines)
+    if after is not None and not _SEPARATOR_RE.match(after):
+        parts = after.split()
+        try:
+            numeric = [float(p) for p in parts]
+        except ValueError:
+            numeric = []
+        if len(numeric) >= 5:
+            raise _error(
+                "OUTCAR_INCONSISTENT_STEP",
+                f"ionic step {frame_index}: the 'magnetization ({axis})' table has more than "
+                f"the declared {n_atoms} ions (an extra row); refused, never silently truncated "
+                "(P3)",
+                location=f"frame {frame_index}",
+            )
+    return rows
+
+
+def _read_magnetization(
+    first_header: str,
+    lines: Iterator[str],
+    n_atoms: int,
+    frame_index: int,
+    issues: list[ParseIssue],
+) -> tuple[np.ndarray | None, dict[str, Any] | None, str | None]:
+    """The magnetization block(s), read from an already-consumed ``magnetization (x)`` header.
+
+    In real VASP the per-ion ``magnetization (x)`` table (LORBIT≥10) is printed after the step's
+    electronic convergence and *before* its ``POSITION … TOTAL-FORCE`` table — so this is called
+    from the step's **pre-table** scan (``_scan_to_next_table``/``_read_header``), alongside the
+    ``in kB`` stress, and the result is attached to the frame whose force table follows (D171).
+
+    Returns ``(moments, carry, stop_line)``:
+
+    * **collinear** (only ``magnetization (x)``): ``moments`` is the per-ion ``tot`` column
+      mapped to canonical μB; ``carry`` is ``None``.
+    * **non-collinear** (``(x)``+``(y)``+``(z)``): ``moments`` is ``None``; the three tables are
+      carried verbatim in ``carry`` (under ``outcar:magnetization_vector``) with a named warning
+      — never mapped into the scalar field (v1.2.1).
+
+    ``stop_line`` is the first line consumed that is not part of the block — the block terminator
+    the caller must reprocess (e.g. ``average (electrostatic) potential at core``, ``in kB``,
+    ``direct lattice vectors``, or the next ``TOTAL-FORCE`` header), or ``None`` at end-of-file or
+    after a ``(z)`` table. It is handed back, never dropped.
+    """
+    axes: list[str] = []
+    rows_by_axis: dict[str, list[list[float]]] = {}
+    stop_line: str | None = None
+    pending: str | None = first_header
+    while pending is not None:
+        match = _MAGMOM_HEADER_RE.search(pending)
+        if match is None:
+            raise _error(
+                "OUTCAR_UNRECOGNIZED_LAYOUT",
+                f"ionic step {frame_index}: unrecognized magnetization table header "
+                f"{pending.strip()!r} (expected 'magnetization (x)' and optionally (y)/(z))",
+                location=f"frame {frame_index}",
+            )
+        axis = match.group(1)
+        expected = "x" if not axes else ("y" if axes == ["x"] else "z")
+        if axis != expected or len(axes) >= 3:
+            raise _error(
+                "OUTCAR_UNRECOGNIZED_LAYOUT",
+                f"ionic step {frame_index}: magnetization table axes out of order "
+                f"({axes} then {axis!r}; expected {expected!r})",
+                location=f"frame {frame_index}",
+            )
+        rows_by_axis[axis] = _read_magmom_rows(lines, n_atoms, frame_index, axis)
+        axes.append(axis)
+        if axis == "z":
+            break
+        # Peek past the table's ``tot`` summary and separators to the next meaningful line: either
+        # the next magnetization axis (non-collinear), or the block terminator to hand back. The
+        # per-axis ``_read_magmom_rows`` consumes only the rows and their closing rule, not the
+        # trailing ``tot  …`` summary line, so skip that here before deciding.
+        nxt = _next_data_line(lines)
+        while nxt is not None and nxt.lstrip().startswith("tot"):
+            nxt = _next_data_line(lines)
+        if nxt is not None and "magnetization (" in nxt:
+            pending = nxt
+            continue
+        stop_line = nxt
+        pending = None
+    if axes == ["x"]:
+        return magnetic_moments([row[-1] for row in rows_by_axis["x"]]), None, stop_line
+    if axes == ["x", "y"]:
+        raise _error(
+            "OUTCAR_INCONSISTENT_STEP",
+            f"ionic step {frame_index}: non-collinear magnetization has (x)/(y) tables but no "
+            "(z) table — refused, never a partial vector (P3)",
+            location=f"frame {frame_index}",
+        )
+    carry = {
+        f"{_CARRY_KEY_PREFIX}{_MAGMOM_VECTOR_KEY}": [
+            rows_by_axis["x"],
+            rows_by_axis["y"],
+            rows_by_axis["z"],
+        ]
+    }
+    issues.append(_noncollinear_magmom_warning(f"frame {frame_index}"))
+    return None, carry, stop_line
 
 
 def _next_data_line(lines: Iterator[str]) -> str | None:
@@ -592,10 +830,13 @@ def _build_frame(
     energy: float,
     carry: float | None,
     stress: np.ndarray | None,
+    magmoms: np.ndarray | None,
+    magmom_carry: dict[str, Any] | None,
     issues: list[ParseIssue],
     frame_index: int,
 ) -> StreamFrame:
-    """Build one frame from the parsed force rows and the step's pending energy/stress."""
+    """Build one frame from the parsed force rows, the step's pending energy/stress, and the
+    step's (optional) magnetization block."""
     frame = Frame(
         index=frame_index,
         atoms=AtomsBlock(
@@ -604,18 +845,26 @@ def _build_frame(
         ),
         cell=build_cell(lattice),
         dynamics=Dynamics(forces=forces(rows[:, 3:])),
-        electronic=Electronic(total_energy=total_energy(energy), stress=stress),
+        electronic=Electronic(
+            total_energy=total_energy(energy),
+            stress=stress,
+            magnetic_moments=magmoms,
+        ),
     )
-    per_frame_custom: dict[str, object] = {}
+    per_frame_custom: dict[str, Any] = {}
     if carry is not None:
         key = f"{_CARRY_KEY_PREFIX}{_ENERGY_WO_ENTROPY_KEY}"
         per_frame_custom[key] = carry
         issues.append(_carry_warning(_ENERGY_WO_ENTROPY_KEY, location=f"frame {frame_index}"))
+    if magmom_carry is not None:
+        per_frame_custom.update(magmom_carry)
     return StreamFrame(frame=frame, per_frame_custom=per_frame_custom)
 
 
 def _read_step_energy(
-    lines: Iterator[str], frame_index: int, first_line: str | None
+    lines: Iterator[str],
+    frame_index: int,
+    first_line: str | None,
 ) -> tuple[float | None, float | None, bool]:
     """Scan forward from just past a step's force table to that step's ``energy(sigma->0)``.
 
@@ -624,7 +873,8 @@ def _read_step_energy(
     begins, so this reads forward from the table. Returns ``(energy, carry, hit_next_table)``:
 
     * ``(energy, carry, False)`` once the step's ``energy(sigma->0)`` is found — the common path,
-      returning *before* the next step's stress/cell so those stay for ``_scan_to_next_table``;
+      returning *before* the next step's stress/cell/magnetization so those stay for
+      ``_scan_to_next_table``;
     * ``(None, None, True)`` if the next step's ``TOTAL-FORCE`` table is reached first — the step
       has a force table but no energy summary though the file continues (the caller raises
       ``OUTCAR_MISSING_BLOCK`` — never a defaulted energy, P3);
@@ -648,25 +898,43 @@ def _read_step_energy(
 
 
 def _scan_to_next_table(
-    lines: Iterator[str], lattice: np.ndarray, next_frame_index: int
+    lines: Iterator[str],
+    lattice: np.ndarray,
+    next_frame_index: int,
+    n_atoms: int,
+    issues: list[ParseIssue],
 ) -> tuple[_PreTable, np.ndarray, bool]:
-    """Scan from just past a step's ``energy(sigma->0)`` to the next step's ``TOTAL-FORCE`` header,
-    capturing that next step's pre-table ``in kB`` stress and (NpT) own ``direct lattice vectors``
-    cell along the way.
+    """Scan from just past a step's energy summary to the next step's ``TOTAL-FORCE`` header,
+    capturing that next step's pre-table ``in kB`` stress, its (LORBIT≥10) ``magnetization (x)``
+    moments, and (NpT) own ``direct lattice vectors`` cell along the way.
 
     Returns ``(pre_table, lattice, found)``; ``found`` is ``False`` at end-of-file (no further
     step). A ``direct lattice vectors`` block torn mid-write here is a recoverable torn tail
     (``OUTCAR_TRUNCATED``): the current frame has already been emitted, so truncate-mode keeps it.
+    In real VASP order the per-ion ``magnetization (x)`` table (D171) precedes the force table, so
+    it is read here and attached to the *next* frame — the same pre-table region as the stress.
     """
     pending_stress: np.ndarray | None = None
-    for line in lines:
+    magmoms: np.ndarray | None = None
+    magmom_carry: dict[str, Any] | None = None
+    line: str | None = None
+    while True:
+        if line is None:
+            line = next(lines, None)
+        if line is None:
+            return _PreTable(pending_stress, magmoms, magmom_carry), lattice, False
         if "TOTAL-FORCE" in line:
-            return _PreTable(pending_stress), lattice, True
+            return _PreTable(pending_stress, magmoms, magmom_carry), lattice, True
+        if "magnetization (" in line:
+            magmoms, magmom_carry, line = _read_magnetization(
+                line, lines, n_atoms, next_frame_index, issues
+            )
+            continue
         if "in kB" in line:
             pending_stress = _parse_stress(line, next_frame_index)
         elif "direct lattice vectors" in line:
             lattice = _read_lattice(lines, where=f"frame {next_frame_index}", hint=_TRUNCATE_HINT)
-    return _PreTable(pending_stress), lattice, False
+        line = None
 
 
 def _steps(
@@ -677,9 +945,10 @@ def _steps(
 ) -> Iterator[StreamFrame]:
     """Yield one ``StreamFrame`` per ``POSITION … TOTAL-FORCE`` table, lazily, one step resident.
 
-    Real VASP order per step: the pre-table stress/cell (``pre``), the force table, then the
-    ``energy(sigma->0)`` summary. Each frame is emitted only once its own energy is read — the
-    energy is *never* borrowed from a neighbouring step.
+    Real VASP order per step: the pre-table stress/cell/magnetization (``pre``), the force table,
+    then the ``energy(sigma->0)`` summary. Each frame is emitted only once its own energy is read —
+    the energy is *never* borrowed from a neighbouring step, and its per-ion moments come from the
+    pre-table region that precedes its force table (D171).
     """
     lattice = header.lattice
     pre = first_pre
@@ -702,9 +971,22 @@ def _steps(
                 location=f"frame {frame_index}",
                 hint=_TRUNCATE_HINT,
             )
-        yield _build_frame(header, rows, lattice, energy, carry, pre.stress, issues, frame_index)
+        yield _build_frame(
+            header,
+            rows,
+            lattice,
+            energy,
+            carry,
+            pre.stress,
+            pre.magmoms,
+            pre.magmom_carry,
+            issues,
+            frame_index,
+        )
         frame_index += 1
-        pre, lattice, found = _scan_to_next_table(lines, lattice, frame_index)
+        pre, lattice, found = _scan_to_next_table(
+            lines, lattice, frame_index, header.n_atoms, issues
+        )
         if not found:
             return
 
@@ -792,7 +1074,7 @@ class OutcarParser(ParserPlugin):
         stream.seek(0)
         lines = _line_reader(stream)
         issues: list[ParseIssue] = []
-        header, first_pre = _read_header(lines)
+        header, first_pre = _read_header(lines, issues)
         if header is None or first_pre is None:
             raise _error(
                 "OUTCAR_EMPTY",
@@ -872,6 +1154,14 @@ class OutcarParser(ParserPlugin):
                     "and divided by the exact factor 1602.1766208 kBar per eV/Å³; recorded in "
                     "parse_notes. A step without a stress line reads None (P3 — never a "
                     "defaulted zero tensor).",
+                ),
+                "electronic.magnetic_moments": FieldCapability(
+                    level=full.level,
+                    notes="Collinear per-ion μB moments read from the 'magnetization (x)' "
+                    "table's 'tot' column (spin-up-positive, verbatim — D171). An OUTCAR-only "
+                    "artifact: vasprun.xml carries no per-ion magnetization block. A run "
+                    "without a magnetization block reads None (P3); the non-collinear (y)/(z) "
+                    "tables are carried verbatim, not mapped (v1.2.1).",
                 ),
                 "simulation.extra": FieldCapability(
                     level=partial,

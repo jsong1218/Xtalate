@@ -1,0 +1,21 @@
+case: md-npt-h2o-v5
+format_id: outcar
+source_file: OUTCAR
+sha256: "755e8b3d28a05d8c27e92fe25b3e6b437d3f8c31b1787869955ddec34734a0d1"
+origin:
+  kind: synthetic
+  source: "Authored-realistic VASP 5.4.4 NpT-MD OUTCAR with per-step cells (M45-S2)."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - OUTCAR_UNMAPPED_LINE_CARRIED
+    - OUTCAR_UNMAPPED_LINE_CARRIED
+    - OUTCAR_UNMAPPED_LINE_CARRIED
+  frame_count: 3
+notes: >-
+  The VASP 5.4.4 spelling (narrower fixed columns, scientific-notation `in kB` line, 5.x-era
+  banner/POTCAR wording) of a three-step NpT run whose cell shrinks 10.0 → 9.9 → 9.8 Å, so each
+  later step carries its own `direct lattice vectors` block and the reader must track per-step
+  cells, not reuse the header lattice. This is the version-drift dimension: the same anchors and
+  whitespace-split columns the 6.x reader keys on must hold for the 5.x spelling, with the same
+  exact issue multiset.

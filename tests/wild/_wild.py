@@ -27,6 +27,15 @@ kind of test into the weakest. So a wild case declares two things instead:
 The oracle does not always apply: partial occupancy makes the count non-integral, and older
 entries omit ``Z`` or the formula. Those cases name a reason from :data:`SKIP_REASONS` *and*
 write it out in prose, so a skipped check is a recorded judgement and never a silent pass.
+
+The oracle is CIF-specific. A VASP output file (OUTCAR / vasprun.xml) carries no
+``_chemical_formula_sum``/``Z`` equivalent, so there is nothing for it to read — the
+stoichiometry check is **format-gated** to ``format_id: cif`` and structurally absent for
+``vasprun``/``outcar`` (D172). In its place a VASP case may declare an ``expectation.pair:``
+naming the sibling case of the *other* VASP format for the same run, and the suite asserts the
+two readers agree on energy/forces/stress/cell/positions — with ``electronic.magnetic_moments``
+excluded, because it is an OUTCAR-only field (vasprun.xml carries no per-ion magnetization
+block), so the pair oracle asserts the honest **asymmetry**, never agreement.
 """
 
 from __future__ import annotations
@@ -53,6 +62,14 @@ _Z_TAG = "_cell_formula_units_z"
 # must still spell out the specific reason in prose — the vocabulary keeps the reasons
 # comparable across cases without flattening them into a checkbox.
 SKIP_REASONS = ("partial_occupancy", "formula_absent", "z_absent", "formula_disagrees_with_source")
+
+#: The formats the file's-own-chemistry oracle applies to. CIF is the only corpus format that
+#: carries ``_chemical_formula_sum``/``Z``; VASP output has no self-declared composition tag, so
+#: the stoichiometry check is format-gated (D172). For a non-CIF format it is structurally
+#: absent — not a skip reason, which is a recorded judgement about a check that *could* have
+#: run. The pair-agreement oracle (``expectation.pair``) takes its place for VASP.
+STOICH_FORMATS = frozenset({"cif"})
+STOICH_NOT_APPLICABLE = "not_applicable"
 
 
 class WildExpectationError(ValueError):
@@ -82,12 +99,20 @@ class WildExpectation:
     """A CIF block is one structure; this is 1 for every case so far, but declaring it keeps
     the assertion honest if a future format enters this corpus."""
 
+    pair: str | None
+    """The ``case`` name of the sibling VASP file of the *other* format for the same run, or
+    ``None``. Drives the OUTCAR↔vasprun pair-agreement oracle (D172): the suite parses both
+    and asserts agreement on energy/forces/stress/cell/positions, with
+    ``electronic.magnetic_moments`` excluded (an OUTCAR-only field — vasprun.xml carries no
+    per-ion magnetization block)."""
+
 
 def load_expectation(case: gov.GoldenCase) -> WildExpectation:
     """Parse and validate the ``expectation`` block of a wild manifest."""
 
     raw = case.data.get("expectation")
     where = case.rel_manifest
+    format_id = case.data.get("format_id")
     if not isinstance(raw, dict):
         raise WildExpectationError(f"{where}: 'expectation' must be a mapping")
 
@@ -119,22 +144,42 @@ def load_expectation(case: gov.GoldenCase) -> WildExpectation:
             stoichiometry="refused",
             stoichiometry_note="the file is refused; no structure is produced",
             frame_count=0,
+            pair=None,
         )
 
-    stoichiometry = raw.get("stoichiometry", "checked")
-    if stoichiometry != "checked" and stoichiometry not in SKIP_REASONS:
-        raise WildExpectationError(
-            f"{where}: 'expectation.stoichiometry' must be 'checked' or one of {SKIP_REASONS}, "
-            f"got {stoichiometry!r}"
+    if format_id in STOICH_FORMATS:
+        stoichiometry = raw.get("stoichiometry", "checked")
+        if stoichiometry != "checked" and stoichiometry not in SKIP_REASONS:
+            raise WildExpectationError(
+                f"{where}: 'expectation.stoichiometry' must be 'checked' or one of "
+                f"{SKIP_REASONS}, got {stoichiometry!r}"
+            )
+        note = str(raw.get("stoichiometry_note", "")).strip()
+        if stoichiometry != "checked" and not note:
+            # A skipped oracle with no stated reason is indistinguishable from a skipped oracle
+            # that hides a bug, so the reason is mandatory rather than encouraged.
+            raise WildExpectationError(
+                f"{where}: 'expectation.stoichiometry_note' is required when the stoichiometry "
+                "check is skipped — a skipped check must be a recorded judgement"
+            )
+    else:
+        # The file's-own-chemistry oracle is CIF-only: VASP output carries no composition tag,
+        # so the check is structurally absent — not a skip reason (which justifies a check that
+        # could have run but was declined). Declaring one here would be a category error.
+        if "stoichiometry" in raw or "stoichiometry_note" in raw:
+            raise WildExpectationError(
+                f"{where}: 'stoichiometry' does not apply to format_id {format_id!r} — the "
+                "oracle is CIF-only; a VASP case is checked by the pair-agreement oracle instead"
+            )
+        stoichiometry = STOICH_NOT_APPLICABLE
+        note = (
+            "the file's-own-chemistry oracle is CIF-only; VASP output has no self-declared "
+            "composition (the pair-agreement oracle applies instead)"
         )
-    note = str(raw.get("stoichiometry_note", "")).strip()
-    if stoichiometry != "checked" and not note:
-        # A skipped oracle with no stated reason is indistinguishable from a skipped oracle
-        # that hides a bug, so the reason is mandatory rather than encouraged.
-        raise WildExpectationError(
-            f"{where}: 'expectation.stoichiometry_note' is required when the stoichiometry "
-            "check is skipped — a skipped check must be a recorded judgement"
-        )
+
+    pair = raw.get("pair")
+    if pair is not None and (not isinstance(pair, str) or not pair.strip()):
+        raise WildExpectationError(f"{where}: 'expectation.pair' must be a non-empty case name")
 
     frame_count = raw.get("frame_count", 1)
     if not isinstance(frame_count, int) or frame_count < 1:
@@ -146,6 +191,7 @@ def load_expectation(case: gov.GoldenCase) -> WildExpectation:
         stoichiometry=stoichiometry,
         stoichiometry_note=note,
         frame_count=frame_count,
+        pair=pair,
     )
 
 

@@ -1,0 +1,20 @@
+case: scf-h2o-v6
+format_id: outcar
+source_file: OUTCAR
+sha256: "47ff15d0827a2502dd5c54ac3b9ca7da133d0cf35f4f70e96a4b8a1c73a2cb6d"
+origin:
+  kind: synthetic
+  source: "Authored-realistic VASP 6.3.2 single-point OUTCAR, modelled on the relax-h2o golden bytes (M45-S2)."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - OUTCAR_UNMAPPED_LINE_CARRIED
+  frame_count: 1
+notes: >-
+  A single-point (SCF) run: one ionic step carrying energy(sigma->0), forces and a
+  tension-positive-mapped stress. The one declared anomaly is the 'energy without entropy'
+  scalar — recognized but with no canonical field, so it is carried verbatim under
+  `outcar:energy_without_entropy` with the OUTCAR_UNMAPPED_LINE_CARRIED warning (an honest
+  carry, never a loss). The exact-set rule means the file must produce exactly this code and
+  nothing else: a parser that started silently dropping the carry, or one that invented a new
+  warning for an ordinary 6.x file, would fail here.

@@ -255,13 +255,14 @@ def validate_manifest_schema(case: GoldenCase) -> None:
             "(it is the obligation ATTRIBUTIONS.md aggregates)"
         )
 
-    # A public-domain dedication is still a provenance obligation: a CC0 file whose origin
-    # cannot be traced back to the database record it came from is not auditable, so the wild
-    # corpus requires the URL as well as the source (D70).
-    if case.is_wild and not str(origin.get("url", "")).strip():
+    # A vendored third-party file must be traceable to the record it was taken from (D70).
+    # This is a *published-dataset* obligation: a synthetic case (the project's own work,
+    # Apache-2.0) has no external record to point at, and a contributed case is traceable
+    # through the contributor's grant in the manifest rather than a URL (D172).
+    if case.is_wild and kind == "published-dataset" and not str(origin.get("url", "")).strip():
         raise ManifestError(
-            f"{where}: origin.url is required for a real-world case — a vendored third-party "
-            "file must be traceable to the record it was taken from"
+            f"{where}: origin.url is required for a published-dataset case — a vendored "
+            "third-party file must be traceable to the record it was taken from"
         )
 
     # The source and expectation files the manifest names must actually exist.

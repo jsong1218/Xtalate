@@ -4,7 +4,7 @@ source_file: OUTCAR
 expected_canonical: expected.canonical.json
 canonical_schema_version: 1.0.0
 sha256: 814cb7448408f29acf96ab85b71e9d31c5919a8f7f980eb02c8a78307838856b
-expected_sha256: 6844021cfdd92dd34421c0ab5b323a96308b6524d763962c0c71dbfbe764a8ab
+expected_sha256: 83acfe9b9fb882fb85ceb3e60856b6deed0310a68a18d4380d5de7cd63e7f36d
 origin:
   kind: synthetic
   source: 'Hand-written for M43-S1 (classical VASP 6.3.2 OUTCAR layout): relax-h2o.'

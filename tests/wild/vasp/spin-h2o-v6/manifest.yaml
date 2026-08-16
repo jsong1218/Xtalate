@@ -1,0 +1,22 @@
+case: spin-h2o-v6
+format_id: outcar
+source_file: OUTCAR
+sha256: "c956d9238837ab613996c69bd4fc7fa275825efe5b1220b9a3db42fac5e2894c"
+origin:
+  kind: synthetic
+  source: "Authored-realistic spin-polarized VASP 6.3.2 OUTCAR (paired with spin-h2o-v6-vasprun; M45-S2)."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - OUTCAR_UNMAPPED_LINE_CARRIED
+    - OUTCAR_UNMAPPED_LINE_CARRIED
+    - OUTCAR_UNMAPPED_LINE_CARRIED
+  frame_count: 3
+  pair: spin-h2o-v6-vasprun
+notes: >-
+  A spin-polarized three-step run. The OUTCAR `magnetization (x)` table's per-ion `tot` column
+  maps first-class to `electronic.magnetic_moments` (M45-S1, D171) — the pair oracle below
+  asserts the honest asymmetry against the sibling vasprun.xml, which carries no per-ion
+  magnetization block and legitimately leaves the field None. The three
+  OUTCAR_UNMAPPED_LINE_CARRIED warnings are the per-step 'energy without entropy' carry, as
+  on the non-spin-polarized cases.
