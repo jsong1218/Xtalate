@@ -1,0 +1,18 @@
+case: spin-h2o-v6-vasprun
+format_id: vasprun
+source_file: vasprun.xml
+sha256: "b66a259bc6fdbf93fc0fd04921c63c96768fe59c0eac8014b874bdfc2aed33fa"
+origin:
+  kind: synthetic
+  source: "Authored-realistic spin-polarized VASP 6.3.2 vasprun.xml (paired with spin-h2o-v6; M45-S2)."
+  license: "Apache-2.0"
+expectation:
+  issue_codes: []
+  frame_count: 3
+notes: >-
+  The vasprun.xml spelling of the same spin-polarized run as `spin-h2o-v6`. A label-complete
+  read: energy/forces/stress/positions/cell all first-class, so the expected issue set is
+  empty — any parser warning here would be an anomaly. Because vasprun.xml's per-step schema
+  carries no per-ion magnetization block, `electronic.magnetic_moments` is legitimately None
+  on every frame (correct absence, P3); the pair oracle asserts exactly that asymmetry against
+  the OUTCAR side rather than a fake agreement on a field only OUTCAR carries.

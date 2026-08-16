@@ -316,6 +316,28 @@ contributor adding a scenario should expect to touch `src/xtalate/recovery/` +
 example is that the seam is documented end to end, so the community can contribute scenarios the
 way §5.1 lets them contribute formats (roadmap §13 rule 2).
 
+### 5.5 Contributing real-world VASP files (a standing call)
+
+The real-world corpus ([​`tests/wild/`](../tests/wild), governed by the same manifest/licensing
+rules as `tests/golden/`) holds two kinds of file. The CIF cases under `tests/wild/cod/` are
+genuine Crystallography Open Database entries vendored verbatim. The VASP cases under
+`tests/wild/vasp/` are **authored-realistic fixtures** — self-licensed Apache-2.0 files modelled on
+real VASP 5.x/6.x output, spanning single-point, relaxation, NpT MD, spin-polarized,
+killed/truncated and layout-drift runs, with the OUTCAR↔vasprun **pair-agreement** as their oracle
+(the CIF stoichiometry oracle does not apply, since VASP output declares no composition). The
+harness is real and permanent; only batch 1's provenance is authored.
+
+**Real-world OUTCAR / vasprun.xml pairs are welcome into the same harness.** Drop the files under
+`tests/wild/vasp/<case>/` together with a `manifest.yaml` declaring the **exact**
+`expectation.issue_codes` set the file must produce (plus `frame_count`, and a `pair:` naming the
+sibling case of the other VASP format for the same run when both halves are contributed). Every
+real-file anomaly must be triaged the way M20 requires: fixed in the parser, or named in the
+manifest by someone who looked at it — the suite fails on any other outcome. The file's license
+must permit redistribution (record it in `origin.license`; a `published-dataset` origin also needs
+its source URL), and after adding a manifest, regenerate
+`tests/golden/ATTRIBUTIONS.md` with `python tests/golden/_governance.py`. The maintainer files the
+tracking issue for batch 2; this documented call is the standing invitation.
+
 ## 6. Coding conventions (the non-negotiables)
 
 These invariants are what make Xtalate trustworthy. A change that breaks one will not merge, however

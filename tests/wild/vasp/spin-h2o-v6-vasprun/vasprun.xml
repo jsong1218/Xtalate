@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<vasprun>
+<generator>
+  <i name="program" type="string" >vasp.6.3.2</i>
+</generator>
+<atominfo>
+  <array name="atomtypes">
+    <dimension>2</dimension>
+    <field> mass </field>
+    <field> Z </field>
+    <field> psp </field>
+    <v> 1.0 1.0 8 </v>
+    <v> 1.0 8.0 8 </v>
+  </array>
+  <array name="atoms">
+    <dimension>3</dimension>
+    <field> vasp_x </field>
+    <field> vasp_y </field>
+    <field> vasp_z </field>
+    <field> atom_type </field>
+    <set>
+      <c> 0.50000000 0.75000000 0.50000000 1 </c>
+      <c> 0.75000000 0.50000000 0.50000000 1 </c>
+      <c> 0.50000000 0.50000000 0.50000000 2 </c>
+    </set>
+  </array>
+</atominfo>
+<structure name="initialpos" >
+  <crystal>
+    <varray name="basis" >
+      <v> 10.0 0.0 0.0 </v>
+      <v> 0.0 10.0 0.0 </v>
+      <v> 0.0 0.0 10.0 </v>
+    </varray>
+  </crystal>
+  <varray name="positions" >
+    <v> 0.5 0.75 0.5 </v>
+    <v> 0.75 0.5 0.5 </v>
+    <v> 0.5 0.5 0.5 </v>
+  </varray>
+</structure>
+<calculation>
+  <energy>
+    <i name="e_0_energy" type="float" > -76.4 </i>
+  </energy>
+  <varray name="forces" >
+    <v> 0.2 -0.1 0.0 </v>
+    <v> -0.1 0.05 0.0 </v>
+    <v> -0.1 0.0 0.05 </v>
+  </varray>
+  <varray name="stress" >
+    <v> 1602.1766208 400.5441552 100.1360388 </v>
+    <v> 400.5441552 3204.3532416 200.2720776 </v>
+    <v> 100.1360388 200.2720776 801.0883104 </v>
+  </varray>
+  <structure>
+  <crystal>
+    <varray name="basis" >
+      <v> 10.0 0.0 0.0 </v>
+      <v> 0.0 10.0 0.0 </v>
+      <v> 0.0 0.0 10.0 </v>
+    </varray>
+  </crystal>
+  <varray name="positions" >
+    <v> 0.5 0.75 0.5 </v>
+    <v> 0.75 0.5 0.5 </v>
+    <v> 0.5 0.5 0.5 </v>
+  </varray>
+  </structure>
+</calculation>
+<calculation>
+  <energy>
+    <i name="e_0_energy" type="float" > -76.41 </i>
+  </energy>
+  <varray name="forces" >
+    <v> 0.1 -0.05 0.0 </v>
+    <v> -0.05 0.02 0.0 </v>
+    <v> -0.05 0.0 0.02 </v>
+  </varray>
+  <structure>
+  <crystal>
+    <varray name="basis" >
+      <v> 10.0 0.0 0.0 </v>
+      <v> 0.0 10.0 0.0 </v>
+      <v> 0.0 0.0 10.0 </v>
+    </varray>
+  </crystal>
+  <varray name="positions" >
+    <v> 0.5 0.73 0.5 </v>
+    <v> 0.73 0.5 0.5 </v>
+    <v> 0.5 0.5 0.5 </v>
+  </varray>
+  </structure>
+</calculation>
+<calculation>
+  <energy>
+    <i name="e_0_energy" type="float" > -76.42 </i>
+  </energy>
+  <varray name="forces" >
+    <v> 0.01 -0.01 0.0 </v>
+    <v> -0.01 0.005 0.0 </v>
+    <v> -0.01 0.0 0.005 </v>
+  </varray>
+  <varray name="stress" >
+    <v> 1602.1766208 400.5441552 100.1360388 </v>
+    <v> 400.5441552 3204.3532416 200.2720776 </v>
+    <v> 100.1360388 200.2720776 801.0883104 </v>
+  </varray>
+  <structure>
+  <crystal>
+    <varray name="basis" >
+      <v> 10.0 0.0 0.0 </v>
+      <v> 0.0 10.0 0.0 </v>
+      <v> 0.0 0.0 10.0 </v>
+    </varray>
+  </crystal>
+  <varray name="positions" >
+    <v> 0.5 0.7400000000000001 0.5 </v>
+    <v> 0.7400000000000001 0.5 0.5 </v>
+    <v> 0.5 0.5 0.5 </v>
+  </varray>
+  </structure>
+</calculation>
+</vasprun>

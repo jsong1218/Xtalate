@@ -1,0 +1,20 @@
+case: relax-h2o-v6
+format_id: outcar
+source_file: OUTCAR
+sha256: "31e05e40b3a82e208678a281d730c17ae44dadd2979d0196ecf29efafa4991eb"
+origin:
+  kind: synthetic
+  source: "Authored-realistic VASP 6.3.2 ionic-relaxation OUTCAR, modelled on the relax-h2o golden bytes (M45-S2)."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - OUTCAR_UNMAPPED_LINE_CARRIED
+    - OUTCAR_UNMAPPED_LINE_CARRIED
+    - OUTCAR_UNMAPPED_LINE_CARRIED
+  frame_count: 3
+notes: >-
+  A three-step ionic relaxation with moving geometry and decaying forces. One
+  OUTCAR_UNMAPPED_LINE_CARRIED per step is the whole expected anomaly set — the per-step
+  'energy without entropy' carry, three times. The exact multiset (not subset) rule is what
+  keeps the frame_count honest: a parser that dropped a step, or that started double-counting
+  a warning, would change the multiset and fail.
