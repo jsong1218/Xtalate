@@ -3,7 +3,7 @@ format_id: lammps_dump
 source_file: dump.lammpstrj
 expected_canonical: expected.canonical.json
 canonical_schema_version: 1.0.0
-sha256: 35bcc178628891c6511e147c548697892205833d71b9d127fa13b65000f8acb6
+sha256: 1b4152ee16cb277de2be76dac31d01eff863711afc673e6b04da68f46cdccbbc
 expected_sha256: 100a611b39697fbdfd504b4b0bfdb556d995f07119fc2ca6a781cd556f7fa171
 origin:
   kind: synthetic

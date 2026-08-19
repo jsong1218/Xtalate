@@ -99,7 +99,7 @@ def test_declared_units_parse_with_no_scenario_and_style_in_parse_notes() -> Non
 
 
 def test_undeclared_units_refuse_with_ambiguous_units_hint() -> None:
-    undeclared = _source("metal-ortho-declared").replace(b"ITEM: UNITS metal\n", b"")
+    undeclared = _source("metal-ortho-declared").replace(b"ITEM: UNITS\nmetal\n", b"")
     with pytest.raises(ParseError) as exc:
         PARSER.parse(io.BytesIO(undeclared), filename="dump.lammpstrj")
     issue = exc.value.issues[0]
@@ -108,7 +108,7 @@ def test_undeclared_units_refuse_with_ambiguous_units_hint() -> None:
 
 
 def test_undeclared_units_recover_under_a_chosen_style() -> None:
-    undeclared = _source("metal-ortho-declared").replace(b"ITEM: UNITS metal\n", b"")
+    undeclared = _source("metal-ortho-declared").replace(b"ITEM: UNITS\nmetal\n", b"")
     recovered = PARSER.parse_recover(
         io.BytesIO(undeclared),
         filename="dump.lammpstrj",
@@ -123,7 +123,7 @@ def test_undeclared_units_recover_under_a_chosen_style() -> None:
 
 
 def test_unknown_recovery_style_refuses() -> None:
-    undeclared = _source("metal-ortho-declared").replace(b"ITEM: UNITS metal\n", b"")
+    undeclared = _source("metal-ortho-declared").replace(b"ITEM: UNITS\nmetal\n", b"")
     with pytest.raises(ParseError) as exc:
         PARSER.parse_recover(
             io.BytesIO(undeclared),
@@ -136,7 +136,7 @@ def test_unknown_recovery_style_refuses() -> None:
 
 
 def test_declared_unsupported_units_refuse() -> None:
-    lj = _source("metal-ortho-declared").replace(b"ITEM: UNITS metal", b"ITEM: UNITS lj")
+    lj = _source("metal-ortho-declared").replace(b"ITEM: UNITS\nmetal\n", b"ITEM: UNITS\nlj\n")
     with pytest.raises(ParseError) as exc:
         PARSER.parse(io.BytesIO(lj), filename="dump.lammpstrj")
     assert exc.value.issues[0].code == "LAMMPSDUMP_UNSUPPORTED_UNITS"
@@ -183,7 +183,9 @@ def test_image_flags_warning_states_the_coordinate_convention() -> None:
     result = _parse("wrapped-flags-metal")
     warning = next(i for i in result.issues if i.code == "LAMMPSDUMP_IMAGE_FLAGS_CARRIED")
     assert "wrapped Cartesian (x/y/z)" in warning.message
-    assert "unwrapping remains possible" in warning.message
+    assert "unwrapping is reconstructable at frame 0" in warning.message
+    assert "only frame 0's flags are retained" in warning.message
+    assert "never applied on parse (D43)" in warning.message
 
 
 def test_partial_image_flag_family_is_malformed() -> None:
@@ -321,6 +323,63 @@ def test_upload_reference_requires_a_reference() -> None:
     assert exc.value.issues[0].code == "LAMMPSDUMP_MISSING_SPECIES"
 
 
+def test_upload_reference_applies_per_atom_symbols_when_atoms_exceed_types() -> None:
+    """Finding 2: the reference supplies one symbol per *atom*, not one per distinct type. A dump
+    with more atoms than distinct types (3 atoms, types 1/2/1) must resolve — the earlier
+    index-keyed mapping refused any dump whose atom count exceeded its type count."""
+    src = (
+        b"ITEM: UNITS\nmetal\n"
+        b"ITEM: TIMESTEP\n0\n"
+        b"ITEM: NUMBER OF ATOMS\n3\n"
+        b"ITEM: BOX BOUNDS pp pp pp\n0 10\n0 10\n0 10\n"
+        b"ITEM: ATOMS id type x y z\n1 1 1.0 2.0 3.0\n2 2 4.0 5.0 6.0\n3 1 7.0 8.0 9.0\n"
+    )
+    # Build a matching 3-atom reference (Si, O, Si) via the species-map path, then upload it.
+    reference = PARSER.parse_recover(
+        io.BytesIO(src),
+        filename="dump.lammpstrj",
+        hint="supply_species",
+        choice="species_map",
+        parameters={"species": "1:Si 2:O"},
+    ).canonical
+    assert reference.frames[0].atoms.symbols == ["Si", "O", "Si"]
+    recovered = PARSER.parse_recover(
+        io.BytesIO(src),
+        filename="dump.lammpstrj",
+        hint="supply_species",
+        choice="upload_reference",
+        parameters={"reference": reference},
+    )
+    assert recovered.canonical.frames[0].atoms.symbols == ["Si", "O", "Si"]
+
+
+def test_upload_reference_atom_count_mismatch_refuses() -> None:
+    """A reference whose atom count does not match the dump cannot supply per-atom symbols."""
+    src = _source("typed-atoms-metal")  # 2 atoms
+    three_atom_ref = PARSER.parse_recover(
+        io.BytesIO(
+            b"ITEM: UNITS\nmetal\n"
+            b"ITEM: TIMESTEP\n0\n"
+            b"ITEM: NUMBER OF ATOMS\n3\n"
+            b"ITEM: BOX BOUNDS pp pp pp\n0 10\n0 10\n0 10\n"
+            b"ITEM: ATOMS id type x y z\n1 1 1.0 2.0 3.0\n2 2 4.0 5.0 6.0\n3 1 7.0 8.0 9.0\n"
+        ),
+        filename="dump.lammpstrj",
+        hint="supply_species",
+        choice="species_map",
+        parameters={"species": "1:Si 2:O"},
+    ).canonical
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse_recover(
+            io.BytesIO(src),
+            filename="dump.lammpstrj",
+            hint="supply_species",
+            choice="upload_reference",
+            parameters={"reference": three_atom_ref},
+        )
+    assert exc.value.issues[0].code == "LAMMPSDUMP_MISSING_SPECIES"
+
+
 # --- triclinic exactness (end to end through the parser) -----------------------------
 
 
@@ -362,6 +421,66 @@ def test_empty_file_refuses() -> None:
     with pytest.raises(ParseError) as exc:
         PARSER.parse(io.BytesIO(b""), filename="d.dump")
     assert exc.value.issues[0].code == "LAMMPSDUMP_EMPTY"
+
+
+# --- id-order alignment (finding 1) --------------------------------------------------
+
+
+def test_unsorted_dump_is_realigned_by_id_with_a_warning() -> None:
+    """A dump written without `dump_modify sort id` lists atoms in arbitrary order. The parser
+    sorts each frame by ascending id so the per-atom arrays line up, warns once, and never
+    changes the atoms themselves."""
+    dump = _source("metal-ortho-declared").replace(
+        b"1 Si 1.0 2.0 3.0 0.1 0.2 0.3 5.0\n2 O 4.0 5.0 6.0 -0.1 -0.2 -0.3 6.0\n",
+        b"2 O 4.0 5.0 6.0 -0.1 -0.2 -0.3 6.0\n1 Si 1.0 2.0 3.0 0.1 0.2 0.3 5.0\n",
+    )
+    result = PARSER.parse(io.BytesIO(dump), filename="dump.lammpstrj")
+    # Reordered back into id order: Si (id 1) precedes O (id 2), positions follow the id.
+    assert result.canonical.frames[0].atoms.symbols == ["Si", "O"]
+    assert result.canonical.frames[0].atoms.positions[0].tolist() == [1.0, 2.0, 3.0]
+    warning = next(i for i in result.issues if i.code == "LAMMPSDUMP_ATOMS_REORDERED")
+    assert "sorted by ascending atom id" in warning.message
+    assert "only reordered" in warning.message
+
+
+def test_inconsistent_atom_ids_across_frames_refuse() -> None:
+    """Constant N is not constant identity: frames with the same count but different id sets are
+    not the same atoms, so the trajectory is refused rather than silently aligned by row."""
+    dump = _source("metal-ortho-declared").replace(
+        b"1 Si 1.5 2.5 3.5 0.11 0.21 0.31 5.0",
+        b"3 Si 1.5 2.5 3.5 0.11 0.21 0.31 5.0",
+    )
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse(io.BytesIO(dump), filename="dump.lammpstrj")
+    assert exc.value.issues[0].code == "LAMMPSDUMP_VARIABLE_ATOM_IDENTITY"
+
+
+# --- ITEM: TIME carry-through (finding 5) --------------------------------------------
+
+
+def test_item_time_preamble_carried_per_frame() -> None:
+    """`dump_modify time yes` writes a two-line `ITEM: TIME` block before each `ITEM: TIMESTEP`.
+    The wall-clock time is not a canonical dt, so it rides verbatim per frame (P3)."""
+    dump = (
+        b"ITEM: UNITS\nmetal\n"
+        b"ITEM: TIME\n0.005\n"
+        b"ITEM: TIMESTEP\n0\n"
+        b"ITEM: NUMBER OF ATOMS\n2\n"
+        b"ITEM: BOX BOUNDS pp pp pp\n0 10\n0 10\n0 10\n"
+        b"ITEM: ATOMS id element x y z\n1 Si 1.0 2.0 3.0\n2 O 4.0 5.0 6.0\n"
+        b"ITEM: TIME\n0.010\n"
+        b"ITEM: TIMESTEP\n10\n"
+        b"ITEM: NUMBER OF ATOMS\n2\n"
+        b"ITEM: BOX BOUNDS pp pp pp\n0 10\n0 10\n0 10\n"
+        b"ITEM: ATOMS id element x y z\n1 Si 1.5 2.5 3.5\n2 O 4.0 5.0 6.0\n"
+    )
+    result = PARSER.parse(io.BytesIO(dump), filename="dump.lammpstrj")
+    assert result.canonical.frame_count == 2
+    times = result.canonical.user_metadata.custom_per_frame["lammps_dump:time"]
+    assert np.asarray(times).tolist() == [0.005, 0.010]
+    # The declared step numbers still ride alongside — TIME does not replace TIMESTEP.
+    steps = result.canonical.user_metadata.custom_per_frame["lammps_dump:timestep"]
+    assert np.asarray(steps).tolist() == [0.0, 10.0]
 
 
 # --- capabilities / registration -----------------------------------------------------

@@ -1,8 +1,9 @@
+ITEM: UNITS
+real
 ITEM: TIMESTEP
 0
 ITEM: NUMBER OF ATOMS
 2
-ITEM: UNITS real
 ITEM: BOX BOUNDS xy xz yz pp pp pp
 0 28 5
 0 12 3

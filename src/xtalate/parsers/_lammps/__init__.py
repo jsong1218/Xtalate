@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from xtalate.parsers._lammps.box import Box, box_from_bounds, scaled_to_cartesian
 from xtalate.parsers._lammps.columns import (
+    COORDINATE_COLUMN_NAMES,
     CoordinateColumns,
     CoordinateKind,
     coordinate_note,
@@ -26,6 +27,7 @@ from xtalate.parsers._lammps.units import UNIT_STYLES, UnitStyle, unit_style
 
 __all__ = [
     "Box",
+    "COORDINATE_COLUMN_NAMES",
     "CoordinateColumns",
     "CoordinateKind",
     "ELEMENT_COLUMN_NAMES",

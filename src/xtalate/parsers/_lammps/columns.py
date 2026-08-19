@@ -45,6 +45,13 @@ _FAMILIES: dict[CoordinateKind, tuple[str, str, str]] = {
     CoordinateKind.UNWRAPPED: ("xu", "yu", "zu"),
 }
 
+#: Every coordinate column name across all three families — the single authoritative set a
+#: parser consults to decide which header names it has already claimed as coordinates (so it
+#: does not re-declare the family map; the dump parser builds its ``_KNOWN_COLUMNS`` from this).
+COORDINATE_COLUMN_NAMES: frozenset[str] = frozenset(
+    name for family in _FAMILIES.values() for name in family
+)
+
 
 @dataclass(frozen=True)
 class CoordinateColumns:

@@ -5,15 +5,25 @@ v0.3's CIF, shipped here as its parser half (the exporter is M47's first deliver
 a within-milestone parser-first split, **not** the vasprun/OUTCAR source-never-target seam,
 D159). A dump is a sequence of per-snapshot blocks:
 
+    [ITEM: UNITS]                         (only with `dump_modify units yes`, first snapshot)
+    <style>
+    [ITEM: TIME]                          (only with `dump_modify time yes`, every snapshot)
+    <time>
     ITEM: TIMESTEP
     <step>
     ITEM: NUMBER OF ATOMS
     <n>
-    [ITEM: UNITS <style>]                 (only with `dump_modify units yes`)
     ITEM: BOX BOUNDS [xy xz yz] [xflag yflag zflag]
     <bounds rows>
     ITEM: ATOMS <column names…>
     <n data rows>
+
+``ITEM: UNITS`` and ``ITEM: TIME`` are a **preamble before** ``ITEM: TIMESTEP`` — each a
+two-line item (the keyword line, then the value on the next line — LAMMPS ``dump.cpp``
+``write_header``), not an inline ``ITEM: UNITS <style>``. LAMMPS writes ``UNITS`` on the first
+snapshot only and ``TIME`` on every snapshot when enabled; the parser inherits the frame-0
+unit style into later snapshots and carries each ``TIME`` value per frame. (An inline
+``ITEM: UNITS <style>`` is also tolerated — some third-party writers emit it.)
 
 **Streaming-first** (``parse_stream`` is the real implementation; ``parse`` is
 ``materialize`` of it — the D56 one-code-path guarantee) because dumps share XDATCAR's 10⁴-frame
@@ -68,6 +78,7 @@ import numpy as np
 
 from xtalate.parsers._common import build_provenance
 from xtalate.parsers._lammps import (
+    COORDINATE_COLUMN_NAMES,
     Box,
     CoordinateColumns,
     box_from_bounds,
@@ -108,6 +119,11 @@ FORMAT_ID = "lammps_dump"
 #: ``trajectory.timestep`` is a time in fs; a dump declares step numbers and no dt, so the
 #: index cannot be converted to a time and is carried verbatim instead (P3, P1).
 _STEP_KEY = "lammps_dump:timestep"
+#: The per-frame custom key an ``ITEM: TIME`` value rides under (``dump_modify time yes``): the
+#: dump's real simulation time in the style's time unit. It is *not* the canonical
+#: ``trajectory.timestep`` (a dt in fs, which a dump never states), so it is carried verbatim
+#: per snapshot rather than mapped (P3, P1).
+_TIME_KEY = "lammps_dump:time"
 #: The custom-array key the original numeric type column rides under (frame 0 values, the
 #: canonical per-atom first-dim-N contract): the symbols resolved from a ``species_map`` do
 #: not by themselves preserve the source's type numbering, so the numbers are carried.
@@ -124,7 +140,9 @@ _UNSUPPORTED_UNITS = "LAMMPSDUMP_UNSUPPORTED_UNITS"
 _MISSING_SPECIES = "LAMMPSDUMP_MISSING_SPECIES"
 _NO_SPECIES_COLUMN = "LAMMPSDUMP_NO_SPECIES_COLUMN"
 _VARIABLE_ATOM_COUNT = "LAMMPSDUMP_VARIABLE_ATOM_COUNT"
+_VARIABLE_ATOM_IDENTITY = "LAMMPSDUMP_VARIABLE_ATOM_IDENTITY"
 _VARIABLE_SPECIES = "LAMMPSDUMP_VARIABLE_SPECIES"
+_ATOMS_REORDERED = "LAMMPSDUMP_ATOMS_REORDERED"
 _UNMAPPED_CARRIED = "LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED"
 _IMAGE_FLAGS_CARRIED = "LAMMPSDUMP_IMAGE_FLAGS_CARRIED"
 _PER_FRAME_COLUMN = "LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE"
@@ -134,12 +152,6 @@ _SPECIES_SUPPLIED = "LAMMPSDUMP_SPECIES_SUPPLIED"
 _UNITS_HINT = "ambiguous_units"
 _SPECIES_HINT = "supply_species"
 
-#: The coordinate families the dump writes (x/xs/xu semantics — S1's resolver).
-_COORD_FAMILIES: tuple[tuple[str, str, str], ...] = (
-    ("x", "y", "z"),
-    ("xs", "ys", "zs"),
-    ("xu", "yu", "zu"),
-)
 _VELOCITY_COLUMNS = ("vx", "vy", "vz")
 #: The wrapped-coordinate bookkeeping columns (M46-S3): recognized *specifically*, distinct
 #: from the generic unmapped-column carry, and carried to the named image-flags payload.
@@ -152,7 +164,7 @@ _KNOWN_COLUMNS: frozenset[str] = frozenset(
     {
         "id",
         "type",
-        *[name for family in _COORD_FAMILIES for name in family],
+        *COORDINATE_COLUMN_NAMES,  # the shared core's authoritative family map (S1)
         *_VELOCITY_COLUMNS,
     }
 )
@@ -225,7 +237,7 @@ def _require(lines: _Lines, message: str, *, location: str, hint: str | None = N
 #: The ITEM keywords a dump can declare, longest-first — matched longest-first in
 #: ``_header_line`` so the multi-word items (``NUMBER OF ATOMS``, ``BOX BOUNDS``) are not
 #: split at their first space.
-_ITEMS: tuple[str, ...] = ("NUMBER OF ATOMS", "BOX BOUNDS", "TIMESTEP", "UNITS", "ATOMS")
+_ITEMS: tuple[str, ...] = ("NUMBER OF ATOMS", "BOX BOUNDS", "TIMESTEP", "UNITS", "TIME", "ATOMS")
 
 
 def _header_line(line: str) -> tuple[str, str] | None:
@@ -287,29 +299,82 @@ class _BlockHeader:
 
     step: int
     n_atoms: int
-    unit_declared: bool  # ITEM: UNITS present in the file
-    unit_style: UnitStyle | None  # the style in force (declared or recovery-applied)
+    unit_declared: bool  # ITEM: UNITS present in *this* snapshot
+    declared_style: UnitStyle | None  # the style this snapshot's ITEM: UNITS named, if any
+    unit_style: UnitStyle | None  # the style in force (declared / inherited / recovery-applied)
+    sim_time: float | None  # ITEM: TIME value (dump_modify time yes), if present
     box: Box
     pbc: tuple[bool, bool, bool]
     columns: list[str]
     location: str  # "frame N" for error messages
 
 
+def _read_preamble_value(lines: _Lines, inline: str, *, where: str, item: str) -> str:
+    """The single value of a two-line preamble item (``ITEM: UNITS`` / ``ITEM: TIME``).
+
+    LAMMPS writes these as two lines — the ``ITEM: <item>`` keyword line, then the value on the
+    next line (``dump.cpp`` ``write_header``). An inline ``ITEM: <item> <value>`` form (some
+    third-party writers) is tolerated: when the keyword line already carries the value, it is
+    used and no extra line is read. Exactly one whitespace token must result."""
+    tokens = (
+        inline.split()
+        if inline
+        else _require(lines, f"file ended after {where}'s ITEM: {item}", location=where).split()
+    )
+    if len(tokens) != 1:
+        raise _error(
+            _MALFORMED,
+            f"{where}'s ITEM: {item} must name exactly one value, found {' '.join(tokens)!r}",
+            location=where,
+        )
+    return tokens[0]
+
+
 def _read_block_header(
     lines: _Lines,
     *,
-    unit_style: UnitStyle | None,
+    recovery_style: UnitStyle | None,
+    inherited_style: UnitStyle | None,
     frame_index: int,
 ) -> _BlockHeader:
-    """Read one ``ITEM: TIMESTEP`` … ``ITEM: ATOMS <columns>`` block header.
+    """Read one snapshot's header: the optional ``UNITS``/``TIME`` preamble, then
+    ``TIMESTEP`` … ``ATOMS <columns>``.
 
-    ``unit_style`` is the recovery-applied style when the caller re-reads under an
-    ``ambiguous_units`` choice; ``None`` means honor the file's own declaration (or refuse).
+    ``recovery_style`` is the style an ``ambiguous_units`` re-read applies; ``inherited_style``
+    is the style established by frame 0 (LAMMPS declares ``ITEM: UNITS`` on the first snapshot
+    only, so later snapshots inherit it). ``None``/``None`` on frame 0 means honor the file's
+    own declaration or refuse.
     """
     where = f"frame {frame_index}"
-    parsed = _header_line(
-        _require(lines, f"file ended before {where}'s TIMESTEP item", location=where)
-    )
+
+    # Preamble: optional ITEM: UNITS and ITEM: TIME items appearing *before* ITEM: TIMESTEP,
+    # each a two-line item (Part 3 §3 n.19). ITEM: UNITS is the declared-vs-ambiguous contrast.
+    unit_declared = False
+    declared_style: UnitStyle | None = None
+    sim_time: float | None = None
+    line = _require(lines, f"file ended before {where}'s TIMESTEP item", location=where)
+    parsed = _header_line(line.rstrip("\n"))
+    while parsed is not None and parsed[0] in ("UNITS", "TIME"):
+        if parsed[0] == "UNITS":
+            if unit_declared:
+                raise _error(_MALFORMED, f"{where} declares ITEM: UNITS twice", location=where)
+            unit_declared = True
+            style_name = _read_preamble_value(lines, parsed[1], where=where, item="UNITS")
+            declared_style = lookup_unit_style(style_name)
+            if declared_style is None:
+                raise _error(
+                    _UNSUPPORTED_UNITS,
+                    f"{where} declares unit style {style_name!r}, which the hand-verified "
+                    "conversion tables do not cover (metal/real/si only, M46-S1); the file "
+                    "cannot be converted to canonical Å/fs/eV",
+                    location=where,
+                )
+        else:  # TIME
+            time_token = _read_preamble_value(lines, parsed[1], where=where, item="TIME")
+            sim_time = _floats([time_token], location=where, count=1)[0]
+        line = _require(lines, f"file ended before {where}'s TIMESTEP item", location=where)
+        parsed = _header_line(line.rstrip("\n"))
+
     item = parsed[0] if parsed is not None else None
     if item != "TIMESTEP":
         raise _error(_MALFORMED, f"expected 'ITEM: TIMESTEP', found {item!r}", location=where)
@@ -338,48 +403,21 @@ def _read_block_header(
             location=where,
         )
 
-    # Optional ITEM: UNITS — the declared-vs-ambiguous contrast (Part 3 §3 n.19).
-    unit_declared = False
-    declared_style: UnitStyle | None = None
-    peeked = lines.next()
-    if peeked is not None:
-        parsed = _header_line(peeked.rstrip("\n"))
-        if parsed is not None and parsed[0] == "UNITS":
-            unit_declared = True
-            tokens = parsed[1].split()
-            if len(tokens) != 1:
-                raise _error(
-                    _MALFORMED,
-                    f"{where} declares units as {' '.join(tokens)!r}; expected one style",
-                    location=where,
-                )
-            declared_style = lookup_unit_style(tokens[0])
-            if declared_style is None:
-                raise _error(
-                    _UNSUPPORTED_UNITS,
-                    f"{where} declares unit style {tokens[0]!r}, which the hand-verified "
-                    "conversion tables do not cover (metal/real/si only, M46-S1); the file "
-                    "cannot be converted to canonical Å/fs/eV",
-                    location=where,
-                )
-            peeked = lines.next()
-
-    if unit_style is not None and declared_style is not None:
+    if recovery_style is not None and declared_style is not None:
         raise _error(
             _MALFORMED,
             f"{where} declares ITEM: UNITS {declared_style.code} but the recovery re-read was "
             "asked to apply a style; a file either declares its units or it does not",
             location=where,
         )
-    effective = unit_style if unit_style is not None else declared_style
+    effective = recovery_style or declared_style or inherited_style
 
     # ITEM: BOX BOUNDS [xy xz yz] [xflag yflag zflag] + three rows.
-    if peeked is None:
-        raise _error(_MALFORMED, f"file ended before {where}'s BOX BOUNDS item", location=where)
-    parsed = _header_line(peeked.rstrip("\n"))
+    box_line = _require(lines, f"file ended before {where}'s BOX BOUNDS item", location=where)
+    parsed = _header_line(box_line.rstrip("\n"))
     if parsed is None or parsed[0] != "BOX BOUNDS":
         raise _error(
-            _MALFORMED, f"expected 'ITEM: BOX BOUNDS', found {peeked.strip()!r}", location=where
+            _MALFORMED, f"expected 'ITEM: BOX BOUNDS', found {box_line.strip()!r}", location=where
         )
     tokens = parsed[1].split()
     triclinic = tokens[:3] == ["xy", "xz", "yz"]
@@ -435,7 +473,9 @@ def _read_block_header(
         step=step,
         n_atoms=n_atoms,
         unit_declared=unit_declared,
+        declared_style=declared_style,
         unit_style=effective,
+        sim_time=sim_time,
         box=box,
         pbc=pbc,
         columns=columns,
@@ -562,12 +602,14 @@ class LammpsDumpParser(ParserPlugin):
             )
             return ParseResult(canonical=canonical, issues=[*issues, note])
         if hint == _SPECIES_HINT:
+            species_map: Mapping[int, str] | list[str] | None = None
+            reference_symbols: list[str] | None = None
             if choice == "species_map":
                 species_map = _recover_species_map(parameters)
                 wording = "a type→symbol species_map preset"
             elif choice == "upload_reference":
-                species_map = _reference_species_map(parameters)
-                wording = "the atom symbols of a matching reference structure"
+                reference_symbols = _reference_symbols(parameters)
+                wording = "the per-atom symbols of a matching reference structure"
             else:
                 raise _error(
                     _MISSING_SPECIES,
@@ -575,7 +617,12 @@ class LammpsDumpParser(ParserPlugin):
                     "(offered: species_map, upload_reference)",
                     hint=_SPECIES_HINT,
                 )
-            frame_stream = self.parse_stream(stream, filename=filename, species_map=species_map)
+            frame_stream = self.parse_stream(
+                stream,
+                filename=filename,
+                species_map=species_map,
+                reference_symbols=reference_symbols,
+            )
             canonical, issues = materialize(frame_stream)
             note = ParseIssue(
                 severity="warning",
@@ -598,6 +645,7 @@ class LammpsDumpParser(ParserPlugin):
         filename: str | None,
         unit_style: UnitStyle | None = None,
         species_map: Mapping[int, str] | list[str] | None = None,
+        reference_symbols: list[str] | None = None,
     ) -> FrameStream:
         """Header-eager, snapshot-lazy dump parse (M12; Part 3 §2).
 
@@ -606,9 +654,12 @@ class LammpsDumpParser(ParserPlugin):
         both need frame 0's values, and both live in the header — then every later snapshot
         is read and yielded one at a time, so peak memory tracks one frame block.
 
-        ``unit_style`` / ``species_map`` are the parse-time recovery inputs (reached through
-        ``parse_recover``); the defaults honor the file's own declarations and refuse
-        honestly when they are absent.
+        ``unit_style`` / ``species_map`` / ``reference_symbols`` are the parse-time recovery
+        inputs (reached through ``parse_recover``): ``species_map`` resolves a numeric type
+        column through a type→symbol map, ``reference_symbols`` applies a matching reference
+        structure's per-atom symbols directly (so a dump with more atoms than distinct types
+        resolves too). The defaults honor the file's own declarations and refuse honestly
+        when they are absent.
         """
         issues: list[ParseIssue] = []
         lines = _Lines(stream)
@@ -617,7 +668,9 @@ class LammpsDumpParser(ParserPlugin):
             raise _error(_EMPTY, "file is empty; a LAMMPS dump starts with 'ITEM: TIMESTEP'")
 
         lines.push(first_line.rstrip("\n"))
-        first = _read_block_header(lines, unit_style=unit_style, frame_index=0)
+        first = _read_block_header(
+            lines, recovery_style=unit_style, inherited_style=None, frame_index=0
+        )
         if first.unit_style is None:
             raise _error(
                 _AMBIGUOUS_UNITS,
@@ -632,9 +685,17 @@ class LammpsDumpParser(ParserPlugin):
         # attribute across the refusal, so the non-None style is captured in a local.
         first_style = first.unit_style
         assert first_style is not None  # refused above; the generator relies on it
-        first_declared = first.unit_declared
-        first_frame, carries, symbols = _build_frame(
-            first, first_rows, species_map=species_map, issues=issues, index=0
+        # Shared across frame 0 and the generator so the "sorted by id" warning fires once for
+        # the whole trajectory and the per-frame-column warning dedupes per column (below).
+        warned: set[str] = set()
+        first_frame, carries, symbols, ids = _build_frame(
+            first,
+            first_rows,
+            species_map=species_map,
+            reference_symbols=reference_symbols,
+            issues=issues,
+            index=0,
+            warned=warned,
         )
 
         coordinate_kind = _coordinate_kind(first)
@@ -647,6 +708,13 @@ class LammpsDumpParser(ParserPlugin):
             "trajectory.timestep stays None (P3) and each step rides in "
             f"user_metadata.custom_per_frame[{_STEP_KEY!r}].",
         ]
+        if first.sim_time is not None:
+            parse_notes.append(
+                "The dump also declares an ITEM: TIME simulation time per snapshot "
+                "(dump_modify time yes); it is the run time in the style's time unit, not the "
+                "canonical dt, so it rides verbatim in "
+                f"user_metadata.custom_per_frame[{_TIME_KEY!r}]."
+            )
         provenance = build_provenance(
             format_id=FORMAT_ID,
             filename=filename,
@@ -666,29 +734,30 @@ class LammpsDumpParser(ParserPlugin):
         )
 
         def _frames() -> Iterator[StreamFrame]:
-            warned: set[str] = set()
-            yield StreamFrame(frame=first_frame, per_frame_custom={_STEP_KEY: first.step})
+            yield StreamFrame(frame=first_frame, per_frame_custom=_per_frame_custom(first))
             index = 1
             while True:
                 boundary = lines.next_significant()
                 if boundary is None:
                     return  # a complete file ends after a complete snapshot
                 lines.push(boundary)
-                header_k = _read_block_header(lines, unit_style=unit_style, frame_index=index)
-                hk_style = header_k.unit_style
-                if hk_style is None:
+                header_k = _read_block_header(
+                    lines,
+                    recovery_style=unit_style,
+                    inherited_style=first_style,
+                    frame_index=index,
+                )
+                # The style in force is never None here (frame 0's style is inherited); a *later*
+                # ITEM: UNITS naming a different style is the only unit conflict a dump can hold.
+                if (
+                    header_k.declared_style is not None
+                    and header_k.declared_style.code != first_style.code
+                ):
                     raise _error(
                         _MALFORMED,
-                        f"frame {index} declares no unit style but frame 0 does; a dump's "
-                        "unit declaration cannot appear mid-file",
-                        location=f"frame {index}",
-                    )
-                if (header_k.unit_declared, hk_style.code) != (first_declared, first_style.code):
-                    raise _error(
-                        _MALFORMED,
-                        f"frame {index} declares units {hk_style.code!r} but "
-                        f"frame 0 declares {first_style.code!r}; a dump's unit style "
-                        "must be constant across frames",
+                        f"frame {index} declares units {header_k.declared_style.code!r} but "
+                        f"frame 0 declares {first_style.code!r}; a dump's unit style must be "
+                        "constant across frames",
                         location=f"frame {index}",
                     )
                 if header_k.columns != first.columns:
@@ -709,15 +778,31 @@ class LammpsDumpParser(ParserPlugin):
                         location=f"frame {index}",
                     )
                 rows = _read_data_rows(lines, header_k)
-                frame_k, _, symbols_k = _build_frame(
+                frame_k, _, symbols_k, ids_k = _build_frame(
                     header_k,
                     rows,
                     species_map=species_map,
+                    reference_symbols=reference_symbols,
                     issues=issues,
                     index=index,
                     first_carries=carries,
                     warned=warned,
                 )
+                # Atom identity must be constant across frames (Part 2 §3.2). With ids present,
+                # each frame was sorted by id in _build_frame, so equal-length sorted id arrays
+                # that differ mean the *set* of atoms changed (a swap that a plain row-order
+                # comparison would miss) — refuse, naming a bounded sample of the difference.
+                if ids is not None and ids_k is not None and not np.array_equal(ids, ids_k):
+                    only_k = _id_preview(np.setdiff1d(ids_k, ids))
+                    only_0 = _id_preview(np.setdiff1d(ids, ids_k))
+                    raise _error(
+                        _VARIABLE_ATOM_IDENTITY,
+                        f"frame {index}'s atom id set differs from frame 0's; the canonical "
+                        "model requires a constant atom identity across frames (Part 2 §3.2). "
+                        f"ids in frame {index} not in frame 0: [{only_k}]; "
+                        f"ids in frame 0 not in frame {index}: [{only_0}]",
+                        location=f"frame {index}",
+                    )
                 if symbols_k != symbols:
                     raise _error(
                         _VARIABLE_SPECIES,
@@ -726,7 +811,7 @@ class LammpsDumpParser(ParserPlugin):
                         "identity across frames (Part 2 §3.2)",
                         location=f"frame {index}",
                     )
-                yield StreamFrame(frame=frame_k, per_frame_custom={_STEP_KEY: header_k.step})
+                yield StreamFrame(frame=frame_k, per_frame_custom=_per_frame_custom(header_k))
                 index += 1
 
         return FrameStream(header, _frames(), issues=issues)
@@ -781,6 +866,23 @@ class LammpsDumpParser(ParserPlugin):
 # --- frame building ------------------------------------------------------------------
 
 
+def _per_frame_custom(header: _BlockHeader) -> dict[str, object]:
+    """The per-snapshot custom values: the step number always, plus an ``ITEM: TIME`` run time
+    when the dump declares one (``dump_modify time yes``). Neither is the canonical ``timestep``
+    (a dt in fs the dump never states), so both ride verbatim in ``custom_per_frame`` (P3)."""
+    custom: dict[str, object] = {_STEP_KEY: header.step}
+    if header.sim_time is not None:
+        custom[_TIME_KEY] = header.sim_time
+    return custom
+
+
+def _id_preview(values: np.ndarray) -> str:
+    """A bounded preview of an id array for a refusal message (first five, then an ellipsis) —
+    a trajectory can carry 10⁴ atoms, so the full set is never dumped into the message."""
+    head = ", ".join(str(int(v)) for v in values[:5])
+    return head + (", …" if values.size > 5 else "")
+
+
 def _coordinate_kind(header: _BlockHeader) -> CoordinateColumns:
     """Resolve the coordinate family in force for ``header`` (S1's resolver)."""
     try:
@@ -794,22 +896,68 @@ def _build_frame(
     rows: list[list[str]],
     *,
     species_map: Mapping[int, str] | list[str] | None,
+    reference_symbols: list[str] | None = None,
     issues: list[ParseIssue],
     index: int,
     first_carries: Mapping[str, object] | None = None,
     warned: set[str] | None = None,
-) -> tuple[Frame, dict[str, object], list[str]]:
-    """One snapshot → (Frame, per-atom carries, symbols).
+) -> tuple[Frame, dict[str, object], list[str], np.ndarray | None]:
+    """One snapshot → (Frame, per-atom carries, symbols, sorted id array | None).
 
     The carries are built for every snapshot (they are needed to compare later snapshots
     against frame 0), but only frame 0's become the object-level ``custom_per_atom``; the
     caller passes them in as ``first_carries`` for later snapshots so a column whose values
     vary across frames warns once per column (``custom_per_atom`` is stored once per object,
     Part 2 §3.10 — the extXYZ streaming consistency check, same shape).
+
+    When the dump carries an ``id`` column the rows are sorted by it first (LAMMPS does not
+    write atoms in a stable order unless ``dump_modify sort id`` is set, so a raw dump would
+    otherwise scramble the per-atom arrays frame to frame). The sorted id array is returned so
+    the caller can enforce constant atom identity; a reorder is announced once (``warned``).
     """
     assert header.unit_style is not None  # refused in parse_stream before any frame is built
     style = header.unit_style
     distance = style.distance_to_angstrom
+
+    # Sort by atom id when present (finding 1). LAMMPS writes atoms in no stable order unless
+    # `dump_modify sort id` is set, so a raw dump would otherwise scramble the per-atom arrays
+    # from frame to frame. Every downstream read below (positions, symbols, velocities, carries)
+    # uses the reordered rows, so the whole snapshot is consistent, and the sorted id array is
+    # returned so the caller can enforce constant atom identity.
+    ids: np.ndarray | None = None
+    if "id" in header.columns:
+        id_floats = _column_floats(rows, _column_index(header, "id"), header)
+        if not np.all(id_floats == np.floor(id_floats)):
+            raise _error(
+                _MALFORMED,
+                f"{header.location} id column holds non-integer values; LAMMPS atom ids are "
+                "integers",
+                location=header.location,
+            )
+        order = np.argsort(id_floats, kind="stable")
+        reordered = not np.array_equal(order, np.arange(order.size))
+        rows = [rows[i] for i in order]
+        ids = id_floats[order].astype(np.int64)
+        if ids.size > 1 and np.any(np.diff(ids) == 0):
+            raise _error(
+                _MALFORMED,
+                f"{header.location} repeats an atom id; ids must be unique within a snapshot",
+                location=header.location,
+            )
+        if reordered and warned is not None and _ATOMS_REORDERED not in warned:
+            warned.add(_ATOMS_REORDERED)
+            issues.append(
+                ParseIssue(
+                    severity="warning",
+                    code=_ATOMS_REORDERED,
+                    message=(
+                        "atoms were not written in id order (no `dump_modify sort id`); rows "
+                        "were sorted by ascending atom id so the per-atom arrays line up across "
+                        "frames. The atoms and their data are unchanged, only reordered."
+                    ),
+                    location=header.location,
+                )
+            )
 
     coords = _coordinate_kind(header)
     positions_raw: np.ndarray
@@ -825,7 +973,7 @@ def _build_frame(
         positions_raw = positions_raw - header.box.origin
     positions = positions_raw * distance
 
-    symbols = _resolve_symbols(header, rows, species_map)
+    symbols = _resolve_symbols(header, rows, species_map, reference_symbols)
 
     velocities: np.ndarray | None = None
     if all(name in header.columns for name in _VELOCITY_COLUMNS):
@@ -880,8 +1028,10 @@ def _build_frame(
                     message=(
                         f"per-atom image flags (ix/iy/iz) carried to "
                         f"user_metadata.custom_per_atom[{IMAGE_FLAGS_CARRY_KEY!r}]; coordinates "
-                        f"are {convention}, so unwrapping remains possible from a format that can "
-                        "hold them. The flags are never applied on parse (D43)."
+                        f"are {convention}. custom_per_atom is object-level (Part 2 §3.10), so "
+                        "only frame 0's flags are retained — unwrapping is reconstructable at "
+                        "frame 0, but a trajectory whose flags advance across frames keeps only "
+                        "the first snapshot's. The flags are never applied on parse (D43)."
                     ),
                     location="frame 0",
                 )
@@ -938,17 +1088,40 @@ def _build_frame(
         cell=Cell(lattice_vectors=header.box.lattice * distance, pbc=header.pbc),
         dynamics=Dynamics(velocities=velocities),
     )
-    return frame, carries, symbols
+    return frame, carries, symbols, ids
 
 
 def _resolve_symbols(
     header: _BlockHeader,
     rows: list[list[str]],
     species_map: Mapping[int, str] | list[str] | None,
+    reference_symbols: list[str] | None = None,
 ) -> list[str]:
     """The frame's element symbols: an element column resolves directly; a numeric type
     column resolves only under a ``species_map`` preset (the existing ``missing_species``
-    case, Part 3 §7.2) and refuses recoverably otherwise."""
+    case, Part 3 §7.2) and refuses recoverably otherwise.
+
+    ``reference_symbols`` (the ``upload_reference`` recovery choice) supplies the per-atom
+    symbols directly, indexed by atom in the dump's id-sorted order — so a dump with more
+    atoms than distinct types resolves, which a type→symbol map could never express. The count
+    must match this snapshot's atom count exactly, or the reference does not describe this dump
+    and the conversion is refused (never silently trimmed)."""
+    if reference_symbols is not None:
+        if len(reference_symbols) != len(rows):
+            raise _error(
+                _MISSING_SPECIES,
+                f"{header.location} has {len(rows)} atoms but the reference structure supplies "
+                f"{len(reference_symbols)} per-atom symbols; the reference does not match this "
+                "dump",
+                location=header.location,
+                hint=_SPECIES_HINT,
+            )
+        try:
+            return resolve_species(
+                type_values=None, element_column=list(reference_symbols), species_map=None
+            )
+        except ValueError as exc:
+            raise _error(_MALFORMED, f"{header.location}: {exc}") from exc
     element_names = [name for name in header.columns if is_element_column(name)]
     if len(element_names) > 1:
         raise _error(
@@ -1034,13 +1207,14 @@ def _recover_species_map(parameters: dict[str, object]) -> Mapping[int, str] | l
     )
 
 
-def _reference_species_map(parameters: dict[str, object]) -> Mapping[int, str]:
-    """Build the type→symbol map for the ``upload_reference`` choice from a matching
+def _reference_symbols(parameters: dict[str, object]) -> list[str]:
+    """The per-atom symbols for the ``upload_reference`` choice, drawn from a matching
     reference structure (Part 4 §3.3): the CLI injects a parsed ``reference`` CanonicalObject
-    (``cli._inject_references``); its frame-0 per-atom symbols, indexed by atom, become the
-    map. A count mismatch is caught by the shared core's two-sided validation — every
-    observed type must be named and every map entry must be observed — so a reference that
-    does not match this dump is refused, never silently trimmed."""
+    (``cli._inject_references``); its frame-0 per-atom symbols are returned in order, indexed by
+    atom. They are applied directly (``_resolve_symbols``), *not* collapsed into a type→symbol
+    map — so a dump with more atoms than distinct types (the common case) resolves, and a
+    reference whose atom count does not match this dump is refused there, never silently
+    trimmed."""
     ref = parameters.get("reference")
     if ref is None:
         raise _error(
@@ -1050,8 +1224,7 @@ def _reference_species_map(parameters: dict[str, object]) -> Mapping[int, str]:
             hint=_SPECIES_HINT,
         )
     reference = cast(CanonicalObject, ref)
-    symbols = reference.frames[0].atoms.symbols
-    return {i + 1: str(s) for i, s in enumerate(symbols)}
+    return [str(s) for s in reference.frames[0].atoms.symbols]
 
 
 def _units_distance(style: UnitStyle) -> str:
