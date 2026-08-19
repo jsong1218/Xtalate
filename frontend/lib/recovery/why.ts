@@ -98,6 +98,13 @@ export const WHY_THIS_MATTERS: Record<string, WhyThisMatters> = {
       "This is not a value Xtalate invents or fills — the numbers are your file's own. What you are choosing is how to read them so they land in the canonical tension-positive convention: 'compression-positive' flips the sign, 'tension-positive' keeps it as written. Choose wrong and every stress in the output is negated, so the interpretation is recorded as an explicit assumption on the conversion rather than guessed.",
     ],
   },
+  ambiguous_units: {
+    question: QUESTION,
+    stakes: [
+      "A LAMMPS dump records bare numbers for positions and velocities but does not always state which unit style produced them. Without the style, a length of 1.0 could be one ångström (metal, real) or one metre (si), and a velocity's units differ the same way — so the numbers cannot be interpreted, or converted, until the style is fixed.",
+      "This is not a value Xtalate invents — the numbers are your file's own. What you are choosing is how to read the units already written: 'metal' (ångström, picoseconds, eV), 'real' (ångström, femtoseconds, kcal/mol), or 'si' (metre, seconds, joule). Pick the wrong style and every length and velocity is off by orders of magnitude, so the choice is recorded as an explicit assumption on the conversion rather than guessed.",
+    ],
+  },
 };
 
 /** Disclosure copy for a scenario code, or `null` when there is none (a plugin scenario). */
