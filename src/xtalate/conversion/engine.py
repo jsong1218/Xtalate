@@ -162,7 +162,13 @@ class ConversionEngine:
         ``True`` for a directory-writing caller (CLI), ``False`` for the single-download HTTP
         service, so the pause the service shows never offers a choice it cannot fulfil."""
         matrix = self._registry.capability_matrix()
-        diff = build_preflight(source, matrix, target_format_id, output_multifile=output_multifile)
+        diff = build_preflight(
+            source,
+            matrix,
+            target_format_id,
+            output_multifile=output_multifile,
+            source_format_id=source_format_id,
+        )
         status = "awaiting_recovery" if diff.unresolved else "completed"
         report = self._assemble(
             stage="preflight",
@@ -225,7 +231,13 @@ class ConversionEngine:
             # report like any parse warning (Part 3 §5 rule 5), so the recovery is never silent.
             parse_issues = [*parse_issues, *parse_recovery.issues]
         matrix = self._registry.capability_matrix()
-        diff = build_preflight(source, matrix, target_format_id, output_multifile=output_multifile)
+        diff = build_preflight(
+            source,
+            matrix,
+            target_format_id,
+            output_multifile=output_multifile,
+            source_format_id=source_format_id,
+        )
         # Opt-in fabricative scenarios (velocity/mass emission) the user requested via
         # `recovery_choices` — not auto-detected by the diff, since the target does not *require*
         # these fields (Part 4 §3.3, D46). Merged with the diff's scenarios before recovery.
@@ -503,7 +515,13 @@ class ConversionEngine:
         the resume path does (Part 6 §6)."""
         recovery_choices = recovery_choices or {}
         matrix = self._registry.capability_matrix()
-        diff = build_preflight(source, matrix, target_format_id, output_multifile=output_multifile)
+        diff = build_preflight(
+            source,
+            matrix,
+            target_format_id,
+            output_multifile=output_multifile,
+            source_format_id=source_format_id,
+        )
         on_demand = on_demand_fabricative_scenarios(
             source, matrix, target_format_id, recovery_choices, mode=mode
         )
@@ -695,6 +713,7 @@ class ConversionEngine:
             partial_occupancy=partial_occupancy_count(None),
             matrix=matrix,
             target_format_id=target_format_id,
+            source_format_id=source_format_id,
         )
         preserved = [*diff.preserved, *diff.pending]
         removed = diff.removed
@@ -910,6 +929,7 @@ class ConversionEngine:
             partial_occupancy=partial_occupancy_count(None),
             matrix=matrix,
             target_format_id=target_format_id,
+            source_format_id=source_format_id,
         )
         fs_scenario = next((s for s in diff.unresolved if s.scenario == "frame_selection"), None)
         other = [s for s in diff.unresolved if s.scenario != "frame_selection"]

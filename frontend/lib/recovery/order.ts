@@ -7,9 +7,9 @@
  * it depends on. That order is engine knowledge, not UI knowledge (v0.7 standing rule 3: the UI
  * renders envelopes, it never re-derives engine behaviour), so it is published by the engine as
  * `scenario_resolution_order` in the committed `docs/vocabulary.json` — the parse-time recovery stage
- * (`missing_species`, `truncate_corrupt_tail`, resolved *before* parsing completes) followed by the
- * conversion-time dependency order (frame_selection → constraint → lattice → masses → velocities →
- * ambiguous_stress_convention).
+ * (`missing_species`, `truncate_corrupt_tail`, `ambiguous_units`, resolved *before* parsing completes)
+ * followed by the conversion-time dependency order (frame_selection → constraint → lattice → masses →
+ * velocities → ambiguous_stress_convention).
  *
  * This constant mirrors that artifact; `order.test.ts` asserts they are equal, so it can never drift
  * the way the old hand-copied `DEP_ORDER` did — and, unlike that copy, it sorts the parse-time
@@ -22,6 +22,7 @@ import type { AwaitingScenario } from "@/lib/report/types";
 export const RECOVERY_RESOLUTION_ORDER: readonly string[] = [
   "missing_species",
   "truncate_corrupt_tail",
+  "ambiguous_units",
   "frame_selection",
   "constraint_representation",
   "missing_lattice",

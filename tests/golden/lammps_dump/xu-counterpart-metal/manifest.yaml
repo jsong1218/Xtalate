@@ -1,0 +1,19 @@
+case: xu-counterpart-metal
+format_id: lammps_dump
+source_file: dump.lammpstrj
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: d3843d0859c3e10cb4f52b24b106a79a2d037bb31154f4539bae3ec35b95713f
+expected_sha256: 22f18b192f16cf9014ab441e1be61aed6211a01bed5a97f16f690863f3dadf12
+origin:
+  kind: synthetic
+  source: 'Hand-written for M46-S3 (image flags): the unwrapped-coordinate counterpart of wrapped-flags-metal.'
+  license: Apache-2.0
+notes: >-
+  The xu-counterpart proof fixture (M46-S3): the same physical trajectory as
+  wrapped-flags-metal, described with unwrapped xu/yu/zu coordinates (atom 2 at continuous
+  (10.5,0.5,0.5) A, no image-flag columns). Reading both fixtures and applying the flags to
+  the wrapped one (in the test, never in the parser) must yield identical positions — the
+  correctness proof that the carried image flags are sufficient to reconstruct what xu gives
+  directly, and the fixture against which the LAMMPSDUMP_UNWRAPPING_LOST_ON_EXPORT prediction
+  is proven (converting either to a format that cannot hold flags fires it).

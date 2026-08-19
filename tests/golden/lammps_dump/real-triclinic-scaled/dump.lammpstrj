@@ -1,0 +1,13 @@
+ITEM: UNITS
+real
+ITEM: TIMESTEP
+0
+ITEM: NUMBER OF ATOMS
+2
+ITEM: BOX BOUNDS xy xz yz pp pp pp
+0 28 5
+0 12 3
+0 10 2
+ITEM: ATOMS id element xs ys zs
+1 Si 0.5 0.5 0.5
+2 O 0.0 0.0 0.0

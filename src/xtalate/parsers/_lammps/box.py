@@ -1,0 +1,102 @@
+"""Triclinic box-bounds ↔ lattice-vectors mapping (M46; the shared `_lammps` core).
+
+LAMMPS dump files write the box on three ``ITEM: BOX BOUNDS`` rows: for an orthogonal
+box just ``xlo xhi`` / ``ylo yhi`` / ``zlo zhi``; for a restricted triclinic box the
+header line gains ``xy xz yz`` and each row carries the tilt of its trailing dimension.
+
+**The bound-vs-edge subtlety (verified against LAMMPS's "Triclinic (non-orthogonal)
+simulation boxes" howto, https://docs.lammps.org/Howto_triclinic.html, accessed
+2026-08).** The restricted triclinic box is defined by its *edge* parameters
+``(xlo, xhi, ylo, yhi, zlo, zhi, xy, xz, yz)`` with edge vectors
+
+    a = (xhi−xlo, 0, 0),  b = (xy, yhi−ylo, 0),  c = (xz, yz, zhi−zlo),
+
+but a dump file does **not** write those bounds directly: it writes the *axis-aligned
+bounding box* that encloses the tilted cell, computed from the restricted parameters as
+
+    xlo_bound = xlo + MIN(0, xy, xz, xy+xz)      xhi_bound = xhi + MAX(0, xy, xz, xy+xz)
+    ylo_bound = ylo + MIN(0, yz)                 yhi_bound = yhi + MAX(0, yz)
+    zlo_bound = zlo                              zhi_bound = zhi
+
+(the doc's exact formulas, under "Output of restricted and general triclinic boxes in a
+dump file"). A naive ``a = (xhi_bound − xlo_bound, …)`` therefore builds the wrong cell
+whenever any tilt is non-zero — the *edge* length is recovered by inverting the
+bounding-box formulas first:
+
+    xlo = xlo_bound − MIN(0, xy, xz, xy+xz)      xhi = xhi_bound − MAX(0, xy, xz, xy+xz)
+    ylo = ylo_bound − MIN(0, yz)                 yhi = yhi_bound − MAX(0, yz)
+
+The orthogonal box is the tilt=0 special case: the inversion is the identity and the
+three edge vectors are diagonal.
+
+Scaled (``xs``/``ys``/``zs``) coordinates are fractional in the tilted box, so the
+scaled→Cartesian mapping is ``r = origin + frac·lattice`` where ``origin = (xlo, ylo,
+zlo)`` — the same mapping LAMMPS itself uses (``x = xlo + sx·lx + sy·xy + sz·xz`` etc.,
+per the howto's general-to-restricted discussion).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+
+@dataclass(frozen=True)
+class Box:
+    """A LAMMPS box in canonical form: an explicit lattice plus its origin (Å).
+
+    ``lattice`` holds the edge vectors as rows (``a``, ``b``, ``c``), so the
+    scaled→Cartesian mapping is the single matrix multiply ``frac @ lattice + origin``.
+    """
+
+    lattice: np.ndarray  # 3×3, row vectors (Å)
+    origin: np.ndarray  # (xlo, ylo, zlo) (Å)
+
+
+def box_from_bounds(
+    xlo: float,
+    xhi: float,
+    ylo: float,
+    yhi: float,
+    zlo: float,
+    zhi: float,
+    *,
+    xy: float = 0.0,
+    xz: float = 0.0,
+    yz: float = 0.0,
+) -> Box:
+    """Build the canonical box from a dump's ``ITEM: BOX BOUNDS`` rows.
+
+    The six bounds are whatever the dump row states — for a triclinic box these are the
+    *bounding-box* values ``xlo_bound … zhi_bound``, which are inverted to the restricted
+    edge parameters before the edge vectors are formed (the bound-vs-edge subtlety
+    above). ``xy``/``xz``/``yz`` default to zero, which makes the orthogonal
+    ``ITEM: BOX BOUNDS`` (two-column rows) the tilt=0 special case with no extra call.
+    """
+
+    # Invert the bounding-box formulas (Howto_triclinic, "Output of … dump file").
+    xlo_restricted = xlo - min(0.0, xy, xz, xy + xz)
+    xhi_restricted = xhi - max(0.0, xy, xz, xy + xz)
+    ylo_restricted = ylo - min(0.0, yz)
+    yhi_restricted = yhi - max(0.0, yz)
+    lx = xhi_restricted - xlo_restricted
+    ly = yhi_restricted - ylo_restricted
+    lz = zhi - zlo
+    lattice = np.array([[lx, 0.0, 0.0], [xy, ly, 0.0], [xz, yz, lz]], dtype=np.float64)
+    return Box(
+        lattice=lattice,
+        origin=np.array([xlo_restricted, ylo_restricted, zlo], dtype=np.float64),
+    )
+
+
+def scaled_to_cartesian(scaled: np.ndarray, box: Box) -> np.ndarray:
+    """Convert ``(N, 3)`` scaled (``xs``/``ys``/``zs``) coordinates to Cartesian Å.
+
+    Scaled coordinates are fractional in the tilted box (0..1 in each direction), so the
+    conversion is the single affine map ``r = frac·lattice + origin`` — exactly the
+    mapping LAMMPS applies for its restricted triclinic box (the howto's
+    ``x = xlo + sx·lx + sy·xy + sz·xz`` …).
+    """
+    result: np.ndarray = scaled @ box.lattice + box.origin
+    return result

@@ -159,6 +159,40 @@ _TAILORED: dict[str, list[tuple[str, bytes]]] = {
             + b"  POSITION  TOTAL-FORCE (eV/Angst)\n  ---\n  0 0 0 0 0 0\n",
         ),
     ],
+    # M46-S2: the LAMMPS dump parser — a plausible ITEM: block header with a broken body,
+    # reaching past the sniff guard into the block/record-level parsing edges.
+    "lammps_dump": [
+        ("header_only", b"ITEM: TIMESTEP\n0\n"),  # no NUMBER OF ATOMS -> malformed header.
+        ("bad_item", b"ITEM: TIMESTEP\n0\nITEM: NUMBER OF ATOMS\n2\nITEM: XYZ\n"),
+        (
+            "no_box_flags",
+            b"ITEM: TIMESTEP\n0\nITEM: NUMBER OF ATOMS\n1\n"
+            + b"ITEM: BOX BOUNDS\n0 10\n0 10\n0 10\n",
+        ),  # noqa: E501
+        (
+            "triclinic_missing_tilt",
+            b"ITEM: TIMESTEP\n0\nITEM: NUMBER OF ATOMS\n1\n"
+            + b"ITEM: BOX BOUNDS xy xz yz pp pp pp\n0 28\n0 12\n0 10\n",
+        ),
+        (
+            "short_data_block",
+            b"ITEM: TIMESTEP\n0\nITEM: NUMBER OF ATOMS\n3\nITEM: UNITS metal\n"
+            + b"ITEM: BOX BOUNDS pp pp pp\n0 10\n0 10\n0 10\n"
+            + b"ITEM: ATOMS id element x y z\n1 Si 1.0 2.0 3.0\n2 O 4.0 5.0 6.0\n",
+        ),
+        (
+            "nonnumeric_coordinate",
+            b"ITEM: TIMESTEP\n0\nITEM: NUMBER OF ATOMS\n1\nITEM: UNITS metal\n"
+            + b"ITEM: BOX BOUNDS pp pp pp\n0 10\n0 10\n0 10\n"
+            + b"ITEM: ATOMS id element x y z\n1 Si oops 2.0 3.0\n",
+        ),
+        (
+            "invalid_element",
+            b"ITEM: TIMESTEP\n0\nITEM: NUMBER OF ATOMS\n1\nITEM: UNITS metal\n"
+            + b"ITEM: BOX BOUNDS pp pp pp\n0 10\n0 10\n0 10\n"
+            + b"ITEM: ATOMS id element x y z\n1 Xx 1.0 2.0 3.0\n",
+        ),
+    ],
 }
 
 

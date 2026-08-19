@@ -62,6 +62,11 @@ export const SCENARIO_LABELS: Record<string, Labeled> = {
     description:
       "The file has a stress tensor but does not say whether positive means tension or compression.",
   },
+  ambiguous_units: {
+    label: "Unit style not declared",
+    description:
+      "The dump does not state its LAMMPS unit style, so lengths and velocities cannot be interpreted without one.",
+  },
 };
 
 /**
@@ -112,6 +117,11 @@ export const CHOICE_LABELS: Record<string, Record<string, Labeled>> = {
   ambiguous_stress_convention: {
     ase_sign_convention: { label: "Read it as compression-positive (ASE / VASP convention)" },
     tension_positive: { label: "Read it as tension-positive (canonical convention)" },
+  },
+  ambiguous_units: {
+    metal: { label: "metal units (ångström, picoseconds, eV)" },
+    real: { label: "real units (ångström, femtoseconds, kcal/mol)" },
+    si: { label: "SI units (metre, seconds, joule)" },
   },
 };
 

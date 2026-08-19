@@ -41,7 +41,12 @@ from xtalate.recovery import RecoveryError, UnresolvedScenario, available_option
 from xtalate.schema import CanonicalObject, PresenceMap
 from xtalate.schema.paths import DERIVED_PATHS as _DERIVED_PATHS
 from xtalate.schema.paths import is_full_occupancy
-from xtalate.sdk import STRESS_CARRY_KEYS, CapabilityLevel, FormatCapabilities
+from xtalate.sdk import (
+    IMAGE_FLAGS_CARRY_KEY,
+    STRESS_CARRY_KEYS,
+    CapabilityLevel,
+    FormatCapabilities,
+)
 
 # `_DERIVED_PATHS` (`atoms.atomic_numbers`) is a derived mirror of `atoms.symbols` (Part 2 §3.3),
 # not independent source information, so it is excluded from the diff and the completeness invariant
@@ -92,6 +97,12 @@ _STRESS_CARRY_PATHS = {
     key: f"user_metadata.custom_per_frame['{key}']" for key in _STRESS_CARRY_KEYS
 }
 _ELECTRONIC_STRESS = "electronic.stress"
+
+#: The presence path of the image-flag carry (M46-S3): the per-atom wrapped-coordinate
+#: bookkeeping the LAMMPS dump parser carries specifically. Its presence proves the source
+#: object actually holds image flags; the capability comparison (source-read present,
+#: target-write absent) drives the unwrapping-loss prediction.
+_IMAGE_FLAGS_PATH = f"user_metadata.custom_per_atom['{IMAGE_FLAGS_CARRY_KEY}']"
 
 # Opt-in fabricative scenarios: a canonical field the target *can* write but does not *require*, so
 # the pre-flight diff never demands it. Emission is requested by the user supplying a recovery
@@ -158,13 +169,17 @@ def build_preflight(
     target_format_id: str,
     *,
     output_multifile: bool = True,
+    source_format_id: str | None = None,
 ) -> PreflightDiff:
     """Compute the pre-flight diff of ``source`` against the target's write capabilities.
 
     ``output_multifile`` declares whether the caller's output sink accepts multiple files, gating
     the ``split_all`` recovery option (Part 4 §3.3): ``True`` for the CLI (writes a directory),
     ``False`` for the single-download HTTP service. Defaults ``True`` so the library/CLI behaviour
-    is unchanged."""
+    is unchanged. ``source_format_id`` names the source's format so the diff can read its
+    *read*-side capability declaration — the named image-flag dimension (M46-S3) — for the
+    unwrapping-loss prediction; ``None`` (a caller that does not know the source format) skips
+    that gate."""
     return build_preflight_from_presence(
         source.field_presence(),
         frame_count=source.frame_count,
@@ -173,6 +188,7 @@ def build_preflight(
         matrix=matrix,
         target_format_id=target_format_id,
         output_multifile=output_multifile,
+        source_format_id=source_format_id,
     )
 
 
@@ -185,6 +201,7 @@ def build_preflight_from_presence(
     matrix: CapabilityMatrix,
     target_format_id: str,
     output_multifile: bool = True,
+    source_format_id: str | None = None,
 ) -> PreflightDiff:
     """The presence-driven core of the pre-flight diff (M12).
 
@@ -334,6 +351,34 @@ def build_preflight_from_presence(
                         "the values are carried verbatim, but nothing downstream reads them as "
                         "occupancy. Occupancy is a known gap in the Canonical Model "
                         "(Part 3 §3 n.11), not an oversight of this target."
+                    ),
+                    source="capability",
+                )
+            )
+
+    # The image-flag hazard (M46-S3, D176): a source that carries per-atom image flags — only a
+    # wrapped LAMMPS dump produces them — targets a format that cannot hold them. The generic
+    # `removed` entry above already says "we did not carry this column"; this warning names the
+    # *consequence*: the output can no longer be unwrapped, and it looks correct. Driven by the
+    # named capability dimension (source-read present ∧ target-write absent), read directly from
+    # the declarations — not a hard-coded format list (**P6**). The source-read gate uses the
+    # `source_format_id` the engine threads in; a caller without it still fires on the carry key's
+    # presence (only the lammps_dump parser produces that key).
+    if presence.status_of(_IMAGE_FLAGS_PATH) != "absent" and not caps.holds_image_flags:
+        source_holds = (
+            source_format_id is None or matrix.get(source_format_id, "read").holds_image_flags
+        )
+        if source_holds:
+            diff.warnings.append(
+                ReportWarning(
+                    code="LAMMPSDUMP_UNWRAPPING_LOST_ON_EXPORT",
+                    message=(
+                        f"source carries per-atom image flags (wrapped-coordinate bookkeeping) in "
+                        f"user_metadata.custom_per_atom[{IMAGE_FLAGS_CARRY_KEY!r}], and target "
+                        f"format {target_format_id!r} cannot hold them. The output can no longer "
+                        "be unwrapped: continuous trajectories cannot be reconstructed from it, "
+                        "even though it looks correct. The flags were carried on parse, never "
+                        "applied."
                     ),
                     source="capability",
                 )

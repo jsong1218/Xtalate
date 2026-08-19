@@ -25,6 +25,10 @@ _EXPECTED_CLASSES = {
     # choice is required in both modes, yet no `supplied` entry is recorded (the stress values are
     # genuine source data; only their sign convention is resolved).
     "ambiguous_stress_convention": HazardClass.FABRICATIVE,
+    # M46: FABRICATIVE for mode gating, but interpretive — a LAMMPS file with no declared unit
+    # style fires from the parser (recovery_hint="ambiguous_units"); the raw numbers are genuine
+    # source data, only their scale is resolved, so no `supplied` entry is recorded.
+    "ambiguous_units": HazardClass.FABRICATIVE,
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
@@ -87,6 +91,12 @@ def test_missing_species_options() -> None:
 
 def test_truncate_corrupt_tail_options() -> None:
     assert available_options("truncate_corrupt_tail") == ["truncate", "abort"]
+
+
+def test_ambiguous_units_options() -> None:
+    # M46: exactly the three styles whose conversion factors are hand-verified; grows only by
+    # corpus evidence (M49), never from LAMMPS's documented style list.
+    assert available_options("ambiguous_units") == ["metal", "real", "si"]
 
 
 # --- scenarios that refuse in this version (empty offered list) ----------------------------------

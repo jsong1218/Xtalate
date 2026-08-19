@@ -93,6 +93,48 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-authored for M42-S4 (RF-4): H2 in a 4 A cubic cell carrying energy=, a per-atom forces= column, and a 6-number Voigt stress= (ASE order xx,yy,zz,yz,xz,xy) — the spelling ASE's extXYZ reader refuses outright without the parser's 6-number expansion.
 
+## `lammps_dump` / `metal-ortho-declared` (golden)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M46-S2 (LAMMPS dump parser): a two-frame trajectory in declared metal units.
+
+## `lammps_dump` / `real-triclinic-scaled` (golden)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M46-S2 (LAMMPS dump parser): a triclinic scaled-coordinate dump in declared real units.
+
+## `lammps_dump` / `si-ortho-declared` (golden)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M46-S2 (LAMMPS dump parser): a single-frame dump in declared si units.
+
+## `lammps_dump` / `typed-atoms-metal` (golden)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M46-S2 (LAMMPS dump parser): a typed-atom dump in declared metal units.
+
+## `lammps_dump` / `wrapped-flags-metal` (golden)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M46-S3 (image flags): a wrapped-coordinate dump whose second atom crosses a periodic boundary.
+
+## `lammps_dump` / `xu-counterpart-metal` (golden)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M46-S3 (image flags): the unwrapped-coordinate counterpart of wrapped-flags-metal.
+
 ## `outcar` / `md-h2o` (golden)
 
 - **Source file:** `OUTCAR`

@@ -1,0 +1,19 @@
+case: real-triclinic-scaled
+format_id: lammps_dump
+source_file: dump.lammpstrj
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 43e6188537cdc8d917921b31e10517b102483daa07d39ce5400666b828847cb6
+expected_sha256: a42c5a186a4e9a97f5f4eeb34960341dd25fee8f1fa9755031bb32be1be69a48
+origin:
+  kind: synthetic
+  source: 'Hand-written for M46-S2 (LAMMPS dump parser): a triclinic scaled-coordinate dump in declared real units.'
+  license: Apache-2.0
+notes: >-
+  The triclinic-box golden (M46-S2): a single-frame dump in declared real units whose
+  'ITEM: BOX BOUNDS xy xz yz' rows carry the axis-aligned bounding-box values that must be
+  inverted to the restricted edge parameters (Howto_triclinic; the S1 shared-core subtlety),
+  with scaled (xs/ys/zs) coordinates mapped to Cartesian via the tilted lattice. Edge
+  vectors a=(20,0,0) b=(5,10,0) c=(3,2,10); the Si atom at scaled (0.5,0.5,0.5) lands at
+  Cartesian (14,6,5) A. No velocity columns -> velocities stay None (P3). A sign or
+  transpose error in the tilt inversion cannot hide behind an orthogonal lattice.
