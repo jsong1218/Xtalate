@@ -185,9 +185,11 @@ def _build_assumption(
             parameters=_species_params(code, parameters),
             origin="preset",
             description=(
-                f"Element symbols supplied at parse time via {code!r}; the source (VASP-4 POSCAR) "
-                "listed only atom counts. Symbols are required to represent the structure and did "
-                "not exist in the file — they are fabricated by this recorded choice, not carried."
+                f"Element symbols supplied at parse time via {code!r}; the source file carried no "
+                "element symbols (a VASP-4 POSCAR lists only atom counts; a LAMMPS dump lists "
+                "only numeric atom types). Symbols are required to represent the structure and "
+                "did not exist in the file — they are fabricated by this recorded choice, not "
+                "carried."
             ),
             supplied=[
                 SuppliedField(

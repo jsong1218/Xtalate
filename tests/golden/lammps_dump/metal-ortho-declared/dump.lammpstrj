@@ -1,0 +1,24 @@
+ITEM: TIMESTEP
+0
+ITEM: NUMBER OF ATOMS
+2
+ITEM: UNITS metal
+ITEM: BOX BOUNDS pp pp pp
+0 20
+0 20
+0 20
+ITEM: ATOMS id element x y z vx vy vz c_pe
+1 Si 1.0 2.0 3.0 0.1 0.2 0.3 5.0
+2 O 4.0 5.0 6.0 -0.1 -0.2 -0.3 6.0
+ITEM: TIMESTEP
+10
+ITEM: NUMBER OF ATOMS
+2
+ITEM: UNITS metal
+ITEM: BOX BOUNDS pp pp pp
+0 20
+0 20
+0 20
+ITEM: ATOMS id element x y z vx vy vz c_pe
+1 Si 1.5 2.5 3.5 0.11 0.21 0.31 5.0
+2 O 4.0 5.0 6.0 -0.11 -0.21 -0.31 6.0

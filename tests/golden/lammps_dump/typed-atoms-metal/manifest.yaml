@@ -1,0 +1,18 @@
+case: typed-atoms-metal
+format_id: lammps_dump
+source_file: dump.lammpstrj
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 6685b5135872f73d1c4f43e32b8dc784f30fd55c6f96e26e39aeb1632aefcc73
+expected_sha256: 8c962d36a2df24a3e39198476f26dd878529d0e9e7e7bb8fef23eb88ee2c4cd6
+origin:
+  kind: synthetic
+  source: 'Hand-written for M46-S2 (LAMMPS dump parser): a typed-atom dump in declared metal units.'
+  license: Apache-2.0
+notes: >-
+  The typed-atoms golden (M46-S2): a single-frame dump in declared metal units whose
+  'ITEM: ATOMS' header carries a numeric type column (1, 2) and no element column. The
+  plain parse refuses recoverably (LAMMPSDUMP_MISSING_SPECIES, hint supply_species); the
+  expected canonical is the object produced by parse_recover(supply_species, species_map
+  '1:Si 2:O'), which resolves types to symbols through the shared core's two-sided map
+  validation and carries the original type numbers under custom_per_atom['lammps_dump:type'].

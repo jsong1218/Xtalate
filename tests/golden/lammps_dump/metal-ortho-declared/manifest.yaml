@@ -1,0 +1,18 @@
+case: metal-ortho-declared
+format_id: lammps_dump
+source_file: dump.lammpstrj
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 35bcc178628891c6511e147c548697892205833d71b9d127fa13b65000f8acb6
+expected_sha256: 100a611b39697fbdfd504b4b0bfdb556d995f07119fc2ca6a781cd556f7fa171
+origin:
+  kind: synthetic
+  source: 'Hand-written for M46-S2 (LAMMPS dump parser): a two-frame trajectory in declared metal units.'
+  license: Apache-2.0
+notes: >-
+  The declared-units / ordinary-axes golden (M46-S2): a two-frame LAMMPS dump with an
+  explicit 'ITEM: UNITS metal' header (no scenario fires — the style lands in parse_notes,
+  the declared-vs-ambiguous contrast), an orthogonal box, element-labeled atoms, a velocity
+  family (converted A/ps -> A/fs, x1e-3), and one generic compute column c_pe carried to
+  custom_per_atom['lammps_dump:c_pe'] with LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED. Frame 1 moves
+  the Si atom so a frozen-frame parser would fail the golden diff.

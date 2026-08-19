@@ -1,0 +1,17 @@
+case: si-ortho-declared
+format_id: lammps_dump
+source_file: dump.lammpstrj
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 20556f6e7b970b4a85b9df29676f3d51b93c546fcce4dfa6114df21e0796ea21
+expected_sha256: 6baf35b7920617cc26c2ce91681c8b5a3ab9cd273bca55e0dd34cc9ef3633f8f
+origin:
+  kind: synthetic
+  source: 'Hand-written for M46-S2 (LAMMPS dump parser): a single-frame dump in declared si units.'
+  license: Apache-2.0
+notes: >-
+  The si-units golden (M46-S2): a single-frame dump in declared si units whose positions
+  and box bounds are metres and must be converted to the canonical A/fs/eV system (x1e10
+  distance). The Si atom at (0.1,0.2,0.3) m -> (1e9,2e9,3e9) A; the 1 m box -> a 1e10 A
+  lattice. No velocity columns -> velocities stay None (P3). Pins the SI row of the S1
+  hand-verified unit tables end to end through the parser.

@@ -14,6 +14,7 @@ from __future__ import annotations
 from xtalate.parsers.ase_traj import AseTrajParser, make_ase_traj_parser
 from xtalate.parsers.cif import CifParser, make_cif_parser
 from xtalate.parsers.extxyz import ExtxyzParser
+from xtalate.parsers.lammps_dump import LammpsDumpParser, make_lammps_dump_parser
 from xtalate.parsers.outcar import OutcarParser, make_outcar_parser
 from xtalate.parsers.poscar import PoscarParser, make_contcar_parser, make_poscar_parser
 from xtalate.parsers.vasprun import VasprunParser, make_vasprun_parser
@@ -25,6 +26,7 @@ __all__ = [
     "AseTrajParser",
     "CifParser",
     "ExtxyzParser",
+    "LammpsDumpParser",
     "OutcarParser",
     "PoscarParser",
     "VasprunParser",
@@ -34,6 +36,7 @@ __all__ = [
     "make_ase_traj_parser",
     "make_cif_parser",
     "make_contcar_parser",
+    "make_lammps_dump_parser",
     "make_outcar_parser",
     "make_poscar_parser",
     "make_vasprun_parser",
@@ -46,7 +49,9 @@ def builtin_parsers() -> list[ParserPlugin]:
     XDATCAR, M14 ASE trajectory;    v0.4: M17 CIF, read side only until M19 adds the exporter;
     v1.2 M42-S2: vasprun, the first **parser-only** format — a DFT output, never a conversion
     target (D159), so it has no entry in ``builtin_exporters``; v1.2 M43-S1: OUTCAR, the second
-    parser-only VASP output (D164)."""
+    parser-only VASP output (D164); v1.3 M46-S2: lammps_dump, registered **parser-only as a
+    staging state** — the exporter is M47's first deliverable, so this is *not* the
+    vasprun/OUTCAR permanent source-never-target seam (D175)."""
     return [
         XyzParser(),
         ExtxyzParser(),
@@ -57,4 +62,5 @@ def builtin_parsers() -> list[ParserPlugin]:
         make_cif_parser(),
         make_vasprun_parser(),
         make_outcar_parser(),
+        make_lammps_dump_parser(),
     ]
