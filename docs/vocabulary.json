@@ -34,6 +34,11 @@
       "ase_sign_convention",
       "tension_positive"
     ],
+    "ambiguous_units": [
+      "metal",
+      "real",
+      "si"
+    ],
     "constraint_representation": [
       "drop_all",
       "project"
@@ -77,6 +82,7 @@
   ],
   "scenario_codes": [
     "ambiguous_stress_convention",
+    "ambiguous_units",
     "constraint_representation",
     "frame_selection",
     "missing_energy",
@@ -90,6 +96,7 @@
   "scenario_resolution_order": [
     "missing_species",
     "truncate_corrupt_tail",
+    "ambiguous_units",
     "frame_selection",
     "constraint_representation",
     "missing_lattice",

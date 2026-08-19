@@ -18,13 +18,14 @@ future convenience can make Xtalate invent scientific data or silently choose wh
 to discard (Part 4 §3.1, "Alternative rejected: a single risk-level scale").
 
 **The interpretive axis (M40) is orthogonal to the three classes.** ``ambiguous_stress_convention``
-classifies as **FABRICATIVE** for mode gating (an explicit choice is required in both strict and
-permissive modes), but it *interprets* genuine source data — the stress tensor is real, only its
-sign convention is being resolved — so it records an ``Assumption`` with **no** ``supplied``
-entry (the value already existed in the source; only its meaning was fixed). The
-``INTERPRETIVE_SCENARIOS`` marker scopes the "fabricative ⇒ ``supplied``" invariant to
-scenarios that genuinely *invent* a value the source never had; it is a separate marker, not a
-fourth hazard tier (Part 4 §3.1's three-value enum stays discrete by design).
+and ``ambiguous_units`` (M46) classify as **FABRICATIVE** for mode gating (an explicit choice is
+required in both strict and permissive modes), but they *interpret* genuine source data — the
+stress tensor / the raw numbers are real, only their sign convention / unit scale is being
+resolved — so they record an ``Assumption`` with **no** ``supplied`` entry (the value already
+existed in the source; only its meaning was fixed). The ``INTERPRETIVE_SCENARIOS`` marker scopes
+the "fabricative ⇒ ``supplied``" invariant to scenarios that genuinely *invent* a value the
+source never had; it is a separate marker, not a fourth hazard tier (Part 4 §3.1's three-value
+enum stays discrete by design).
 
 **v0.2 scope (M7 — scenario catalog completion).** The full Part 4 §3.3 catalog of eight scenarios
 is registered and hazard-classified here, so classification and the honest-option-list rule are
@@ -109,6 +110,13 @@ SCENARIO_HAZARD: dict[str, HazardClass] = {
     # (INTERPRETIVE_SCENARIOS below): the stress values are genuine source data, only their sign
     # convention is resolved, so no `supplied` entry is recorded.
     "ambiguous_stress_convention": HazardClass.FABRICATIVE,
+    # M46: FABRICATIVE for mode gating — an explicit choice is required in *both* strict and
+    # permissive modes, no auto-applied default. Interpretive (INTERPRETIVE_SCENARIOS below):
+    # the file's raw numbers are genuine source data; only their unit *scale* is resolved, so
+    # no `supplied` entry is recorded. Parse-time-blocking: a LAMMPS file without a declared
+    # unit style cannot be converted to canonical Å/fs/eV at all, so it fires from the parser
+    # (recovery_hint="ambiguous_units"), exactly like missing_species.
+    "ambiguous_units": HazardClass.FABRICATIVE,
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
@@ -122,7 +130,9 @@ SCENARIO_HAZARD: dict[str, HazardClass] = {
 #: consults this marker where the "fabricative ⇒ ``supplied``" invariant is applied, so the
 #: invariant stays scoped to genuinely fabricated fields. Orthogonal to the three hazard
 #: classes — a separate marker, never a fourth enum value.
-INTERPRETIVE_SCENARIOS: frozenset[str] = frozenset({"ambiguous_stress_convention"})
+INTERPRETIVE_SCENARIOS: frozenset[str] = frozenset(
+    {"ambiguous_stress_convention", "ambiguous_units"}
+)
 
 
 def is_interpretive(scenario: str) -> bool:
@@ -203,6 +213,15 @@ def available_options(
         # the frame volume is available, and it tracks to v1.1.1 — absent from the offered list
         # until then, so naming it refuses (never offered-then-refused, Part 4 §3.3).
         return ["ase_sign_convention", "tension_positive"]
+    if scenario == "ambiguous_units":
+        # M46: exactly the three styles whose conversion factors are hand-verified (Å/ps/eV,
+        # Å/fs/kcal-per-mol, m/s/J — the shared `_lammps` unit tables). The list starts at
+        # exactly this and grows **only by golden-corpus evidence** (M49), never speculatively
+        # from LAMMPS's documented style list (roadmap §13 rule 2); `si` is in the initial three
+        # because it is a documented, common-enough style with a hand-verifiable table. A style
+        # beyond these three is not an ambiguity to resolve — the catalog cannot interpret it —
+        # so the parser refuses with its own error rather than offering it here.
+        return ["metal", "real", "si"]
     if scenario == "missing_species":
         # Parse-time scenario, resolved in Slice 2: an ordered symbol / type→element map, or the
         # symbols read from a matching reference structure (Part 4 §3.3).

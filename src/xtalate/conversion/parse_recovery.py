@@ -43,6 +43,12 @@ from xtalate.sdk import ParseError, ParseIssue, enforce_max_frames
 _HINT_TO_SCENARIO = {
     "supply_species": "missing_species",
     "truncate_at_last_valid_frame": "truncate_corrupt_tail",
+    # M46: a LAMMPS file that declares no unit style cannot be converted to canonical
+    # Å/fs/eV at all — parse-time-blocking, so it fires from the parser like the other two
+    # parse-time scenarios. The scenario code equals the hint code (the `ambiguous_units`
+    # catalog entry); the parser's `parse_recover` applies the chosen style's conversion
+    # factors on re-read.
+    "ambiguous_units": "ambiguous_units",
 }
 
 #: The parse-time recovery scenarios, in resolution-stage order (Part 4 §3.3). These resolve *ahead*
@@ -190,6 +196,26 @@ def _build_assumption(
                 )
             ],
         )
+    if scenario == "ambiguous_units":
+        # Interpretive (Part 4 §3.1, M46): the file's raw numbers are genuine source data —
+        # only their unit *scale* was unresolved. No `supplied` entry: nothing was created;
+        # the Assumption's plain-language description states the interpretation applied, so
+        # the Conversion Report says which basis every position/velocity/box bound was
+        # converted from (a wrong choice silently rescales every value — hence the P4
+        # refusal discipline, never a guessed default).
+        return AppliedAssumption(
+            id="A1",
+            scenario=scenario,
+            choice=code,
+            parameters={"unit_style": code},
+            origin="preset",
+            description=(
+                f"Interpreted LAMMPS units as `{code}` ({_UNIT_STYLE_SUMMARIES[code]}); all "
+                "positions, velocities, and box bounds converted from that basis. The source "
+                "file declared no unit style — the values are genuine source data, only their "
+                "scale was resolved by this recorded choice, never guessed."
+            ),
+        )
     # truncate_corrupt_tail — selective reductive: genuine frames kept, corrupt tail dropped.
     kept = canonical.frame_count
     return AppliedAssumption(
@@ -218,3 +244,14 @@ def _species_params(code: str, parameters: dict[str, object]) -> dict[str, objec
     if code == "species_map":
         return {"species": parameters.get("species")}
     return {"source": "upload_reference"}
+
+
+#: The human-readable unit basis per `ambiguous_units` choice, stated in the Assumption
+#: description (the same summaries the shared `_lammps` unit tables carry; the recovery
+#: layer does not import parsers, so the three labels are restated here and pinned by the
+#: recovery test against the tables' own summaries).
+_UNIT_STYLE_SUMMARIES = {
+    "metal": "Å, ps, eV",
+    "real": "Å, fs, kcal/mol",
+    "si": "m, s, J",
+}
