@@ -83,6 +83,16 @@ class FormatCapabilities(BaseModel):
     # diff can compare it in canonical space instead of false-failing on "missing". Empty = the
     # parser never carries unmapped values for any field (it maps everything it reads).
     carried_field_keys: dict[str, str] = Field(default_factory=dict)
+    # Whether this format's representation can hold per-atom **image flags** — the LAMMPS
+    # `ix`/`iy`/`iz` wrapped-coordinate bookkeeping — as a structured payload (M46-S3, D176).
+    # Read side: the parser carries them specifically to
+    # `custom_per_atom['lammps_dump:image_flags']`; write side: the exporter writes them back. The
+    # named capability dimension the pre-flight diff reads directly (mirroring a scalar field's
+    # PARTIAL/NONE cell): False (the default) = the format cannot hold them, so converting a
+    # flag-carrying source to it makes unwrapping impossible and the diff states that consequence
+    # before a byte is written. Declared True on `lammps_dump` (read); the incumbent formats
+    # (XYZ/extXYZ/POSCAR/CONTCAR/XDATCAR) declare absence by the default.
+    holds_image_flags: bool = False
     # The sign convention of the `electronic.stress` tensor this exporter writes (write side;
     # Part 2 §3.7.1, DECISIONS.md D151). The canonical convention is tension-positive; an exporter
     # whose files carry the opposite (compression-positive, e.g. ASE-native extXYZ) reverses the

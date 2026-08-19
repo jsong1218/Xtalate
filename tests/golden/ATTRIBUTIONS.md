@@ -121,6 +121,20 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-written for M46-S2 (LAMMPS dump parser): a typed-atom dump in declared metal units.
 
+## `lammps_dump` / `wrapped-flags-metal` (golden)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M46-S3 (image flags): a wrapped-coordinate dump whose second atom crosses a periodic boundary.
+
+## `lammps_dump` / `xu-counterpart-metal` (golden)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M46-S3 (image flags): the unwrapped-coordinate counterpart of wrapped-flags-metal.
+
 ## `outcar` / `md-h2o` (golden)
 
 - **Source file:** `OUTCAR`

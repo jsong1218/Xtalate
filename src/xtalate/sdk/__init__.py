@@ -12,6 +12,7 @@ from xtalate.sdk.capabilities import (
     FieldCapability,
     FormatCapabilities,
 )
+from xtalate.sdk.image_flags import IMAGE_FLAGS_CARRY_KEY
 from xtalate.sdk.plugins import ExporterPlugin, ParserPlugin
 from xtalate.sdk.results import (
     ExporterWarning,
@@ -41,6 +42,7 @@ __all__ = [
     "FrameLimitExceeded",
     "FrameStream",
     "ExporterWarning",
+    "IMAGE_FLAGS_CARRY_KEY",
     "ParseError",
     "ParseIssue",
     "ParseResult",

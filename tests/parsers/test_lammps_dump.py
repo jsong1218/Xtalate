@@ -31,6 +31,10 @@ _CLEAN_CASES = {
     "metal-ortho-declared": ["LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED"],
     "real-triclinic-scaled": [],
     "si-ortho-declared": [],
+    # M46-S3 proof fixtures: the wrapped+flags case fires the specific image-flag warning
+    # (never the generic unmapped-column one); the xu counterpart carries no flags at all.
+    "wrapped-flags-metal": ["LAMMPSDUMP_IMAGE_FLAGS_CARRIED"],
+    "xu-counterpart-metal": [],
 }
 
 
@@ -161,30 +165,43 @@ def test_generic_columns_carried_with_warning() -> None:
     assert np.asarray(carried).tolist() == [5.0, 6.0]
 
 
-def test_image_flag_columns_carried_generically_at_s2() -> None:
-    """At the end of S2, ix/iy/iz flow through the generic unmapped-column carry — retained,
-    a generic warning fires, nothing is silently lost (S3 upgrades them to the specific
-    image-flag hazard)."""
-    dump = (
-        _source("metal-ortho-declared")
-        .replace(
-            b"ITEM: ATOMS id element x y z vx vy vz c_pe",
-            b"ITEM: ATOMS id element x y z ix iy iz",
-        )
-        .replace(b"1 Si 1.0 2.0 3.0 0.1 0.2 0.3 5.0", b"1 Si 1.0 2.0 3.0 0 0 0")
-        .replace(b"2 O 4.0 5.0 6.0 -0.1 -0.2 -0.3 6.0", b"2 O 4.0 5.0 6.0 0 0 0")
-        .replace(b"1 Si 1.5 2.5 3.5 0.11 0.21 0.31 5.0", b"1 Si 1.5 2.5 3.5 1 1 1")
-        .replace(b"2 O 4.0 5.0 6.0 -0.11 -0.21 -0.31 6.0", b"2 O 4.0 5.0 6.0 1 1 1")
+def test_image_flags_carried_specifically_and_never_applied() -> None:
+    """M46-S3: a complete ix/iy/iz family is a specific, named carry — distinct from the
+    generic unmapped-column path — and the flags are never applied on parse (D43)."""
+    result = _parse("wrapped-flags-metal")
+    codes = [i.code for i in result.issues]
+    assert "LAMMPSDUMP_IMAGE_FLAGS_CARRIED" in codes
+    assert "LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED" not in codes
+    carried = result.canonical.user_metadata.custom_per_atom["lammps_dump:image_flags"]
+    assert np.asarray(carried).tolist() == [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+    # The positions stay wrapped — the parser never unwraps (D43); atom 2 is at (0.5,0.5,0.5),
+    # not (10.5,0.5,0.5).
+    assert result.canonical.frames[0].atoms.positions[1].tolist() == [0.5, 0.5, 0.5]
+
+
+def test_image_flags_warning_states_the_coordinate_convention() -> None:
+    result = _parse("wrapped-flags-metal")
+    warning = next(i for i in result.issues if i.code == "LAMMPSDUMP_IMAGE_FLAGS_CARRIED")
+    assert "wrapped Cartesian (x/y/z)" in warning.message
+    assert "unwrapping remains possible" in warning.message
+
+
+def test_partial_image_flag_family_is_malformed() -> None:
+    dump = _source("wrapped-flags-metal")
+    dump = dump.replace(
+        b"ITEM: ATOMS id element x y z ix iy iz", b"ITEM: ATOMS id element x y z ix"
     )
-    result = PARSER.parse(io.BytesIO(dump), filename="dump.lammpstrj")
-    assert "LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED" in {i.code for i in result.issues}
-    for name in ("ix", "iy", "iz"):
-        key = f"lammps_dump:{name}"
-        assert key in result.canonical.user_metadata.custom_per_atom
-        assert np.asarray(result.canonical.user_metadata.custom_per_atom[key]).tolist() == [
-            0.0,
-            0.0,
-        ]
+    dump = dump.replace(b"1 Si 1.0 2.0 3.0 0 0 0", b"1 Si 1.0 2.0 3.0 0")
+    dump = dump.replace(b"2 O 0.5 0.5 0.5 1 0 0", b"2 O 0.5 0.5 0.5 1")
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse(io.BytesIO(dump), filename="dump.lammpstrj")
+    assert "partial image-flag family" in exc.value.issues[0].message
+
+
+def test_xu_counterpart_carries_no_image_flags() -> None:
+    result = _parse("xu-counterpart-metal")
+    assert "lammps_dump:image_flags" not in result.canonical.user_metadata.custom_per_atom
+    assert all(i.code != "LAMMPSDUMP_IMAGE_FLAGS_CARRIED" for i in result.issues)
 
 
 def test_per_frame_column_variance_warns_once_per_column() -> None:

@@ -1,0 +1,127 @@
+{
+  "schema_version": "1.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Si",
+          "O"
+        ],
+        "atomic_numbers": [
+          14,
+          8
+        ],
+        "positions": [
+          [
+            1.0,
+            2.0,
+            3.0
+          ],
+          [
+            0.5,
+            0.5,
+            0.5
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            10.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": null,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": null,
+  "provenance": {
+    "source_filename": "dump.lammpstrj",
+    "source_format": "lammps_dump",
+    "source_units": {
+      "positions": "angstrom",
+      "lattice_vectors": "angstrom",
+      "velocities": "angstrom/picosecond"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "Coordinates read as wrapped Cartesian (x/y/z); converted to canonical Å.",
+      "Unit style in force: metal (Å, ps, eV) — declared in the file.",
+      "pbc read from the dump's boundary flags: (True, True, True).",
+      "The dump declares step numbers, not a time axis (no timestep size in the file); trajectory.timestep stays None (P3) and each step rides in user_metadata.custom_per_frame['lammps_dump:timestep']."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-08-19T05:18:38Z",
+        "operation": "parse",
+        "source_format": "lammps_dump",
+        "target_format": null,
+        "tool_version": "1.2.0",
+        "parser_version": "lammps_dump-parser 1.2.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {},
+    "custom_per_atom": {
+      "lammps_dump:id": [
+        1.0,
+        2.0
+      ],
+      "lammps_dump:image_flags": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0,
+          0.0
+        ]
+      ]
+    },
+    "custom_per_frame": {
+      "lammps_dump:timestep": [
+        0.0
+      ]
+    }
+  }
+}

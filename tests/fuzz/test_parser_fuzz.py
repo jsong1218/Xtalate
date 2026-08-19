@@ -164,7 +164,11 @@ _TAILORED: dict[str, list[tuple[str, bytes]]] = {
     "lammps_dump": [
         ("header_only", b"ITEM: TIMESTEP\n0\n"),  # no NUMBER OF ATOMS -> malformed header.
         ("bad_item", b"ITEM: TIMESTEP\n0\nITEM: NUMBER OF ATOMS\n2\nITEM: XYZ\n"),
-        ("no_box_flags", b"ITEM: TIMESTEP\n0\nITEM: NUMBER OF ATOMS\n1\n" + b"ITEM: BOX BOUNDS\n0 10\n0 10\n0 10\n"),
+        (
+            "no_box_flags",
+            b"ITEM: TIMESTEP\n0\nITEM: NUMBER OF ATOMS\n1\n"
+            + b"ITEM: BOX BOUNDS\n0 10\n0 10\n0 10\n",
+        ),  # noqa: E501
         (
             "triclinic_missing_tilt",
             b"ITEM: TIMESTEP\n0\nITEM: NUMBER OF ATOMS\n1\n"

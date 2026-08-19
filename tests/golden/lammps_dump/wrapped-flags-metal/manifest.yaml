@@ -1,0 +1,20 @@
+case: wrapped-flags-metal
+format_id: lammps_dump
+source_file: dump.lammpstrj
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 285d3595d67019b0f1b560f9ba9fa52a99719bf4129aa65df457e27fbf7d9003
+expected_sha256: ada5bbb1ec03de78328d87eb76d2c29f75170186972be29d361c59816555db02
+origin:
+  kind: synthetic
+  source: 'Hand-written for M46-S3 (image flags): a wrapped-coordinate dump whose second atom crosses a periodic boundary.'
+  license: Apache-2.0
+notes: >-
+  The wrapped-plus-image-flags proof fixture (M46-S3): a single-frame dump in declared metal
+  units whose x/y/z coordinates are wrapped in the 10 A box and whose ix/iy/iz columns record
+  the periodic images (atom 2 at wrapped (0.5,0.5,0.5) with ix=1). The parser carries the
+  flags specifically to custom_per_atom['lammps_dump:image_flags'] with
+  LAMMPSDUMP_IMAGE_FLAGS_CARRIED and NEVER applies them on parse (D43) — the positions stay
+  wrapped. Its xu-counterpart-metal sibling describes the same physical trajectory with
+  unwrapped xu/yu/zu; the test applies the flags (wrapped + flags*cell) and proves the two
+  reconstruct identically, so the carried flags are sufficient to unwrap.

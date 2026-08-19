@@ -36,9 +36,16 @@ Honesty on the ordinary axes, per the M46 plan and Part 3 §3 n.19:
   ``_collect_custom_columns`` precedent, verbatim). ``custom_per_atom`` is object-level (Part 2
   §3.10), so a column whose values *vary* across frames cannot be represented losslessly: frame
   0 is carried and ``LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE`` warns once per diverging
-  column (the extXYZ streaming consistency check, same shape). **This mechanically includes
-  ``ix iy iz`` at this slice** — they are carried generically and a generic warning fires
-  (nothing is silently lost), which M46-S3 then upgrades to the specific image-flag hazard.
+  column (the extXYZ streaming consistency check, same shape).
+* **Image flags are a specific, named carry (M46-S3).** A complete ``ix iy iz`` family is
+  recognized *specifically* — distinct from the generic carry — and lands in
+  ``user_metadata.custom_per_atom["lammps_dump:image_flags"]`` (a ``(N, 3)`` array) with the
+  warning ``LAMMPSDUMP_IMAGE_FLAGS_CARRIED``, which states the coordinate convention in force
+  alongside (wrapped Cartesian / scaled / unwrapped — the two facts are only useful together).
+  The flags are **never applied on parse** (D43 — an unrequested transform that would discard
+  the wrapped form the source chose); the pre-flight diff predicts the unwrapping loss when
+  such a source targets a format that cannot hold them (Part 3 §4; the named capability dimension).
+  A partial ``ix``/``iy``/``iz`` family is malformed, refused.
 * **The constant-N boundary is a measured refusal.** A dump whose atom count varies across
   frames (grand-canonical, deposition, evaporation) raises
   ``LAMMPSDUMP_VARIABLE_ATOM_COUNT`` naming the first diverging frame and listing the per-frame
@@ -84,6 +91,7 @@ from xtalate.schema import (
     TrajectoryMetadata,
 )
 from xtalate.sdk import (
+    IMAGE_FLAGS_CARRY_KEY,
     CapabilityLevel,
     FieldCapability,
     FormatCapabilities,
@@ -118,6 +126,7 @@ _NO_SPECIES_COLUMN = "LAMMPSDUMP_NO_SPECIES_COLUMN"
 _VARIABLE_ATOM_COUNT = "LAMMPSDUMP_VARIABLE_ATOM_COUNT"
 _VARIABLE_SPECIES = "LAMMPSDUMP_VARIABLE_SPECIES"
 _UNMAPPED_CARRIED = "LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED"
+_IMAGE_FLAGS_CARRIED = "LAMMPSDUMP_IMAGE_FLAGS_CARRIED"
 _PER_FRAME_COLUMN = "LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE"
 _UNITS_INTERPRETED = "LAMMPSDUMP_UNITS_INTERPRETED"
 _SPECIES_SUPPLIED = "LAMMPSDUMP_SPECIES_SUPPLIED"
@@ -132,10 +141,13 @@ _COORD_FAMILIES: tuple[tuple[str, str, str], ...] = (
     ("xu", "yu", "zu"),
 )
 _VELOCITY_COLUMNS = ("vx", "vy", "vz")
+#: The wrapped-coordinate bookkeeping columns (M46-S3): recognized *specifically*, distinct
+#: from the generic unmapped-column carry, and carried to the named image-flags payload.
+_IMAGE_FLAG_COLUMNS = ("ix", "iy", "iz")
 
-#: The columns the parser recognizes as its own (S2 — the image-flag columns ix/iy/iz are
-#: deliberately NOT here: they flow through the generic unmapped-column carry at this slice,
-#: and S3 upgrades them to the specific image-flag hazard).
+#: The columns the parser recognizes as its own (S2). The image-flag columns ix/iy/iz are
+#: deliberately NOT here: they are handled by the specific image-flag carry (S3), never the
+#: generic unmapped-column path.
 _KNOWN_COLUMNS: frozenset[str] = frozenset(
     {
         "id",
@@ -758,6 +770,11 @@ class LammpsDumpParser(ParserPlugin):
             required_fields=[],  # read side: absence is honoured, not required
             native_coordinate_system="cartesian",
             lossy_notes=[],
+            # The named image-flag capability dimension (M46-S3, D176): lammps_dump reads the
+            # ix/iy/iz flags specifically (they survive into the canonical object), so the
+            # pre-flight diff can predict the unwrapping loss when such a source targets a format
+            # that cannot hold them. The incumbent formats declare absence by the default.
+            holds_image_flags=True,
         )
 
 
@@ -834,8 +851,51 @@ def _build_frame(
         carries[_TYPE_KEY] = _column_floats(rows, _column_index(header, "type"), header)
     if "id" in header.columns:
         carries[_ID_KEY] = _column_floats(rows, _column_index(header, "id"), header)
+
+    # The specific image-flag carry (M46-S3): a complete ix/iy/iz family is a named structured
+    # payload — never the generic unmapped-column path — because a wrapped dump plus its flags
+    # contains everything needed to reconstruct continuous trajectories, and dropping them makes
+    # unwrapping impossible while the output looks correct. The coordinate convention in force is
+    # stated *alongside* the warning (the two facts are only useful together), and the flags are
+    # never applied on parse (D43). A partial family is malformed, refused — never guessed.
+    image_flags_present = [name for name in _IMAGE_FLAG_COLUMNS if name in header.columns]
+    if len(image_flags_present) == 3:
+        flags = np.column_stack(
+            [
+                _column_floats(rows, _column_index(header, name), header)
+                for name in _IMAGE_FLAG_COLUMNS
+            ]
+        )
+        carries[IMAGE_FLAGS_CARRY_KEY] = flags
+        if first_carries is None:
+            convention = {
+                "cartesian": "wrapped Cartesian (x/y/z)",
+                "scaled": "scaled (xs/ys/zs)",
+                "unwrapped": "unwrapped Cartesian (xu/yu/zu)",
+            }[coords.kind.value]
+            issues.append(
+                ParseIssue(
+                    severity="warning",
+                    code=_IMAGE_FLAGS_CARRIED,
+                    message=(
+                        f"per-atom image flags (ix/iy/iz) carried to "
+                        f"user_metadata.custom_per_atom[{IMAGE_FLAGS_CARRY_KEY!r}]; coordinates "
+                        f"are {convention}, so unwrapping remains possible from a format that can "
+                        "hold them. The flags are never applied on parse (D43)."
+                    ),
+                    location="frame 0",
+                )
+            )
+    elif image_flags_present:
+        raise _error(
+            _MALFORMED,
+            f"{header.location} declares a partial image-flag family; ix/iy/iz must come "
+            "together or not at all",
+            location=header.location,
+        )
+
     for name in header.columns:
-        if name in _KNOWN_COLUMNS or is_element_column(name):
+        if name in _KNOWN_COLUMNS or is_element_column(name) or name in _IMAGE_FLAG_COLUMNS:
             continue
         values = _column_floats(rows, _column_index(header, name), header)
         carries[f"{_CUSTOM_PREFIX}{name}"] = values
