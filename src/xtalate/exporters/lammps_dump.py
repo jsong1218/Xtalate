@@ -114,14 +114,16 @@ class LammpsDumpExporter(ExporterPlugin):
                 "never a guessed default"
             )
 
-        # The type map is assigned once, on the first frame, in first-appearance order — a
-        # deterministic 1..K numbering that makes a round-trip stable — and every later frame
-        # must be expressible under it (constant atom identity, the parser's own rule).
+        # The type map grows by first appearance across the trajectory — a deterministic
+        # 1..K numbering (in frame-then-atom order) that makes a round-trip stable. A species
+        # first seen in a later frame gets the next number (the dump states per-snapshot rows;
+        # it does not require every type in frame 0), and export_warnings audits the same
+        # frame-order build so nothing is written unreported (P1).
         type_map: dict[str, int] = {}
         written_units = False
         for i, sf in enumerate(frames):
             frame = sf.frame
-            _extend_type_map(type_map, frame.atoms.symbols, i)
+            _extend_type_map(type_map, frame.atoms.symbols)
             if not written_units:
                 # LAMMPS declares the unit style in the first snapshot's preamble block
                 # (dump.cpp write_header), as a two-line ITEM.
@@ -144,10 +146,12 @@ class LammpsDumpExporter(ExporterPlugin):
     def export_warnings(self, canonical: Any) -> list[ExporterWarning]:
         """The one transformation this exporter applies that must be audited: it *renumbers*
         atoms into LAMMPS numeric types, so the mapping is stated in the Conversion Report as
-        an audit line (deterministic first-appearance order, never a silent renumbering)."""
+        an audit line (deterministic first-appearance order, never a silent renumbering). The
+        map is built over **every** frame in order — the same build ``export_stream`` writes — so
+        a species that first appears after frame 0 is reported, not written silently (P1)."""
         type_map: dict[str, int] = {}
-        if canonical.frames:
-            _extend_type_map(type_map, canonical.frames[0].atoms.symbols, 0)
+        for frame in canonical.frames:
+            _extend_type_map(type_map, frame.atoms.symbols)
         mapping = ", ".join(f"type {number} → {symbol}" for symbol, number in type_map.items())
         return [
             ExporterWarning(
@@ -314,23 +318,17 @@ def _coordinate_kind(header: StreamHeader) -> str:
     return "cartesian"
 
 
-def _extend_type_map(type_map: dict[str, int], symbols: list[str], index: int) -> None:
-    """Assign numeric LAMMPS atom types by *first appearance* across the trajectory (Si=1,
-    O=2, …), raising if a later frame introduces a species the map has not seen — the writer
-    cannot express a type whose identity it has not recorded (the parser's own
-    constant-identity rule). Deterministic so a round-trip is stable."""
+def _extend_type_map(type_map: dict[str, int], symbols: list[str]) -> None:
+    """Extend ``type_map`` with any species not yet seen, numbering by *first appearance* across
+    the whole trajectory (Si=1, O=2, …). Called on every frame in order, so a species that first
+    appears in a later frame is assigned the next number — the dump format states per-snapshot
+    rows and does not require every type to appear in the first frame, so this is representable,
+    not a loss. Deterministic (index order, first-appearance) so a round-trip is stable, and the
+    single source of truth for both the written ``type`` column and the ``export_warnings`` audit
+    line (which must build over the same frames, or a late species is written unreported — P1)."""
     for symbol in symbols:
         if symbol not in type_map:
             type_map[symbol] = len(type_map) + 1
-    # A frame must be fully expressible under the map built so far. (Symbols are per-atom
-    # identities; a trajectory that changes species mid-way cannot be one dump.)
-    missing = [s for s in symbols if s not in type_map]
-    if missing:
-        raise ValueError(
-            "lammps_dump: frame "
-            f"{index} introduces species {sorted(set(missing))} not seen in the trajectory's "
-            "first frame; a dump has one type map for the whole run"
-        )
 
 
 def _require_cell(frame: Any, index: int) -> np.ndarray:
@@ -442,6 +440,13 @@ def _write_snapshot(
     # source's (P3). The column header and the rows must agree by construction, so the same
     # flag gates both.
     has_velocities = frame.dynamics.velocities is not None
+    # Unit-convert the whole velocity block once, not once per atom (it is frame-constant).
+    velocities = (
+        np.asarray(frame.dynamics.velocities, dtype=float)
+        / style.velocity_to_angstrom_per_femtosecond
+        if has_velocities
+        else None
+    )
     has_ids = _ID_KEY in header.custom_per_atom
     columns: list[str] = []
     if has_ids:
@@ -464,20 +469,16 @@ def _write_snapshot(
                     "lammps_dump: the carried id column is shorter than the atom count ("
                     f"{len(_values)} < {n_atoms})"
                 )
-            row.append(_fmt_number(float(_values[atom_index])))
+            row.append(_fmt_id(_values[atom_index]))
         row.append(symbol)
         row.append(str(type_map[symbol]))
         row.append(_fmt(coordinate_values[atom_index, 0]))
         row.append(_fmt(coordinate_values[atom_index, 1]))
         row.append(_fmt(coordinate_values[atom_index, 2]))
-        if has_velocities:
-            velocity = (
-                np.asarray(frame.dynamics.velocities, dtype=float)
-                / style.velocity_to_angstrom_per_femtosecond
-            )
-            row.append(_fmt(velocity[atom_index, 0]))
-            row.append(_fmt(velocity[atom_index, 1]))
-            row.append(_fmt(velocity[atom_index, 2]))
+        if velocities is not None:
+            row.append(_fmt(velocities[atom_index, 0]))
+            row.append(_fmt(velocities[atom_index, 1]))
+            row.append(_fmt(velocities[atom_index, 2]))
         if image_flags_array is not None:
             row.extend(_fmt_number(value) for value in image_flags_array[atom_index])
         for _, values in custom_values:
@@ -541,6 +542,19 @@ def _mixed_velocities_reason(frames: list[Any]) -> str:
 
 def _fmt(x: float) -> str:
     return repr(float(x))
+
+
+def _fmt_id(value: Any) -> str:
+    """Format a carried atom id. LAMMPS ids are integers, but the parser carries the ``id``
+    column as a float64 array (its columns are read uniformly as floats), so an integer-valued
+    id would otherwise be written ``1.0`` — which a real LAMMPS reader rejects for the id field,
+    and which surprises a hand-diff the report never mentioned (the litmus test). Emit an
+    integer-valued id without the decimal point; fall back to the float repr only for the
+    pathological non-integer carry (never silently truncating it)."""
+    f = float(value)
+    if np.isfinite(f) and f == np.floor(f):
+        return str(int(f))
+    return repr(f)
 
 
 def _fmt_number(value: Any) -> str:

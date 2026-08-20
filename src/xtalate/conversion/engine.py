@@ -594,6 +594,14 @@ class ConversionEngine:
             return False
         if type(exporter).atom_permutation is not ExporterPlugin.atom_permutation:
             return False  # a reordering exporter needs a permutation map streaming does not thread
+        if type(exporter).unrepresentable is not ExporterPlugin.unrepresentable:
+            # A value-level refusal (D179) the engine consults only on the materialized write
+            # path (right after `_apply_write_plan`); the streaming path never asks, so an
+            # exporter that can refuse a value must not take it — else the refusal is skipped
+            # and unrepresentable bytes are written. Today `lammps_dump` is already excluded by
+            # `requires_units_style` below; this guards any future streaming exporter that
+            # overrides the hook without that capability.
+            return False
         matrix = self._registry.capability_matrix()
         caps = matrix.get(target_format_id, "write")
         if caps.max_frames is not None:

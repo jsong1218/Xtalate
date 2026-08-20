@@ -25,20 +25,25 @@ Neither fixture needs a recovery preset — both *declare* their unit style, so 
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 
 import numpy as np
 
 from tests._format_helpers import assert_scientifically_equal, parse_bytes
+from xtalate.conversion import ConversionEngine
 from xtalate.exporters.lammps_dump import make_lammps_dump_exporter
 from xtalate.parsers.lammps_dump import make_lammps_dump_parser
+from xtalate.registry import default_registry
 from xtalate.schema import CanonicalObject
 from xtalate.sdk.image_flags import IMAGE_FLAGS_CARRY_KEY
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 _UNITS_KEY = "lammps_dump:units"
 _TYPE_KEY = "lammps_dump:type"
+_ID_KEY = "lammps_dump:id"
 _TYPES_ASSIGNED = "LAMMPSDUMP_TYPES_ASSIGNED"
+_METAL = {"ambiguous_units": {"choice": "metal", "parameters": {}}}
 
 _META = GOLDEN / "lammps_dump" / "metal-ortho-declared" / "dump.lammpstrj"
 _FLAGS = GOLDEN / "lammps_dump" / "wrapped-flags-metal" / "dump.lammpstrj"
@@ -93,6 +98,83 @@ def test_lammps_dump_reaches_its_fixed_point_at_the_first_hop() -> None:
     hop2 = parse_bytes(parser, _write(exporter, hop1)).canonical
     assert _TYPE_KEY in hop1.user_metadata.custom_per_atom
     assert_scientifically_equal(hop1, hop2)
+
+
+def _atoms_rows(dump_text: str) -> list[list[str]]:
+    """The whitespace-split ATOMS data rows of every snapshot (the lines under each
+    ``ITEM: ATOMS`` header, up to the next ``ITEM:``)."""
+    rows: list[list[str]] = []
+    in_atoms = False
+    for line in dump_text.splitlines():
+        if line.startswith("ITEM: ATOMS"):
+            in_atoms = True
+            continue
+        if line.startswith("ITEM:"):
+            in_atoms = False
+            continue
+        if in_atoms and line.strip():
+            rows.append(line.split())
+    return rows
+
+
+def test_lammps_dump_writes_integer_atom_ids_not_floats() -> None:
+    """A carried atom id is written as an integer (``1``), never ``1.0``. The parser reads every
+    dump column as float64, so the id carry is a float array; formatting it through the float path
+    would emit ``1.0`` — which a real LAMMPS reader rejects for the integer id field, and which is a
+    ``1``→``1.0`` hand-diff surprise the report never mentions (the litmus test). The id column is
+    the first column of these fixtures' ATOMS rows."""
+    parser, exporter = make_lammps_dump_parser(), make_lammps_dump_exporter()
+    source = parse_bytes(parser, _META.read_bytes()).canonical
+    # The fixture really carries an id column — otherwise the check proves nothing.
+    assert _ID_KEY in source.user_metadata.custom_per_atom
+    written = _write(exporter, source).decode("utf-8")
+
+    rows = _atoms_rows(written)
+    assert rows, "the export wrote no ATOMS rows"
+    integer = re.compile(r"-?\d+")
+    for row in rows:
+        assert integer.fullmatch(row[0]), f"id column is not an integer token: {row[0]!r}"
+
+
+def test_lammps_dump_reports_species_that_first_appear_after_frame_zero() -> None:
+    """A species that first appears in a *later* frame is assigned its type and — crucially —
+    **reported**. The type map grows by first appearance across the whole trajectory, so the
+    ``LAMMPSDUMP_TYPES_ASSIGNED`` audit line must list every species, not only frame 0's; otherwise
+    a late species reaches the bytes with an unreported type number (P1). The canonical model fixes
+    the atom count across frames (Part 2 §3.2), so the source keeps two atoms throughout and instead
+    *swaps* the second species O→H between the frames — H first appears in frame 1."""
+    two_frames = (
+        b'2\nLattice="4.0 0.0 0.0 0.0 4.0 0.0 0.0 0.0 4.0" '
+        b'Properties=species:S:1:pos:R:3 pbc="T T T"\n'
+        b"Si 0.0 0.0 0.0\nO 2.0 2.0 2.0\n"
+        b'2\nLattice="4.0 0.0 0.0 0.0 4.0 0.0 0.0 0.0 4.0" '
+        b'Properties=species:S:1:pos:R:3 pbc="T T T"\n'
+        b"Si 0.0 0.0 0.0\nH 2.0 2.0 2.0\n"
+    )
+    registry = default_registry()
+    engine = ConversionEngine(registry)
+    source = registry.get_parser("extxyz").parse(io.BytesIO(two_frames), filename=None).canonical
+    # Frame 0 is Si/O; H first appears in frame 1 — otherwise "after frame zero" proves nothing.
+    assert source.frames[0].atoms.symbols == ["Si", "O"]
+    assert "H" in source.frames[1].atoms.symbols and "H" not in source.frames[0].atoms.symbols
+
+    result = engine.convert(
+        source,
+        source_format_id="extxyz",
+        target_format_id="lammps_dump",
+        recovery_choices=_METAL,
+    )
+    assert result.report.status == "completed"
+    assert result.output is not None
+
+    # The audit line names the COMPLETE map, including the late H (type 3).
+    audit = [w for w in result.report.warnings if w.code == _TYPES_ASSIGNED]
+    assert audit, "the type-assignment audit warning is missing"
+    assert "type 3 → H" in audit[0].message
+    # And the written dump actually carries an H atom under type 3 in the second snapshot (the
+    # column layout is ``element type x y z``).
+    rows = _atoms_rows(result.output.decode("utf-8"))
+    assert any(row[0] == "H" and row[1] == "3" for row in rows)
 
 
 def test_lammps_dump_identity_preserves_image_flags() -> None:
