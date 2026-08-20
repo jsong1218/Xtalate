@@ -568,6 +568,14 @@ class ConversionEngine:
         caps = matrix.get(target_format_id, "write")
         if caps.max_frames is not None:
             return False
+        # A target whose write requires a declared unit style (M47-S1, D177) is a *static* fact
+        # that needs a recovery choice — known before any frame is read, and no frame can
+        # resolve it — so it can never take the recovery-free streaming path (reconciliation 3:
+        # canonical → lammps_dump routes through materialized convert). The engine rejects
+        # exactly this class by contract ("a static fact that could need a recovery choice
+        # raises ValueError — use convert").
+        if caps.requires_units_style:
+            return False
         if any(r not in _UNIVERSAL_FIELDS for r in caps.required_fields):
             return False
         constraints = matrix.field_capability(target_format_id, "write", "dynamics.constraints")

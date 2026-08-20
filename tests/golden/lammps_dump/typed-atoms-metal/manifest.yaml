@@ -4,7 +4,7 @@ source_file: dump.lammpstrj
 expected_canonical: expected.canonical.json
 canonical_schema_version: 1.0.0
 sha256: 0c8e41e6fb4afad8c2eae38d414c38c6171c9994fa84f2acad7adacaced3749e
-expected_sha256: 8c962d36a2df24a3e39198476f26dd878529d0e9e7e7bb8fef23eb88ee2c4cd6
+expected_sha256: d4773c3826acfbada334d337e4c0ebb409aef2e27f54755aae152b2733e40c05
 origin:
   kind: synthetic
   source: 'Hand-written for M46-S2 (LAMMPS dump parser): a typed-atom dump in declared metal units.'

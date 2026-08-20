@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from ase import units as ase_units
 
-from xtalate.parsers._lammps import (
+from xtalate.sdk.lammps import (
     UNIT_STYLES,
     box_from_bounds,
     coordinate_note,
@@ -26,7 +26,7 @@ from xtalate.parsers._lammps import (
     resolve_species,
     scaled_to_cartesian,
 )
-from xtalate.parsers._lammps.columns import CoordinateKind
+from xtalate.sdk.lammps.columns import CoordinateKind
 
 # --- per-style unit tables (hand-verified against the LAMMPS units doc) ---------------
 

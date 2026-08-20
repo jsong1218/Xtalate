@@ -7,7 +7,7 @@ Cartesian Å (Part 2 §3.4). LAMMPS's coordinate-column vocabulary is fixed:
 * ``x``/``y``/``z`` — wrapped Cartesian, in the box frame (already Cartesian; the
   parser subtracts the box origin).
 * ``xs``/``ys``/``zs`` — scaled, i.e. fractional in the tilted box (→ multiply by the
-  lattice; :func:`xtalate.parsers._lammps.box.scaled_to_cartesian`).
+  lattice; :func:`xtalate.sdk.lammps.box.scaled_to_cartesian`).
 * ``xu``/``yu``/``zu`` — unwrapped Cartesian, in the box frame (continuous across
   periodic images; Cartesian directly).
 

@@ -55,14 +55,14 @@ def test_builtins_register_without_error() -> None:
         "cif",
         "vasprun",
         "outcar",
-        # M46-S2: lammps_dump joins as a *parser* (read side) — its exporter lands in M47.
+        # M46-S2: lammps_dump joins as a parser; M47-S1 adds the exporter (staging closed).
         "lammps_dump",
     }
     # Asymmetric since M42 slice 2: vasprun is the first parser-only format (D159) — Xtalate
-    # reads it but does not write it; OUTCAR (M43) is the second; lammps_dump (M46-S2) is the
-    # third — parser-only as a *staging state* until M47's exporter (D175), not the permanent
-    # source-never-target seam. The two assertions stay separate because read-only formats are
-    # legitimate, they are just no longer the only kind.
+    # reads it but does not write it; OUTCAR (M43) is the second — the permanent source-never-
+    # target seam. lammps_dump's parser-only stint (M46-S2) was a *staging state*, closed by
+    # M47-S1 (D177): it now registers an exporter too, so it appears in both sets. The two
+    # assertions stay separate because read-only formats are legitimate.
     assert {e.format_id for e in reg.exporters()} == {
         "xyz",
         "extxyz",
@@ -71,6 +71,8 @@ def test_builtins_register_without_error() -> None:
         "xdatcar",
         "ase_traj",
         "cif",
+        # M47-S1: the dump exporter lands, closing the M46 parser-only staging state (D177).
+        "lammps_dump",
     }
 
 

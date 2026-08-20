@@ -4,7 +4,7 @@ source_file: dump.lammpstrj
 expected_canonical: expected.canonical.json
 canonical_schema_version: 1.0.0
 sha256: 1b4152ee16cb277de2be76dac31d01eff863711afc673e6b04da68f46cdccbbc
-expected_sha256: 100a611b39697fbdfd504b4b0bfdb556d995f07119fc2ca6a781cd556f7fa171
+expected_sha256: 4a32322b586f32d30bf4e77db78bd1fb247d000d7c933d8b6faef0c578c3a722
 origin:
   kind: synthetic
   source: 'Hand-written for M46-S2 (LAMMPS dump parser): a two-frame trajectory in declared metal units.'

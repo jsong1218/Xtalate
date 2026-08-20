@@ -102,6 +102,7 @@
     "missing_lattice",
     "missing_masses",
     "missing_velocities",
-    "ambiguous_stress_convention"
+    "ambiguous_stress_convention",
+    "ambiguous_units"
   ]
 }

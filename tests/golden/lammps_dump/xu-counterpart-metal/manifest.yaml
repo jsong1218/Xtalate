@@ -4,7 +4,7 @@ source_file: dump.lammpstrj
 expected_canonical: expected.canonical.json
 canonical_schema_version: 1.0.0
 sha256: d3843d0859c3e10cb4f52b24b106a79a2d037bb31154f4539bae3ec35b95713f
-expected_sha256: 22f18b192f16cf9014ab441e1be61aed6211a01bed5a97f16f690863f3dadf12
+expected_sha256: a0a61d8abb0d4613633bfe3e358eb28d491ad9af14550d74ec7258fee320d122
 origin:
   kind: synthetic
   source: 'Hand-written for M46-S3 (image flags): the unwrapped-coordinate counterpart of wrapped-flags-metal.'

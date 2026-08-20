@@ -24,7 +24,6 @@ import pytest
 from tests._dummy_plugins import make_object
 from xtalate.capabilities import Registry
 from xtalate.conversion import parse_with_recovery
-from xtalate.parsers._lammps import UNIT_STYLES
 from xtalate.recovery import RecoveryError
 from xtalate.recovery.scenarios import (
     INTERPRETIVE_SCENARIOS,
@@ -42,6 +41,7 @@ from xtalate.sdk import (
     ParseResult,
     ParserPlugin,
 )
+from xtalate.sdk.lammps import UNIT_STYLES
 
 STYLE = "ambiguous_units"
 _HINT = "ambiguous_units"

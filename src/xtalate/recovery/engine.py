@@ -44,6 +44,7 @@ from xtalate.recovery.scenarios import (
 from xtalate.schema import AtomsBlock, CanonicalObject, Cell, Frame
 from xtalate.schema.elements import atomic_number
 from xtalate.schema.presence import PresenceMap
+from xtalate.sdk.lammps.units import UNIT_STYLES
 from xtalate.sdk.stress_carries import STRESS_CARRY_KEYS
 
 # Resolution order (Part 4 §3.3): frame_selection first (a bounding box is computed on the chosen
@@ -53,7 +54,9 @@ from xtalate.sdk.stress_carries import STRESS_CARRY_KEYS
 # `ambiguous_stress_convention` is last: the stress interpretation depends on none of the others
 # (it reads the per-frame stress carry, which `frame_selection` has already sliced to the
 # retained frame either way), so it sits after the dependency chain, where it reads clearly
-# (D150).
+# (D150). `ambiguous_units` (write side, M47-S1) is likewise independent — it is keyed on the
+# *target's* identity, not on any source data — so it resolves after everything that could shape
+# the object, alongside the other interpretive scenario.
 _DEP_ORDER = (
     "frame_selection",
     "constraint_representation",
@@ -61,6 +64,7 @@ _DEP_ORDER = (
     "missing_masses",
     "missing_velocities",
     "ambiguous_stress_convention",
+    "ambiguous_units",
 )
 
 #: The custom-array key the `ambiguous_stress_convention` resolver interprets when the detected
@@ -71,6 +75,12 @@ _DEP_ORDER = (
 #: the guard below rather than a bare literal.
 _DEFAULT_STRESS_CARRY_KEY = "extxyz:stress"
 assert _DEFAULT_STRESS_CARRY_KEY in STRESS_CARRY_KEYS  # registry-first key (D18)
+
+#: The custom_global key the write-side `ambiguous_units` resolver writes a directly-constructed
+#: scenario's resolved style under when the scenario carries no ``params['custom_global_key']``
+#: (the pre-flight always passes the target-derived key; this covers hand-built scenarios, the
+#: same default-key posture as the stress resolver above).
+_DEFAULT_UNITS_STYLE_KEY = "lammps_dump:units"
 
 
 class RecoveryError(ValueError):
@@ -213,6 +223,8 @@ class RecoveryEngine:
                 working, applied = _apply_missing_velocities(working, aid, choice, origin, match)
             elif scenario_code == "ambiguous_stress_convention":
                 working, applied = _apply_stress_convention(working, aid, choice, origin, match)
+            elif scenario_code == "ambiguous_units":
+                working, applied = _apply_units_style(working, aid, choice, origin, match)
             else:  # missing_lattice
                 working, applied = _apply_missing_lattice(
                     working, aid, choice, origin, match, computed_on_frame=selected_source_index
@@ -1123,6 +1135,67 @@ def _apply_stress_convention(
                 detail=f"retired for {frames_desc}.",
             )
         ],
+    )
+    return updated, assumption
+
+
+def _apply_units_style(
+    canonical: CanonicalObject,
+    aid: str,
+    choice: dict[str, Any],
+    origin: str,
+    scenario: UnresolvedScenario,
+) -> tuple[CanonicalObject, AppliedAssumption]:
+    """Resolve the unit style a LAMMPS-family target's write declares (interpretive, **write**
+    side; v1.3 M47-S1, D177, Part 4 §3.3).
+
+    The write-side twin of the parse-time `ambiguous_units` resolution: a LAMMPS target does
+    not define units, so its output can only be self-describing when the writer states an
+    ``ITEM: UNITS <style>`` header and converts the canonical Å/fs/eV values to that style's
+    basis. The chosen style is therefore threaded to the exporter through the object — the
+    same channel the stress convention uses (the resolver materializes the resolved state
+    into the canonical object and the exporter reads it back) — as the format-scoped
+    ``custom_global[<target>:units]`` marker named by ``params['custom_global_key']`` (the
+    pre-flight derives it from the target's own format id, so the parser carry, the exporter's
+    read, and this write can never drift apart). The export-time trigger is **target
+    identity** (``requires_units_style``), unlike the parse-time one, which fires from the
+    file's own silence.
+
+    One ``Assumption`` is recorded — the style is the user's decision, never Xtalate's (a
+    wrong choice rescales every value on write, the same teeth the parse side has) — with
+    **no ``supplied`` entry** (``INTERPRETIVE_SCENARIOS``: nothing was created; the canonical
+    values are genuine, only the output basis was fixed)."""
+    if not is_interpretive(scenario.scenario):
+        raise RecoveryError(
+            f"ambiguous_units resolver mis-wired for {scenario.scenario!r}: it is not "
+            "registered in INTERPRETIVE_SCENARIOS"
+        )
+    code = _choice_code(choice, scenario)
+    key = scenario.params.get("custom_global_key", _DEFAULT_UNITS_STYLE_KEY)
+    style = UNIT_STYLES.get(code)
+    if style is None:  # pragma: no cover - _choice_code already checked the offered list
+        raise RecoveryError(f"ambiguous_units: unknown style {code!r}")
+
+    um = canonical.user_metadata
+    new_um = um.model_copy(update={"custom_global": {**um.custom_global, key: style.code}})
+    updated = canonical.model_copy(update={"user_metadata": new_um})
+    assumption = AppliedAssumption(
+        id=aid,
+        scenario="ambiguous_units",
+        choice=code,
+        parameters={"unit_style": style.code},
+        origin=origin,
+        description=(
+            f"Interpreted the target's LAMMPS unit style as `{style.code}` "
+            f"({style.summary}): the output declares an ITEM: UNITS {style.code} header and "
+            "every position, velocity, and box bound is converted from the canonical "
+            "Å/fs/eV basis to that style's units on write. A LAMMPS file defines no units, so "
+            "this is a recorded choice, never a guessed default — every dump Xtalate writes "
+            "declares its style explicitly."
+        ),
+        # Interpretive: nothing was created (the canonical values are genuine source data;
+        # only the output basis was fixed), exactly as on the parse side (Part 4 §3.1, M46).
+        supplied=[],
     )
     return updated, assumption
 

@@ -104,6 +104,12 @@ _ELECTRONIC_STRESS = "electronic.stress"
 #: target-write absent) drives the unwrapping-loss prediction.
 _IMAGE_FLAGS_PATH = f"user_metadata.custom_per_atom['{IMAGE_FLAGS_CARRY_KEY}']"
 
+#: The presence-path shape under which a LAMMPS-family target's resolved unit style rides in
+#: ``custom_global`` (``'<format>:units'``, derived per target — see ``_units_style_key``).
+#: The write-side `ambiguous_units` arm plans this path unconditionally so the marker the
+#: recovery resolver sets survives the write-plan filter into the exporter (M47-S1, D177).
+_UNITS_STYLE_KEY_PATH = "user_metadata.custom_global['{key}']"
+
 # Opt-in fabricative scenarios: a canonical field the target *can* write but does not *require*, so
 # the pre-flight diff never demands it. Emission is requested by the user supplying a recovery
 # choice for the scenario (Part 4 §3.3, "user requests velocity emission for a target that supports
@@ -458,7 +464,43 @@ def build_preflight_from_presence(
                     params={"custom_key": key},
                 )
             )
+    # The write-side `ambiguous_units` trigger (v1.3 M47-S1, D177): a LAMMPS-family target
+    # does not define units, so **every** write to it needs a declared unit style — whatever
+    # the source carried. That makes the trigger **target identity**, not a data carry (the
+    # contrast with `ambiguous_stress_convention`, which fires only when a stress payload is
+    # present): the arm is keyed on the target's declared `requires_units_style` capability
+    # (the `holds_image_flags` pattern — a named dimension read directly from the
+    # declarations, never a hard-coded format list, **P6**). The emitted scenario carries the
+    # pair-specific honest option list and the format-scoped custom_global key the resolved
+    # style will ride under (the same object channel the exporter reads, mirroring the
+    # stress-carried machinery). The per-key path joins the write plan unconditionally: once
+    # the style resolves, the exporter always writes the `ITEM: UNITS` header, so the marker
+    # key must survive the write-plan filter even when the source never carried it.
+    if caps.requires_units_style:
+        units_key = _units_style_key(target_format_id)
+        diff.write_plan.add(_UNITS_STYLE_KEY_PATH.format(key=units_key))
+        diff.unresolved.append(
+            UnresolvedScenario(
+                scenario="ambiguous_units",
+                detail=(
+                    f"target format {target_format_id!r} writes a LAMMPS file, which defines "
+                    "no unit system: the output must declare its unit style and the canonical "
+                    "Å/fs/eV values must be converted to that style's basis on write — a "
+                    "recorded choice, never a guessed default"
+                ),
+                options=available_options("ambiguous_units"),
+                params={"custom_global_key": units_key},
+            )
+        )
     return diff
+
+
+def _units_style_key(format_id: str) -> str:
+    """The format-scoped ``custom_global`` key a LAMMPS-family target carries its resolved unit
+    style under (Part 2 §6.1 ``"<format>:<key>"``), derived from the target's own format id so
+    the parser carry, the exporter's read, and the pre-flight's write-plan entry can never
+    drift apart (the response coordinate of ``requires_units_style``)."""
+    return f"{format_id}:units"
 
 
 def _scenario_options(
