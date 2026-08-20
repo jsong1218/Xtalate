@@ -69,6 +69,13 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     # error cannot hide. It is also the only source carrying site occupancy, which is how the
     # partial-occupancy pre-flight warning (M19 slice 2) gets exercised across the whole matrix.
     "cif": ("cif/zno-hexagonal-p1", "zno_hexagonal.cif"),
+    # M47: the LAMMPS dump exporter closes M46's staging state, so lammps_dump enrols as a full
+    # source *and* target (unlike the D159 VASP-output seam above). The element-labeled metal case
+    # anchors it: declared metal units + an orthogonal box + velocities + a per-atom c_pe column
+    # over two frames, so every hop out of it exercises the units carry and the custom-column loss
+    # accounting. Its one recovery need on the way *in* to dump is write-side ``ambiguous_units``
+    # (FIXED_PRESETS below); the coordinate family and image flags round-trip without a preset.
+    "lammps_dump": ("lammps_dump/metal-ortho-declared", "dump.lammpstrj"),
     # M36: exfmt, the *installed reference plugin* (plugins/example-format/), enrolled as a source
     # so the compatibility canary participates in the full matrix — the milestone's "appears in the
     # nightly matrix with zero core changes" (Part 8 §2). Its parser lives in a separate
@@ -103,6 +110,11 @@ FIXED_PRESETS: dict[str, dict[str, Any]] = {
     # gap. ``project`` keeps the representable subset and records the rest — deterministic, and
     # ignored by any pair that never hits the scenario (Part 8 §2.2).
     "constraint_representation": {"choice": "project", "parameters": {}},
+    # M47: writing *to* lammps_dump without a resolved unit style refuses (write-side
+    # ``ambiguous_units``, target-driven — D177). Every ``* → lammps_dump`` hop reaches it, so the
+    # matrix pins a deterministic style; ``metal`` matches the golden source's own declared units,
+    # keeping a lammps_dump → lammps_dump hop an honest identity rather than a unit re-label.
+    "ambiguous_units": {"choice": "metal", "parameters": {}},
 }
 
 

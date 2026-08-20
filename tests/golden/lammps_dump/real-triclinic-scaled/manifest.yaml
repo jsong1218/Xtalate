@@ -4,7 +4,7 @@ source_file: dump.lammpstrj
 expected_canonical: expected.canonical.json
 canonical_schema_version: 1.0.0
 sha256: 43e6188537cdc8d917921b31e10517b102483daa07d39ce5400666b828847cb6
-expected_sha256: a42c5a186a4e9a97f5f4eeb34960341dd25fee8f1fa9755031bb32be1be69a48
+expected_sha256: e6d703aadceeeca22e8aea73749c3882290279a2c955a89b60374f261c36e480
 origin:
   kind: synthetic
   source: 'Hand-written for M46-S2 (LAMMPS dump parser): a triclinic scaled-coordinate dump in declared real units.'

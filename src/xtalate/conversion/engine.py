@@ -396,6 +396,36 @@ class ConversionEngine:
         canonical_out = _apply_write_plan(recovered, write_plan, target_format_id)
         exporter = self._registry.get_exporter(target_format_id)
 
+        # A last value-level gate the capability diff cannot see: a field the target can hold in
+        # general may still carry a value this format cannot state (a general-triclinic cell to a
+        # LAMMPS dump, which holds only the restricted form). The exporter reports it via the
+        # additive `unrepresentable` hook (D179); rather than crash mid-write or silently transform
+        # (D43), the engine turns it into a clean refused report — a completed HTTP-200 outcome,
+        # never an error (Part 4 §4; P1). Consulted on the write-plan-filtered object, after
+        # recovery, so the refused report carries the recovery-augmented preserved/removed.
+        unrepresentable = exporter.unrepresentable(canonical_out)
+        if unrepresentable is not None:
+            return self._refuse(
+                source=source,
+                source_format_id=source_format_id,
+                source_filename=source_filename,
+                source_sha256=source_sha256,
+                target_format_id=target_format_id,
+                target_filename=target_filename,
+                mode=mode,
+                diff=diff,
+                preserved=preserved,
+                removed=removed,
+                supplied=supplied,
+                assumptions=assumptions,
+                fabricated_at_parse=fabricated_at_parse,
+                refusal={
+                    "code": "UNREPRESENTABLE_VALUE",
+                    "message": unrepresentable,
+                    "unresolved_scenarios": [],
+                },
+            )
+
         # Warnings echo parse warnings (Part 3 §5 rule 5) alongside capability caveats (already in
         # diff.warnings). Export-time transformation warnings come from the exporter itself via the
         # additive `export_warnings` hook (Part 4 §1 rule 3, Part 2 §3.7.1; D151): the exporter owns
@@ -564,9 +594,25 @@ class ConversionEngine:
             return False
         if type(exporter).atom_permutation is not ExporterPlugin.atom_permutation:
             return False  # a reordering exporter needs a permutation map streaming does not thread
+        if type(exporter).unrepresentable is not ExporterPlugin.unrepresentable:
+            # A value-level refusal (D179) the engine consults only on the materialized write
+            # path (right after `_apply_write_plan`); the streaming path never asks, so an
+            # exporter that can refuse a value must not take it — else the refusal is skipped
+            # and unrepresentable bytes are written. Today `lammps_dump` is already excluded by
+            # `requires_units_style` below; this guards any future streaming exporter that
+            # overrides the hook without that capability.
+            return False
         matrix = self._registry.capability_matrix()
         caps = matrix.get(target_format_id, "write")
         if caps.max_frames is not None:
+            return False
+        # A target whose write requires a declared unit style (M47-S1, D177) is a *static* fact
+        # that needs a recovery choice — known before any frame is read, and no frame can
+        # resolve it — so it can never take the recovery-free streaming path (reconciliation 3:
+        # canonical → lammps_dump routes through materialized convert). The engine rejects
+        # exactly this class by contract ("a static fact that could need a recovery choice
+        # raises ValueError — use convert").
+        if caps.requires_units_style:
             return False
         if any(r not in _UNIVERSAL_FIELDS for r in caps.required_fields):
             return False

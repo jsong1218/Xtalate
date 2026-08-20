@@ -9,7 +9,8 @@
  * `scenario_resolution_order` in the committed `docs/vocabulary.json` — the parse-time recovery stage
  * (`missing_species`, `truncate_corrupt_tail`, `ambiguous_units`, resolved *before* parsing completes)
  * followed by the conversion-time dependency order (frame_selection → constraint → lattice → masses →
- * velocities → ambiguous_stress_convention).
+ * velocities → ambiguous_stress_convention → ambiguous_units, the write-side trigger landing last in
+ * M47-S1, D177).
  *
  * This constant mirrors that artifact; `order.test.ts` asserts they are equal, so it can never drift
  * the way the old hand-copied `DEP_ORDER` did — and, unlike that copy, it sorts the parse-time
@@ -29,6 +30,7 @@ export const RECOVERY_RESOLUTION_ORDER: readonly string[] = [
   "missing_masses",
   "missing_velocities",
   "ambiguous_stress_convention",
+  "ambiguous_units",
 ];
 
 /**

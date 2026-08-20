@@ -93,6 +93,16 @@ class FormatCapabilities(BaseModel):
     # before a byte is written. Declared True on `lammps_dump` (read); the incumbent formats
     # (XYZ/extXYZ/POSCAR/CONTCAR/XDATCAR) declare absence by the default.
     holds_image_flags: bool = False
+    # Whether this format's representation requires a *declared unit style* to write anything at
+    # all (write side; v1.3 M47-S1, D177). A LAMMPS-family target does not define units — its
+    # output file is only self-describing when the writer declares an `ITEM: UNITS <style>`
+    # header — so exporting to it without a resolved `ambiguous_units` choice is refused, and
+    # the declared style is written back (canonical Å/fs/eV converted to the style's basis).
+    # Declared True by the LAMMPS dump exporter; the incumbent formats declare absence by the
+    # default. The pre-flight diff reads it directly (mirroring the `holds_image_flags`
+    # dimension) to fire the write-side `ambiguous_units` scenario — a *target-identity*
+    # trigger: a dump needs a style whatever the source carried.
+    requires_units_style: bool = False
     # The sign convention of the `electronic.stress` tensor this exporter writes (write side;
     # Part 2 §3.7.1, DECISIONS.md D151). The canonical convention is tension-positive; an exporter
     # whose files carry the opposite (compression-positive, e.g. ASE-native extXYZ) reverses the

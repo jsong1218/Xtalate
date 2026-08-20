@@ -64,7 +64,7 @@ Honesty on the ordinary axes, per the M46 plan and Part 3 §3 n.19:
 * **Typed atoms resolve through the existing ``missing_species`` scenario** (Part 3 §7.2): a
   numeric ``type`` column without a ``species_map`` preset raises the recoverable
   ``LAMMPSDUMP_MISSING_SPECIES`` issue (``recovery_hint="supply_species"``, the same hint the
-  VASP-4 POSCAR path uses); an element-labeled dump needs no scenario. The shared ``_lammps``
+  VASP-4 POSCAR path uses); an element-labeled dump needs no scenario. The shared ``sdk.lammps``
   core does the map validation and the unit/box/coordinate conversion (S1).
 """
 
@@ -77,21 +77,6 @@ from typing import BinaryIO, cast
 import numpy as np
 
 from xtalate.parsers._common import build_provenance
-from xtalate.parsers._lammps import (
-    COORDINATE_COLUMN_NAMES,
-    Box,
-    CoordinateColumns,
-    box_from_bounds,
-    coordinate_note,
-    is_element_column,
-    resolve_coordinate_columns,
-    resolve_species,
-    scaled_to_cartesian,
-)
-from xtalate.parsers._lammps import (
-    unit_style as lookup_unit_style,
-)
-from xtalate.parsers._lammps.units import UnitStyle
 from xtalate.schema import (
     SCHEMA_VERSION,
     AtomsBlock,
@@ -111,6 +96,21 @@ from xtalate.sdk import (
     ParseResult,
     ParserPlugin,
 )
+from xtalate.sdk.lammps import (
+    COORDINATE_COLUMN_NAMES,
+    Box,
+    CoordinateColumns,
+    box_from_bounds,
+    coordinate_note,
+    is_element_column,
+    resolve_coordinate_columns,
+    resolve_species,
+    scaled_to_cartesian,
+)
+from xtalate.sdk.lammps import (
+    unit_style as lookup_unit_style,
+)
+from xtalate.sdk.lammps.units import UnitStyle
 from xtalate.sdk.streaming import FrameStream, StreamFrame, StreamHeader, materialize
 
 FORMAT_ID = "lammps_dump"
@@ -119,6 +119,13 @@ FORMAT_ID = "lammps_dump"
 #: ``trajectory.timestep`` is a time in fs; a dump declares step numbers and no dt, so the
 #: index cannot be converted to a time and is carried verbatim instead (P3, P1).
 _STEP_KEY = "lammps_dump:timestep"
+#: The format-scoped ``custom_global`` key the *unit style in force* is carried under (M47-S1):
+#: the declared ``ITEM: UNITS`` style — or the style a recovery-applied re-read interpreted —
+#: becomes a first-class carried value, the mirror of how the image flags are carried
+#: specifically. The dump **exporter** (M47) reads it back to write the ``ITEM: UNITS`` header
+#: and convert to the style's basis; without the carry, a write-side round-trip could not be
+#: validated (the re-parse must reproduce the choice the write applied, Part 5 §2).
+_UNITS_KEY = "lammps_dump:units"
 #: The per-frame custom key an ``ITEM: TIME`` value rides under (``dump_modify time yes``): the
 #: dump's real simulation time in the style's time unit. It is *not* the canonical
 #: ``trajectory.timestep`` (a dt in fs, which a dump never states), so it is carried verbatim
@@ -730,6 +737,12 @@ class LammpsDumpParser(ParserPlugin):
             schema_version=SCHEMA_VERSION,
             provenance=provenance,
             trajectory=TrajectoryMetadata(timestep=None),
+            # The unit style in force (declared in the file, or applied by recovery) is a
+            # carried value, not just a parse note (M47-S1): the exporter writes it back as
+            # the ITEM: UNITS header, and the re-parse must reproduce it for the write-side
+            # conversion to validate (Part 5 §2). Parse_notes still record *how* it was
+            # established (declared vs. recovery-applied) so the two facts stay distinct.
+            custom_global={_UNITS_KEY: first.unit_style.code},
             custom_per_atom=carries,
         )
 

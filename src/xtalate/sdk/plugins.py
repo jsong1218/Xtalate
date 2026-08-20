@@ -122,6 +122,25 @@ class ExporterPlugin(ABC):
         """
         return []
 
+    def unrepresentable(self, canonical: CanonicalObject) -> str | None:
+        """Why this exporter cannot represent ``canonical``'s *values*, or ``None`` when every value
+        is representable (Part 4 §1; DECISIONS.md D179).
+
+        The Capability Matrix predicts loss at *field* granularity — whether a format can hold a
+        field at all. Some targets accept a field's type but not every value: a LAMMPS dump holds a
+        lattice, but only in LAMMPS's restricted-triclinic form, and refuses any other cell rather
+        than silently rotate it (D43); it likewise holds velocities, but its constant-column layout
+        cannot carry them on only *some* frames of a trajectory. Those are value-level facts the
+        capability diff cannot see, so the engine asks the exporter directly — once per conversion,
+        on the write-plan-filtered object (``canonical′``) it is about to write, the same object
+        ``export_warnings`` sees. A returned string is the plain-language reason and produces a
+        clean ``UNREPRESENTABLE_VALUE`` refusal (a completed HTTP-200 refused report, never an
+        export-time crash; P1); ``None`` lets the export proceed. Additive and optional like
+        ``export_warnings`` (D151) and
+        ``atom_permutation`` (D23): the default returns ``None``, so existing and third-party
+        exporters are unaffected. It reports; it never mutates ``canonical``."""
+        return None
+
     def atom_permutation(self, canonical: CanonicalObject) -> list[int] | None:
         """The atom reordering this exporter applies on write, or ``None`` for no reordering.
 

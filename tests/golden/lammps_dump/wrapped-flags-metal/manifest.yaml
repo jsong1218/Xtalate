@@ -4,7 +4,7 @@ source_file: dump.lammpstrj
 expected_canonical: expected.canonical.json
 canonical_schema_version: 1.0.0
 sha256: 25e2ac771519b254c3f339fd3016e29d41639993b4baa924d95e459532edeff9
-expected_sha256: ada5bbb1ec03de78328d87eb76d2c29f75170186972be29d361c59816555db02
+expected_sha256: e951334954b7d806ce99fc3d3d24f6add3e3907f071fcfbffc2ffa220d791267
 origin:
   kind: synthetic
   source: 'Hand-written for M46-S3 (image flags): a wrapped-coordinate dump whose second atom crosses a periodic boundary.'
