@@ -109,6 +109,16 @@ def test_prediction_does_not_fire_for_a_non_flag_source() -> None:
     assert "LAMMPSDUMP_UNWRAPPING_LOST_ON_EXPORT" not in {w.code for w in diff.warnings}
 
 
+def test_dump_target_holds_flags_and_only_needs_units_recovery() -> None:
+    """S2's write capability and behavior close the dump-to-dump seam: image-flag loss is no
+    longer predicted, while the target-driven units scenario remains required."""
+    _, matrix = _registry()
+    source = _parse("wrapped-flags-metal")
+    diff = build_preflight(source, matrix, "lammps_dump", source_format_id="lammps_dump")
+    assert "LAMMPSDUMP_UNWRAPPING_LOST_ON_EXPORT" not in {w.code for w in diff.warnings}
+    assert [scenario.scenario for scenario in diff.unresolved].count("ambiguous_units") == 1
+
+
 # --- the correctness proof: flags are sufficient to unwrap ---------------------------
 
 

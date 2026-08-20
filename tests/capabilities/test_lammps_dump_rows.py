@@ -5,10 +5,9 @@ becomes the first full-axis format addition since v0.3. This pins the write-side
 the Part 3 §3 table and the §4 write declarations must match — the table-sync discipline
 (Part 8 §1.1): element column + type map (FULL symbols), positions FULL (unit-converted),
 lattice PARTIAL (restricted triclinic form), velocities FULL-but-only-when-present,
-`requires_units_style=True` (the write-side `ambiguous_units` trigger), and — the M47-S1 →
-M47-S2 resting state — **image flags are NOT yet written** (`holds_image_flags=False` write,
-so dump→dump still predicts the unwrapping loss until S2 flips the capability *with* the
-flag-writing behavior).
+`requires_units_style=True` (the write-side `ambiguous_units` trigger), and — M47-S2 —
+**image flags are written back** (`holds_image_flags=True` write), so dump→dump no longer
+predicts the unwrapping loss while incumbent targets still do.
 """
 
 from __future__ import annotations
@@ -64,14 +63,12 @@ def test_write_requires_a_declared_unit_style() -> None:
     assert MATRIX.get("lammps_dump", "write").requires_units_style is True
 
 
-def test_s1_write_side_does_not_yet_hold_image_flags() -> None:
-    """The S1 → S2 resting-state contract: the capability stays False until S2 writes the
-    flags back, so the M46 pre-flight still predicts LAMMPSDUMP_UNWRAPPING_LOST_ON_EXPORT for
-    dump→dump at end-of-S1 (honest predicted loss, never a silent one)."""
+def test_s2_write_side_holds_image_flags() -> None:
+    """S2 lands the capability with the writer behavior: dump→dump can preserve the
+    unwrapping payload, while the read-side declaration remains unchanged."""
     caps = EXPORTER.capabilities()
-    assert caps.holds_image_flags is False
-    assert MATRIX.get("lammps_dump", "write").holds_image_flags is False
-    # The read side keeps its M46 declaration.
+    assert caps.holds_image_flags is True
+    assert MATRIX.get("lammps_dump", "write").holds_image_flags is True
     assert MATRIX.get("lammps_dump", "read").holds_image_flags is True
 
 
@@ -79,7 +76,7 @@ def test_write_writable_custom_key_spellings() -> None:
     caps = EXPORTER.capabilities()
     # The resolved unit style is the one writable custom_global key (the ITEM: UNITS header);
     # the per-snapshot step number rides custom_per_frame; per-atom columns are open-ended
-    # (a name pattern) minus the S1-excluded image-flag carry.
+    # (a name pattern), including the structured image-flag carry.
     assert caps.writable_custom_keys == {
         "user_metadata.custom_global": ["lammps_dump:units"],
         "user_metadata.custom_per_frame": ["lammps_dump:timestep"],
@@ -88,7 +85,9 @@ def test_write_writable_custom_key_spellings() -> None:
     import re
 
     assert re.fullmatch(pattern, "lammps_dump:c_pe") is not None
-    assert re.fullmatch(pattern, "lammps_dump:image_flags") is None
+    assert re.fullmatch(pattern, "lammps_dump:image_flags") is not None
+    assert re.fullmatch(pattern, "lammps_dump:id") is None
+    assert re.fullmatch(pattern, "lammps_dump:type") is None
     assert re.fullmatch(pattern, "foreign:key") is None
 
 

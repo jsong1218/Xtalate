@@ -46,6 +46,7 @@ from typing import Any, BinaryIO
 import numpy as np
 
 from xtalate.sdk import (
+    IMAGE_FLAGS_CARRY_KEY,
     CapabilityLevel,
     ExporterPlugin,
     ExporterWarning,
@@ -68,16 +69,13 @@ _UNITS_KEY = f"{FORMAT_ID}:units"
 _STEP_KEY = f"{FORMAT_ID}:timestep"
 # The per-atom custom key an `id` column rides under (parser carry, _ID_KEY).
 _ID_KEY = f"{FORMAT_ID}:id"
-#: The per-atom custom keys this exporter writes back as dump columns (M47-S1): the generic
-#: carried columns (``lammps_dump:<name>`` — compute/fix outputs, id) round-trip verbatim,
-#: declared to the pre-flight as the writable pattern so the write plan and the bytes cannot
-#: drift. The one exclusion is the **image-flag carry** (M46-S3): S1 does not yet write
-#: ``ix iy iz`` back (that is M47-S2), so the key deliberately fails this pattern and is
-#: routed ``removed`` — with the M46 pre-flight predicting
-#: ``LAMMPSDUMP_UNWRAPPING_LOST_ON_EXPORT`` against the S1 write capability
-#: (``holds_image_flags=False``), an honest predicted loss, never a silent one. S2 flips the
-#: capability *and* this pattern together with the flag-writing behavior.
-_WRITABLE_PER_ATOM = re.compile(rf"{FORMAT_ID}:(?!image_flags)[^:]*")
+#: The per-atom custom keys this exporter writes back as dump columns (M47-S1/S2): generic
+#: ``lammps_dump:<name>`` columns round-trip verbatim, while the reserved ``id``/``type``
+#: carries are represented by the writer's canonical ``id``/generated ``type`` columns and the
+#: image-flags carry is expanded into its specific ``ix iy iz`` family. The pattern is declared
+#: to pre-flight so the write plan and bytes cannot drift; the exporter keeps the reserved carries
+#: out of the generic-column loop and handles them in their format-defined positions.
+_WRITABLE_PER_ATOM = re.compile(rf"{FORMAT_ID}:(?!(?:id|type)$)[^:]*")
 
 #: Audit-line code for the generated type map (surfaced in the Conversion Report via
 #: ``export_warnings`` — the exporter-owned report channel).
@@ -105,6 +103,7 @@ class LammpsDumpExporter(ExporterPlugin):
     ) -> None:
         style_code = header.custom_global.get(_UNITS_KEY)
         style = unit_style(style_code) if isinstance(style_code, str) else None
+        coordinate_kind = _coordinate_kind(header)
         if style is None:
             raise ValueError(
                 "lammps_dump: no resolved unit style on the object "
@@ -127,7 +126,16 @@ class LammpsDumpExporter(ExporterPlugin):
                 # (dump.cpp write_header), as a two-line ITEM.
                 stream.write(f"ITEM: UNITS\n{style.code}\n".encode())
                 written_units = True
-            _write_snapshot(stream, frame, i, sf.per_frame_custom, header, style, type_map)
+            _write_snapshot(
+                stream,
+                frame,
+                i,
+                sf.per_frame_custom,
+                header,
+                style,
+                type_map,
+                coordinate_kind,
+            )
 
         if not written_units:
             raise ValueError("lammps_dump: the object being exported has no frames")
@@ -215,8 +223,9 @@ class LammpsDumpExporter(ExporterPlugin):
                     level=CapabilityLevel.PARTIAL,
                     notes=(
                         "Generic carried columns (lammps_dump:<name>) are written back verbatim; "
-                        "the image-flag carry is not written in S1 (predicted loss), and a "
-                        "foreign-scoped key is dropped."
+                        "id/type carries are represented by the id/generated-type columns, and "
+                        "image flags are written as ix/iy/iz when carried; a foreign-scoped key "
+                        "is dropped."
                     ),
                 ),
                 "user_metadata.custom_per_frame": FieldCapability(
@@ -244,12 +253,10 @@ class LammpsDumpExporter(ExporterPlugin):
             allows_open_boundaries=True,  # the f boundary flag expresses a non-periodic axis
             representable_constraint_kinds=[],
             native_coordinate_system="cartesian",
-            # The named capability dimensions (M46-S3 / M47-S1): the dump reads *and* carries
-            # image flags, but S1 does not yet write them back (holds_image_flags stays False
-            # until S2 lands the flag-writing behavior with it — the S1→S2 resting-state
-            # contract), while the write *requires* a declared unit style (requires_units_style
-            # drives the write-side ambiguous_units refusal).
-            holds_image_flags=False,
+            # The named capability dimensions (M46-S3 / M47-S2): the dump reads and writes
+            # image flags specifically, while the write *requires* a declared unit style
+            # (requires_units_style drives the write-side ambiguous_units refusal).
+            holds_image_flags=True,
             requires_units_style=True,
             lossy_notes=[
                 "Per-snapshot ITEM: TIME / simulation-time carries are not written (a dump "
@@ -257,6 +264,23 @@ class LammpsDumpExporter(ExporterPlugin):
                 "verify); step numbers ride ITEM: TIMESTEP (carried or renumbered from 0)."
             ],
         )
+
+
+def _coordinate_kind(header: StreamHeader) -> str:
+    """Recover the source coordinate family from parser provenance for a write round-trip.
+
+    The LAMMPS parser records this format-defined fact in ``provenance.parse_notes``. A
+    programmatically constructed canonical object has no such note, so the safe default is the
+    ordinary wrapped Cartesian family (x/y/z), which is also the historical S1 output.
+    """
+    for note in header.provenance.parse_notes:
+        if "scaled (xs/ys/zs)" in note:
+            return "scaled"
+        if "unwrapped Cartesian (xu/yu/zu)" in note:
+            return "unwrapped"
+        if "wrapped Cartesian (x/y/z)" in note:
+            return "cartesian"
+    return "cartesian"
 
 
 def _extend_type_map(type_map: dict[str, int], symbols: list[str], index: int) -> None:
@@ -295,6 +319,7 @@ def _write_snapshot(
     header: StreamHeader,
     style: UnitStyle,
     type_map: dict[str, int],
+    coordinate_kind: str,
 ) -> None:
     """One ``ITEM:``-block snapshot. Shared by whole-file and streamed writes (one code path)."""
     distance = style.distance_to_angstrom
@@ -341,16 +366,46 @@ def _write_snapshot(
         out.append(f"{_fmt(0.0)} {_fmt(ly / distance)}")
         out.append(f"{_fmt(0.0)} {_fmt(lz / distance)}")
 
-    # The ATOMS column set: id (carried) · element · type · x y z [vx vy vz] · carried custom
-    # columns — image flags excluded in S1 (the pattern above), so what the re-parse carries
-    # matches what the write plan promised.
+    # The ATOMS column set: id (carried) · element · generated type · the source coordinate
+    # convention · optional velocities · image flags · carried custom columns. Reserved carries
+    # are handled explicitly below so they cannot appear twice in the header.
     symbols = list(frame.atoms.symbols)
-    positions = np.asarray(frame.atoms.positions, dtype=float) / distance
+    positions = np.asarray(frame.atoms.positions, dtype=float)
+    if coordinate_kind == "scaled":
+        # The writer emits a zero-origin box, so express canonical Cartesian positions as
+        # fractional coordinates in the restricted lattice. This is the inverse of the parser's
+        # scaled_to_cartesian mapping and preserves xs/ys/zs as a convention, not merely as a
+        # spelling change.
+        fractional = positions @ np.linalg.inv(lattice)
+        coordinate_values = fractional
+        coordinate_names = ("xs", "ys", "zs")
+    else:
+        # x/y/z and xu/yu/zu are both Cartesian in the writer's zero-origin box; only the
+        # coordinate family distinguishes wrapped from unwrapped semantics. The canonical object
+        # deliberately retains the source values exactly as read (the parser never auto-unwraps).
+        coordinate_values = positions / distance
+        coordinate_names = ("x", "y", "z") if coordinate_kind == "cartesian" else ("xu", "yu", "zu")
     custom_values = [
         (key[len(FORMAT_ID) + 1 :], np.asarray(values, dtype=float))
         for key, values in header.custom_per_atom.items()
         if _WRITABLE_PER_ATOM.fullmatch(key)
+        and key not in {_ID_KEY, f"{FORMAT_ID}:type", IMAGE_FLAGS_CARRY_KEY}
     ]
+    image_flags = header.custom_per_atom.get(IMAGE_FLAGS_CARRY_KEY)
+    image_flags_array = None if image_flags is None else np.asarray(image_flags)
+    if image_flags_array is not None:
+        if image_flags_array.shape != (len(symbols), 3):
+            raise ValueError(
+                "lammps_dump: image flags must have shape "
+                f"({len(symbols)}, 3), got {image_flags_array.shape}"
+            )
+        if not np.all(np.isfinite(image_flags_array)) or not np.all(
+            image_flags_array == np.floor(image_flags_array)
+        ):
+            raise ValueError("lammps_dump: image flags must be finite integer triplets")
+        # Image flags are integer bookkeeping by definition; cast after the
+        # finite/integer-valued guard so they render as `0` not `0.0`.
+        image_flags_array = image_flags_array.astype(np.int64)
     # The id column is written **only when the object carries it** (round-tripped identity);
     # a source without one gets no id column — never a synthesized numbering presented as the
     # source's (P3). The column header and the rows must agree by construction, so the same
@@ -360,9 +415,11 @@ def _write_snapshot(
     columns: list[str] = []
     if has_ids:
         columns.append("id")
-    columns += ["element", "type", "x", "y", "z"]
+    columns += ["element", "type", *coordinate_names]
     if has_velocities:
         columns += ["vx", "vy", "vz"]
+    if image_flags_array is not None:
+        columns += ["ix", "iy", "iz"]
     columns += [name for name, _ in custom_values]
     out.append("ITEM: ATOMS " + " ".join(columns))
 
@@ -379,9 +436,9 @@ def _write_snapshot(
             row.append(_fmt_number(float(_values[atom_index])))
         row.append(symbol)
         row.append(str(type_map[symbol]))
-        row.append(_fmt(positions[atom_index, 0]))
-        row.append(_fmt(positions[atom_index, 1]))
-        row.append(_fmt(positions[atom_index, 2]))
+        row.append(_fmt(coordinate_values[atom_index, 0]))
+        row.append(_fmt(coordinate_values[atom_index, 1]))
+        row.append(_fmt(coordinate_values[atom_index, 2]))
         if has_velocities:
             velocity = (
                 np.asarray(frame.dynamics.velocities, dtype=float)
@@ -390,6 +447,8 @@ def _write_snapshot(
             row.append(_fmt(velocity[atom_index, 0]))
             row.append(_fmt(velocity[atom_index, 1]))
             row.append(_fmt(velocity[atom_index, 2]))
+        if image_flags_array is not None:
+            row.extend(_fmt_number(value) for value in image_flags_array[atom_index])
         for _, values in custom_values:
             if atom_index >= len(values):
                 raise ValueError(

@@ -217,6 +217,53 @@ def test_small_roundtrip_reproduces_scientific_content() -> None:
     assert_scientifically_equal(left, right)
 
 
+def test_image_flags_are_written_back_with_the_coordinate_convention() -> None:
+    obj = _resolved("wrapped-flags-metal")
+    out = _export(obj).decode()
+    atoms_header = next(line for line in out.splitlines() if line.startswith("ITEM: ATOMS"))
+    assert "x y z ix iy iz" in atoms_header
+    rows = out.split(atoms_header, 1)[1].strip().splitlines()
+    assert rows[0].split()[-3:] == ["0", "0", "0"]
+    assert rows[1].split()[-3:] == ["1", "0", "0"]
+    reparsed = _reparse(_export(obj))
+    np.testing.assert_array_equal(
+        reparsed.user_metadata.custom_per_atom["lammps_dump:image_flags"],
+        obj.user_metadata.custom_per_atom["lammps_dump:image_flags"],
+    )
+
+
+def test_image_flags_are_absent_never_zero_filled() -> None:
+    out = _export(_resolved(_METAL)).decode()
+    atoms_header = next(line for line in out.splitlines() if line.startswith("ITEM: ATOMS"))
+    assert all(name not in atoms_header.split() for name in ("ix", "iy", "iz"))
+    assert all(" ix " not in line for line in out.splitlines())
+
+
+@pytest.mark.parametrize(
+    ("case", "coordinate_header"),
+    [
+        ("wrapped-flags-metal", "x y z"),
+        ("xu-counterpart-metal", "xu yu zu"),
+        (_TRICLINIC, "xs ys zs"),
+    ],
+)
+def test_coordinate_convention_is_preserved(case: str, coordinate_header: str) -> None:
+    out = _export(_resolved(case)).decode()
+    atoms_header = next(line for line in out.splitlines() if line.startswith("ITEM: ATOMS"))
+    assert coordinate_header in atoms_header
+
+
+def test_wrapped_flags_roundtrip_reconstructs_unwrapped_positions_in_test() -> None:
+    wrapped = _resolved("wrapped-flags-metal")
+    reparsed = _reparse(_export(wrapped))
+    xu = _resolved("xu-counterpart-metal")
+    flags = np.asarray(reparsed.user_metadata.custom_per_atom["lammps_dump:image_flags"])
+    cell = reparsed.frames[0].cell
+    assert cell is not None
+    reconstructed = reparsed.frames[0].atoms.positions + flags * np.diag(cell.lattice_vectors)
+    np.testing.assert_allclose(reconstructed, xu.frames[0].atoms.positions)
+
+
 @pytest.mark.parametrize("direction", ["read", "write"])
 def test_registered_as_full_axis(direction: str) -> None:
     from xtalate.registry import default_registry
