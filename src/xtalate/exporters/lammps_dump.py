@@ -45,6 +45,7 @@ from typing import Any, BinaryIO
 
 import numpy as np
 
+from xtalate.schema.presence import compute_field_presence
 from xtalate.sdk import (
     IMAGE_FLAGS_CARRY_KEY,
     CapabilityLevel,
@@ -157,6 +158,36 @@ class LammpsDumpExporter(ExporterPlugin):
                 ),
             )
         ]
+
+    def unrepresentable(self, canonical: Any) -> str | None:
+        """Why the dump format cannot express ``canonical``'s *values*, or ``None`` when it can
+        (Part 4 §1; D179). A returned string produces a clean ``UNREPRESENTABLE_VALUE`` refusal, not
+        an export-time crash (P1). Two value-level facts the field-granular Capability Matrix cannot
+        see are checked here, before export:
+
+        1. **A general-triclinic cell.** A dump can state only the *restricted* triclinic form; any
+           other cell would need a rotation to write, silently changing the trajectory's frame of
+           reference (D43). A frame with **no** lattice is not this method's concern — that is a
+           required-field gap the pre-flight / ``missing_lattice`` recovery handles — so only frames
+           that carry a lattice are checked.
+        2. **Mixed-presence velocities.** A dump requires a *constant* per-atom column layout across
+           every snapshot, so it cannot carry ``vx vy vz`` on only some frames. When the presence
+           model reports ``dynamics.velocities`` as ``mixed`` (present on some frames, absent on
+           others — a legitimate canonical state), writing it would demand either per-frame-varying
+           columns (output the parser rejects) or a fabricated rest state for the gap frames
+           (forbidden, P3/P1). Neither is allowed, so the conversion is refused rather than silently
+           mangled. A uniformly-present or uniformly-absent velocity field is representable and
+           passes."""
+        for index, frame in enumerate(canonical.frames):
+            cell = frame.cell
+            if cell is None or cell.lattice_vectors is None:
+                continue
+            lattice = np.asarray(cell.lattice_vectors, dtype=float)
+            if not _is_restricted(lattice):
+                return _unrestricted_reason(index)
+        if compute_field_presence(canonical).status_of("dynamics.velocities") == "mixed":
+            return _mixed_velocities_reason(canonical.frames)
+        return None
 
     def capabilities(self) -> FormatCapabilities:
         none = FieldCapability(level=CapabilityLevel.NONE)
@@ -460,21 +491,52 @@ def _write_snapshot(
     stream.write(("\n".join(out) + "\n").encode("utf-8"))
 
 
-def _require_restricted(lattice: np.ndarray, index: int) -> None:
-    """A LAMMPS dump can only state the *restricted* triclinic form (edge rows along x). Any
-    other cell is refused loudly — rotating a lattice would silently change the trajectory's
-    frame of reference, an unrequested transform (D43)."""
-    if not (
+def _is_restricted(lattice: np.ndarray) -> bool:
+    """Whether ``lattice`` is in LAMMPS's *restricted* triclinic form (upper-triangle zeros: edge
+    **a** along x, **b** in the xy-plane). This is the one value-level geometry a dump can state;
+    any other cell would need a rotation to write, which would silently change the trajectory's
+    frame of reference — an unrequested transform Xtalate refuses rather than performs (D43)."""
+    return bool(
         np.allclose(lattice[0, 1], 0.0)
         and np.allclose(lattice[0, 2], 0.0)
         and np.allclose(lattice[1, 2], 0.0)
-    ):
-        raise ValueError(
-            "lammps_dump: frame "
-            f"{index}'s lattice is not LAMMPS's restricted triclinic form "
-            "((a,0,0),(xy,ly,0),(xz,yz,lz)); the format cannot state it — a rotation would "
-            "silently change the trajectory's frame of reference"
-        )
+    )
+
+
+def _unrestricted_reason(index: int) -> str:
+    """The plain-language reason a non-restricted cell cannot be written — shared verbatim by the
+    engine-consulted :meth:`LammpsDumpExporter.unrepresentable` refusal and the defensive raise in
+    ``_require_restricted``, so the refused report and the backstop crash say the same thing."""
+    return (
+        f"lammps_dump: frame {index}'s lattice is not LAMMPS's restricted triclinic form "
+        "((a,0,0),(xy,ly,0),(xz,yz,lz)); the format cannot state it — a rotation would silently "
+        "change the trajectory's frame of reference"
+    )
+
+
+def _require_restricted(lattice: np.ndarray, index: int) -> None:
+    """Defensive backstop for the write path: the engine consults ``unrepresentable`` and refuses
+    a non-restricted cell *before* export, so this only fires if that guard is ever bypassed."""
+    if not _is_restricted(lattice):
+        raise ValueError(_unrestricted_reason(index))
+
+
+def _mixed_velocities_reason(frames: list[Any]) -> str:
+    """The plain-language reason a *mixed*-presence velocity field cannot be written: a dump's
+    per-atom column layout must be identical across every snapshot, so ``vx vy vz`` cannot appear on
+    only part of the trajectory. Names the first frame that breaks the pattern for a concrete
+    pointer. Consulted only after :func:`compute_field_presence` has classified the field ``mixed``,
+    so both a present and an absent frame are guaranteed to exist."""
+    present = [f.index for f in frames if f.dynamics.velocities is not None]
+    absent = [f.index for f in frames if f.dynamics.velocities is None]
+    return (
+        "lammps_dump: velocities are present on some frames but absent on others "
+        f"(present on {len(present)} of {len(frames)} frames; first frame without them is "
+        f"{absent[0]}). A dump requires a constant per-atom column layout across every "
+        "snapshot, so it cannot carry velocities on only part of the trajectory — and "
+        "fabricating a rest state for the gap frames would assert a stillness the source "
+        "never recorded (P3)"
+    )
 
 
 def _fmt(x: float) -> str:
