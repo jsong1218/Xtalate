@@ -10,7 +10,7 @@ one native format, never reads native files.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, BinaryIO
 
 from xtalate.schema import CanonicalObject
@@ -48,6 +48,7 @@ class ParserPlugin(ABC):
         hint: str,
         choice: str,
         parameters: dict[str, object],
+        recovery_context: Mapping[str, object] | None = None,
     ) -> ParseResult:
         """Re-parse a file that raised a *recoverable* ``ParseError`` (Part 4 §3.3), applying the
         caller's recovery ``choice`` for the error's ``recovery_hint``.
@@ -61,7 +62,18 @@ class ParserPlugin(ABC):
         ``Assumption`` per applied choice, and threads it
         into the Conversion Report; the parser performs only the mechanical re-read. The default
         refuses — a parser that raised a recoverable hint but did not override this is a bug,
-        surfaced loudly rather than silently."""
+        surfaced loudly rather than silently.
+
+        ``recovery_context`` (M48; additive, default ``None``) carries **every** parse-time choice
+        the orchestrator has resolved so far for this file, keyed by scenario — each value the same
+        ``{"choice", "parameters"}`` spec as ``recovery_choices``. It exists because a single file
+        can lack several required facts at once: a LAMMPS *data* file declares neither its unit
+        style nor its element symbols (nor its atom style, when the ``Atoms`` comment is absent), so
+        it needs ``ambiguous_units`` + ``missing_species`` (+ ``ambiguous_atom_style``) applied
+        *together* in one re-read. ``conversion._try_recover`` drives an accumulating loop, adding
+        the current scenario to ``recovery_context`` before each call, so a parser that consumes it
+        can apply the whole set at once. Parsers that need only one recovery at a time ignore it and
+        read ``hint``/``choice``/``parameters`` as before — it is accept-and-ignore for them."""
         raise NotImplementedError(
             f"{type(self).__name__} raised a recoverable parse error (hint {hint!r}) but "
             "implements no parse_recover hook"

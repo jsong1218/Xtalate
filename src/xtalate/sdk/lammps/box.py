@@ -90,6 +90,42 @@ def box_from_bounds(
     )
 
 
+def box_from_edges(
+    xlo: float,
+    xhi: float,
+    ylo: float,
+    yhi: float,
+    zlo: float,
+    zhi: float,
+    *,
+    xy: float = 0.0,
+    xz: float = 0.0,
+    yz: float = 0.0,
+) -> Box:
+    """Build the canonical box from a LAMMPS **data** file's box header (M48).
+
+    Unlike a dump (:func:`box_from_bounds`), a data file writes the *restricted edge
+    parameters directly* — ``xlo xhi`` / ``ylo yhi`` / ``zlo zhi`` and the optional
+    ``xy xz yz`` line are the edge lengths and tilts themselves, **not** the axis-aligned
+    bounding box (LAMMPS "read_data" / "write_data" command docs,
+    https://docs.lammps.org/read_data.html, accessed 2026-08). So no bound-vs-edge
+    inversion is applied: the edge vectors are formed straight from the parameters,
+
+        a = (xhi−xlo, 0, 0),  b = (xy, yhi−ylo, 0),  c = (xz, yz, zhi−zlo),
+
+    with ``origin = (xlo, ylo, zlo)``. The orthogonal box is the tilt=0 special case
+    (a data file with no ``xy xz yz`` line), where this and :func:`box_from_bounds`
+    coincide; they diverge only when a tilt is non-zero — which is exactly why the two
+    conventions are separate helpers rather than one, so neither format silently reads
+    the other's box.
+    """
+    lx = xhi - xlo
+    ly = yhi - ylo
+    lz = zhi - zlo
+    lattice = np.array([[lx, 0.0, 0.0], [xy, ly, 0.0], [xz, yz, lz]], dtype=np.float64)
+    return Box(lattice=lattice, origin=np.array([xlo, ylo, zlo], dtype=np.float64))
+
+
 def scaled_to_cartesian(scaled: np.ndarray, box: Box) -> np.ndarray:
     """Convert ``(N, 3)`` scaled (``xs``/``ys``/``zs``) coordinates to Cartesian Å.
 

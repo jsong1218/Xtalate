@@ -1,0 +1,13 @@
+case: atomic-metal-ortho
+format_id: lammps_data
+source_file: structure.data
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: f6f048371b152697ca3198dc654d44fb4e7e6b7ae8de6e59cc64e50e40d32816
+expected_sha256: aedc3363da3f99a5d0df1d0efd33def1bce16c6e6159dfcc2be898fc08d87b00
+origin:
+  kind: synthetic
+  source: 'Hand-written for M48-S1 (LAMMPS data parser).'
+  license: Apache-2.0
+notes: >-
+  The atomic-style golden (M48-S1): atom style 'atomic' (id type x y z), declared-free metal units resolved by ambiguous_units, a Masses table -> atoms.masses, an orthogonal box read straight from the edge params (box_from_edges, no bounding-box inversion), and out-of-order ids sorted ascending. No velocities (dynamics.velocities None, P3), no topology. The expected canonical is the object produced under ambiguous_units=metal + species_map '1:Ar 2:Ne'.

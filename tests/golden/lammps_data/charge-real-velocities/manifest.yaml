@@ -1,0 +1,13 @@
+case: charge-real-velocities
+format_id: lammps_data
+source_file: structure.data
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 3cef38bee9101b2d4943a27666c3940838e711c947f11806399b6a5dcc8a8ef5
+expected_sha256: f8fe9d72f7743988008927a3decf68f6bb9eff7adaa248ace54b0854e9c5f503
+origin:
+  kind: synthetic
+  source: 'Hand-written for M48-S1 (LAMMPS data parser).'
+  license: Apache-2.0
+notes: >-
+  The charge-style golden (M48-S1): atom style 'charge' (id type q x y z) -> per-atom charges in electronic.charges, real units resolved by ambiguous_units (velocity factor x1, A/fs), a Velocities section joined by id, and a Masses table. Proves the charge column and the velocity join. The expected canonical is the object under ambiguous_units=real + species_map '1:O 2:H'.

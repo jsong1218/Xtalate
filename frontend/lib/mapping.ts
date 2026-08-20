@@ -67,6 +67,11 @@ export const SCENARIO_LABELS: Record<string, Labeled> = {
     description:
       "The dump does not state its LAMMPS unit style, so lengths and velocities cannot be interpreted without one.",
   },
+  ambiguous_atom_style: {
+    label: "Atom style not declared",
+    description:
+      "The data file's Atoms section names no atom style, so its columns cannot be read without one.",
+  },
 };
 
 /**
@@ -122,6 +127,11 @@ export const CHOICE_LABELS: Record<string, Record<string, Labeled>> = {
     metal: { label: "metal units (ångström, picoseconds, eV)" },
     real: { label: "real units (ångström, femtoseconds, kcal/mol)" },
     si: { label: "SI units (metre, seconds, joule)" },
+  },
+  ambiguous_atom_style: {
+    atomic: { label: "atomic style (id type x y z)" },
+    charge: { label: "charge style (id type q x y z)" },
+    full: { label: "full style (id molecule-id type q x y z)" },
   },
 };
 

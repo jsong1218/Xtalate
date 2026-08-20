@@ -17,6 +17,7 @@ chosen style in ``parse_recover`` exactly as the real one will.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import BinaryIO
 
 import pytest
@@ -81,6 +82,7 @@ class _AmbiguousUnitsStubParser(ParserPlugin):
         hint: str,
         choice: str,
         parameters: dict[str, object],
+        recovery_context: Mapping[str, object] | None = None,
     ) -> ParseResult:
         assert hint == _HINT
         return ParseResult(

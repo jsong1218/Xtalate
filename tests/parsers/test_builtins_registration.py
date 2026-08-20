@@ -57,6 +57,8 @@ def test_builtins_register_without_error() -> None:
         "outcar",
         # M46-S2: lammps_dump joins as a parser; M47-S1 adds the exporter (staging closed).
         "lammps_dump",
+        # M48-S1: lammps_data joins as a parser; M48-S2 adds the exporter (staging state, D180).
+        "lammps_data",
     }
     # Asymmetric since M42 slice 2: vasprun is the first parser-only format (D159) — Xtalate
     # reads it but does not write it; OUTCAR (M43) is the second — the permanent source-never-

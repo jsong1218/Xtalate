@@ -93,6 +93,34 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-authored for M42-S4 (RF-4): H2 in a 4 A cubic cell carrying energy=, a per-atom forces= column, and a 6-number Voigt stress= (ASE order xx,yy,zz,yz,xz,xy) — the spelling ASE's extXYZ reader refuses outright without the parser's 6-number expansion.
 
+## `lammps_data` / `atomic-metal-ortho` (golden)
+
+- **Source file:** `structure.data`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M48-S1 (LAMMPS data parser).
+
+## `lammps_data` / `charge-real-velocities` (golden)
+
+- **Source file:** `structure.data`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M48-S1 (LAMMPS data parser).
+
+## `lammps_data` / `full-no-style-comment` (golden)
+
+- **Source file:** `structure.data`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M48-S1 (LAMMPS data parser).
+
+## `lammps_data` / `full-triclinic-topology` (golden)
+
+- **Source file:** `structure.data`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M48-S1 (LAMMPS data parser).
+
 ## `lammps_dump` / `metal-ortho-declared` (golden)
 
 - **Source file:** `dump.lammpstrj`

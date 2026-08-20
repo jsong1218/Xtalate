@@ -29,6 +29,11 @@ _EXPECTED_CLASSES = {
     # style fires from the parser (recovery_hint="ambiguous_units"); the raw numbers are genuine
     # source data, only their scale is resolved, so no `supplied` entry is recorded.
     "ambiguous_units": HazardClass.FABRICATIVE,
+    # M48: FABRICATIVE for mode gating, but interpretive (INTERPRETIVE_SCENARIOS) — a LAMMPS *data*
+    # file whose `Atoms` section names no style fires from the parser
+    # (recovery_hint="ambiguous_atom_style"); the columns are genuine source data, only their
+    # layout (which is the charge, which the molecule-id) is resolved, so no `supplied` entry.
+    "ambiguous_atom_style": HazardClass.FABRICATIVE,
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
@@ -97,6 +102,12 @@ def test_ambiguous_units_options() -> None:
     # M46: exactly the three styles whose conversion factors are hand-verified; grows only by
     # corpus evidence (M49), never from LAMMPS's documented style list.
     assert available_options("ambiguous_units") == ["metal", "real", "si"]
+
+
+def test_ambiguous_atom_style_options() -> None:
+    # M48: exactly the three LAMMPS atom styles whose `Atoms` column layout is hand-verified;
+    # grows only by corpus evidence (M49), never from LAMMPS's documented atom-style list.
+    assert available_options("ambiguous_atom_style") == ["atomic", "charge", "full"]
 
 
 # --- scenarios that refuse in this version (empty offered list) ----------------------------------

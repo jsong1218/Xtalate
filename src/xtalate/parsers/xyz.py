@@ -30,7 +30,7 @@ so they are carried verbatim — one per frame — under
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import BinaryIO
 
 import numpy as np
@@ -200,6 +200,7 @@ class XyzParser(ParserPlugin):
         hint: str,
         choice: str,
         parameters: dict[str, object],
+        recovery_context: Mapping[str, object] | None = None,
     ) -> ParseResult:
         """Recover a trajectory with a corrupt final frame by truncating at the last valid one
         (``truncate_at_last_valid_frame`` → ``truncate``, Part 4 §3.3).

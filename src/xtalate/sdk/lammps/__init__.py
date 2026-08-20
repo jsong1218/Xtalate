@@ -13,7 +13,12 @@ primitives.
 
 from __future__ import annotations
 
-from xtalate.sdk.lammps.box import Box, box_from_bounds, scaled_to_cartesian
+from xtalate.sdk.lammps.box import (
+    Box,
+    box_from_bounds,
+    box_from_edges,
+    scaled_to_cartesian,
+)
 from xtalate.sdk.lammps.columns import (
     COORDINATE_COLUMN_NAMES,
     CoordinateColumns,
@@ -37,6 +42,7 @@ __all__ = [
     "UNIT_STYLES",
     "UnitStyle",
     "box_from_bounds",
+    "box_from_edges",
     "coordinate_note",
     "is_element_column",
     "resolve_coordinate_columns",

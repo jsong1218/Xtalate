@@ -30,6 +30,11 @@
     "user_metadata.tags"
   ],
   "choice_codes": {
+    "ambiguous_atom_style": [
+      "atomic",
+      "charge",
+      "full"
+    ],
     "ambiguous_stress_convention": [
       "ase_sign_convention",
       "tension_positive"
@@ -81,6 +86,7 @@
     "user_metadata.custom_per_frame"
   ],
   "scenario_codes": [
+    "ambiguous_atom_style",
     "ambiguous_stress_convention",
     "ambiguous_units",
     "constraint_representation",
@@ -97,6 +103,7 @@
     "missing_species",
     "truncate_corrupt_tail",
     "ambiguous_units",
+    "ambiguous_atom_style",
     "frame_selection",
     "constraint_representation",
     "missing_lattice",
