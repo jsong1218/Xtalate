@@ -1,0 +1,25 @@
+case: dump-undeclared-metal-ortho
+format_id: lammps_dump
+source_file: dump.lammpstrj
+sha256: "8ef6ef7c3095939b69776425d2183c012ea87957ec1454543377392ffe617f7b"
+origin:
+  kind: synthetic
+  source: "Authored-realistic LAMMPS dump (M49-S1): a two-frame orthogonal trajectory written without an ITEM: UNITS header (older dump output, or dump_modify units no), element-labeled with velocities, in the metal style."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - LAMMPSDUMP_UNITS_INTERPRETED
+  frame_count: 2
+  parse_recover:
+    - "ambiguous_units=metal"
+  roundtrip: checked
+notes: >-
+  The undeclared-units wild case: no ITEM: UNITS header, so every position/velocity/box bound
+  is uninterpretable until a style is named — a bare parse refuses with the recoverable
+  LAMMPSDUMP_AMBIGUOUS_UNITS (R3: refuse, never guess) and the suite parses under the manifest's
+  declared ambiguous_units=metal preset. The recovery's LAMMPSDUMP_UNITS_INTERPRETED note lands
+  in the exact issue multiset. roundtrip: checked — the export writes the resolved style as a
+  declared ITEM: UNITS header (the write side needs the same resolution the read did, M47-S1),
+  so the re-parse is self-describing and the two objects agree on the carried style.
+  Authoring follows D167: the shape generalizes the committed M46 golden metal-ortho-declared,
+  with the units preamble removed.

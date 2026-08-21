@@ -353,6 +353,37 @@ its source URL), and after adding a manifest, regenerate
 `tests/golden/ATTRIBUTIONS.md` with `python tests/golden/_governance.py`. The maintainer files the
 tracking issue for batch 2; this documented call is the standing invitation.
 
+### 5.6 Contributing real-world LAMMPS files (a standing call)
+
+The LAMMPS cases under `tests/wild/lammps/` are **authored-realistic fixtures** — self-licensed
+Apache-2.0 files generalizing the M46–M48 golden dumps/data files to real-world shapes: unit
+styles (`metal`/`real`), orthogonal and triclinic boxes, typed and element-labeled atoms,
+open-ended `compute`/`fix` output columns, a declared-`ITEM: UNITS` header, wrapped coordinates
+with `ix iy iz` image flags, a molecular data file with carried topology, a genuine variable-N
+deposition dump that refuses with measured per-frame counts, and an atom-style-comment-absent
+data file. Their oracle is the **round-trip self-consistency** check (M49-S1): a file that
+parses cleanly under its manifest's declared preset is re-exported through its own exporter and
+re-parsed, and the two canonical objects must be scientifically equal — the parser and exporter
+agreeing on meaning, the format-native ground truth for full read+write formats that declare no
+composition and have no sibling reader.
+
+**Real-world LAMMPS dump / data files are welcome into the same harness.** Drop the files under
+`tests/wild/lammps/<case>/` together with a `manifest.yaml` declaring the **exact**
+`expectation.issue_codes` set (plus `frame_count`), the `parse_recover` preset(s) the file needs
+if it does not self-describe (CLI spelling, e.g. `ambiguous_units=metal` or
+`missing_species=species_map,species=1:Si 2:O`), and the `roundtrip` declaration: `checked` for a
+file whose re-export must agree with it, `skipped` with a stated reason for a file that
+deliberately exercises a lossy export surface (the dump exporter does not write `ITEM: TIME`
+carries) or that is refused. A refused file (`parse_error`) produces no object, so it declares
+neither oracle. Every real-file anomaly must be triaged the way M20 requires — fixed in the
+parser, or named in the manifest by someone who looked at it — and the unit/atom-style option
+lists (`ambiguous_units` metal/real/si, `ambiguous_atom_style` atomic/charge/full) grow **only**
+by this corpus evidence, never speculatively from LAMMPS's documentation (roadmap §13 rule 2).
+The file's license must permit redistribution (record it in `origin.license`), and after adding a
+manifest, regenerate `tests/golden/ATTRIBUTIONS.md` with `python tests/golden/_governance.py`.
+The maintainer files the tracking issue for real batch files; this documented call is the
+standing invitation.
+
 ## 6. Coding conventions (the non-negotiables)
 
 These invariants are what make Xtalate trustworthy. A change that breaks one will not merge, however

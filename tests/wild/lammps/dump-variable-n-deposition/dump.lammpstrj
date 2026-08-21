@@ -1,0 +1,40 @@
+ITEM: UNITS
+metal
+ITEM: TIMESTEP
+0
+ITEM: NUMBER OF ATOMS
+3
+ITEM: BOX BOUNDS pp pp pp
+0 10
+0 10
+0 10
+ITEM: ATOMS id element x y z
+1 Cu 1.0 2.0 3.0
+2 Cu 4.0 5.0 6.0
+3 Cu 7.0 8.0 9.0
+ITEM: TIMESTEP
+1000
+ITEM: NUMBER OF ATOMS
+4
+ITEM: BOX BOUNDS pp pp pp
+0 10
+0 10
+0 10
+ITEM: ATOMS id element x y z
+1 Cu 1.1 2.1 3.1
+2 Cu 4.1 5.1 6.1
+3 Cu 7.1 8.1 9.1
+4 Cu 0.5 0.5 0.5
+ITEM: TIMESTEP
+2000
+ITEM: NUMBER OF ATOMS
+4
+ITEM: BOX BOUNDS pp pp pp
+0 10
+0 10
+0 10
+ITEM: ATOMS id element x y z
+1 Cu 1.2 2.2 3.2
+2 Cu 4.2 5.2 6.2
+3 Cu 7.2 8.2 9.2
+4 Cu 0.8 0.8 0.8

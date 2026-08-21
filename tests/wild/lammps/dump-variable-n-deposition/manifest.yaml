@@ -1,0 +1,21 @@
+case: dump-variable-n-deposition
+format_id: lammps_dump
+source_file: dump.lammpstrj
+sha256: "e6dca0c61307788f3d04affb107ac20d5d1bad211b910798da344d634744cd3c"
+origin:
+  kind: synthetic
+  source: "Authored-realistic LAMMPS dump (M49-S1): a three-snapshot deposition trajectory (3 -> 4 -> 4 atoms) in declared metal units — the grand-canonical/deposition shape the canonical model cannot hold — generalizing the M46 dump block spelling."
+  license: "Apache-2.0"
+expectation:
+  parse_error: LAMMPSDUMP_VARIABLE_ATOM_COUNT
+  frame_count: 0
+notes: >-
+  The genuine variable-N wild case (M49-S1 dimension 8; the v2.0 variable-N evidence file the
+  release notes cite): the atom count varies across frames (a deposition grows the cell
+  population 3 -> 4), which the canonical model requires constant (Part 2 §3.2), so the parse
+  refuses with LAMMPSDUMP_VARIABLE_ATOM_COUNT naming the first diverging frame and listing the
+  per-frame counts seen — measured, never padded or truncated. The suite pins the refusal code
+  AND the exact 'Per-frame counts seen: [3, 4]' detail (test_variable_n_refusal_measures_
+  per_frame_counts), so the evidence stays real. A refused file produces no object, so no
+  round-trip oracle applies. Authoring follows D167: the block spelling generalizes the
+  committed M46 goldens; the counts are the file's own.

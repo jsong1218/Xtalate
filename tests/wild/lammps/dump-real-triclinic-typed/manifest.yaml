@@ -1,0 +1,26 @@
+case: dump-real-triclinic-typed
+format_id: lammps_dump
+source_file: dump.lammpstrj
+sha256: "13f3df1dd2f4698a1b671cdb7d005411bbfe7ac8cef9fa3776b3c643392a2638"
+origin:
+  kind: synthetic
+  source: "Authored-realistic LAMMPS dump (M49-S1): a declared-real triclinic trajectory whose atoms are identified by numeric type only (no element column), generalizing the M46 goldens real-triclinic-scaled (tilted box) and typed-atoms-metal (type column)."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - LAMMPSDUMP_SPECIES_SUPPLIED
+  frame_count: 2
+  parse_recover:
+    - "missing_species=species_map,species=1:Si 2:O"
+  roundtrip: checked
+notes: >-
+  The typed-atoms wild case (M49-S1 dimension 3): a dump in declared real units with a triclinic
+  box (the xy xz yz bounding form inverted to the restricted edges by the M46 shared core) whose
+  atoms carry numeric types only, so a bare parse refuses with the recoverable
+  LAMMPSDUMP_MISSING_SPECIES and the suite parses under the manifest's declared
+  missing_species=species_map preset (types 1,2 -> Si,O). The recovery's own
+  LAMMPSDUMP_SPECIES_SUPPLIED note is part of the exact issue multiset — a recovery is never
+  silent (P1). roundtrip: checked — the export writes an element column and the re-parse is
+  self-describing; the reported type renumbering is the one audited difference (D178).
+  Authoring follows D167: the tilted-box bounds and ITEM: spellings generalize the committed
+  M46 golden real-triclinic-scaled.

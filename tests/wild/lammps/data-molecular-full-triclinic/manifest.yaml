@@ -1,0 +1,30 @@
+case: data-molecular-full-triclinic
+format_id: lammps_data
+source_file: structure.data
+sha256: "80bed687e839cbe11d837190186bb736f3821af761c99b5b6f58c33fda7d7d84"
+origin:
+  kind: synthetic
+  source: "Authored-realistic LAMMPS data file (M49-S1): an ethane-like molecule in the full atom style (molecule-id + charges), triclinic box, with Bonds/Angles/Dihedrals/Impropers and their coefficient blocks plus Pair Coeffs, generalizing the M48 golden full-triclinic-topology's known-good bytes."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - LAMMPSDATA_SPECIES_SUPPLIED
+    - LAMMPSDATA_TOPOLOGY_CARRIED
+    - LAMMPSDATA_UNITS_INTERPRETED
+  frame_count: 1
+  parse_recover:
+    - "ambiguous_units=metal"
+    - "missing_species=species_map,species=1:C 2:H"
+  roundtrip: checked
+notes: >-
+  The molecular-data wild case (M49-S1 dimension 7): a full-style data file (id molecule-id
+  type q x y z) in a triclinic box whose Bonds/Angles/Dihedrals/Impropers, every * Coeffs
+  block, and the header's topology count lines are carried verbatim in
+  custom_global['lammps_data:topology'] with LAMMPSDATA_TOPOLOGY_CARRIED — the restart format's
+  byte-faithful payload, never re-derived (P1). The compound parse-time recovery
+  (ambiguous_units + missing_species) resolves in one re-read (M48's recovery_context seam),
+  and both recovery notes plus the topology carry form the exact issue multiset. roundtrip:
+  checked — data -> data' re-emits the carried topology and the re-parse (through the
+  exporter's reparse_recovery hook, D182) reproduces the object, so the molecular information
+  survives byte-faithfully. Authoring follows D167: the geometry, section order, and 'Atoms #
+  full' spelling generalize the committed M48 golden full-triclinic-topology.

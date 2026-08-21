@@ -1,0 +1,28 @@
+case: data-atomic-real-ortho
+format_id: lammps_data
+source_file: structure.data
+sha256: "fadf328993baf214378771265a57eaa2f92af08224b0be40aca6919118241b98"
+origin:
+  kind: synthetic
+  source: "Authored-realistic LAMMPS data file (M49-S1): an Ar-Ne mixture in the atomic atom style and real units with element-commented Masses rows and a Velocities block, generalizing the M48 golden atomic-metal-ortho's known-good bytes."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - LAMMPSDATA_SPECIES_SUPPLIED
+    - LAMMPSDATA_UNITS_INTERPRETED
+  frame_count: 1
+  parse_recover:
+    - "ambiguous_units=real"
+    - "missing_species=species_map,species=1:Ar 2:Ne"
+  roundtrip: checked
+notes: >-
+  The real-units data wild case (M49-S1 dimensions 1/3): an atomic-style data file in the real
+  unit system — the second dominant MLIP/bio style — whose Masses rows carry element comments
+  (1 39.948 # Ar) a human reader maps to the species_map the manifest declares; the parser
+  itself resolves types only through the explicit missing_species recovery, never by reading
+  comments silently (R3). The Atoms rows are deliberately written out of id order, as LAMMPS
+  does not guarantee, so the id-sorted read is exercised. The compound parse-time recovery's
+  notes are the exact issue multiset. roundtrip: checked — the export regenerates the Masses
+  section from atoms.masses and the re-parse (via reparse_recovery, D182) reproduces the
+  object. Authoring follows D167: the shape generalizes the committed M48 golden
+  atomic-metal-ortho.

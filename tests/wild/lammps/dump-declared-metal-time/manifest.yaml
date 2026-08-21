@@ -1,0 +1,26 @@
+case: dump-declared-metal-time
+format_id: lammps_dump
+source_file: dump.lammpstrj
+sha256: "196c97b08d492b5c84fc2902be459e0034505b1c83fa96a84f2b32f432faaa4c"
+origin:
+  kind: synthetic
+  source: "Authored-realistic LAMMPS dump (M49-S1): a declared-metal two-frame trajectory written with dump_modify time yes, so every snapshot carries an ITEM: TIME preamble (the run time in the style's time unit), element-labeled with velocities."
+  license: "Apache-2.0"
+expectation:
+  issue_codes: []
+  frame_count: 2
+  roundtrip: skipped
+  roundtrip_note: >-
+    The dump exporter deliberately does not write ITEM: TIME carries (a declared lossy note,
+    D177): the per-snapshot run time rides custom_per_frame['lammps_dump:time'] and a re-export
+    drops it, so the round-trip oracle is skipped — the loss is predicted and reported, never
+    silently made. The file parses cleanly and its exact issue set (empty) and frame count are
+    still asserted.
+notes: >-
+  The ITEM: TIME wild case (the 'deliberately exercises a lossy target' round-trip skip): a
+  dump written with dump_modify time yes, where the per-snapshot simulation time is carried to
+  custom_per_frame['lammps_dump:time'] verbatim (it is the run time in the style's unit, not a
+  canonical dt — P3). A re-export cannot write it back, so roundtrip: skipped states the reason
+  rather than asserting a false identity — the loss is a declared, predicted capability
+  surface, exactly what the skip vocabulary exists for. Authoring follows D167: the shape
+  generalizes the committed M46 golden metal-ortho-declared with the TIME preamble added.

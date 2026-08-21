@@ -1,0 +1,21 @@
+case: data-full-no-style-comment
+format_id: lammps_data
+source_file: structure.data
+sha256: "ae4888383966235b2cbbf83ca1b0be1d61da4a2f685c6499f87158e16f4c708e"
+origin:
+  kind: synthetic
+  source: "Authored-realistic LAMMPS data file (M49-S1): a four-ion rock-salt pair in the full column layout whose Atoms section carries no '# <style>' comment, generalizing the M48 golden full-no-style-comment's known-good bytes."
+  license: "Apache-2.0"
+expectation:
+  parse_error: LAMMPSDATA_AMBIGUOUS_ATOM_STYLE
+  frame_count: 0
+notes: >-
+  The atom-style-comment-absent wild case (M49-S1 dimension 9): the Atoms section names no
+  style, so the column layout (which column is the charge, which the molecule-id) is
+  unknowable and a bare parse refuses with the recoverable LAMMPSDATA_AMBIGUOUS_ATOM_STYLE (R3:
+  refuse, never guess) — the wild-corpus refusal evidence for the M48 scenario. The recovery
+  under ambiguous_atom_style=full is exercised by the committed M48 golden
+  tests/golden/lammps_data/full-no-style-comment (which also names the three-way compound
+  recovery), so this case pins the honest real-world default: refuse. A refused file produces
+  no object, so no round-trip oracle applies. Authoring follows D167: the shape generalizes
+  the committed M48 golden full-no-style-comment to a distinct four-ion configuration.
