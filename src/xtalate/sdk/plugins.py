@@ -10,7 +10,7 @@ one native format, never reads native files.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, BinaryIO
 
 from xtalate.schema import CanonicalObject
@@ -48,6 +48,7 @@ class ParserPlugin(ABC):
         hint: str,
         choice: str,
         parameters: dict[str, object],
+        recovery_context: Mapping[str, object] | None = None,
     ) -> ParseResult:
         """Re-parse a file that raised a *recoverable* ``ParseError`` (Part 4 §3.3), applying the
         caller's recovery ``choice`` for the error's ``recovery_hint``.
@@ -61,7 +62,18 @@ class ParserPlugin(ABC):
         ``Assumption`` per applied choice, and threads it
         into the Conversion Report; the parser performs only the mechanical re-read. The default
         refuses — a parser that raised a recoverable hint but did not override this is a bug,
-        surfaced loudly rather than silently."""
+        surfaced loudly rather than silently.
+
+        ``recovery_context`` (M48; additive, default ``None``) carries **every** parse-time choice
+        the orchestrator has resolved so far for this file, keyed by scenario — each value the same
+        ``{"choice", "parameters"}`` spec as ``recovery_choices``. It exists because a single file
+        can lack several required facts at once: a LAMMPS *data* file declares neither its unit
+        style nor its element symbols (nor its atom style, when the ``Atoms`` comment is absent), so
+        it needs ``ambiguous_units`` + ``missing_species`` (+ ``ambiguous_atom_style``) applied
+        *together* in one re-read. ``conversion._try_recover`` drives an accumulating loop, adding
+        the current scenario to ``recovery_context`` before each call, so a parser that consumes it
+        can apply the whole set at once. Parsers that need only one recovery at a time ignore it and
+        read ``hint``/``choice``/``parameters`` as before — it is accept-and-ignore for them."""
         raise NotImplementedError(
             f"{type(self).__name__} raised a recoverable parse error (hint {hint!r}) but "
             "implements no parse_recover hook"
@@ -151,6 +163,30 @@ class ExporterPlugin(ABC):
         derived from the *same* grouping it writes; the default identity is correct for exporters
         that preserve source order. Additive to the frozen ``export`` contract (DECISIONS.md D23),
         so existing/third-party exporters keep working unchanged."""
+        return None
+
+    def reparse_recovery(
+        self, canonical: CanonicalObject
+    ) -> Mapping[str, dict[str, object]] | None:
+        """The recovery context the Validation Engine must apply to re-parse **this exporter's own
+        output**, or ``None`` when the output is self-describing (M48-S2, D182).
+
+        Validation re-parses the written bytes and diffs them against the source object (Part 5 §2).
+        Almost every format's output is self-describing — a dump writes its ``ITEM: UNITS`` header
+        and an element column, POSCAR/CIF/XYZ carry their own labels — so the re-parse is a bare
+        ``parse`` and this returns ``None`` (the default). A **LAMMPS data** file is the exception:
+        it declares neither a unit system nor element symbols (atoms are numeric types only), so its
+        output cannot re-parse without the same ``ambiguous_units`` + ``missing_species`` choices
+        the conversion already resolved. This hook hands the Validation Engine that context —
+        derived from the object the exporter wrote, so it reproduces exactly the write — the engine
+        drives the target parser's ``parse_recover`` with it instead of ``parse``. The applied
+        choices are already recorded Assumptions in the Conversion Report, so re-applying them on
+        re-read is the expected mechanism, not a new finding.
+
+        Return value: the ``{scenario: {"choice", "parameters"}}`` map ``parse_recover`` consumes as
+        its ``recovery_context`` (the M48 SDK seam). Additive to the frozen ``export`` contract
+        (like ``atom_permutation``); existing/third-party exporters keep the self-describing
+        default."""
         return None
 
     def supports_streaming(self) -> bool:

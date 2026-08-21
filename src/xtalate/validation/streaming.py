@@ -599,6 +599,13 @@ def validate_stream(
     precision = require_supported_precision(
         target_format_id, caps.numeric_precision, caps.native_coordinate_system
     )
+    # No recovery-assisted re-parse here, deliberately (contrast engine.py `validate`, D182). The
+    # batch engine drives `parse_recover` for a non-self-describing output (a LAMMPS data file) via
+    # the exporter's `reparse_recovery` hook. The streaming validator needs no counterpart because
+    # no such target can reach it: `streaming_eligible` bars any `requires_units_style` target (and
+    # any recovery-able required field), and `frame_selection_streaming_eligible` admits only
+    # `max_frames == 1` targets — `lammps_data` is neither. A streaming-eligible target is
+    # self-describing on re-parse by contract, so the bare `parse` below is always sufficient.
     # Mirror the batch engine's caps plumbing (engine.py `validate`): the target's *read*
     # declaration (parser.carried_field_keys) names the carry a re-parse holds a planned field
     # under, and the *write* declaration (exporter.stress_output_convention) the convention to

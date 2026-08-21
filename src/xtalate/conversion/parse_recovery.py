@@ -24,8 +24,10 @@ parse error, not a completed-but-refused conversion.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from io import BytesIO
+from typing import cast
 
 from xtalate.capabilities import Registry
 from xtalate.discovery import Sniffer
@@ -37,7 +39,7 @@ from xtalate.recovery import (
     available_options,
 )
 from xtalate.schema import CanonicalObject
-from xtalate.sdk import ParseError, ParseIssue, enforce_max_frames
+from xtalate.sdk import ParseError, ParseIssue, ParseResult, enforce_max_frames
 
 # A recoverable parse hint (Part 3 §5) → the recovery scenario that resolves it (Part 4 §3.3).
 _HINT_TO_SCENARIO = {
@@ -49,6 +51,13 @@ _HINT_TO_SCENARIO = {
     # catalog entry); the parser's `parse_recover` applies the chosen style's conversion
     # factors on re-read.
     "ambiguous_units": "ambiguous_units",
+    # M48: a LAMMPS *data* file whose ``Atoms`` section carries no ``# <style>`` comment cannot
+    # be read at all — the column layout (which column is the charge, which the molecule-id) is
+    # unknowable — so it is parse-time-blocking and fires from the parser like the others. The
+    # scenario code equals the hint code (the `ambiguous_atom_style` catalog entry); a data file
+    # also declares neither units nor element symbols, so this hint typically resolves *alongside*
+    # `ambiguous_units` + `missing_species` in the compound recovery loop below.
+    "ambiguous_atom_style": "ambiguous_atom_style",
 }
 
 #: The parse-time recovery scenarios, in resolution-stage order (Part 4 §3.3). These resolve *ahead*
@@ -56,8 +65,10 @@ _HINT_TO_SCENARIO = {
 #: mixing a parse-time scenario with a conversion-time one must render the parse-time card first.
 #: Derived from ``_HINT_TO_SCENARIO`` (single source, deduplicated, insertion-ordered) so the names
 #: are never re-typed; ``backend.vocabulary`` prepends this to the engine's conversion-time
-#: ``_DEP_ORDER`` to publish one resolution order the Web UI consumes (v0.7 review, F4). Only one
-#: parse-time hint fires per parse, so the intra-stage order is nominal but fixed for determinism.
+#: ``_DEP_ORDER`` to publish one resolution order the Web UI consumes (v0.7 review, F4). Since M48 a
+#: single parse can fire *several* of these at once (a LAMMPS data file needs ``ambiguous_units`` +
+#: ``missing_species`` + ``ambiguous_atom_style`` together), so this fixed order also pins how such
+#: co-occurring parse-time cards are rendered and how their Assumptions are numbered.
 PARSE_TIME_SCENARIOS: tuple[str, ...] = tuple(dict.fromkeys(_HINT_TO_SCENARIO.values()))
 
 
@@ -132,36 +143,110 @@ def _try_recover(
     error: ParseError,
     recovery_choices: dict[str, dict[str, object]],
 ) -> ParseRecovery | None:
-    """Apply a parse-time preset if one matches the error's recovery hint; else return ``None``."""
-    issue = next((i for i in error.issues if i.recovery_hint), None)
-    if issue is None or issue.recovery_hint not in _HINT_TO_SCENARIO:
-        return None
-    scenario = _HINT_TO_SCENARIO[issue.recovery_hint]
-    choice_spec = recovery_choices.get(scenario)
-    if choice_spec is None:
-        return None  # no preset for this scenario → refuse (the parse error stands).
-    code = choice_spec.get("choice")
-    offered = available_options(scenario)
-    if not isinstance(code, str) or code not in offered:
-        raise RecoveryError(f"{scenario!r}: choice {code!r} is not an offered option {offered!r}")
-    if scenario == "truncate_corrupt_tail" and code == "abort":
-        return None  # abort is an explicit give-up: the recoverable parse error stands.
+    """Apply parse-time presets in an accumulating loop (M48); return ``None`` to refuse.
 
-    raw_params = choice_spec.get("parameters")
-    parameters: dict[str, object] = raw_params if isinstance(raw_params, dict) else {}
-    result = parser.parse_recover(  # type: ignore[attr-defined]
-        BytesIO(data),
-        filename=filename,
-        hint=issue.recovery_hint,
-        choice=code,
-        parameters=parameters,
-    )
-    assumption = _build_assumption(scenario, code, parameters, result.canonical, issue)
-    return ParseRecovery(
-        canonical=result.canonical,
-        format_id=fmt,
-        assumptions=[assumption],
-        issues=list(result.issues),
+    A single file can lack several required facts at once — a LAMMPS *data* file declares neither
+    its unit style nor its element symbols (nor its atom style, when the ``Atoms`` comment is
+    absent) — so recovery is a fixpoint, not a single step: re-parse with every choice resolved so
+    far, and if that surfaces a *new* recoverable need the caller supplied a preset for, resolve it
+    too and re-parse again. One ``Assumption`` is recorded per need that actually fired, in the
+    order they surfaced (never for an unused supplied preset — the loop only ever touches a need the
+    parser genuinely raised, so the report stays honest, P1). The accumulated choices ride into each
+    re-read via ``parse_recover``'s ``recovery_context`` (the M48 SDK seam).
+
+    Refusal is the default (Part 4 §4): ``None`` is returned when the *first* need has no preset or
+    is an explicit ``abort`` — the recoverable parse error stands unchanged. Once any recovery has
+    been applied, a later unmet need is an honest blocker whose ``ParseError`` propagates (the parse
+    genuinely cannot complete), never a silent drop of the progress made.
+    """
+    context: dict[str, dict[str, object]] = {}
+    resolved: list[tuple[str, str, dict[str, object], ParseIssue]] = []
+    current = error
+    while True:
+        issue = next((i for i in current.issues if i.recovery_hint), None)
+        if issue is None or issue.recovery_hint not in _HINT_TO_SCENARIO:
+            # No further recoverable need. With recoveries already applied, reaching here means the
+            # latest re-read raised a *non-recoverable* error — an honest blocker; propagate it.
+            if resolved:
+                raise current
+            return None
+        scenario = _HINT_TO_SCENARIO[issue.recovery_hint]
+        if scenario in context:
+            # The parser re-raised a need already resolved → no progress; surface it, never loop.
+            raise current
+        choice_spec = recovery_choices.get(scenario)
+        if choice_spec is None:
+            if resolved:
+                raise current  # partial progress, this need unmet → honest blocker (never silent).
+            return None  # first need has no preset → refuse (the parse error stands, Part 4 §4).
+        code = choice_spec.get("choice")
+        offered = available_options(scenario)
+        if not isinstance(code, str) or code not in offered:
+            raise RecoveryError(
+                f"{scenario!r}: choice {code!r} is not an offered option {offered!r}"
+            )
+        if scenario == "truncate_corrupt_tail" and code == "abort":
+            if resolved:
+                raise current
+            return None  # abort is an explicit give-up: the recoverable parse error stands.
+
+        raw_params = choice_spec.get("parameters")
+        parameters: dict[str, object] = raw_params if isinstance(raw_params, dict) else {}
+        context[scenario] = {"choice": code, "parameters": parameters}
+        resolved.append((scenario, code, parameters, issue))
+        try:
+            result = _invoke_parse_recover(
+                parser,
+                BytesIO(data),
+                filename=filename,
+                hint=issue.recovery_hint,
+                choice=code,
+                parameters=parameters,
+                recovery_context=dict(context),
+            )
+        except ParseError as exc:
+            current = exc  # a further parse-time need surfaced under the applied choice(s); loop.
+            continue
+        assumptions = [_build_assumption(s, c, p, result.canonical, i) for (s, c, p, i) in resolved]
+        return ParseRecovery(
+            canonical=result.canonical,
+            format_id=fmt,
+            assumptions=assumptions,
+            issues=list(result.issues),
+        )
+
+
+def _invoke_parse_recover(
+    parser: object,
+    stream: BytesIO,
+    *,
+    filename: str | None,
+    hint: str,
+    choice: str,
+    parameters: dict[str, object],
+    recovery_context: dict[str, dict[str, object]],
+) -> ParseResult:
+    """Call ``parser.parse_recover``, threading ``recovery_context`` only when the override accepts
+    it. The M48 seam is additive with a default on the ABC, so first-party parsers (and any plugin
+    written against the current SDK) take the keyword; a third-party parser overriding the older
+    signature — one that never needed compound recovery — is called without it and keeps working
+    (P6, no plugin break)."""
+    recover = parser.parse_recover  # type: ignore[attr-defined]
+    if "recovery_context" in inspect.signature(recover).parameters:
+        return cast(
+            ParseResult,
+            recover(
+                stream,
+                filename=filename,
+                hint=hint,
+                choice=choice,
+                parameters=parameters,
+                recovery_context=recovery_context,
+            ),
+        )
+    return cast(
+        ParseResult,
+        recover(stream, filename=filename, hint=hint, choice=choice, parameters=parameters),
     )
 
 
@@ -218,6 +303,26 @@ def _build_assumption(
                 "scale was resolved by this recorded choice, never guessed."
             ),
         )
+    if scenario == "ambiguous_atom_style":
+        # Interpretive (Part 4 §3.1, M48): the data file's `Atoms` columns are genuine source
+        # data — the atom style only fixes *how to read the columns already present* (which is the
+        # charge, which the molecule-id), fabricating nothing. No `supplied` entry: nothing was
+        # created; the description states the layout applied, so the Conversion Report says which
+        # column each value was read from (a wrong choice silently misreads charges as molecule-ids
+        # — hence the P4 refusal discipline, never a guessed default).
+        return AppliedAssumption(
+            id="A1",
+            scenario=scenario,
+            choice=code,
+            parameters={"atom_style": code},
+            origin="preset",
+            description=(
+                f"Interpreted the LAMMPS data `Atoms` columns as atom style `{code}` "
+                f"({_ATOM_STYLE_SUMMARIES[code]}); the source file's `Atoms` section carried no "
+                "`# <style>` comment naming the layout. The columns are genuine source data — only "
+                "their meaning was resolved by this recorded choice, never guessed."
+            ),
+        )
     # truncate_corrupt_tail — selective reductive: genuine frames kept, corrupt tail dropped.
     kept = canonical.frame_count
     return AppliedAssumption(
@@ -256,4 +361,13 @@ _UNIT_STYLE_SUMMARIES = {
     "metal": "Å, ps, eV",
     "real": "Å, fs, kcal/mol",
     "si": "m, s, J",
+}
+
+#: The human-readable ``Atoms`` column layout per `ambiguous_atom_style` choice, stated in the
+#: Assumption description (M48). The recovery layer does not import parsers, so the three layouts
+#: are restated here and pinned by the recovery test against the data parser's own definitions.
+_ATOM_STYLE_SUMMARIES = {
+    "atomic": "id type x y z",
+    "charge": "id type q x y z",
+    "full": "id molecule-id type q x y z",
 }

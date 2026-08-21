@@ -17,6 +17,7 @@ elements.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from io import BytesIO
 from typing import BinaryIO
 
@@ -449,6 +450,7 @@ class PoscarParser(ParserPlugin):
         hint: str,
         choice: str,
         parameters: dict[str, object],
+        recovery_context: Mapping[str, object] | None = None,
     ) -> ParseResult:
         """Recover a VASP-4 POSCAR (counts, no species line) by supplying element symbols
         (``supply_species``, Part 4 §3.3).

@@ -91,7 +91,8 @@ class ValidationEngine:
         """Re-parse ``output`` and run the §2 check catalog against ``expected`` under
         ``tolerance``. Returns exactly one :class:`ValidationReport` (Part 5 §3)."""
         parser = self._registry.get_parser(target_format_id)
-        caps = self._registry.get_exporter(target_format_id).capabilities()
+        exporter = self._registry.get_exporter(target_format_id)
+        caps = exporter.capabilities()
         precision = require_supported_precision(
             target_format_id, caps.numeric_precision, caps.native_coordinate_system
         )
@@ -102,9 +103,32 @@ class ValidationEngine:
         # reversed to canonical space and compared for real, not false-failed as "missing" (D151).
         read_caps = parser.capabilities()
 
+        # Almost every output is self-describing, so it re-parses through the ordinary ``parse``
+        # (§1). A LAMMPS *data* file is the exception: it declares neither a unit system nor element
+        # symbols, so its output cannot re-parse at all without the same ``ambiguous_units`` +
+        # ``missing_species`` choices the conversion already resolved. The exporter hands us that
+        # recovery context (M48-S2, D182), derived from the object it wrote, and we drive the target
+        # parser's ``parse_recover`` with it — the same read path, primed with the recorded
+        # Assumptions rather than left to guess. The re-parse then produces recovery *notes* by
+        # construction (the applied unit/species choices); those are the expected mechanism, not a
+        # finding, so ``reparse_assisted`` keeps them listed for transparency without downgrading a
+        # clean round-trip out of ``passed``. Value defects still surface through the diff checks.
+        reparse_recovery = exporter.reparse_recovery(expected)
+        reparse_assisted = reparse_recovery is not None
+
         reparse_issues: list[ParseIssue] = []
         try:
-            result = parser.parse(BytesIO(output), filename=None)
+            if reparse_recovery is not None:
+                result = parser.parse_recover(
+                    BytesIO(output),
+                    filename=None,
+                    hint="",
+                    choice="",
+                    parameters={},
+                    recovery_context=reparse_recovery,
+                )
+            else:
+                result = parser.parse(BytesIO(output), filename=None)
         except ParseError as exc:
             # The output does not even re-parse — the most damning finding possible. Report it as
             # a single failing check rather than raising, so the caller still gets a structured
@@ -125,7 +149,7 @@ class ValidationEngine:
         canonical = result.canonical
         reparse_issues = list(result.issues)
 
-        perm = self._registry.get_exporter(target_format_id).atom_permutation(expected)
+        perm = exporter.atom_permutation(expected)
 
         checks = [
             _check_atom_count(expected, canonical),
@@ -149,7 +173,12 @@ class ValidationEngine:
             _check_report_consistency(conversion_report),
         ]
         return self._finalize(
-            conversion_report, expected.schema_version, tolerance, reparse_issues, checks
+            conversion_report,
+            expected.schema_version,
+            tolerance,
+            reparse_issues,
+            checks,
+            reparse_assisted=reparse_assisted,
         )
 
     def _finalize(
@@ -159,11 +188,17 @@ class ValidationEngine:
         tolerance: ToleranceProfile,
         reparse_issues: list[ParseIssue],
         checks: list[CheckResult],
+        *,
+        reparse_assisted: bool = False,
     ) -> ValidationReport:
         worst = max((_RANK[c.status] for c in checks), default=0)
         # A re-parse that succeeded only with warnings is itself a finding (§3): it cannot pass
-        # clean, only at best passed_with_warnings.
-        if reparse_issues and worst == 0:
+        # clean, only at best passed_with_warnings. The exception is a recovery-assisted re-parse
+        # (D182): a non-self-describing output (a LAMMPS data file) can only be re-read with the
+        # recorded unit/species Assumptions, which emit notes by construction — the expected
+        # mechanism, not a defect — so they are listed for transparency but do not downgrade a
+        # clean diff. Genuine value defects still fail through the checks above.
+        if reparse_issues and worst == 0 and not reparse_assisted:
             worst = 1
         return ValidationReport(
             report_id=str(uuid.uuid4()),

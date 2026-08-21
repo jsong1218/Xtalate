@@ -7,7 +7,8 @@
  * it depends on. That order is engine knowledge, not UI knowledge (v0.7 standing rule 3: the UI
  * renders envelopes, it never re-derives engine behaviour), so it is published by the engine as
  * `scenario_resolution_order` in the committed `docs/vocabulary.json` — the parse-time recovery stage
- * (`missing_species`, `truncate_corrupt_tail`, `ambiguous_units`, resolved *before* parsing completes)
+ * (`missing_species`, `truncate_corrupt_tail`, `ambiguous_units`, `ambiguous_atom_style`, resolved
+ * *before* parsing completes — the last is the LAMMPS-data style pick, M48-S1, D180)
  * followed by the conversion-time dependency order (frame_selection → constraint → lattice → masses →
  * velocities → ambiguous_stress_convention → ambiguous_units, the write-side trigger landing last in
  * M47-S1, D177).
@@ -24,6 +25,7 @@ export const RECOVERY_RESOLUTION_ORDER: readonly string[] = [
   "missing_species",
   "truncate_corrupt_tail",
   "ambiguous_units",
+  "ambiguous_atom_style",
   "frame_selection",
   "constraint_representation",
   "missing_lattice",

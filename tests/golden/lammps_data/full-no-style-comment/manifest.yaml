@@ -1,0 +1,13 @@
+case: full-no-style-comment
+format_id: lammps_data
+source_file: structure.data
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 63120fa9c04be2c02af242a4439398789b4f2c5dec5f89b474001ab78a0b2b96
+expected_sha256: 1a9374bb2fca2901453f8936f024b6c580d38da10009d8987cf76ea8f2283298
+origin:
+  kind: synthetic
+  source: 'Hand-written for M48-S1 (LAMMPS data parser).'
+  license: Apache-2.0
+notes: >-
+  The undeclared-atom-style golden (M48-S1): the Atoms section carries no '# <style>' comment, so the plain parse refuses recoverably (LAMMPSDATA_AMBIGUOUS_ATOM_STYLE, hint ambiguous_atom_style) and the column layout is unknowable until the caller names it. The expected canonical is the object produced under the THREE-way compound recovery (ambiguous_atom_style=full + ambiguous_units=metal + species_map '1:Na 2:Cl') the orchestrator threads together through recovery_context (D180). Proves the sibling scenario and the compound parse-time recovery loop.

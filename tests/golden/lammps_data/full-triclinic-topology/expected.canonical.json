@@ -1,0 +1,311 @@
+{
+  "schema_version": "1.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "C",
+          "C",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H",
+          "H"
+        ],
+        "atomic_numbers": [
+          6,
+          6,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "positions": [
+          [
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            2.5,
+            1.0,
+            1.0
+          ],
+          [
+            0.6,
+            1.9,
+            1.0
+          ],
+          [
+            0.6,
+            0.1,
+            1.7
+          ],
+          [
+            0.6,
+            0.1,
+            0.3
+          ],
+          [
+            2.9,
+            1.9,
+            1.0
+          ],
+          [
+            2.9,
+            0.1,
+            1.7
+          ],
+          [
+            2.9,
+            0.1,
+            0.3
+          ]
+        ],
+        "masses": [
+          12.011,
+          12.011,
+          1.008,
+          1.008,
+          1.008,
+          1.008,
+          1.008,
+          1.008
+        ],
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.5,
+            9.0,
+            0.0
+          ],
+          [
+            0.5,
+            0.25,
+            8.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1e-6,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1e-6,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1e-6
+          ],
+          [
+            -1e-6,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -1e-6,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            -1e-6
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": null,
+        "stress": null,
+        "charges": [
+          -0.18,
+          -0.18,
+          0.06,
+          0.06,
+          0.06,
+          0.06,
+          0.06,
+          0.06
+        ],
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": null,
+  "provenance": {
+    "source_filename": "structure.data",
+    "source_format": "lammps_data",
+    "source_units": {
+      "positions": "angstrom",
+      "lattice_vectors": "angstrom",
+      "velocities": "angstrom/picosecond",
+      "masses": "amu"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "Unit style in force: metal (Å, ps, eV) — applied by recovery (a data file declares no unit style).",
+      "pbc not declared in a data file (LAMMPS reads the boundary from the input script's `boundary` command, not the file); a simulation box is periodic by the format's nature, so cell.pbc was set to the LAMMPS default (p p p) — applied and recorded here, not read from the file.",
+      "Atom style: full (id molecule type q x y z)."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-08-20T18:36:29Z",
+        "operation": "parse",
+        "source_format": "lammps_data",
+        "target_format": null,
+        "tool_version": "1.2.0",
+        "parser_version": "lammps_data-parser 1.2.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {
+      "lammps_data:units": "metal",
+      "lammps_data:comment": "ethane-like molecule (full style, metal units, triclinic)",
+      "lammps_data:topology": {
+        "header_counts": [
+          "7 bonds",
+          "1 bond types"
+        ],
+        "sections": [
+          {
+            "section": "Bonds",
+            "comment": null,
+            "rows": [
+              "1 1 1 2",
+              "2 1 1 3",
+              "3 1 1 4",
+              "4 1 1 5",
+              "5 1 2 6",
+              "6 1 2 7",
+              "7 1 2 8"
+            ]
+          },
+          {
+            "section": "Bond Coeffs",
+            "comment": null,
+            "rows": [
+              "1 300.0 1.09"
+            ]
+          }
+        ]
+      }
+    },
+    "custom_per_atom": {
+      "lammps_data:id": [
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0
+      ],
+      "lammps_data:type": [
+        1.0,
+        1.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0
+      ],
+      "lammps_data:molecule_id": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "lammps_dump:image_flags": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ]
+    },
+    "custom_per_frame": {}
+  }
+}

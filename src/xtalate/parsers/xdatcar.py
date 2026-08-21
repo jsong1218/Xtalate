@@ -27,7 +27,7 @@ Format-defined facts handled at parse time and recorded rather than guessed (Par
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import BinaryIO
 
@@ -181,6 +181,7 @@ class XdatcarParser(ParserPlugin):
         hint: str,
         choice: str,
         parameters: dict[str, object],
+        recovery_context: Mapping[str, object] | None = None,
     ) -> ParseResult:
         """Recover an XDATCAR whose tail is a torn write by keeping the valid prefix
         (``truncate_at_last_valid_frame`` → ``truncate``, Part 4 §3.3; the M13 half of D56).

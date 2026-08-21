@@ -117,6 +117,16 @@ SCENARIO_HAZARD: dict[str, HazardClass] = {
     # unit style cannot be converted to canonical Å/fs/eV at all, so it fires from the parser
     # (recovery_hint="ambiguous_units"), exactly like missing_species.
     "ambiguous_units": HazardClass.FABRICATIVE,
+    # M48: FABRICATIVE for mode gating — an explicit choice is required in *both* strict and
+    # permissive modes, no auto-applied default. Interpretive (INTERPRETIVE_SCENARIOS below):
+    # a LAMMPS *data* file's ``Atoms`` columns are genuine source data; the atom style only says
+    # *how to read the columns already present* (which column is the charge, which the
+    # molecule-id), fabricating nothing — so no `supplied` entry. Parse-time-blocking: when the
+    # ``Atoms # <style>`` comment is absent, the column layout is unknowable and the file cannot
+    # be parsed at all, so it fires from the parser (recovery_hint="ambiguous_atom_style"),
+    # exactly like ambiguous_units. A style *outside* the supported set is not an ambiguity to
+    # resolve — the parser refuses it as unsupported, never offers it here.
+    "ambiguous_atom_style": HazardClass.FABRICATIVE,
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
@@ -131,7 +141,7 @@ SCENARIO_HAZARD: dict[str, HazardClass] = {
 #: invariant stays scoped to genuinely fabricated fields. Orthogonal to the three hazard
 #: classes — a separate marker, never a fourth enum value.
 INTERPRETIVE_SCENARIOS: frozenset[str] = frozenset(
-    {"ambiguous_stress_convention", "ambiguous_units"}
+    {"ambiguous_stress_convention", "ambiguous_units", "ambiguous_atom_style"}
 )
 
 
@@ -222,6 +232,14 @@ def available_options(
         # beyond these three is not an ambiguity to resolve — the catalog cannot interpret it —
         # so the parser refuses with its own error rather than offering it here.
         return ["metal", "real", "si"]
+    if scenario == "ambiguous_atom_style":
+        # M48: the three supported LAMMPS atom styles whose ``Atoms`` column layout is
+        # hand-verified — ``atomic`` (id type x y z), ``charge`` (id type q x y z), and ``full``
+        # (id molecule-id type q x y z). The list starts at exactly this and grows only by
+        # golden-corpus evidence (roadmap §13 rule 2), never speculatively from LAMMPS's full
+        # documented atom-style list. A style beyond these three is not an ambiguity to resolve —
+        # the parser refuses it as unsupported rather than offering it here.
+        return ["atomic", "charge", "full"]
     if scenario == "missing_species":
         # Parse-time scenario, resolved in Slice 2: an ordered symbol / type→element map, or the
         # symbols read from a matching reference structure (Part 4 §3.3).

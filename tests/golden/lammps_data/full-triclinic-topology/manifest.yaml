@@ -1,0 +1,13 @@
+case: full-triclinic-topology
+format_id: lammps_data
+source_file: structure.data
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 57fe8fbadb02dc6ea3f6321c67684ac34b3197345ad4a0f9d39e88edae007508
+expected_sha256: a88c988526a193990938989af13d940fe167f56e5739e8b8692eb1d4d78a2057
+origin:
+  kind: synthetic
+  source: 'Hand-written for M48-S1 (LAMMPS data parser).'
+  license: Apache-2.0
+notes: >-
+  The full-style flagship golden (M48-S1): atom style 'full' (id molecule-id type q x y z) with a molecule-id carried per-atom, per-atom charges, a complete ix/iy/iz image-flag triple carried under the shared IMAGE_FLAGS_CARRY_KEY (never applied on parse, D43), a restricted triclinic box (xy/xz/yz read straight from the edge line, box_from_edges), a Velocities section, a Masses table -> atoms.masses, and topology (Bonds + Bond Coeffs + the 'bonds'/'bond types' header counts) carried verbatim in custom_global['lammps_data:topology'] with LAMMPSDATA_TOPOLOGY_CARRIED. The expected canonical is the object under ambiguous_units=metal + species_map '1:C 2:H'.

@@ -105,6 +105,13 @@ export const WHY_THIS_MATTERS: Record<string, WhyThisMatters> = {
       "This is not a value Xtalate invents — the numbers are your file's own. What you are choosing is how to read the units already written: 'metal' (ångström, picoseconds, eV), 'real' (ångström, femtoseconds, kcal/mol), or 'si' (metre, seconds, joule). Pick the wrong style and every length and velocity is off by orders of magnitude, so the choice is recorded as an explicit assumption on the conversion rather than guessed.",
     ],
   },
+  ambiguous_atom_style: {
+    question: QUESTION,
+    stakes: [
+      "A LAMMPS data file lists one row per atom, but the columns after the atom id mean different things under different atom styles — and the file does not always name the style in its Atoms section. Under 'atomic' the row is id type x y z; under 'charge' a charge column sits before the coordinates; under 'full' a molecule-id and a charge both precede them. Read the row under the wrong style and the coordinates, the charge, and the molecule assignment are all taken from the wrong columns.",
+      "This is not a value Xtalate invents — the columns are your file's own. What you are choosing is how to read them: 'atomic' (id type x y z), 'charge' (id type q x y z), or 'full' (id molecule-id type q x y z). Pick the wrong style and the positions and any per-atom charge are misread, so the choice is recorded as an explicit assumption on the conversion rather than guessed.",
+    ],
+  },
 };
 
 /** Disclosure copy for a scenario code, or `null` when there is none (a plugin scenario). */

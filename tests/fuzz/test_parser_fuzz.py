@@ -193,6 +193,35 @@ _TAILORED: dict[str, list[tuple[str, bytes]]] = {
             + b"ITEM: ATOMS id element x y z\n1 Xx 1.0 2.0 3.0\n",
         ),
     ],
+    # M48-S1: the LAMMPS data parser — a plausible box header (a line ending in "xlo xhi" clears
+    # the sniff guard) with a broken body, reaching the header/section-reader edges that raise
+    # MALFORMED before the recovery refusals ever fire.
+    "lammps_data": [
+        # box + counts but no Atoms section at all.
+        (
+            "no_atoms_section",
+            b"comment\n1 atoms\n1 atom types\n0.0 10.0 xlo xhi\n"
+            + b"0.0 10.0 ylo yhi\n0.0 10.0 zlo zhi\n",
+        ),
+        # an xlo xhi line carrying a single bound instead of two.
+        (
+            "short_box_line",
+            b"comment\n1 atoms\n1 atom types\n0.0 xlo xhi\n"
+            + b"0.0 10.0 ylo yhi\n0.0 10.0 zlo zhi\n",
+        ),
+        # a header that declares zero atoms — a data file must state at least one.
+        (
+            "zero_atoms",
+            b"comment\n0 atoms\n1 atom types\n0.0 10.0 xlo xhi\n"
+            + b"0.0 10.0 ylo yhi\n0.0 10.0 zlo zhi\nAtoms # atomic\n",
+        ),
+        # non-numeric box bounds on the xlo xhi line.
+        (
+            "nonnumeric_box",
+            b"comment\n1 atoms\n1 atom types\nlo hi xlo xhi\n"
+            + b"0.0 10.0 ylo yhi\n0.0 10.0 zlo zhi\n",
+        ),
+    ],
 }
 
 

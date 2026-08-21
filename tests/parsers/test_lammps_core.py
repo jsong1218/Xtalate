@@ -21,7 +21,9 @@ from ase import units as ase_units
 from xtalate.sdk.lammps import (
     UNIT_STYLES,
     box_from_bounds,
+    box_from_edges,
     coordinate_note,
+    edges_from_box,
     resolve_coordinate_columns,
     resolve_species,
     scaled_to_cartesian,
@@ -38,6 +40,7 @@ def test_metal_factors_are_hand_verified() -> None:
     assert metal.time_to_femtosecond == 1e3  # 1 ps = 1e3 fs
     assert metal.energy_to_electronvolt == 1.0
     assert metal.velocity_to_angstrom_per_femtosecond == 1e-3  # 1 Å/ps = 1e-3 Å/fs
+    assert metal.mass_to_amu == 1.0  # grams/mole, numerically amu
 
 
 def test_real_factors_are_hand_verified() -> None:
@@ -53,6 +56,7 @@ def test_real_factors_are_hand_verified() -> None:
     )
     assert real.energy_to_electronvolt == pytest.approx(0.0433641, rel=1e-6)
     assert real.velocity_to_angstrom_per_femtosecond == 1.0
+    assert real.mass_to_amu == 1.0  # grams/mole, numerically amu
 
 
 def test_si_factors_are_hand_verified() -> None:
@@ -62,6 +66,10 @@ def test_si_factors_are_hand_verified() -> None:
     assert si.time_to_femtosecond == 1e15  # 1 s = 1e15 fs
     assert si.energy_to_electronvolt == pytest.approx(ase_units.J / ase_units.eV)
     assert si.velocity_to_angstrom_per_femtosecond == 1e-5  # 1 m/s = 1e10 Å / 1e15 fs
+    # mass = kg/particle → amu: 1 / 1.66053906660e-27. ASE's internal mass unit is amu,
+    # so ``ase_units.kg`` is 1 kg expressed in amu — the same NIST value, to the last bit.
+    assert si.mass_to_amu == pytest.approx(ase_units.kg)
+    assert si.mass_to_amu == pytest.approx(6.022140762081123e26)
 
 
 def test_worked_value_conversions_per_style() -> None:
@@ -73,14 +81,19 @@ def test_worked_value_conversions_per_style() -> None:
     assert 2.5 * metal.distance_to_angstrom == 2.5
     assert 1.0 * metal.time_to_femtosecond == 1000.0
     assert 1.0 * metal.velocity_to_angstrom_per_femtosecond == 1e-3
-    # real: 1 kcal/mol → 0.0433641 eV; 3.0 Å/fs stays 3.0 Å/fs.
+    # metal: a 55.845 g/mol iron mass stays 55.845 amu.
+    assert 55.845 * metal.mass_to_amu == 55.845
+    # real: 1 kcal/mol → 0.0433641 eV; 3.0 Å/fs stays 3.0 Å/fs; 12.011 g/mol → 12.011 amu.
     assert 1.0 * real.energy_to_electronvolt == pytest.approx(0.0433641, rel=1e-6)
     assert 3.0 * real.velocity_to_angstrom_per_femtosecond == 3.0
+    assert 12.011 * real.mass_to_amu == 12.011
     # si: 1 m box edge → 1e10 Å; 1 s → 1e15 fs; 1 m/s → 1e-5 Å/fs; 1 J → 6.2415e18 eV.
     assert 1.0 * si.distance_to_angstrom == 1e10
     assert 1.0 * si.time_to_femtosecond == 1e15
     assert 1.0 * si.velocity_to_angstrom_per_femtosecond == 1e-5
     assert 1.0 * si.energy_to_electronvolt == pytest.approx(6.241509074460763e18)
+    # si: one carbon-12 atom's mass 1.9926e-26 kg → ~12 amu.
+    assert 1.9926468e-26 * si.mass_to_amu == pytest.approx(12.0, rel=1e-4)
 
 
 def test_every_style_carries_a_human_readable_summary() -> None:
@@ -124,6 +137,52 @@ def test_triclinic_box_with_nonzero_origin() -> None:
     box = box_from_bounds(2.0, 15.0, 0.0, 8.5, 0.0, 6.0, xy=2.0, xz=1.0, yz=0.5)
     np.testing.assert_allclose(box.lattice, [[10.0, 0.0, 0.0], [2.0, 8.0, 0.0], [1.0, 0.5, 6.0]])
     np.testing.assert_allclose(box.origin, [2.0, 0.0, 0.0])
+
+
+def test_data_box_reads_edges_directly_no_bounding_box_inversion() -> None:
+    """A LAMMPS **data** file writes the restricted edge parameters themselves, not the
+    dump's axis-aligned bounding box: the same restricted box (0..10, 0..8, 0..6, tilts
+    xy=2, xz=1, yz=0.5) is written xlo..zhi = 0..10, 0..8, 0..6 verbatim, so
+    ``box_from_edges`` forms a=(10,0,0), b=(2,8,0), c=(1,0.5,6) with no inversion — where
+    feeding those same numbers to the dump's ``box_from_bounds`` would wrongly shrink the
+    edges (it would read them as a bounding box)."""
+    box = box_from_edges(0.0, 10.0, 0.0, 8.0, 0.0, 6.0, xy=2.0, xz=1.0, yz=0.5)
+    np.testing.assert_allclose(box.lattice, [[10.0, 0.0, 0.0], [2.0, 8.0, 0.0], [1.0, 0.5, 6.0]])
+    np.testing.assert_allclose(box.origin, [0.0, 0.0, 0.0])
+
+
+def test_data_and_dump_boxes_coincide_only_at_zero_tilt() -> None:
+    """The two box helpers agree for an orthogonal box (the tilt=0 special case) and
+    diverge the moment a tilt is non-zero — the reason they are separate functions."""
+    edges = box_from_edges(1.0, 11.0, 2.0, 10.0, 0.0, 6.0)
+    bounds = box_from_bounds(1.0, 11.0, 2.0, 10.0, 0.0, 6.0)
+    np.testing.assert_allclose(edges.lattice, bounds.lattice)
+    np.testing.assert_allclose(edges.origin, bounds.origin)
+    # With a tilt they must differ: box_from_bounds inverts, box_from_edges does not.
+    tilted_edges = box_from_edges(0.0, 10.0, 0.0, 8.0, 0.0, 6.0, xy=2.0, xz=1.0)
+    tilted_bounds = box_from_bounds(0.0, 10.0, 0.0, 8.0, 0.0, 6.0, xy=2.0, xz=1.0)
+    assert not np.allclose(tilted_edges.lattice, tilted_bounds.lattice)
+
+
+def test_edges_from_box_inverts_box_from_edges() -> None:
+    """``edges_from_box`` (M48-S2, the data *exporter*'s box write-back) is the exact inverse of
+    ``box_from_edges``: a restricted-triclinic lattice reads back to the same edge parameters the
+    data file would state, with no bounding-box arithmetic in either direction."""
+    box = box_from_edges(0.0, 10.0, 0.0, 8.0, 0.0, 6.0, xy=2.0, xz=1.0, yz=0.5)
+    lx, ly, lz, xy, xz, yz = edges_from_box(box.lattice)
+    # The edge lengths are the diagonal; the tilts are the sub-diagonal — a plain read-off.
+    assert (lx, ly, lz) == (10.0, 8.0, 6.0)
+    assert (xy, xz, yz) == (2.0, 1.0, 0.5)
+
+
+def test_edges_from_box_is_origin_free() -> None:
+    """The inverse deliberately drops the origin: a data file the exporter writes is zero-origin
+    (canonical positions are absolute), so ``edges_from_box`` returns only the six edge parameters
+    and no ``xlo/ylo/zlo`` — two lattices differing solely by origin give identical edges."""
+    a = box_from_edges(2.0, 12.0, 3.0, 11.0, 1.0, 7.0, xy=2.0, xz=1.0, yz=0.5)
+    b = box_from_edges(0.0, 10.0, 0.0, 8.0, 0.0, 6.0, xy=2.0, xz=1.0, yz=0.5)
+    assert not np.allclose(a.origin, b.origin)
+    assert edges_from_box(a.lattice) == edges_from_box(b.lattice)
 
 
 def test_scaled_to_cartesian_matches_lammps_own_mapping() -> None:

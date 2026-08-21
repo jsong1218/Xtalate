@@ -90,6 +90,67 @@ def box_from_bounds(
     )
 
 
+def box_from_edges(
+    xlo: float,
+    xhi: float,
+    ylo: float,
+    yhi: float,
+    zlo: float,
+    zhi: float,
+    *,
+    xy: float = 0.0,
+    xz: float = 0.0,
+    yz: float = 0.0,
+) -> Box:
+    """Build the canonical box from a LAMMPS **data** file's box header (M48).
+
+    Unlike a dump (:func:`box_from_bounds`), a data file writes the *restricted edge
+    parameters directly* — ``xlo xhi`` / ``ylo yhi`` / ``zlo zhi`` and the optional
+    ``xy xz yz`` line are the edge lengths and tilts themselves, **not** the axis-aligned
+    bounding box (LAMMPS "read_data" / "write_data" command docs,
+    https://docs.lammps.org/read_data.html, accessed 2026-08). So no bound-vs-edge
+    inversion is applied: the edge vectors are formed straight from the parameters,
+
+        a = (xhi−xlo, 0, 0),  b = (xy, yhi−ylo, 0),  c = (xz, yz, zhi−zlo),
+
+    with ``origin = (xlo, ylo, zlo)``. The orthogonal box is the tilt=0 special case
+    (a data file with no ``xy xz yz`` line), where this and :func:`box_from_bounds`
+    coincide; they diverge only when a tilt is non-zero — which is exactly why the two
+    conventions are separate helpers rather than one, so neither format silently reads
+    the other's box.
+    """
+    lx = xhi - xlo
+    ly = yhi - ylo
+    lz = zhi - zlo
+    lattice = np.array([[lx, 0.0, 0.0], [xy, ly, 0.0], [xz, yz, lz]], dtype=np.float64)
+    return Box(lattice=lattice, origin=np.array([xlo, ylo, zlo], dtype=np.float64))
+
+
+def edges_from_box(
+    lattice: np.ndarray,
+) -> tuple[float, float, float, float, float, float]:
+    """The inverse of :func:`box_from_edges` (M48-S2): a restricted triclinic lattice → a data
+    file's edge parameters ``(lx, ly, lz, xy, xz, yz)``.
+
+    A data file writes edge lengths and tilts *directly* — not the dump's axis-aligned bounding
+    box — so the inverse is a plain read-off of the restricted lattice rows: ``lx = a_x``,
+    ``ly = b_y``, ``lz = c_z``, ``xy = b_x``, ``xz = c_x``, ``yz = c_y``. There is deliberately
+    **no** inverse for the origin: the parser drops the source box origin (canonical positions are
+    absolute Cartesian), so the exporter writes a zero-origin box — ``xlo=0, xhi=lx`` … — which
+    preserves every inter-atomic distance and the cell shape exactly. A lattice outside the
+    restricted form is refused upstream (``unrepresentable``), never silently rotated here; this is
+    the write-side twin of ``box_from_edges``, kept separate from :func:`box_from_bounds`'s
+    bounding-box convention so neither format writes the other's box.
+    """
+    lx = float(lattice[0, 0])
+    ly = float(lattice[1, 1])
+    lz = float(lattice[2, 2])
+    xy = float(lattice[1, 0])
+    xz = float(lattice[2, 0])
+    yz = float(lattice[2, 1])
+    return lx, ly, lz, xy, xz, yz
+
+
 def scaled_to_cartesian(scaled: np.ndarray, box: Box) -> np.ndarray:
     """Convert ``(N, 3)`` scaled (``xs``/``ys``/``zs``) coordinates to Cartesian Å.
 

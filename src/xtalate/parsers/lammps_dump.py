@@ -579,8 +579,13 @@ class LammpsDumpParser(ParserPlugin):
         hint: str,
         choice: str,
         parameters: dict[str, object],
+        recovery_context: Mapping[str, object] | None = None,
     ) -> ParseResult:
         """Re-read under a parse-time recovery choice (Part 4 §3.3).
+
+        A dump ever needs at most one parse-time recovery at a time (units *or* species,
+        surfaced one per parse), so ``recovery_context`` (M48, the compound-recovery seam the
+        LAMMPS *data* parser consumes) is accepted and ignored here.
 
         ``ambiguous_units`` → apply the chosen style's conversion factors; ``supply_species``
         → apply the caller's ``species_map`` (a type→symbol map / ordered list / CLI string)

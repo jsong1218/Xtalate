@@ -12,10 +12,10 @@ accessed 2026-08) and the NIST physical constants that page points at ("For all 
 except lj, LAMMPS uses physical constants from www.physics.nist.gov"). The per-style
 rows the doc states:
 
-* ``metal`` — distance Å, time ps, energy eV, velocity Å/ps.
+* ``metal`` — distance Å, time ps, energy eV, velocity Å/ps, mass grams/mole (amu).
 * ``real`` — distance Å, time fs, energy kcal/mol (the **thermochemical** calorie,
-  4.184 J), velocity Å/fs.
-* ``si`` — distance m, time s, energy J, velocity m/s.
+  4.184 J), velocity Å/fs, mass grams/mole (amu).
+* ``si`` — distance m, time s, energy J, velocity m/s, mass kilograms (per particle).
 
 Each factor is the multiplier that converts one source-style value to the canonical
 unit, with the arithmetic shown in the comment beside it. The ``si`` energy factor and
@@ -37,6 +37,10 @@ from dataclasses import dataclass
 _REAL_ENERGY_TO_EV = 0.043364104241800934
 #: 1 J in eV: 1 / 1.602176634e-19.
 _SI_ENERGY_TO_EV = 6.241509074460763e18
+#: 1 kilogram in amu (the canonical mass unit, Part 2 §3.1): 1 / 1.66053906660e-27 kg per amu.
+#: LAMMPS ``si`` mass is the kilograms of one particle, so this is the per-particle kg→amu factor
+#: (M48; the ``metal``/``real`` styles already state mass in grams/mole, numerically amu, ×1).
+_SI_MASS_TO_AMU = 6.022140762081123e26
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,7 @@ class UnitStyle:
     time_to_femtosecond: float
     energy_to_electronvolt: float
     velocity_to_angstrom_per_femtosecond: float
+    mass_to_amu: float
     summary: str
 
 
@@ -69,6 +74,8 @@ UNIT_STYLES: dict[str, UnitStyle] = {
         energy_to_electronvolt=1.0,
         # velocity = Å/ps = Å / 1e3 fs → ×1e-3.
         velocity_to_angstrom_per_femtosecond=1e-3,
+        # mass = grams/mole, numerically amu → ×1.
+        mass_to_amu=1.0,
         summary="Å, ps, eV",
     ),
     "real": UnitStyle(
@@ -82,6 +89,8 @@ UNIT_STYLES: dict[str, UnitStyle] = {
         energy_to_electronvolt=_REAL_ENERGY_TO_EV,
         # velocity = Å/fs → ×1.
         velocity_to_angstrom_per_femtosecond=1.0,
+        # mass = grams/mole, numerically amu → ×1.
+        mass_to_amu=1.0,
         summary="Å, fs, kcal/mol",
     ),
     "si": UnitStyle(
@@ -94,6 +103,8 @@ UNIT_STYLES: dict[str, UnitStyle] = {
         energy_to_electronvolt=_SI_ENERGY_TO_EV,
         # velocity = m/s = 1e10 Å / 1e15 fs → ×1e-5.
         velocity_to_angstrom_per_femtosecond=1e-5,
+        # mass = kg/particle → amu (see the module constant): 1 / 1.66053906660e-27.
+        mass_to_amu=_SI_MASS_TO_AMU,
         summary="m, s, J",
     ),
 }

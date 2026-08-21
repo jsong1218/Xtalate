@@ -74,7 +74,7 @@ rather than best-effort partial-parsed — a silently wrong force block poisons 
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any, BinaryIO
 
@@ -1034,6 +1034,7 @@ class OutcarParser(ParserPlugin):
         hint: str,
         choice: str,
         parameters: dict[str, object],
+        recovery_context: Mapping[str, object] | None = None,
     ) -> ParseResult:
         """Recover an OUTCAR whose tail is a torn write by keeping the valid prefix
         (``truncate_at_last_valid_frame`` → ``truncate``, Part 4 §3.3; v1.2 M43-S3, D166).

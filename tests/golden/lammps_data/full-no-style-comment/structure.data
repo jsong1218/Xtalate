@@ -1,0 +1,18 @@
+salt pair (full layout, style undeclared)
+
+2 atoms
+2 atom types
+
+0.0 8.0 xlo xhi
+0.0 8.0 ylo yhi
+0.0 8.0 zlo zhi
+
+Masses
+
+1 22.990  # Na
+2 35.453  # Cl
+
+Atoms
+
+1 1 1 1.0 2.0 2.0 2.0
+2 1 2 -1.0 4.0 4.0 4.0
