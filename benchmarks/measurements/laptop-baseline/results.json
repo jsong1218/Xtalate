@@ -184,5 +184,57 @@
         "within_budget": true
       }
     ]
+  },
+  {
+    "name": "parse_lammpsdump_10k",
+    "scale": "full",
+    "wall_seconds": 2.7669892499689013,
+    "peak_rss_bytes": 190988288,
+    "metrics": {
+      "frames": 10000.0,
+      "atoms": 100.0
+    },
+    "budgets": [
+      {
+        "metric": "wall_seconds",
+        "limit": 30.0,
+        "unit": "s",
+        "value": 2.7669892499689013,
+        "within_budget": true
+      },
+      {
+        "metric": "peak_rss_bytes",
+        "limit": 2147483648,
+        "unit": "bytes",
+        "value": 190988288,
+        "within_budget": true
+      }
+    ]
+  },
+  {
+    "name": "convert_lammpsdump_to_extxyz_10k",
+    "scale": "full",
+    "wall_seconds": 11.656751749978866,
+    "peak_rss_bytes": 93634560,
+    "metrics": {
+      "frames": 10000.0,
+      "atoms": 100.0
+    },
+    "budgets": [
+      {
+        "metric": "wall_seconds",
+        "limit": 90.0,
+        "unit": "s",
+        "value": 11.656751749978866,
+        "within_budget": true
+      },
+      {
+        "metric": "peak_rss_bytes",
+        "limit": 2147483648,
+        "unit": "bytes",
+        "value": 93634560,
+        "within_budget": true
+      }
+    ]
   }
 ]

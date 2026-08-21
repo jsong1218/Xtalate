@@ -1,13 +1,16 @@
 """The M15A synthetic performance corpus + benchmark harness (measured, not gated).
 
 Turns the "large trajectory performance" risk (MASTER_SPEC Part 8 §4) into a tracked number
-rather than an anecdote. Eight benchmarks reproduce the spec's performance table exactly:
+rather than an anecdote. Ten benchmarks reproduce the spec's performance table exactly:
 
 * ``parse_xdatcar_10k`` — parse XDATCAR, 10,000 frames × 100 atoms — ≤ 30 s, peak RSS ≤ 2 GB.
 * ``convert_xdatcar_to_extxyz_10k`` — full pipeline incl. validation, same file — ≤ 90 s, ≤ 2 GB.
 * ``parse_vasprun_10k`` — parse vasprun.xml, 10,000 ionic steps × 100 atoms — ≤ 30 s, ≤ 2 GB.
 * ``parse_outcar_10k`` — parse OUTCAR, 10,000 ionic steps × 100 atoms — ≤ 30 s, ≤ 2 GB.
 * ``convert_outcar_to_extxyz_10k`` — the flagship VASP→MLIP conversion, same file — ≤ 90 s, ≤ 2 GB.
+* ``parse_lammpsdump_10k`` — parse a LAMMPS dump, 10,000 frames × 100 atoms — ≤ 30 s, ≤ 2 GB.
+* ``convert_lammpsdump_to_extxyz_10k`` — the deployment-format→MLIP conversion, same file —
+  ≤ 90 s, ≤ 2 GB.
 * ``convert_extxyz_roundtrip_1k`` — extXYZ 1,000 × 1,000 identity round-trip — ≤ 60 s, ≤ 3 GB.
 * ``frame_limit_ceiling`` — 100,000-frame file (the ``06 §5`` cap) — completes, sub-linear memory.
 * ``preflight_latency`` — pre-flight diff on a parsed 10k-frame object — ≤ 1 s (feels instant).
@@ -62,6 +65,7 @@ from typing import Any
 
 from tests.streaming._generators import (
     write_extxyz_trajectory,
+    write_lammps_dump_trajectory,
     write_outcar_trajectory,
     write_vasprun_trajectory,
     write_xdatcar_trajectory,
@@ -203,6 +207,47 @@ def _bench_convert_outcar_to_extxyz_10k(workdir: Path, scale: str) -> dict[str, 
     return {"frames": float(sz.n_frames), "atoms": float(sz.n_atoms)}
 
 
+def _bench_parse_lammpsdump_10k(workdir: Path, scale: str) -> dict[str, float]:
+    """Materialize a full 10k-frame LAMMPS dump — the ``∝ frames`` cost the ≤2 GB bound guards.
+
+    A dump is the deployment-trajectory format (train → deploy → produce → relabel): production
+    dumps reach 10⁴ snapshots exactly like XDATCAR, and the parser is streaming but ``parse``
+    materializes, so this measures the whole-object cost the bound guards."""
+    sz = _sized(scale, full=Scale(10_000, 100), micro=Scale(20, 8))
+    src = write_lammps_dump_trajectory(
+        workdir / "dump.lammpstrj", n_frames=sz.n_frames, n_atoms=sz.n_atoms
+    )
+    parser = default_registry().get_parser("lammps_dump")
+    with src.open("rb") as fh:
+        obj = parser.parse(fh, filename=src.name).canonical
+    return {"frames": float(obj.frame_count), "atoms": float(sz.n_atoms)}
+
+
+def _bench_convert_lammpsdump_to_extxyz_10k(workdir: Path, scale: str) -> dict[str, float]:
+    """The deployment-format → MLIP conversion at 10⁴ scale, via the real CLI with validation:
+    parse → convert → re-parse-and-diff. The generated dump declares its units, so no recovery
+    preset is needed; the ``--validation-report`` flag forces the post-conversion re-parse, so
+    this is the end-to-end pipeline cost of producing a label-complete relabel file, not just
+    the write."""
+    sz = _sized(scale, full=Scale(10_000, 100), micro=Scale(20, 8))
+    src = write_lammps_dump_trajectory(
+        workdir / "dump.lammpstrj", n_frames=sz.n_frames, n_atoms=sz.n_atoms
+    )
+    _cli_ok(
+        [
+            "convert",
+            str(src),
+            "--to",
+            "extxyz",
+            "-o",
+            str(workdir / "out.xyz"),
+            "--validation-report",
+            str(workdir / "validation.json"),
+        ]
+    )
+    return {"frames": float(sz.n_frames), "atoms": float(sz.n_atoms)}
+
+
 def _bench_convert_extxyz_roundtrip_1k(workdir: Path, scale: str) -> dict[str, float]:
     """1,000 frames × 1,000 atoms, extXYZ → extXYZ identity round-trip with validation — the
     widest single frame in the corpus (the ≤3 GB bound is the per-frame-width headroom)."""
@@ -284,6 +329,16 @@ BENCHMARKS: tuple[Benchmark, ...] = (
     Benchmark(
         "convert_outcar_to_extxyz_10k",
         _bench_convert_outcar_to_extxyz_10k,
+        (Budget("wall_seconds", 90.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
+    ),
+    Benchmark(
+        "parse_lammpsdump_10k",
+        _bench_parse_lammpsdump_10k,
+        (Budget("wall_seconds", 30.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
+    ),
+    Benchmark(
+        "convert_lammpsdump_to_extxyz_10k",
+        _bench_convert_lammpsdump_to_extxyz_10k,
         (Budget("wall_seconds", 90.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
     ),
     Benchmark(
@@ -463,7 +518,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--only",
         action="append",
         metavar="NAME",
-        help="Run only this benchmark (repeatable). Default: all eight.",
+        help="Run only this benchmark (repeatable). Default: all ten.",
     )
     parser.add_argument(
         "--out",

@@ -39,6 +39,44 @@ def _norm(v: Any) -> dict[str, Any]:
     return d
 
 
+_DUMP_FRAME = (
+    "ITEM: TIMESTEP\n{t}\n"
+    "ITEM: NUMBER OF ATOMS\n2\n"
+    "ITEM: BOX BOUNDS pp pp pp\n0.0 5.0\n0.0 5.0\n0.0 5.0\n"
+    "ITEM: ATOMS id element x y z\n"
+    "1 Cu 0.0 0.0 0.0\n"
+    "2 Cu 1.0 1.0 1.0\n"
+)
+
+_DUMP = "ITEM: UNITS metal\n" + "".join(_DUMP_FRAME.format(t=t) for t in range(3))
+
+
+def test_streaming_validation_matches_batch_on_lammps_dump_to_extxyz() -> None:
+    # A dump carries a `:`-scoped per-atom custom (`lammps_dump:id`) the extXYZ Properties=
+    # grammar cannot spell (D69), so the pre-flight routes it Removed per-key. The streamed write
+    # plan must mirror that per-key classification (never keep the whole `custom_per_atom`
+    # container), or the streamed expected side plans a path the exporter dropped and
+    # metadata_preservation false-fails where the materialized path passes — the rule-3
+    # streamed==materialized guarantee, exercised on the M49 deployment-trajectory pair.
+    registry = default_registry()
+    eng = ConversionEngine(registry)
+    parser = registry.get_parser("lammps_dump")
+    src = parser.parse(io.BytesIO(_DUMP.encode()), filename="dump.lammpstrj").canonical
+
+    batch = eng.convert(src, source_format_id="lammps_dump", target_format_id="extxyz")
+    out = io.BytesIO()
+    streamed = eng.convert_stream(
+        io.BytesIO(_DUMP.encode()),
+        source_format_id="lammps_dump",
+        target_format_id="extxyz",
+        output=out,
+    )
+    assert batch.validation is not None and streamed.validation is not None
+    assert batch.validation.status == "passed"
+    assert streamed.validation.status == "passed"
+    assert _norm(streamed.validation) == _norm(batch.validation)
+
+
 @pytest.mark.parametrize("n", [1, 3, 6])
 def test_streaming_validation_matches_batch_on_convert(n: int) -> None:
     eng = ConversionEngine(default_registry())

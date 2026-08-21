@@ -413,6 +413,11 @@ def test_streaming_single_pass_and_materialize_equivalence() -> None:
 
 def test_sniff_identifies_dump_unambiguously() -> None:
     assert PARSER.sniff(b"ITEM: TIMESTEP\n0\n", "x.dump") == 1.0
+    # A declared-units dump (dump_modify units yes — the modern spelling and this exporter's own
+    # output) writes the ITEM: UNITS / ITEM: TIME preamble before ITEM: TIMESTEP; the sniffer
+    # must recognise those first lines too (M49-S2: the CLI benchmark surfaces the gap).
+    assert PARSER.sniff(b"ITEM: UNITS\nmetal\nITEM: TIMESTEP\n0\n", "x.dump") == 1.0
+    assert PARSER.sniff(b"ITEM: TIME\n0.0\nITEM: TIMESTEP\n0\n", "x.dump") == 1.0
     assert PARSER.sniff(b"ITEM: NUMBER OF ATOMS\n", "x.dump") == 0.0
     assert PARSER.sniff(b"1\nLattice=...", None) == 0.0
 
