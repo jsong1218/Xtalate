@@ -14,9 +14,12 @@ slice guarantees:
 * **A declared-but-unused atom type is preserved.** When S1 folded a type that no atom uses into a
   verbatim ``Masses`` section, the exporter writes that section verbatim (all types) and preserves
   the source's own type numbering, rather than regenerating a table that would drop the unused type.
-* **Value-level refusals.** ``unrepresentable`` refuses a multi-frame object, a non-restricted cell,
-  a molecule-id without charges, and one element carrying two masses — each a clean refusal, never a
-  silent flatten (the engine-level trio lives in ``tests/conversion/test_write_lammps_data.py``).
+* **A multi-frame object is a recovery, not a refusal.** Like POSCAR/CONTCAR, a data file writes a
+  single configuration via ``max_frames=1`` + ``frame_selection`` (M48-S3, D183), so a multi-frame
+  object is *not* ``unrepresentable`` — pre-flight offers the frame choice rather than refusing.
+* **Value-level refusals.** ``unrepresentable`` refuses a non-restricted cell, a molecule-id without
+  charges, and one element carrying two masses — each a clean refusal, never a silent flatten (the
+  engine-level trio lives in ``tests/conversion/test_write_lammps_data.py``).
 * **Absence stays absent (P3).** A source with no title writes a blank first line; velocities are
   written only when present.
 """
@@ -240,15 +243,20 @@ def test_velocities_written_only_when_present() -> None:
 # --- value-level refusals (unrepresentable) ------------------------------------------
 
 
-def test_multi_frame_object_is_unrepresentable() -> None:
+def test_multi_frame_object_is_not_unrepresentable() -> None:
+    """A multi-frame object is a *recovery*, not a value-level refusal (M48-S3, D183): a data file
+    declares ``max_frames=1`` and lets ``frame_selection`` pick one configuration, exactly as
+    POSCAR/CONTCAR do. So ``unrepresentable`` — the value-level gate — must pass it through
+    (``None``); the frame reduction is the engine's job, offered as a recovery, never a silent
+    flatten. The frame-selection route is proven end-to-end in
+    ``tests/conversion/test_write_lammps_data.py``."""
     import copy
 
     obj = _load("atomic-metal-ortho")
     second = copy.deepcopy(obj.frames[0])
     second.index = 1
     obj.frames.append(second)
-    reason = make_lammps_data_exporter().unrepresentable(obj)
-    assert reason is not None and "single configuration" in reason
+    assert make_lammps_data_exporter().unrepresentable(obj) is None
 
 
 def test_molecule_id_without_charges_is_unrepresentable() -> None:

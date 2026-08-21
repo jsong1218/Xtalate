@@ -43,9 +43,12 @@ train→deploy→produce→relabel loop — so every mapping is honest and every
   lines by :func:`sdk.lammps.edges_from_box` — the direct inverse of the parser's ``box_from_edges``
   (a data file writes edge parameters directly, unlike a dump's bounding box). A lattice outside the
   restricted form is **refused** (``unrepresentable``), never silently rotated.
-* **A single configuration only.** A data file is one frame. A multi-frame (trajectory) object
-  cannot be one data file, so ``unrepresentable`` (D179) refuses it — the engine returns a clean
-  ``UNREPRESENTABLE_VALUE`` refused report rather than silently writing only frame 0.
+* **A single configuration only — via ``frame_selection``, like POSCAR.** A data file is one frame,
+  so it declares ``max_frames=1`` (as POSCAR/CONTCAR do). A multi-frame (trajectory) object is not
+  refused outright: the pre-flight offers the ``frame_selection`` recovery, one frame is chosen and
+  the dropped rest recorded as an Assumption (P4, never silent) — which is what lets a relaxation
+  *trajectory* become a restart configuration (the M48-S3 flagship, D183). ``export_stream`` keeps a
+  defensive one-frame backstop for a bypassed pre-flight.
 
 **Streaming-first for one-code-path honesty, but single-block.** Mirroring ``lammps_dump`` and
 ``xdatcar``, ``export`` is defined over ``export_stream``; but a data file is one configuration, so
@@ -116,8 +119,9 @@ class LammpsDataExporter(ExporterPlugin):
         self.export_stream(frame_stream.header, frame_stream.frames(), stream)
 
     def supports_streaming(self) -> bool:
-        # A data file is a single configuration; there is no per-frame streaming benefit, and a
-        # multi-frame object is refused (unrepresentable), so this is never a streaming target.
+        # A data file is a single configuration (max_frames=1); there is no per-frame streaming
+        # benefit, and a multi-frame object is reduced to one frame by the frame_selection recovery
+        # before export, so this is never a streaming target.
         return False
 
     def export_stream(
@@ -162,34 +166,29 @@ class LammpsDataExporter(ExporterPlugin):
     def unrepresentable(self, canonical: Any) -> str | None:
         """Why a data file cannot express ``canonical``'s *values*, or ``None`` when it can (Part 4
         §1; D179). A returned string produces a clean ``UNREPRESENTABLE_VALUE`` refusal, not an
-        export-time crash (P1). Four value-level facts the field-granular Capability Matrix cannot
-        see are checked here, before export:
+        export-time crash (P1). Three value-level facts the field-granular Capability Matrix cannot
+        see are checked here, before export. (The multi-frame case is *not* one of them: a data file
+        is a single configuration, but like POSCAR it declares ``max_frames=1`` so the pre-flight
+        offers the ``frame_selection`` recovery — one frame is chosen and the rest recorded as an
+        Assumption, never silently truncated, D181/D183 — so by the time this runs the object is
+        already a single frame.)
 
-        1. **More than one frame.** A data file is one configuration; a trajectory object cannot be
-           one data file, and writing only frame 0 would be a silent truncation.
-        2. **A general (non-restricted) triclinic cell.** A data file states only the restricted
+        1. **A general (non-restricted) triclinic cell.** A data file states only the restricted
            triclinic form (``a`` along x, ``b`` in the xy-plane); any other cell would need a
            rotation to write, silently changing the frame of reference (D43). A frame with no
            lattice is a required-field gap the ``missing_lattice`` recovery handles, not this
            method's concern.
-        3. **A molecule-id without charges.** The only style that carries a molecule-id is ``full``
+        2. **A molecule-id without charges.** The only style that carries a molecule-id is ``full``
            (``id molecule type q x y z``), which also requires a charge column. An object with a
            carried molecule-id but no ``electronic.charges`` has no supported style, and fabricating
            a zero charge (P3) or silently dropping the molecule-id (P1) are both refused.
-        4. **One element symbol with more than one mass.** A data file's ``Masses`` table is keyed
+        3. **One element symbol with more than one mass.** A data file's ``Masses`` table is keyed
            by atom *type*, and types are assigned per element symbol, so all atoms of one symbol
            share a single mass. An object whose atoms of the same symbol carry different masses
            (e.g. isotope labels sharing an element symbol) cannot be expressed without collapsing
            that distinction,
            which the format cannot record — so it is refused rather than silently flattened."""
-        frames = canonical.frames
-        if len(frames) > 1:
-            return (
-                f"lammps_data: a data file is a single configuration but the object has "
-                f"{len(frames)} frames; a data file cannot hold a trajectory, and writing only "
-                "frame 0 would silently drop the rest"
-            )
-        frame = frames[0]
+        frame = canonical.frames[0]
         cell = frame.cell
         if cell is not None and cell.lattice_vectors is not None:
             lattice = np.asarray(cell.lattice_vectors, dtype=float)
@@ -343,7 +342,15 @@ class LammpsDataExporter(ExporterPlugin):
                     IMAGE_FLAGS_CARRY_KEY,
                 ],
             },
-            max_frames=None,  # the unrepresentable hook refuses >1 frame with a clean message
+            # A data file is a single configuration, like POSCAR/CONTCAR (both max_frames=1): a
+            # multi-frame object is not refused outright but routed through the ``frame_selection``
+            # recovery, which picks one frame and records the dropped rest as an Assumption (P4) —
+            # the honest single-config behaviour, and what lets a relaxation *trajectory* become a
+            # restart config (the M48-S3 flagship). The value-level ``unrepresentable`` hook owns
+            # only the facts the frame count cannot express (a non-restricted cell, a molecule-id
+            # without charges, one symbol with two masses); ``export_stream`` keeps a defensive
+            # backstop.
+            max_frames=1,
             required_fields=[
                 "atoms.symbols",
                 "atoms.positions",

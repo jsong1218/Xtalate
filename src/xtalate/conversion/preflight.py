@@ -550,15 +550,31 @@ def on_demand_fabricative_scenarios(
     that cannot store masses (POSCAR) is legal — ``params['emit']=False`` marks it as feeding the
     velocity draw only, recorded in ``supplied`` but never written (D47)."""
     presence = source.field_presence()
+    caps = matrix.get(target_format_id, "write")
     scenarios: list[UnresolvedScenario] = []
     for scenario, path in _OPT_IN_FABRICATIVE.items():
-        requested = scenario in recovery_choices
         chained = (
             scenario == "missing_masses"
             and recovery_choices.get("missing_velocities", {}).get("choice") == "maxwell_boltzmann"
             and presence.status_of("atoms.masses") == "absent"
         )
+        # ``missing_masses`` is dual-role: a hard *required-field* scenario for a mass-requiring
+        # target (owned wholly by ``build_preflight`` — offered as recovery when absent, preserved
+        # when present) and a *chained* feeder for a Maxwell–Boltzmann velocity draw (D46/D47). It
+        # is never a *standalone* opt-in emission. Honoring a bare ``missing_masses`` choice here
+        # would let a blanket preset — a round-trip matrix passing it on every hop so a mass-
+        # requiring target like LAMMPS *data* can enrol (M48-S3, D183) — fabricate masses into
+        # *every* mass-optional target, exactly the cross-conversion fabrication D46 keeps out of
+        # shared presets. So masses proceed only when chained; the required-field path handles the
+        # one target that truly needs them. Velocities keep their standalone opt-in emission (a
+        # genuine user request, the tested `missing_velocities` path).
+        requested = scenario in recovery_choices and scenario != "missing_masses"
         if not (requested or chained):
+            continue
+        # A field the target *requires* is owned by ``build_preflight``'s required-field path, so
+        # the opt-in path must not also emit it — this skips a *chained* ``missing_masses`` for a
+        # target that already requires masses (LAMMPS data), leaving the required-field emission.
+        if path in caps.required_fields:
             continue
         if presence.status_of(path) != "absent":
             raise RecoveryError(

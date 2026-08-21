@@ -12,12 +12,14 @@ HTTP error or a mid-write crash (P1):
 * **No masses → ``RECOVERY_REQUIRED`` / ``missing_masses``.** A data file *requires* a per-type
   ``Masses`` table, so ``atoms.masses`` is a write ``required_field``: an object without them is
   refused via the existing ``missing_masses`` scenario, never invented (P4).
-* **A trajectory → ``UNREPRESENTABLE_VALUE``.** A data file is one configuration; a multi-frame
-  object cannot be one, so the ``unrepresentable`` hook (D179) refuses it rather than silently
-  writing only frame 0.
+* **A trajectory → ``RECOVERY_REQUIRED`` / ``frame_selection``.** A data file is one configuration;
+  a multi-frame object cannot be one, so — like POSCAR/CONTCAR — the exporter declares
+  ``max_frames=1`` and pre-flight offers ``frame_selection`` to pick a configuration (M48-S3, D183),
+  rather than refusing outright or silently writing only frame 0. Supplying the choice completes the
+  write.
 
 The companion is the resolved single-configuration object with masses that writes cleanly under the
-same pipeline — proving the guards refuse exactly the unrepresentable inputs and nothing else.
+same pipeline — proving the guards refuse exactly the unresolvable inputs and nothing else.
 """
 
 from __future__ import annotations
@@ -76,19 +78,34 @@ def test_convert_refuses_an_object_without_masses() -> None:
     ]
 
 
-def test_convert_refuses_a_multi_frame_object_as_unrepresentable() -> None:
+def test_convert_offers_frame_selection_for_a_multi_frame_object() -> None:
+    """A multi-frame object is a *recovery*, not an outright refusal (M48-S3, D183): a data file
+    writes one configuration via ``max_frames=1``, so pre-flight offers ``frame_selection`` — just
+    the POSCAR/CONTCAR path — instead of the old ``UNREPRESENTABLE_VALUE`` refusal. Without the
+    choice it refuses recoverably; with it, the write completes on the selected frame."""
     obj = _load("atomic-metal-ortho")
     second = copy.deepcopy(obj.frames[0])
     second.index = 1
     obj.frames.append(second)
-    result = _convert(obj, recovery_choices=_METAL)
-    assert result.report.status == "refused"
-    assert result.output is None
-    assert result.report.refusal is not None
-    assert result.report.refusal["code"] == "UNREPRESENTABLE_VALUE"
-    assert "single configuration" in result.report.refusal["message"]
+
+    refused = _convert(obj, recovery_choices=_METAL)
+    assert refused.report.status == "refused"
+    assert refused.output is None
+    assert refused.report.refusal is not None
+    assert refused.report.refusal["code"] == "RECOVERY_REQUIRED"
+    scenarios = refused.report.refusal["unresolved_scenarios"]
+    assert [s["scenario"] for s in scenarios] == ["frame_selection"]
+    assert "first" in scenarios[0]["options"]
     # A refused report still carries the pre-flight prediction (completeness holds over it).
-    assert result.report.preserved or result.report.removed
+    assert refused.report.preserved or refused.report.removed
+
+    # Supplying the frame choice completes the write on one configuration.
+    resolved = _convert(
+        obj,
+        recovery_choices={**_METAL, "frame_selection": {"choice": "first", "parameters": {}}},
+    )
+    assert resolved.report.status == "completed"
+    assert resolved.output is not None
 
 
 def test_convert_writes_a_restart_file_with_the_metal_preset() -> None:

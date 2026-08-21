@@ -115,6 +115,22 @@ FIXED_PRESETS: dict[str, dict[str, Any]] = {
     # matrix pins a deterministic style; ``metal`` matches the golden source's own declared units,
     # keeping a lammps_dump → lammps_dump hop an honest identity rather than a unit re-label.
     "ambiguous_units": {"choice": "metal", "parameters": {}},
+    # M48: writing *to* lammps_data requires a ``Masses`` section, so a source that carries no
+    # per-atom masses (XYZ, POSCAR, a dump/extXYZ without them) reaches the write-side
+    # ``missing_masses`` gate — ``atoms.masses`` is a data-target ``required_field`` (D181).
+    # ``standard_masses`` fills IUPAC standard atomic weights from the (always-present) element
+    # symbols — deterministic and generic, unlike the *type-specific* ``missing_species`` map a data
+    # *source* needs, which is why the data target enrols on a fixed preset here but the data
+    # *source* axis cannot (a data file declares neither units nor symbols, so it never bare-parses
+    # — the matrix reads its sources with a bare ``parse``; the data source-and-target fidelity
+    # story is carried by the dedicated identity round-trip, ``test_lammps_data_roundtrip``).
+    # This entry is inert on every pair whose target is not lammps_data: ``missing_masses`` is a
+    # *required-field* scenario owned by ``build_preflight`` (offered when masses are absent,
+    # preserved when present), never a standalone opt-in fabrication — the on-demand fabricative
+    # path deliberately ignores a bare ``missing_masses`` choice so a blanket preset like this one
+    # cannot inject masses into a mass-optional target (D46, D183). So it fires only where the
+    # target genuinely requires masses, and only when the source lacks them (Part 8 §2.2).
+    "missing_masses": {"choice": "standard_masses", "parameters": {}},
 }
 
 

@@ -180,10 +180,17 @@ class RecoveryEngine:
         # the post-reduction object. A fully-``absent`` cell definitely needs it regardless of the
         # frame chosen, so it stays in the upfront list (and its refusal names it, as before).
         lattice_deferred = _mixed_cell(source)
+        # ``missing_masses`` defers identically to ``missing_lattice`` when the source masses are
+        # ``mixed`` (M48-S3): whether the retained frame needs fabrication depends on which frame
+        # ``frame_selection`` keeps, so its necessity — and any refusal for a missing choice — is
+        # decided lazily in the loop against the post-reduction object, not upfront. A uniformly
+        # ``absent`` mass column definitely needs it regardless of frame, so it stays upfront.
+        masses_deferred = _mixed_masses(source)
         unresolved = [
             s
             for s in scenarios
             if not (s.scenario == "missing_lattice" and lattice_deferred)
+            and not (s.scenario == "missing_masses" and masses_deferred)
             and (s.scenario not in SCENARIO_HAZARD or s.scenario not in recovery_choices)
         ]
         if unresolved:
@@ -205,6 +212,21 @@ class RecoveryEngine:
                 if "missing_lattice" not in recovery_choices:
                     # The retained frame lacks the required cell and no choice was supplied — refuse
                     # cleanly (Part 4 §3.2), never let the cell-less object reach the exporter.
+                    return RecoveryResult(canonical=None, assumptions=[], unresolved=[match])
+            if scenario_code == "missing_masses":
+                # The exact analog of the ``missing_lattice`` lazy block above (M48-S3): resolved
+                # against the *working* (post-frame_selection) object so a fabrication never
+                # overwrites a real value (P4). A ``mixed`` mass column whose mass-bearing frame
+                # ``frame_selection`` keeps needs no fill — fabricating anyway would move genuine
+                # source masses into ``supplied`` and out of ``preserved``, a report lie the
+                # completeness invariant catches. Also feeds a chained Maxwell–Boltzmann draw: when
+                # the retained frame already carries masses, the draw reads *those*, not a fill.
+                if _masses_present(working):
+                    continue  # the retained frame carries real masses — no-op, no Assumption.
+                if "missing_masses" not in recovery_choices:
+                    # The retained frame lacks the required masses and no choice was supplied —
+                    # refuse cleanly (Part 4 §3.2), never let a mass-less object reach a mass-
+                    # requiring exporter.
                     return RecoveryResult(canonical=None, assumptions=[], unresolved=[match])
             aid = f"A{counter}"
             counter += 1
@@ -286,6 +308,25 @@ def _mixed_cell(obj: CanonicalObject) -> bool:
     deferred to the lazy in-loop check rather than an upfront refusal."""
     cells = [frame.cell is not None for frame in obj.frames]
     return any(cells) and not all(cells)
+
+
+def _masses_present(obj: CanonicalObject) -> bool:
+    """True iff every frame carries per-atom masses — i.e. ``atoms.masses`` is *uniformly* present.
+    ``missing_masses`` (as a required-field or chained recovery) fabricates only when this is False,
+    so a frame that already has real masses is never overwritten (P4) — the exact analog of
+    :func:`_cell_present` for ``missing_lattice``."""
+    return all(frame.atoms.masses is not None for frame in obj.frames)
+
+
+def _mixed_masses(obj: CanonicalObject) -> bool:
+    """True iff masses are present in *some but not all* frames — the ``mixed`` case where whether
+    ``missing_masses`` is needed depends on which frame ``frame_selection`` keeps, so its refusal is
+    deferred to the lazy in-loop check rather than an upfront refusal (the analog of
+    :func:`_mixed_cell`). The M48-S3 stage-2 property test found this gap for masses — the LAMMPS
+    *data* target is the first to require ``atoms.masses``, so a ``mixed`` mass column reaching a
+    mass-requiring exporter had never occurred before (Part 4 §3.3)."""
+    masses = [frame.atoms.masses is not None for frame in obj.frames]
+    return any(masses) and not all(masses)
 
 
 def _apply_frame_selection(
@@ -1150,9 +1191,11 @@ def _apply_units_style(
     side; v1.3 M47-S1, D177, Part 4 §3.3).
 
     The write-side twin of the parse-time `ambiguous_units` resolution: a LAMMPS target does
-    not define units, so its output can only be self-describing when the writer states an
-    ``ITEM: UNITS <style>`` header and converts the canonical Å/fs/eV values to that style's
-    basis. The chosen style is therefore threaded to the exporter through the object — the
+    not define units, so the writer must fix a style before converting the canonical Å/fs/eV
+    values to that style's basis — the dump records it in an ``ITEM: UNITS <style>`` header
+    (self-describing), while the data file, which writes no units line at all, carries it out of
+    band for the recovery-aware re-parse (M48-S3, D183). The chosen style is threaded to the
+    exporter through the object either way — the
     same channel the stress convention uses (the resolver materializes the resolved state
     into the canonical object and the exporter reads it back) — as the format-scoped
     ``custom_global[<target>:units]`` marker named by ``params['custom_global_key']`` (the
@@ -1187,11 +1230,11 @@ def _apply_units_style(
         origin=origin,
         description=(
             f"Interpreted the target's LAMMPS unit style as `{style.code}` "
-            f"({style.summary}): the output declares an ITEM: UNITS {style.code} header and "
-            "every position, velocity, and box bound is converted from the canonical "
-            "Å/fs/eV basis to that style's units on write. A LAMMPS file defines no units, so "
-            "this is a recorded choice, never a guessed default — every dump Xtalate writes "
-            "declares its style explicitly."
+            f"({style.summary}): every position, velocity, and box bound is converted from the "
+            "canonical Å/fs/eV basis to that style's units on write, and the output must be read "
+            "back under the same style. A LAMMPS file defines no unit system of its own — a dump "
+            "records the style in its ITEM: UNITS header, a data file carries it out of band for "
+            "the recovery-aware re-parse — so this is a recorded choice, never a guessed default."
         ),
         # Interpretive: nothing was created (the canonical values are genuine source data;
         # only the output basis was fixed), exactly as on the parse side (Part 4 §3.1, M46).
