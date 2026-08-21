@@ -18,8 +18,6 @@ realization of the extended-budget note (M15C wires it into the nightly workflow
 
 from __future__ import annotations
 
-import io
-
 from hypothesis import given
 
 from tests.property import _properties, _strategies
@@ -69,8 +67,9 @@ def test_report_is_complete_over_random_objects(source: CanonicalObject) -> None
             assert report.refusal is not None
             continue
         assert result.output is not None, f"->{target}: completed report but no output bytes"
-        reparsed = (
-            _REGISTRY.get_parser(target).parse(io.BytesIO(result.output), filename=None).canonical
+        assert result.canonical_out is not None
+        reparsed = _properties.reparse_output(
+            _REGISTRY, target, result.output, result.canonical_out
         )
         p2 = _properties.absence_violations(report, reparsed)
         assert not p2, f"->{target}: absence conformance violated: {p2}"

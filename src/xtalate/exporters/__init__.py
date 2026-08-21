@@ -13,6 +13,7 @@ from __future__ import annotations
 from xtalate.exporters.ase_traj import AseTrajExporter, make_ase_traj_exporter
 from xtalate.exporters.cif import CifExporter, make_cif_exporter
 from xtalate.exporters.extxyz import ExtxyzExporter
+from xtalate.exporters.lammps_data import LammpsDataExporter, make_lammps_data_exporter
 from xtalate.exporters.lammps_dump import LammpsDumpExporter, make_lammps_dump_exporter
 from xtalate.exporters.poscar import (
     PoscarExporter,
@@ -27,6 +28,7 @@ __all__ = [
     "AseTrajExporter",
     "CifExporter",
     "ExtxyzExporter",
+    "LammpsDataExporter",
     "LammpsDumpExporter",
     "PoscarExporter",
     "XdatcarExporter",
@@ -35,6 +37,7 @@ __all__ = [
     "make_ase_traj_exporter",
     "make_cif_exporter",
     "make_contcar_exporter",
+    "make_lammps_data_exporter",
     "make_lammps_dump_exporter",
     "make_poscar_exporter",
     "make_xdatcar_exporter",
@@ -47,6 +50,7 @@ def builtin_exporters() -> list[ExporterPlugin]:
     return [
         XyzExporter(),
         ExtxyzExporter(),
+        make_lammps_data_exporter(),
         make_lammps_dump_exporter(),
         make_poscar_exporter(),
         make_contcar_exporter(),

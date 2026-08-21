@@ -15,6 +15,9 @@ assertion. Two implementations of one invariant is the point: if they ever disag
 
 from __future__ import annotations
 
+import io
+
+from xtalate.capabilities.registry import Registry
 from xtalate.conversion.report import ConversionReport
 from xtalate.schema import CanonicalObject
 
@@ -88,6 +91,35 @@ def completeness_violations(
                 f"{supplied.from_assumption!r}"
             )
     return violations
+
+
+def reparse_output(
+    registry: Registry, target: str, output: bytes, written: CanonicalObject
+) -> CanonicalObject:
+    """Re-parse a target's ``output`` bytes the way the Validation Engine does (validation.engine
+    §1), so Property 2 can diff a *real* re-read of what was written.
+
+    Almost every target is self-describing and re-reads through a bare ``parse``. A LAMMPS *data*
+    file is the exception (M48-S2, D182): it declares neither a unit system nor element symbols, so
+    its output cannot re-parse at all without the same ``ambiguous_units`` + ``missing_species``
+    choices the conversion resolved. The exporter's ``reparse_recovery`` hook hands back that
+    context, derived from ``written`` — the object the exporter wrote (``result.canonical_out``),
+    exactly the object ``validation.engine`` derives it from — and we prime the target parser's
+    ``parse_recover`` with it. This is the mechanical re-read only; the absence invariant itself
+    stays independently re-derived in :func:`absence_violations` (D50)."""
+    exporter = registry.get_exporter(target)
+    parser = registry.get_parser(target)
+    recovery = exporter.reparse_recovery(written)
+    if recovery is not None:
+        return parser.parse_recover(
+            io.BytesIO(output),
+            filename=None,
+            hint="",
+            choice="",
+            parameters={},
+            recovery_context=recovery,
+        ).canonical
+    return parser.parse(io.BytesIO(output), filename=None).canonical
 
 
 def absence_violations(report: ConversionReport, reparsed: CanonicalObject) -> list[str]:

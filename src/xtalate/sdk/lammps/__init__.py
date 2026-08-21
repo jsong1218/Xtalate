@@ -17,6 +17,7 @@ from xtalate.sdk.lammps.box import (
     Box,
     box_from_bounds,
     box_from_edges,
+    edges_from_box,
     scaled_to_cartesian,
 )
 from xtalate.sdk.lammps.columns import (
@@ -44,6 +45,7 @@ __all__ = [
     "box_from_bounds",
     "box_from_edges",
     "coordinate_note",
+    "edges_from_box",
     "is_element_column",
     "resolve_coordinate_columns",
     "resolve_species",

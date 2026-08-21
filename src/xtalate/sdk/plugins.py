@@ -165,6 +165,30 @@ class ExporterPlugin(ABC):
         so existing/third-party exporters keep working unchanged."""
         return None
 
+    def reparse_recovery(
+        self, canonical: CanonicalObject
+    ) -> Mapping[str, dict[str, object]] | None:
+        """The recovery context the Validation Engine must apply to re-parse **this exporter's own
+        output**, or ``None`` when the output is self-describing (M48-S2, D182).
+
+        Validation re-parses the written bytes and diffs them against the source object (Part 5 §2).
+        Almost every format's output is self-describing — a dump writes its ``ITEM: UNITS`` header
+        and an element column, POSCAR/CIF/XYZ carry their own labels — so the re-parse is a bare
+        ``parse`` and this returns ``None`` (the default). A **LAMMPS data** file is the exception:
+        it declares neither a unit system nor element symbols (atoms are numeric types only), so its
+        output cannot re-parse without the same ``ambiguous_units`` + ``missing_species`` choices
+        the conversion already resolved. This hook hands the Validation Engine that context —
+        derived from the object the exporter wrote, so it reproduces exactly the write — the engine
+        drives the target parser's ``parse_recover`` with it instead of ``parse``. The applied
+        choices are already recorded Assumptions in the Conversion Report, so re-applying them on
+        re-read is the expected mechanism, not a new finding.
+
+        Return value: the ``{scenario: {"choice", "parameters"}}`` map ``parse_recover`` consumes as
+        its ``recovery_context`` (the M48 SDK seam). Additive to the frozen ``export`` contract
+        (like ``atom_permutation``); existing/third-party exporters keep the self-describing
+        default."""
+        return None
+
     def supports_streaming(self) -> bool:
         """Whether this exporter implements ``export_stream`` (M12). Default ``False`` marks a
         whole-file exporter the engine adapts by materializing before ``export``."""

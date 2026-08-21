@@ -23,6 +23,7 @@ from xtalate.sdk.lammps import (
     box_from_bounds,
     box_from_edges,
     coordinate_note,
+    edges_from_box,
     resolve_coordinate_columns,
     resolve_species,
     scaled_to_cartesian,
@@ -161,6 +162,27 @@ def test_data_and_dump_boxes_coincide_only_at_zero_tilt() -> None:
     tilted_edges = box_from_edges(0.0, 10.0, 0.0, 8.0, 0.0, 6.0, xy=2.0, xz=1.0)
     tilted_bounds = box_from_bounds(0.0, 10.0, 0.0, 8.0, 0.0, 6.0, xy=2.0, xz=1.0)
     assert not np.allclose(tilted_edges.lattice, tilted_bounds.lattice)
+
+
+def test_edges_from_box_inverts_box_from_edges() -> None:
+    """``edges_from_box`` (M48-S2, the data *exporter*'s box write-back) is the exact inverse of
+    ``box_from_edges``: a restricted-triclinic lattice reads back to the same edge parameters the
+    data file would state, with no bounding-box arithmetic in either direction."""
+    box = box_from_edges(0.0, 10.0, 0.0, 8.0, 0.0, 6.0, xy=2.0, xz=1.0, yz=0.5)
+    lx, ly, lz, xy, xz, yz = edges_from_box(box.lattice)
+    # The edge lengths are the diagonal; the tilts are the sub-diagonal — a plain read-off.
+    assert (lx, ly, lz) == (10.0, 8.0, 6.0)
+    assert (xy, xz, yz) == (2.0, 1.0, 0.5)
+
+
+def test_edges_from_box_is_origin_free() -> None:
+    """The inverse deliberately drops the origin: a data file the exporter writes is zero-origin
+    (canonical positions are absolute), so ``edges_from_box`` returns only the six edge parameters
+    and no ``xlo/ylo/zlo`` — two lattices differing solely by origin give identical edges."""
+    a = box_from_edges(2.0, 12.0, 3.0, 11.0, 1.0, 7.0, xy=2.0, xz=1.0, yz=0.5)
+    b = box_from_edges(0.0, 10.0, 0.0, 8.0, 0.0, 6.0, xy=2.0, xz=1.0, yz=0.5)
+    assert not np.allclose(a.origin, b.origin)
+    assert edges_from_box(a.lattice) == edges_from_box(b.lattice)
 
 
 def test_scaled_to_cartesian_matches_lammps_own_mapping() -> None:

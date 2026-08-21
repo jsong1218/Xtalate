@@ -126,6 +126,31 @@ def box_from_edges(
     return Box(lattice=lattice, origin=np.array([xlo, ylo, zlo], dtype=np.float64))
 
 
+def edges_from_box(
+    lattice: np.ndarray,
+) -> tuple[float, float, float, float, float, float]:
+    """The inverse of :func:`box_from_edges` (M48-S2): a restricted triclinic lattice → a data
+    file's edge parameters ``(lx, ly, lz, xy, xz, yz)``.
+
+    A data file writes edge lengths and tilts *directly* — not the dump's axis-aligned bounding
+    box — so the inverse is a plain read-off of the restricted lattice rows: ``lx = a_x``,
+    ``ly = b_y``, ``lz = c_z``, ``xy = b_x``, ``xz = c_x``, ``yz = c_y``. There is deliberately
+    **no** inverse for the origin: the parser drops the source box origin (canonical positions are
+    absolute Cartesian), so the exporter writes a zero-origin box — ``xlo=0, xhi=lx`` … — which
+    preserves every inter-atomic distance and the cell shape exactly. A lattice outside the
+    restricted form is refused upstream (``unrepresentable``), never silently rotated here; this is
+    the write-side twin of ``box_from_edges``, kept separate from :func:`box_from_bounds`'s
+    bounding-box convention so neither format writes the other's box.
+    """
+    lx = float(lattice[0, 0])
+    ly = float(lattice[1, 1])
+    lz = float(lattice[2, 2])
+    xy = float(lattice[1, 0])
+    xz = float(lattice[2, 0])
+    yz = float(lattice[2, 1])
+    return lx, ly, lz, xy, xz, yz
+
+
 def scaled_to_cartesian(scaled: np.ndarray, box: Box) -> np.ndarray:
     """Convert ``(N, 3)`` scaled (``xs``/``ys``/``zs``) coordinates to Cartesian Å.
 

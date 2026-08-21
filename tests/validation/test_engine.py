@@ -220,3 +220,56 @@ def test_strict_tolerance_still_passes_a_faithful_conversion() -> None:
     assert result.validation is not None
     assert result.validation.status == "passed"
     assert result.validation.tolerance_profile["name"] == "strict"
+
+
+# --- recovery-aware re-parse for a non-self-describing output (D182) ------------------------------
+
+
+def test_data_output_validates_via_recovery_aware_reparse() -> None:
+    """A LAMMPS data output states no unit system and identifies atoms by numeric type, so a bare
+    re-parse would hit the ``ambiguous_units`` refusal and never read back. The exporter's
+    ``reparse_recovery`` hook hands the Validation Engine the recorded unit/species choices, so the
+    engine drives ``parse_recover`` and genuinely diffs the output (D181). A clean data→data
+    conversion validates as ``passed``: the recovery notes are the expected re-read mechanism, not a
+    finding, so they do not downgrade the aggregate — but they are still listed for transparency."""
+    reg = _registry()
+    obj = (
+        reg.get_parser("lammps_data")
+        .parse_recover(
+            io.BytesIO(
+                (GOLDEN / "lammps_data" / "full-triclinic-topology" / "structure.data").read_bytes()
+            ),
+            filename="structure.data",
+            hint="ambiguous_units",
+            choice="metal",
+            parameters={},
+            recovery_context={
+                "ambiguous_units": {"choice": "metal", "parameters": {}},
+                "missing_species": {"choice": "species_map", "parameters": {"species": "1:C 2:H"}},
+            },
+        )
+        .canonical
+    )
+    result = ConversionEngine(reg).convert(
+        obj,
+        source_format_id="lammps_data",
+        target_format_id="lammps_data",
+        recovery_choices={"ambiguous_units": {"choice": "metal", "parameters": {}}},
+    )
+    assert result.report.status == "completed"
+    assert result.validation is not None
+    # Every diff check ran against a genuinely re-parsed object and passed.
+    assert result.validation.status == "passed"
+    assert all(c.status == "pass" for c in result.validation.checks)
+    # The re-read required the recorded unit/species assumptions; those notes are surfaced.
+    codes = {getattr(i, "code", None) for i in result.validation.reparse_issues}
+    assert "LAMMPSDATA_UNITS_INTERPRETED" in codes
+    assert "LAMMPSDATA_SPECIES_SUPPLIED" in codes
+
+
+def test_self_describing_exporter_keeps_the_reparse_recovery_default() -> None:
+    """The hook is additive: a self-describing target (POSCAR carries its own labels) returns the
+    default ``None``, so the Validation Engine re-parses it with a bare ``parse`` unchanged."""
+    reg = _registry()
+    obj = _source(reg)
+    assert reg.get_exporter("poscar").reparse_recovery(obj) is None

@@ -22,8 +22,6 @@ Stage 2 (hypothesis strategies over randomized objects, with shrinking) is the c
 
 from __future__ import annotations
 
-import io
-
 import pytest
 
 from tests.property import _generators, _properties
@@ -74,9 +72,8 @@ def test_report_is_complete(
         assert report.refusal is not None
         return
     assert result.output is not None, f"{case_id}->{target}: completed report but no output bytes"
-    reparsed = (
-        _REGISTRY.get_parser(target).parse(io.BytesIO(result.output), filename=None).canonical
-    )
+    assert result.canonical_out is not None
+    reparsed = _properties.reparse_output(_REGISTRY, target, result.output, result.canonical_out)
     p2 = _properties.absence_violations(report, reparsed)
     assert not p2, f"{case_id}->{target}: absence conformance violated: {p2}"
 

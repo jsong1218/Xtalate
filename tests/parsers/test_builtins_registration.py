@@ -57,7 +57,8 @@ def test_builtins_register_without_error() -> None:
         "outcar",
         # M46-S2: lammps_dump joins as a parser; M47-S1 adds the exporter (staging closed).
         "lammps_dump",
-        # M48-S1: lammps_data joins as a parser; M48-S2 adds the exporter (staging state, D180).
+        # M48-S1: lammps_data joins as a parser; M48-S2 added the exporter, closing the staging
+        # state (D180, D181).
         "lammps_data",
     }
     # Asymmetric since M42 slice 2: vasprun is the first parser-only format (D159) — Xtalate
@@ -75,6 +76,8 @@ def test_builtins_register_without_error() -> None:
         "cif",
         # M47-S1: the dump exporter lands, closing the M46 parser-only staging state (D177).
         "lammps_dump",
+        # M48-S2: the data exporter lands, closing the M48-S1 parser-only staging state (D181).
+        "lammps_data",
     }
 
 
