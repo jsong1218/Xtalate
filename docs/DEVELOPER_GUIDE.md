@@ -197,6 +197,41 @@ target error — never a new code. The in-tree precedents to copy are
 mapping core, each declaring its read capabilities honestly — including `NONE` for a field the
 format genuinely cannot carry (vasprun's `electronic.magnetic_moments`, which only OUTCAR reads).
 
+### 5.1.2 The required-parse-time-preset variant (a parse blocked on an interpretive choice)
+
+Everything above assumes the file *declares* what it needs. A format can instead be genuinely
+**ambiguous** on an axis the file itself does not state — and the rule is then **refused, never
+defaulted** (P4/R3): the parse is blocked until the caller supplies the interpretive choice as a
+`--recover` preset, and the choice is recorded as an Assumption on the parse, exactly like a
+conversion-time recovery.
+
+The in-tree precedent is LAMMPS' unit system: a dump declares its style in an `ITEM: UNITS` header
+(modern LAMMPS writes it on the first snapshot), but a data file carries the unit system entirely out
+of band — and LAMMPS itself does not name the unit style inside a bare `Atoms` block. The
+`ambiguous_units` scenario (`src/xtalate/recovery/scenarios.py`, `HazardClass.FABRICATIVE` +
+`INTERPRETIVE_SCENARIOS`) is offered with options `metal` · `real` · `si` **only when the file does not
+say**: an undeclared-units file refuses with `RECOVERY_REQUIRED` until the caller passes e.g.
+`--recover ambiguous_units=metal`, while a dump with a declared `ITEM: UNITS` header fires nothing.
+The same shape repeats for `ambiguous_atom_style` (a data file's `Atoms # <style>` comment is honored
+when present and refused when absent) and for the `missing_species` `species_map` preset when a dump
+names atoms by numeric type only.
+
+The machinery to copy lives in `src/xtalate/parsers/lammps_dump.py` (the `recovery_context` seam the
+parser exposes for compound parse-time recovery) and `recovery/scenarios.py` (the scenario
+registration + the option list). Three disciplines bind this variant:
+
+1. **The option list grows by corpus evidence, not by the format's documentation.** The
+   `metal`/`real`/`si` list is exactly what the M46–M49 goldens and the M49 wild corpus exercised;
+   a style the corpus has not shown is **not** added from the LAMMPS manual (standing rule 3).
+2. **A parse-blocking ambiguity is refused, never defaulted.** There is no "guess metal" fallback —
+   an interpretive guess would silently misread every number in the file (P4).
+3. **The preset is recorded, not silent.** The supplied choice lands in the parse's Assumptions and
+   echoes into the Conversion Report like any recovery, so a downstream consumer can see that the
+   file's units were supplied, not discovered.
+
+See also the *Contributing real-world LAMMPS files* call (§5.6) — real files into the wild corpus
+are how the evidence that grows these option lists is gathered.
+
 ### 5.2 Ship it as an installable plugin (no fork)
 
 A third-party distribution advertises its parser/exporter under Xtalate's entry-point groups;
