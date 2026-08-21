@@ -7,3 +7,5 @@ convert_outcar_to_extxyz_10k,full,18.133127,114163712,0.106323,True
 convert_extxyz_roundtrip_1k,full,13.157265,140132352,0.130508,True
 frame_limit_ceiling,full,12.473522,90374144,0.084167,
 preflight_latency,full,2.282880,165068800,0.153732,True
+parse_lammpsdump_10k,full,2.766989,190988288,0.177872,True
+convert_lammpsdump_to_extxyz_10k,full,11.656752,93634560,0.087204,True

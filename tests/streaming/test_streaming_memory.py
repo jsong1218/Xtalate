@@ -30,6 +30,7 @@ from pathlib import Path
 from tests.streaming._generators import (
     write_ase_traj_trajectory,
     write_extxyz_trajectory,
+    write_lammps_dump_trajectory,
     write_outcar_trajectory,
     write_vasprun_trajectory,
     write_xdatcar_trajectory,
@@ -173,4 +174,27 @@ def test_outcar_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
 
     stream_peak = _peak_traced_bytes(lambda: _stream(src, out_stream, "outcar", "extxyz"))
     material_peak = _peak_traced_bytes(lambda: _materialize(src, out_material, "outcar", "extxyz"))
+    _assert_sublinear(stream_peak, material_peak, out_stream, out_material)
+
+
+def test_lammps_dump_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
+    """The M49-S2 deployment-format gate (D185): a generated 10⁴-frame dump — the
+    deployment-trajectory format's ordinary production scale — converts to extXYZ
+    **byte-identically** streamed vs. materialized, with the streamed path bounded by one
+    snapshot block, not the frame count (D56's "chunking changes memory, never truth" made
+    concrete for the format that carries a production MLIP loop). Same contrast as the XDATCAR
+    proof, driven through the header-eager / snapshot-lazy dump streaming parser (M46; D56 at
+    scale)."""
+    # 10⁴ frames is the hard scale (the deployment format's ordinary production size); a modest
+    # per-frame atom count keeps the tracemalloc-traced run at the XDATCAR proof's cost — the
+    # 100-atom-per-frame version is the ``parse_lammpsdump_10k`` benchmark's fixture (same
+    # generator, one source of truth for the 10⁴ dump shape).
+    src = write_lammps_dump_trajectory(tmp_path / "dump.lammpstrj", n_frames=10_000, n_atoms=10)
+    out_stream = tmp_path / "lammps_dump_stream.xyz"
+    out_material = tmp_path / "lammps_dump_material.xyz"
+
+    stream_peak = _peak_traced_bytes(lambda: _stream(src, out_stream, "lammps_dump", "extxyz"))
+    material_peak = _peak_traced_bytes(
+        lambda: _materialize(src, out_material, "lammps_dump", "extxyz")
+    )
     _assert_sublinear(stream_peak, material_peak, out_stream, out_material)

@@ -1,11 +1,17 @@
-"""The real-world corpus suite (v0.4 M20, D70; VASP cases added in v1.2 M45-S2, D172).
+"""The real-world corpus suite (v0.4 M20, D70; VASP cases added in v1.2 M45-S2, D172; LAMMPS
+cases added in v1.3 M49-S1, D184).
 
 Runs each case's parser over its vendored file and asserts the two things M20 asks for:
 **zero silent anomalies** (the issue set a file produces is exactly the set its manifest names)
 and the format's own oracle — **right stoichiometry** for CIF (the expansion agrees with the
-cell composition the file itself declares — see ``_wild.declared_cell_composition``), or the
+cell composition the file itself declares — see ``_wild.declared_cell_composition``), the
 **OUTCAR↔vasprun pair-agreement** for VASP output (two readers of one run must agree on
-energy/forces/stress/cell/positions, the mechanized form of v1.2 §4 rule 4).
+energy/forces/stress/cell/positions, the mechanized form of v1.2 §4 rule 4), or the
+**round-trip self-consistency** for the two full read+write LAMMPS formats (a wild file that
+parses cleanly under its declared preset is re-exported through its own exporter, re-parsed,
+and the two canonical objects asserted scientifically equal — the parser and exporter agreeing
+on meaning, the format-native ground truth for formats with no composition tag and no sibling
+reader, D184).
 
 Both assertions are deliberately unforgiving in the same direction: they fail when the parser
 changes behaviour on a committed file, whether the change looks like an improvement or not. A
@@ -17,21 +23,34 @@ tag, so for ``format_id`` in ``{vasprun, outcar}`` it is structurally absent (no
 ``electronic.magnetic_moments`` is **excluded** from the pair agreement: it is an OUTCAR-only
 field (vasprun.xml has no per-ion magnetization block, D171), so the pair oracle asserts the
 honest asymmetry (OUTCAR populates, vasprun leaves ``None``), never agreement — agreement would
-be a fake green.
+be a fake green. The round-trip oracle is LAMMPS-only, and it is a **scientific** round-trip
+(canonical ≈ canonical), never byte-identity: a wild file's formatting is not preserved
+byte-for-byte (the dump identity is gainy, D178), and a refused case produces no object to
+round-trip at all.
 """
 
 from __future__ import annotations
 
+import io
+from typing import Any
+
 import numpy as np
 import pytest
 
+from tests._format_helpers import assert_scientifically_equal, scientific_dump
 from tests.golden import _governance as gov
 from tests.wild import _wild
+from xtalate.conversion import ConversionEngine
+from xtalate.exporters.lammps_data import make_lammps_data_exporter
+from xtalate.exporters.lammps_dump import make_lammps_dump_exporter
 from xtalate.parsers.cif import make_cif_parser
+from xtalate.parsers.lammps_data import make_lammps_data_parser
+from xtalate.parsers.lammps_dump import make_lammps_dump_parser
 from xtalate.parsers.outcar import make_outcar_parser
 from xtalate.parsers.vasprun import make_vasprun_parser
+from xtalate.registry import default_registry
 from xtalate.schema import CanonicalObject
-from xtalate.sdk import ParseError, ParseResult
+from xtalate.sdk import IMAGE_FLAGS_CARRY_KEY, ParseError, ParseResult
 
 _CASES = _wild.wild_cases()
 _IDS = [c.rel_manifest for c in _CASES]
@@ -41,9 +60,32 @@ _IDS = [c.rel_manifest for c in _CASES]
 _CIF_CASES = [c for c in _CASES if c.data["format_id"] == "cif"]
 _CIF_IDS = [c.rel_manifest for c in _CIF_CASES]
 
+#: The round-trip self-consistency oracle applies only to the two full read+write LAMMPS formats
+#: (M49-S1, D184) — the only wild formats with an exporter to round-trip through.
+_LAMMPS_CASES = [c for c in _CASES if c.data["format_id"] in _wild.ROUNDTRIP_FORMATS]
+_LAMMPS_IDS = [c.rel_manifest for c in _LAMMPS_CASES]
+
+#: The parser's recovery hint for each parse-time scenario (the scenario name is the manifest /
+#: engine spelling; the dump parser's species hint is ``supply_species``, not ``missing_species``).
+_DUMP_HINT_BY_SCENARIO = {
+    "ambiguous_units": "ambiguous_units",
+    "missing_species": "supply_species",
+}
+
+
+#: The per-atom type carry the dump exporter *gains* on a round-trip — assigned deterministically
+#: by first appearance and reported as ``LAMMPSDUMP_TYPES_ASSIGNED`` (D178). The scientific
+#: round-trip allows exactly this one audited gain (see :func:`_dump_scientific_dump`).
+_DUMP_TYPE_KEY = "lammps_dump:type"
+
 
 def _parse(case: gov.GoldenCase) -> ParseResult:
+    """Parse the case exactly as its manifest says: plain ``parse`` when the file
+    self-describes, ``parse_recover`` under the manifest's declared presets when it does not.
+    A manifest that declares no preset but a file that needs one refuses — the exact-set test
+    then requires the manifest to name the refusal."""
     fmt = case.data["format_id"]
+    expectation = _wild.load_expectation(case)
     with case.source_path.open("rb") as fh:
         if fmt == "cif":
             return make_cif_parser().parse(fh, filename=case.source_path.name)
@@ -51,6 +93,33 @@ def _parse(case: gov.GoldenCase) -> ParseResult:
             return make_outcar_parser().parse(fh, filename=case.source_path.name)
         if fmt == "vasprun":
             return make_vasprun_parser().parse(fh, filename=case.source_path.name)
+        if fmt == "lammps_dump":
+            dump_parser = make_lammps_dump_parser()
+            if expectation.parse_recover:
+                context = _wild.parse_recovery_specs(expectation.parse_recover)
+                scenario, entry = next(iter(context.items()))
+                return dump_parser.parse_recover(
+                    fh,
+                    filename=case.source_path.name,
+                    hint=_DUMP_HINT_BY_SCENARIO[scenario],
+                    choice=entry["choice"],
+                    parameters=entry["parameters"],
+                )
+            return dump_parser.parse(fh, filename=case.source_path.name)
+        if fmt == "lammps_data":
+            data_parser = make_lammps_data_parser()
+            if expectation.parse_recover:
+                context = _wild.parse_recovery_specs(expectation.parse_recover)
+                scenario, entry = next(iter(context.items()))
+                return data_parser.parse_recover(
+                    fh,
+                    filename=case.source_path.name,
+                    hint=_DUMP_HINT_BY_SCENARIO.get(scenario, scenario),
+                    choice=entry["choice"],
+                    parameters=entry["parameters"],
+                    recovery_context=context,
+                )
+            return data_parser.parse(fh, filename=case.source_path.name)
     raise AssertionError(f"unknown wild-corpus format_id {fmt!r} in {case.rel_manifest}")
 
 
@@ -149,6 +218,152 @@ def test_expansion_matches_the_files_own_declared_composition(case: gov.GoldenCa
         f"  file says (_chemical_formula_sum x _cell_formula_units_Z): {declared}\n"
         f"  parser produced:                                          {produced}\n"
         "  This is the cardinal sin (v0.4 standing rule 4): stop the line."
+    )
+
+
+# --- the LAMMPS round-trip self-consistency oracle (M49-S1, D184) -------------------
+
+
+def _exporter_for(case: gov.GoldenCase) -> Any:
+    fmt = case.data["format_id"]
+    if fmt == "lammps_dump":
+        return make_lammps_dump_exporter()
+    if fmt == "lammps_data":
+        return make_lammps_data_exporter()
+    raise AssertionError(f"no wild-corpus exporter for format_id {fmt!r}")
+
+
+def _reparse_export(
+    case: gov.GoldenCase, exporter: Any, first: CanonicalObject, output: bytes
+) -> CanonicalObject:
+    """Re-parse this exporter's own output. A dump export always writes a declared ``ITEM:
+    UNITS`` header, so it re-parses bare; a data export cannot self-describe (no units, no
+    symbols), so its re-parse rides the exporter's ``reparse_recovery`` hook (D182) — the same
+    context the Validation Engine primes the re-parse with, derived from the object just
+    written."""
+    if case.data["format_id"] == "lammps_dump":
+        return make_lammps_dump_parser().parse(io.BytesIO(output), filename=None).canonical
+    recovery = exporter.reparse_recovery(first)
+    assert recovery is not None, (
+        f"{case.rel_manifest}: the data exporter produced no re-parse context"
+    )
+    return (
+        make_lammps_data_parser()
+        .parse_recover(
+            io.BytesIO(output),
+            filename=None,
+            hint="",
+            choice="",
+            parameters={},
+            recovery_context=recovery,
+        )
+        .canonical
+    )
+
+
+def _dump_scientific_dump(obj: CanonicalObject) -> dict[str, Any]:
+    """The scientific dump with the derived type carry normalised away.
+
+    A dump round-trip deliberately *gains* ``lammps_dump:type`` (numeric types are assigned by
+    first appearance on export and reported as ``LAMMPSDUMP_TYPES_ASSIGNED``, D178) — and a
+    typed source's own numbering may be renumbered the same reported way. The type numbers are
+    format bookkeeping derived from the element symbols, so the self-consistency oracle compares
+    everything else exactly and pins the type carry as the one audited difference.
+    """
+    dumped = scientific_dump(obj)
+    per_atom = dumped.get("user_metadata", {}).get("custom_per_atom")
+    if isinstance(per_atom, dict):
+        per_atom.pop(_DUMP_TYPE_KEY, None)
+    return dumped
+
+
+@pytest.mark.parametrize("case", _LAMMPS_CASES, ids=_LAMMPS_IDS)
+def test_lammps_cases_round_trip_self_consistently(case: gov.GoldenCase) -> None:
+    """The parser and the exporter agree on meaning for a real file.
+
+    ``dump → Canonical → dump' → Canonical'`` (and the data twin) must be a scientific
+    identity: the file parses cleanly under its declared preset, its own exporter re-writes it,
+    the output re-parses (bare for a dump — the export declares its units; via ``reparse_recovery``
+    for a data file), and the two objects are equal within the strict tolerance profile — the
+    M47/M48 identity-round-trip logic, reused. A file whose export is deliberately lossy declares
+    ``roundtrip: skipped`` with the reason; a refused file produces no object at all.
+    """
+    expectation = _wild.load_expectation(case)
+    if expectation.parse_error is not None:
+        pytest.skip("the file is refused; there is no object to round-trip")
+    if expectation.roundtrip != "checked":
+        pytest.skip(f"round-trip not applicable: {expectation.roundtrip_note}")
+
+    first = _parse(case).canonical
+    exporter = _exporter_for(case)
+    out = io.BytesIO()
+    exporter.export(first, out)
+    second = _reparse_export(case, exporter, first, out.getvalue())
+
+    if case.data["format_id"] == "lammps_data":
+        assert_scientifically_equal(first, second)
+        return
+    # lammps_dump: the type carry is the one audited gain (D178) — nothing else may appear or
+    # disappear, and everything else must be scientifically identical.
+    gained = set(second.user_metadata.custom_per_atom) - set(first.user_metadata.custom_per_atom)
+    lost = set(first.user_metadata.custom_per_atom) - set(second.user_metadata.custom_per_atom)
+    assert gained <= {_DUMP_TYPE_KEY}, (
+        f"{case.rel_manifest}: the dump round-trip gained unexpected carries {sorted(gained)} "
+        f"(only the reported {_DUMP_TYPE_KEY!r} type column may appear)"
+    )
+    assert not lost, (
+        f"{case.rel_manifest}: the dump round-trip dropped carries {sorted(lost)} — a drop is a "
+        "silent loss, never acceptable in a round-trip"
+    )
+    assert _dump_scientific_dump(first) == _dump_scientific_dump(second), (
+        f"{case.rel_manifest}: the dump did not round-trip scientifically equal (type carry "
+        f"{_DUMP_TYPE_KEY!r} normalised away)"
+    )
+
+
+def _case_by_name(name: str) -> gov.GoldenCase:
+    for case in _CASES:
+        if case.data["case"] == name:
+            return case
+    raise AssertionError(f"no wild-corpus case named {name!r}")
+
+
+def test_variable_n_refusal_measures_per_frame_counts() -> None:
+    """The genuine variable-N wild case refuses with the per-frame atom counts in the error
+    detail — the accumulating, user-visible v2.0 evidence file the release notes cite (roadmap
+    §4/§10). Measured, never anecdotal: the assertion pins the exact counts the file really
+    holds, so a fixture that stopped being variable-N (or a parser that stopped measuring)
+    fails here."""
+    case = _case_by_name("dump-variable-n-deposition")
+    expectation = _wild.load_expectation(case)
+    assert expectation.parse_error == "LAMMPSDUMP_VARIABLE_ATOM_COUNT"
+    with pytest.raises(ParseError) as excinfo:
+        _parse(case)
+    codes = sorted(i.code for i in excinfo.value.issues if i.severity == "error")
+    assert codes == ["LAMMPSDUMP_VARIABLE_ATOM_COUNT"]
+    message = excinfo.value.issues[0].message
+    # Frame 0 declares 3 atoms, the first diverging frame declares 4 — the refusal lists the
+    # per-frame counts seen so far, never padding or truncation.
+    assert "Per-frame counts seen: [3, 4]" in message, message
+
+
+def test_image_flags_case_predicts_unwrapping_loss_on_export() -> None:
+    """The realistic wrapped + image-flags dump confirms the M46 correctness obligation on a
+    wild file: targeting a format that cannot hold the flags predicts the unwrapping loss via
+    the ordinary pre-flight ``custom_global``-independent capability diff (M46-S3, D176) — the
+    output looks correct but can no longer be unwrapped, and the Conversion Report says so."""
+    case = _case_by_name("dump-declared-metal-image-flags")
+    canonical = _parse(case).canonical
+    assert IMAGE_FLAGS_CARRY_KEY in canonical.user_metadata.custom_per_atom
+    engine = ConversionEngine(default_registry())
+    result = engine.convert(
+        canonical,
+        source_format_id="lammps_dump",
+        target_format_id="extxyz",
+    )
+    assert result.report.status == "completed"
+    assert "LAMMPSDUMP_UNWRAPPING_LOST_ON_EXPORT" in {w.code for w in result.report.warnings}, (
+        "the conversion did not predict the unwrapping loss for a wrapped wild dump"
     )
 
 

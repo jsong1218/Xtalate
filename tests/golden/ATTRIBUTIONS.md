@@ -348,6 +348,69 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **Source:** Crystallography Open Database entry 4000034
 - **URL:** https://www.crystallography.net/cod/4000034.cif
 
+## `lammps_data` / `data-atomic-real-ortho` (wild)
+
+- **Source file:** `structure.data`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic LAMMPS data file (M49-S1): an Ar-Ne mixture in the atomic atom style and real units with element-commented Masses rows and a Velocities block, generalizing the M48 golden atomic-metal-ortho's known-good bytes.
+
+## `lammps_data` / `data-full-no-style-comment` (wild)
+
+- **Source file:** `structure.data`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic LAMMPS data file (M49-S1): a four-ion rock-salt pair in the full column layout whose Atoms section carries no '# <style>' comment, generalizing the M48 golden full-no-style-comment's known-good bytes.
+
+## `lammps_data` / `data-molecular-full-triclinic` (wild)
+
+- **Source file:** `structure.data`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic LAMMPS data file (M49-S1): an ethane-like molecule in the full atom style (molecule-id + charges), triclinic box, with Bonds/Angles/Dihedrals/Impropers and their coefficient blocks plus Pair Coeffs, generalizing the M48 golden full-triclinic-topology's known-good bytes.
+
+## `lammps_dump` / `dump-declared-metal-image-flags` (wild)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic LAMMPS dump (M49-S1): a wrapped single-snapshot metal dump whose oxygen atom has crossed the +x boundary, carrying the ix iy iz image flags that record it, generalizing the M46 golden wrapped-flags-metal.
+
+## `lammps_dump` / `dump-declared-metal-ortho-compute` (wild)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic LAMMPS dump (M49-S1): a declared-metal orthogonal trajectory with velocities and open-ended compute/fix output columns, generalizing the M46 golden metal-ortho-declared's known-good bytes to the custom-column dimension.
+
+## `lammps_dump` / `dump-declared-metal-time` (wild)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic LAMMPS dump (M49-S1): a declared-metal two-frame trajectory written with dump_modify time yes, so every snapshot carries an ITEM: TIME preamble (the run time in the style's time unit), element-labeled with velocities.
+
+## `lammps_dump` / `dump-real-triclinic-typed` (wild)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic LAMMPS dump (M49-S1): a declared-real triclinic trajectory whose atoms are identified by numeric type only (no element column), generalizing the M46 goldens real-triclinic-scaled (tilted box) and typed-atoms-metal (type column).
+
+## `lammps_dump` / `dump-undeclared-metal-ortho` (wild)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic LAMMPS dump (M49-S1): a two-frame orthogonal trajectory written without an ITEM: UNITS header (older dump output, or dump_modify units no), element-labeled with velocities, in the metal style.
+
+## `lammps_dump` / `dump-variable-n-deposition` (wild)
+
+- **Source file:** `dump.lammpstrj`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic LAMMPS dump (M49-S1): a three-snapshot deposition trajectory (3 -> 4 -> 4 atoms) in declared metal units — the grand-canonical/deposition shape the canonical model cannot hold — generalizing the M46 dump block spelling.
+
 ## `outcar` / `killed-truncated-v5` (wild)
 
 - **Source file:** `OUTCAR`

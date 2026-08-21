@@ -1,0 +1,22 @@
+case: dump-declared-metal-image-flags
+format_id: lammps_dump
+source_file: dump.lammpstrj
+sha256: "151eea1c748172b6c52249ac3a606d074c3eae8007e2925cd657660aeed7d171"
+origin:
+  kind: synthetic
+  source: "Authored-realistic LAMMPS dump (M49-S1): a wrapped single-snapshot metal dump whose oxygen atom has crossed the +x boundary, carrying the ix iy iz image flags that record it, generalizing the M46 golden wrapped-flags-metal."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - LAMMPSDUMP_IMAGE_FLAGS_CARRIED
+  frame_count: 1
+  roundtrip: checked
+notes: >-
+  The image-flag wild case (M49-S1 dimension 6): wrapped coordinates plus a complete ix iy iz
+  family carried specifically (never the generic unmapped-column path) with
+  LAMMPSDUMP_IMAGE_FLAGS_CARRIED, which states the wrapped-Cartesian convention alongside. Atom
+  2 at x=0.5 with ix=1 records a crossing the wrapped coordinate alone hides — a non-trivial
+  flag, so the round-trip proves the unwrapping information survives the write-back
+  (LAMMPSDUMP_UNWRAPPING_LOST_ON_EXPORT when a target cannot hold them, exercised by the
+  suite's conversion test). The flags are never applied on parse (D43). Authoring follows
+  D167: the shape generalizes the committed M46 golden wrapped-flags-metal.

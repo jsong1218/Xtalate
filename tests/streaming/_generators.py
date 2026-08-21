@@ -12,6 +12,15 @@ materialized paths are byte-identical and the memory contrast is dominated by th
 The XDATCAR trajectory (M13) is the *honest* test of the same claim: 10⁴ configurations is an
 XDATCAR's ordinary size, not a synthetic stress case, which is why the roadmap put chunking
 before this parser rather than after it.
+
+The LAMMPS dump trajectory (M49-S2, D185) is the deployment format's own proof: a generated
+10⁴-frame dump — the deployment-trajectory format's ordinary production scale, shared by the
+streaming-memory gate and the ``parse_lammpsdump_10k`` / ``convert_lammpsdump_to_extxyz_10k``
+benchmark rows. The dump parser is header-eager / snapshot-lazy, so peak memory tracks one
+snapshot block; the generator emits the real M46 block spelling (a declared ``ITEM: UNITS``
+preamble on the first snapshot, then per-snapshot ``TIMESTEP`` / ``NUMBER OF ATOMS`` /
+``BOX BOUNDS`` / ``ATOMS`` blocks), so the fixture is realistic enough that the same bytes could
+be benchmarked against real LAMMPS output.
 """
 
 from __future__ import annotations
@@ -354,6 +363,48 @@ def write_outcar_trajectory(path: Path, *, n_frames: int, n_atoms: int, seed: in
                 f" energy(sigma->0) =       {energy:.8f}\n"
             )
             fh.write("\n")
+    return path
+
+
+def write_lammps_dump_trajectory(
+    path: Path, *, n_frames: int, n_atoms: int, seed: int = 1234
+) -> Path:
+    """Write a deterministic ``n_frames × n_atoms`` LAMMPS dump to ``path``, one snapshot block
+    at a time (never buffering the whole file).
+
+    Emits the M46 block spelling the parser keys on: a declared ``ITEM: UNITS metal`` preamble
+    on the **first** snapshot only (so no recovery preset is ever needed — the declared-vs-
+    ambiguous contrast), then per snapshot ``ITEM: TIMESTEP`` / ``NUMBER OF ATOMS`` /
+    ``BOX BOUNDS pp pp pp`` / ``ATOMS id element x y z``, element-labeled atoms against a fixed
+    20 Å cubic cell whose positions drift smoothly per frame. Atoms are written in ascending id
+    order, so the id-sort is a no-op and the parse stays warning-free. Fully reproducible from
+    ``(seed, n_frames, n_atoms)``.
+
+    This is the generator the M49-S2 streaming gate (``tests/streaming/test_streaming_memory.py``)
+    and the ``parse_lammpsdump_10k`` / ``convert_lammpsdump_to_extxyz_10k`` benchmarks share: the
+    dump is built frame by frame and written straight to disk, so it is never held whole in memory
+    (the "generated, never committed" discipline, Part 8 §4).
+    """
+    with path.open("w", encoding="utf-8") as fh:
+        for f in range(n_frames):
+            if f == 0:
+                # LAMMPS writes the unit-style preamble on the first snapshot only (dump.cpp
+                # write_header); later snapshots inherit it.
+                fh.write("ITEM: UNITS\nmetal\n")
+            fh.write("ITEM: TIMESTEP\n")
+            fh.write(f"{f}\n")
+            fh.write("ITEM: NUMBER OF ATOMS\n")
+            fh.write(f"{n_atoms}\n")
+            fh.write("ITEM: BOX BOUNDS pp pp pp\n")
+            fh.write("0 20\n0 20\n0 20\n")
+            fh.write("ITEM: ATOMS id element x y z\n")
+            for a in range(n_atoms):
+                sym = _SYMBOLS[a % len(_SYMBOLS)]
+                base = (seed * 131 + a * 17 + f * 7) % 1000 / 100.0
+                x = (base + 0.01 * f) % 20.0
+                y = (base * 1.3 + 0.02 * a) % 20.0
+                z = (base * 0.7 + 0.005 * f) % 20.0
+                fh.write(f"{a + 1} {sym} {x:.6f} {y:.6f} {z:.6f}\n")
     return path
 
 

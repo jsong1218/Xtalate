@@ -559,9 +559,14 @@ class LammpsDumpParser(ParserPlugin):
     # -- sniff -------------------------------------------------------------------------
 
     def sniff(self, head: bytes, filename: str | None) -> float:
-        # The format is unambiguous from its first line: no other text format starts with
-        # "ITEM: TIMESTEP" (Part 3 §6.1). The extension is a hint only, never consulted.
-        return 1.0 if head.startswith(b"ITEM: TIMESTEP") else 0.0
+        # The format is unambiguous from its first ITEM: block: no other text format writes
+        # "ITEM: …" headers (Part 3 §6.1). A declared-units dump (``dump_modify units yes`` —
+        # the modern spelling, and this exporter's own output) writes an ITEM: UNITS / ITEM:
+        # TIME preamble *before* ITEM: TIMESTEP, so any of the three first lines identifies the
+        # format; a bare "ITEM: NUMBER OF ATOMS" (no TIMESTEP block) does not. The extension is
+        # a hint only, never consulted.
+        first_line = head.split(b"\n", 1)[0].strip()
+        return 1.0 if first_line in (b"ITEM: TIMESTEP", b"ITEM: UNITS", b"ITEM: TIME") else 0.0
 
     # -- parse -------------------------------------------------------------------------
 
@@ -887,8 +892,15 @@ class LammpsDumpParser(ParserPlugin):
 def _per_frame_custom(header: _BlockHeader) -> dict[str, object]:
     """The per-snapshot custom values: the step number always, plus an ``ITEM: TIME`` run time
     when the dump declares one (``dump_modify time yes``). Neither is the canonical ``timestep``
-    (a dt in fs the dump never states), so both ride verbatim in ``custom_per_frame`` (P3)."""
-    custom: dict[str, object] = {_STEP_KEY: header.step}
+    (a dt in fs the dump never states), so both ride verbatim in ``custom_per_frame`` (P3).
+
+    The step is emitted as a float because the canonical model's numeric per-frame customs are
+    float64 (``ArrayFx``, Part 2 §3.10) — the materialized path coerces a raw int at the pydantic
+    boundary, so a streamed path that passed the raw int through would diverge from the
+    materialized output byte-for-byte (``0`` vs ``0.0`` in an extXYZ carry). The M49-S2
+    byte-identity gate caught exactly this asymmetry; the streamed path now emits the step in its
+    canonical numeric form."""
+    custom: dict[str, object] = {_STEP_KEY: float(header.step)}
     if header.sim_time is not None:
         custom[_TIME_KEY] = header.sim_time
     return custom

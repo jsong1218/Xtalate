@@ -27,6 +27,7 @@ skip it — an unvalidated conversion is exactly the artifact this project exist
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 from io import BytesIO
@@ -706,6 +707,32 @@ class ConversionEngine:
 
         stream = parser.parse_stream(source_stream, filename=source_filename)
         header = stream.header
+        # A custom container the target writes only *specific* keys of (D69 — extXYZ's
+        # custom_per_atom name pattern, xdatcar's custom_global comment key) must enter the write
+        # plan per-key, not as the whole container: a container-level entry makes `_kept_custom`
+        # keep every key — including ones the pre-flight classifies Removed and the exporter drops
+        # — so the streamed validation expected side would demand them back and false-fail where
+        # the materialized path passes (standing rule 3). The keys are eager in the header (both
+        # containers are object-level), so the refinement is known before the pass, exactly like the
+        # capability plan itself. `custom_per_frame` stays container-level: no streaming target
+        # per-key-classifies it today (xyz's comment-only list rides a non-streaming target).
+        for container, keys in (
+            ("user_metadata.custom_global", header.custom_global),
+            ("user_metadata.custom_per_atom", header.custom_per_atom),
+        ):
+            allowed = caps.writable_custom_keys.get(container)
+            pattern = caps.writable_custom_key_pattern.get(container)
+            if allowed is None and pattern is None:
+                continue
+            write_plan.discard(container)
+            for key in keys:
+                is_writable = (
+                    key in allowed
+                    if allowed is not None
+                    else re.fullmatch(pattern or "", key) is not None
+                )
+                if is_writable:
+                    write_plan.add(f"{container}['{key}']")
         acc = PresenceAccumulator(header.schema_version)
         acc.observe_header(
             trajectory=header.trajectory,

@@ -1,0 +1,26 @@
+case: dump-declared-metal-ortho-compute
+format_id: lammps_dump
+source_file: dump.lammpstrj
+sha256: "98292a8030d9135f5ef67e4570f3458b04501cf6f2c65ca5ed107f075d753d5a"
+origin:
+  kind: synthetic
+  source: "Authored-realistic LAMMPS dump (M49-S1): a declared-metal orthogonal trajectory with velocities and open-ended compute/fix output columns, generalizing the M46 golden metal-ortho-declared's known-good bytes to the custom-column dimension."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE
+    - LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED
+    - LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED
+  frame_count: 2
+  roundtrip: checked
+notes: >-
+  The declared-units / custom-columns wild case (M49-S1 dimension 4): a two-frame metal dump
+  with an explicit 'ITEM: UNITS metal' header (no units scenario fires — the declared-vs-
+  ambiguous contrast), an orthogonal box, element-labeled atoms, a velocity family, and two
+  open-ended compute columns carried to custom_per_atom with
+  LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED. The per-atom potential-energy column c_pe varies across
+  frames, so LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE fires once (custom_per_atom is
+  object-level, Part 2 §3.10) while c_centro stays constant. roundtrip: checked — the export
+  writes every carried column back and the re-parse reproduces the object (the reported
+  lammps_dump:type gain excepted, the M47 identity discipline). Authoring follows D167: the
+  section order and ITEM: spellings generalize the committed M46 golden metal-ortho-declared.

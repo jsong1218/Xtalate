@@ -35,6 +35,23 @@ label-complete training file — per-frame energy, per-atom forces, first-class 
 stress, and (from OUTCAR) first-class per-atom magnetic moments — via
 `xtalate convert OUTCAR --to extxyz` (equally `vasprun.xml --to extxyz`).
 
+**Plus two full read+write LAMMPS formats — `lammps_dump` and `lammps_data` — as a first-class conversion pair.**
+A dump is the production log of a running simulation (one snapshot per chosen interval), a data file
+the self-contained single-configuration input/restart of one system — both register a parser **and** an
+exporter, so each appears read **and** write in `xtalate capabilities` and `convert --to lammps_dump` /
+`--to lammps_data` are real conversions. Together they close the MLIP loop the read-only VASP formats
+feed: **train (extXYZ) → deploy (`lammps_data` restart) → produce (`lammps_dump`) → relabel (extXYZ)**,
+every arrow a reported conversion with its own Conversion Report. The pair carries two never-guessed
+resolutions: `ambiguous_units` (`metal` / `real` / `si`) — a file that declares no unit system is
+**refused** until you supply the choice as a preset (recorded as an Assumption; a dump with a declared
+`ITEM: UNITS` header fires nothing) — and `ambiguous_atom_style` (`atomic` / `charge` / `full`) for data
+files. Image flags, `compute`/`fix` columns, molecular topology, and the run-time step ride as reported
+carries, and a dump whose atom count varies between snapshots is refused with the measured per-frame
+counts (recorded v2.0 groundwork). In the nightly matrix `lammps_data` enrols as a **target** for every
+golden source — a data file declares no units or symbols, so it cannot bare-parse to enrol as a source,
+and its source-side fidelity is proven instead by a dedicated identity round-trip; `lammps_dump` enrols
+as a full source **and** target.
+
 **CIF is treated as real crystallography.** Cell parameters become lattice vectors, fractional coordinates become Cartesian at the parser boundary, and symmetry is expanded **from the operations the file declares** — parsed as exact affine maps over rationals, with sites on a symmetry element merged on a physical 0.05 Å threshold. A file that names a space group but declares *no* operations is **refused**, never read as a partial structure. Site occupancy is a first-class canonical field (`atoms.occupancies`); a target that cannot represent a partial occupancy says so in the report rather than dropping it silently. The exporter writes every atom explicitly under an identity symmetry loop with no space-group symbol — the coordinates it emits are the already-expanded cell, and any symbol above them would assert a setting they no longer encode.
 
 ## What every conversion gives you

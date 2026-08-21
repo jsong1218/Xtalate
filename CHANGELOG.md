@@ -17,6 +17,85 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+## [1.3.0] — 2026-08-21
+
+Schema version: 1.0.0
+
+### Added — `ambiguous_units` recovery + the LAMMPS dump parser (v1.3 M46; D174–D176)
+
+LAMMPS enters the format family. The `ambiguous_units` recovery scenario (`metal` / `real` / `si`,
+parse-time, **never guessed** — an undeclared-units file refuses until the caller supplies
+`--recover ambiguous_units=…`, and a dump with a declared `ITEM: UNITS` header fires nothing) rides a
+shared `sdk/lammps` core, and the streaming-first dump parser reads the ordinary axes honestly:
+image flags carried and reported (with the export-time unwrapping-loss prediction for a target that
+cannot hold them), `compute`/`fix` columns carried as reported per-atom customs, the run-time step
+carried per frame, and a dump whose atom count varies between snapshots **refused** with the measured
+per-frame counts in the error detail (`LAMMPSDUMP_VARIABLE_ATOM_COUNT` — the accumulating v2.0
+evidence).
+
+### Added — the LAMMPS dump exporter + write-side units (v1.3 M47; D177–D179)
+
+`lammps_dump` becomes the first **full-axis** format addition since v0.3: read **and** write. The
+exporter declares its unit-style requirement on the write capability, so the export-time
+`ambiguous_units` refusal reuses the existing pre-flight arm with **no new pre-flight code**; image
+flags write back under the reported `ix iy iz` convention (D178); and the identity round-trip is
+deliberately *gainy* by exactly one audited, reported column (a numeric `type`). The nightly round-trip
+matrix gains the pair, and the read-direction flagship `lammps_dump → extxyz` (relabel-ready) is
+demonstrated end to end.
+
+### Added — the LAMMPS data parser + `ambiguous_atom_style` + topology carry (v1.3 M48-S1; D180)
+
+A data file — the single-configuration input/restart — parses with the sibling `ambiguous_atom_style`
+scenario (`atomic` / `charge` / `full`; an `Atoms # <style>` comment is honored when present, refused
+when absent), and molecular topology (`Bonds` / `Angles` / `Dihedrals` / `Impropers` + every `* Coeffs`
+block) is carried verbatim in `custom_global`, never modelled.
+
+### Added — the LAMMPS data exporter + topology write-back + recovery-aware validation (v1.3 M48-S2; D181–D182)
+
+A data file writes with units-for-free (the same `requires_units_style` write declaration), topology
+**byte-faithfully** (the carried payload re-emits exactly), and a generated first-appearance type map
+audited in the report. `lammps_data` is the first write target whose output cannot self-describe, so
+validation gains the additive `reparse_recovery` exporter hook (D182) — the engine re-parses the
+written bytes through the recovery context the exporter derived, never a bare parse that would false-
+fail. This is the **restart flagship**: `relaxed.extxyz → lammps_data`, the *deploy* arrow.
+
+### Added — `lammps_data` proven full-axis (v1.3 M48-S3; D183)
+
+`lammps_data` is proven a true inverse: the identity round-trip reproduces every column (topology
+byte-faithful) with bare `assert_scientifically_equal` over the golden trio; the matrix enrols it as a
+**target** for every golden source (a data file cannot bare-parse to enrol as a source — that would
+need a silent self-describing default — so source fidelity is carried by the dedicated identity round-
+trip); and two latent recovery-engine gaps the enrolment unmasked (a blanket preset feeding the
+on-demand fabricative path; a mixed-mass fabrication overwriting real values) were fixed at the
+engine.
+
+### Added — LAMMPS real-world hardening as a hybrid corpus (v1.3 M49-S1; D184)
+
+The wild-corpus harness (CIF, then VASP) is generalized a third time: `tests/wild/lammps/` admits
+dump/data cases governed by exact issue-code sets + frame count + a new **`roundtrip`
+self-consistency oracle** — a file that parses cleanly is re-exported through its own exporter and
+re-parsed, and the two canonical objects must agree within tolerance (the LAMMPS-native ground truth
+for full read+write formats). An authored-realistic batch spans metal/real units, ortho + triclinic
+boxes, typed and element-labeled atoms, compute columns, declared `ITEM: UNITS`, image flags,
+molecular topology, a **genuine variable-N deposition dump** (the measured-refusal evidence the v2.0
+roadmap cites), and an atom-style-absent data refusal. Batch 1 is self-authored (Apache-2.0); **real
+community-contributed LAMMPS files are welcome** into the same harness — see the *Contributing
+real-world LAMMPS files* section of the developer guide.
+
+### Added — the 10⁴-frame streaming proof + benchmark rows (v1.3 M49-S2; D185)
+
+A generated 10⁴-frame dump converts to extXYZ **byte-identically** streamed vs. materialized inside
+the M12 memory ceiling (the deployment-trajectory format at its ordinary production scale, proven
+with the XDATCAR proof's own harness), and `parse_lammpsdump_10k` / `convert_lammpsdump_to_extxyz_10k`
+join the Part 8 §4 benchmark table (measured, not gated). Three required engine fixes ship with the
+proof, each flagged to the maintainer: the dump parser's timestep carry is emitted as float (the
+streamed-vs-materialized byte divergence, one line); the dump sniffer accepts the `ITEM: UNITS` /
+`ITEM: TIME` preamble (Xtalate's own exporter output is now re-sniffable); and `convert_stream`'s
+write plan refines per-key-classified custom containers against the target's key declarations, so a
+colon-scoped per-atom custom (a dump's `lammps_dump:id`) is dropped from the streamed expected object
+exactly as the materialized path drops it — a `metadata_preservation` false-fail on every
+`lammps_dump → extxyz` streaming conversion is gone.
+
 ## [1.2.0] — 2026-08-15
 
 Schema version: 1.0.0
