@@ -361,6 +361,21 @@ def test_non_xml_is_vasprun_malformed() -> None:
     assert excinfo.value.issues[0].code == "VASPRUN_MALFORMED_XML"
 
 
+def test_entity_expansion_is_refused_by_secure_xml_parser() -> None:
+    # This deliberately tiny billion-laughs-shaped payload must be refused before entity
+    # expansion, rather than being handed to an untrusted stdlib XML parser (HIGH-V2, D190).
+    payload = b"""<!DOCTYPE lolz [
+      <!ENTITY lol \"lol\">
+      <!ENTITY lol1 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">
+    ]>
+    <vasprun>&lol1;</vasprun>"""
+    with pytest.raises(ParseError) as excinfo:
+        _parse(payload)
+    issue = excinfo.value.issues[0]
+    assert issue.code == "VASPRUN_MALFORMED_XML"
+    assert "secure parser" in issue.message
+
+
 def test_vasp65_flat_layout_is_refused_not_misread() -> None:
     # VASP 6.5's flat <modeling> layout has no <calculation> blocks; reading it as the
     # classical layout would silently misparse every ionic step (P1) — so it is refused.

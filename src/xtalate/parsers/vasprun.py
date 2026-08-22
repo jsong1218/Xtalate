@@ -55,12 +55,14 @@ coordinate mode than frame 0's — each step is still converted under its own mo
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any, BinaryIO
+from xml.etree.ElementTree import Element
 
 import numpy as np
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 from pydantic import JsonValue
 
 from xtalate.parsers._common import build_provenance
@@ -133,7 +135,7 @@ def _carry_warning(name: str, *, location: str) -> ParseIssue:
     )
 
 
-def _row_values(v: ET.Element, where: str) -> list[float]:
+def _row_values(v: Element, where: str) -> list[float]:
     """The float values of one ``<v>`` row, or a ``VASPRUN_MALFORMED_XML`` error.
 
     A ``<v>`` with no text or with non-numeric content is a malformed-file finding under
@@ -152,13 +154,13 @@ def _row_values(v: ET.Element, where: str) -> list[float]:
         ) from None
 
 
-def _varray_rows(varray: ET.Element) -> list[list[float]]:
+def _varray_rows(varray: Element) -> list[list[float]]:
     """The float rows of a ``<varray>`` (one ``[float, ...]`` per ``<v>`` child)."""
     where = f"<varray name={varray.get('name')!r}>"
     return [_row_values(v, where) for v in varray]
 
 
-def _require_name(elem: ET.Element, where: str) -> str:
+def _require_name(elem: Element, where: str) -> str:
     """A walked tag's ``name`` attribute, or a malformed finding.
 
     VASP never writes unnamed ``<i>``/``<v>``/``<varray>`` tags in the walked blocks; an
@@ -175,7 +177,7 @@ def _require_name(elem: ET.Element, where: str) -> str:
     return name
 
 
-def _scalar_float(elem: ET.Element) -> float | None:
+def _scalar_float(elem: Element) -> float | None:
     """The value of an ``<i>`` scalar, or ``None`` when the text does not parse as one float.
 
     ``None`` (not an error) for a tag whose value is not a plain scalar — the reader's caller
@@ -190,7 +192,7 @@ def _scalar_float(elem: ET.Element) -> float | None:
         return None
 
 
-def _read_program(generator: ET.Element) -> str | None:
+def _read_program(generator: Element) -> str | None:
     """The declared VASP program string (``<i name="program">``) → ``simulation.source_code``."""
     for i in generator.findall("i"):
         if i.get("name") == "program" and i.text is not None:
@@ -198,7 +200,7 @@ def _read_program(generator: ET.Element) -> str | None:
     return None
 
 
-def _read_system(incar: ET.Element) -> str | None:
+def _read_system(incar: Element) -> str | None:
     """The declared ``SYSTEM`` label → ``simulation.extra['system']``."""
     for i in incar.findall("i"):
         if i.get("name") == _SYSTEM_TAG and i.text is not None:
@@ -206,7 +208,7 @@ def _read_system(incar: ET.Element) -> str | None:
     return None
 
 
-def _read_species(atominfo: ET.Element) -> list[tuple[int, int]]:
+def _read_species(atominfo: Element) -> list[tuple[int, int]]:
     """Per-species ``(Z, count)`` from the atom-info blocks, in declared species order.
 
     The classical layout carries one ``<v>`` per species in ``<array name="atomtypes">``
@@ -279,7 +281,7 @@ class _Structure:
     carries: dict[str, Any]
 
 
-def _read_structure(elem: ET.Element, issues: list[ParseIssue], *, location: str) -> _Structure:
+def _read_structure(elem: Element, issues: list[ParseIssue], *, location: str) -> _Structure:
     """Read one ``<structure>``: basis → lattice, positions → raw rows + mode, and every
     other ``<i>``/``<varray>`` tag in the walked block carried verbatim (P1).
 
@@ -326,7 +328,7 @@ def _as_lattice(rows: list[list[float]]) -> np.ndarray:
     return np.asarray(rows, dtype=float)
 
 
-def _read_energy(calc: ET.Element, frame_index: int) -> tuple[float, dict[str, Any]]:
+def _read_energy(calc: Element, frame_index: int) -> tuple[float, dict[str, Any]]:
     """The step's ``electronic.total_energy`` (``e_0_energy``) plus the other energy-block
     scalars carried verbatim per frame. A missing ``<energy>`` block or a missing
     ``e_0_energy`` is a ``ParseError`` (P3 — never a defaulted energy)."""
@@ -365,7 +367,7 @@ def _read_energy(calc: ET.Element, frame_index: int) -> tuple[float, dict[str, A
     return total, carries
 
 
-def _read_forces(calc: ET.Element, frame_index: int) -> np.ndarray:
+def _read_forces(calc: Element, frame_index: int) -> np.ndarray:
     varray = next((v for v in calc.findall("varray") if v.get("name") == "forces"), None)
     if varray is None:
         raise _error(
@@ -377,7 +379,7 @@ def _read_forces(calc: ET.Element, frame_index: int) -> np.ndarray:
     return forces(_varray_rows(varray))
 
 
-def _read_stress(calc: ET.Element, frame_index: int) -> np.ndarray | None:
+def _read_stress(calc: Element, frame_index: int) -> np.ndarray | None:
     """The step's ``electronic.stress`` — the ``<varray name="stress">`` tensor mapped
     deterministically (kBar, compression-positive → tension-positive eV/Å³, D161).
 
@@ -413,7 +415,7 @@ class _Header:
     custom_global: dict[str, JsonValue]
 
 
-def _read_header(context: Iterator[tuple[str, ET.Element]], issues: list[ParseIssue]) -> _Header:
+def _read_header(context: Iterator[tuple[str, Element]], issues: list[ParseIssue]) -> _Header:
     """Parse the document header and stop at the first ``<calculation>`` start.
 
     The ``context`` iterator is shared with the frame loop, which resumes from exactly this
@@ -534,7 +536,7 @@ class _StepState:
 
 
 def _iter_calculations(
-    context: Iterator[tuple[str, ET.Element]],
+    context: Iterator[tuple[str, Element]],
     header: _Header,
     issues: list[ParseIssue],
 ) -> Iterator[StreamFrame]:
@@ -550,7 +552,7 @@ def _iter_calculations(
 
 
 def _build_frame(
-    calc: ET.Element, state: _StepState, frame_index: int, issues: list[ParseIssue]
+    calc: Element, state: _StepState, frame_index: int, issues: list[ParseIssue]
 ) -> StreamFrame:
     """Build one frame from one complete ``<calculation>`` subtree.
 
@@ -678,6 +680,11 @@ class VasprunParser(ParserPlugin):
         issues: list[ParseIssue] = []
         try:
             header = _read_header(context, issues)
+        except DefusedXmlException as exc:
+            raise _error(
+                "VASPRUN_MALFORMED_XML",
+                f"unsafe XML construct refused by the secure parser: {exc}",
+            ) from exc
         except ET.ParseError as exc:
             raise _error("VASPRUN_MALFORMED_XML", f"file is not well-formed XML: {exc}") from exc
 
@@ -689,6 +696,11 @@ class VasprunParser(ParserPlugin):
                 for frame in _iter_calculations(context, header, issues):
                     yielded += 1
                     yield frame
+            except DefusedXmlException as exc:
+                raise _error(
+                    "VASPRUN_MALFORMED_XML",
+                    f"unsafe XML construct refused by the secure parser: {exc}",
+                ) from exc
             except ET.ParseError as exc:
                 if yielded == 0:
                     raise _error(

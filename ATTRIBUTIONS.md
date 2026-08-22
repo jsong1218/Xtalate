@@ -23,7 +23,7 @@ those licenses carry can never silently lapse.
 ## Core runtime dependencies (`pip install xtalate`)
 
 The pure library + CLI. Kept deliberately small (`docs/private/DECISIONS.md` D4/D7): four
-dependencies, one of them the sole scientific-I/O workhorse.
+dependencies, including one secure XML parser and the sole scientific-I/O workhorse.
 
 | Distribution | Declared floor | License (SPDX) |
 |---|---|---|
@@ -31,8 +31,11 @@ dependencies, one of them the sole scientific-I/O workhorse.
 | [numpy](https://github.com/numpy/numpy) | `>=1.26` | BSD-3-Clause (with bundled 0BSD / MIT / Zlib / CC0-1.0 components) |
 | [ase](https://gitlab.com/ase/ase) | `>=3.29,<4` | LGPL-2.1-or-later |
 | [PyYAML](https://github.com/yaml/pyyaml) | `>=6` | MIT |
+| [defusedxml](https://github.com/tiran/defusedxml) | `>=0.7.1` | PSF-2.0 |
 
-**ASE is the sole scientific dependency** (`docs/private/DECISIONS.md` D7). It backs the extXYZ
+**defusedxml is the secure XML dependency** for the untrusted `vasprun.xml` parser; it runs in
+library code before any optional service layer is involved. **ASE is the sole scientific dependency**
+(`docs/private/DECISIONS.md` D7). It backs the extXYZ
 parser/exporter and the ASE `.traj` format, and nothing else in the core reaches for it; pymatgen
 was evaluated and rejected (D4/D7) to keep the dependency surface — and the attack/CVE surface
 (risk R10) — minimal. ASE is **LGPL-2.1-or-later**: Xtalate imports it as an ordinary library

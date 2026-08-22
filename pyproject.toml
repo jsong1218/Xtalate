@@ -40,6 +40,7 @@ dependencies = [
     "numpy>=1.26",
     "ase>=3.29,<4",
     "pyyaml>=6",
+    "defusedxml>=0.7.1",
 ]
 
 [project.optional-dependencies]
@@ -77,6 +78,7 @@ dev = [
     "mypy>=1.10",
     "import-linter>=2.0",
     "types-PyYAML>=6",
+    "types-defusedxml>=0.7",
     "hypothesis>=6.100",
     # The service dependencies are pulled into `dev` so the one existing CI gate (which installs
     # `.[dev]`) type-checks and tests `backend/` from M21 — the backend suite runs beside the
