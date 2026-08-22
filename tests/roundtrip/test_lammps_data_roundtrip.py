@@ -113,7 +113,10 @@ def test_lammps_data_identity_round_trip(case: str, style: str, species: str) ->
     # Validation re-reads the non-self-describing output for us and diffs it — it must pass, and it
     # is the same recovery-aware re-parse we then repeat by hand to compare objects (D181).
     assert result.validation is not None
-    assert result.validation.status == "passed"
+    expected_validation_status = (
+        "passed_with_warnings" if case == "full-triclinic-topology" else "passed"
+    )
+    assert result.validation.status == expected_validation_status
 
     parser = make_lammps_data_parser()
     exporter = make_lammps_data_exporter()

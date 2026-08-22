@@ -69,6 +69,11 @@ columns, which is exactly the fragility the 5.x↔6.x whitespace/column/label dr
 version banner's **major** component is the layout-recognition discriminator: majors 5 and 6 are
 recognized and read; any other major (or no banner) is refused as ``OUTCAR_UNRECOGNIZED_LAYOUT``
 rather than best-effort partial-parsed — a silently wrong force block poisons a training set.
+
+**Stress evidence honesty.** The compression-positive → conventional tension-positive sign flip is
+externally corroborated by the pymatgen issue #1388 discussion. The repository's OUTCAR↔vasprun
+cross-check is synthetic and therefore is not first-party real-file proof; a real paired
+OUTCAR/vasprun.xml fixture is explicitly ticketed for v1.4 rather than implied by this test.
 """
 
 from __future__ import annotations
@@ -196,6 +201,17 @@ _PARSE_NOTES = [
     _STEP_CELL_NOTE,
     _STRESS_NOTE,
     _MAGNETIC_MOMENTS_NOTE,
+]
+
+_LOSSY_NOTES = [
+    "The total-charge table is not mapped to a canonical field.",
+    "DAV electronic-step diagnostics are not mapped to a canonical field.",
+    "E-fermi is not mapped to a canonical field.",
+    "NELECT is not mapped to a canonical field.",
+    "OUTCAR timing diagnostics are not mapped to a canonical field.",
+    "The per-component stress breakdown is not mapped beyond the canonical stress tensor.",
+    "K-point listings are not mapped to a canonical field.",
+    "INCAR and POTCAR echo sections are not mapped to canonical metadata.",
 ]
 
 
@@ -992,7 +1008,13 @@ def _steps(
 
 
 class OutcarParser(ParserPlugin):
-    """VASP OUTCAR reader (Part 3 §3; v1.2 M43-S1). Parser-only (D159)."""
+    """VASP OUTCAR reader (Part 3 §3; v1.2 M43-S1). Parser-only (D159).
+
+    The compression-positive → conventional tension-positive stress sign flip is externally
+    corroborated by the pymatgen issue #1388 discussion. The repository's OUTCAR↔vasprun
+    cross-check is synthetic and is not first-party real-file proof; a real paired fixture is
+    explicitly ticketed for v1.4.
+    """
 
     format_id = FORMAT_ID
     format_name = "VASP OUTCAR"
@@ -1177,7 +1199,10 @@ class OutcarParser(ParserPlugin):
             max_frames=None,  # a trajectory: unbounded step count
             required_fields=[],  # read side: absence is honoured, not required
             native_coordinate_system="cartesian",
-            lossy_notes=[],
+            # OUTCAR contains useful diagnostics beyond the canonical mapping. Name those
+            # intentional omissions explicitly so a label-complete parse is not mistaken for a
+            # byte-complete read (P1, MED-V3).
+            lossy_notes=list(_LOSSY_NOTES),
         )
 
 

@@ -30,7 +30,7 @@ describe("DemoPrivacyGate", () => {
     expect(screen.queryByTestId("demo-privacy-gate")).not.toBeInTheDocument();
   });
 
-  it("blocks with a privacy warning on the demo before it is acknowledged", async () => {
+  it("shows an advisory privacy notice on the demo before it is acknowledged", async () => {
     vi.stubEnv("NEXT_PUBLIC_DEMO_BANNER", "1");
     render(<DemoPrivacyGate />);
 
@@ -48,7 +48,7 @@ describe("DemoPrivacyGate", () => {
     render(<DemoPrivacyGate />);
 
     await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("button", { name: /i understand/i }));
+    fireEvent.click(screen.getByRole("button", { name: /read the notice/i }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(localStorage.getItem(DEMO_PRIVACY_ACK_KEY)).toBe("1");
@@ -61,7 +61,7 @@ describe("DemoPrivacyGate", () => {
     expect(screen.queryByTestId("demo-privacy-gate")).not.toBeInTheDocument();
   });
 
-  it("does not dismiss on Escape — acknowledgment is required", async () => {
+  it("does not dismiss on Escape — the notice remains deliberate", async () => {
     vi.stubEnv("NEXT_PUBLIC_DEMO_BANNER", "1");
     render(<DemoPrivacyGate />);
 

@@ -7,12 +7,12 @@
 # that appears from an upstream change, e.g. a new advisory, is caught even without a push), plus
 # a manual trigger.
 #
-# Unlike ci.yml / main.yml / nightly.yml — which pin actions by moving tag for a solo maintainer's
-# convenience — this workflow pins every action by full commit SHA (with the version in a comment).
-# Pinning by hash is itself one of the checks Scorecard rewards, and this is the one workflow where
-# an unpinned supply-chain action would undercut the very thing being measured. The SHAs below are
-# the ones OpenSSF pins in its own scorecard-analysis workflow; bump them (and the comment) together
-# when updating.
+# Every workflow — ci.yml / main.yml / nightly.yml and this one — pins its actions by full commit
+# SHA (with the version in a trailing comment), which is itself one of the checks Scorecard rewards:
+# an unpinned supply-chain action anywhere would undercut the very thing being measured. The SHAs
+# below are the ones OpenSSF pins in its own scorecard-analysis workflow; bump them (and the comment)
+# together when updating. Because the pins are frozen (there is no Dependabot config), the maintainer
+# advances them by hand when adopting a new action release.
 #
 # NOTE for the maintainer: the SARIF upload needs GitHub code scanning enabled for the repo (free on
 # public repositories). `publish_results: true` publishes the score to the OpenSSF API, which is what

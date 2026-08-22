@@ -69,6 +69,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from tests.golden import _governance as gov
+from xtalate.cli.main import _parse_recover as _cli_parse_recover
+from xtalate.cli.main import _UsageError as _CliUsageError
 
 WILD_ROOT = gov.WILD_ROOT
 
@@ -216,7 +218,7 @@ def load_expectation(case: gov.GoldenCase) -> WildExpectation:
         if roundtrip not in (None, "skipped"):
             raise WildExpectationError(
                 f"{where}: a refused file produces no object to round-trip, so 'roundtrip' "
-                "must be omitted or 'skipped' — not {roundtrip!r}"
+                f"must be omitted or 'skipped' — not {roundtrip!r}"
             )
         note = str(raw.get("roundtrip_note", "")).strip()
         if roundtrip == "skipped" and not note:
@@ -360,54 +362,35 @@ def _recovery_specs(raw: Any, *, where: str, field: str) -> tuple[str, ...]:
 
 def parse_recovery_specs(specs: Sequence[str]) -> dict[str, dict[str, Any]]:
     """Parse CLI-style recovery preset strings into the ``{scenario: {choice, parameters}}`` map
-    the parse-time recovery hooks consume — the same grammar as the CLI's ``--recover``
-    (``SCENARIO=CHOICE[,param=value…]``), so a manifest preset reads exactly like the command
-    line that reproduces it. Validates the scenario name against the known parse-time set and
-    rejects a duplicate scenario (a file needs each fact resolved once)."""
-    choices: dict[str, dict[str, Any]] = {}
-    for spec in specs:
-        scenario, sep, rest = spec.partition("=")
-        if not scenario or not sep or not rest:
-            raise WildExpectationError(
-                f"recovery preset {spec!r} must be SCENARIO=CHOICE[,param=value…]"
-            )
-        scenario = scenario.strip()
+    the parse-time recovery hooks consume.
+
+    The ``SCENARIO=CHOICE[,param=value…]`` grammar — and its int/float/str value coercion — is the
+    CLI's own ``--recover`` parser (:func:`xtalate.cli.main._parse_recover`), reused verbatim so a
+    manifest preset reads *and parses* exactly like the command line that reproduces it. That is the
+    whole point of the shared parser: one grammar, no drift between the wild corpus and the tool.
+    On top of it this layers the wild-corpus rules the CLI does not enforce — the scenario must be a
+    known parse-time scenario, and no scenario may repeat (a file needs each fact resolved once)."""
+    spec_list = list(specs)
+    try:
+        choices = _cli_parse_recover(spec_list)
+    except _CliUsageError as exc:
+        # Re-raise the CLI grammar error as a manifest error so a malformed preset fails the
+        # manifest, not the suite, and reads with the same "recovery preset …" framing.
+        raise WildExpectationError(f"recovery preset: {exc}") from exc
+    if len(choices) != len(spec_list):
+        # ``_parse_recover`` keys on scenario, so a repeated scenario silently collapses; the count
+        # mismatch is how we recover the duplicate the CLI would have overwritten.
+        raise WildExpectationError(
+            f"recovery presets {spec_list!r} name a scenario twice; a file needs each "
+            "parse-time fact resolved once"
+        )
+    for scenario in choices:
         if scenario not in _PARSE_TIME_SCENARIOS:
             raise WildExpectationError(
-                f"recovery preset {spec!r} names unknown parse-time scenario {scenario!r}; "
+                f"recovery preset names unknown parse-time scenario {scenario!r}; "
                 f"the LAMMPS parse-time scenarios are {sorted(_PARSE_TIME_SCENARIOS)}"
             )
-        if scenario in choices:
-            raise WildExpectationError(
-                f"recovery preset {spec!r} names {scenario!r} twice; a file needs each parse-time "
-                "fact resolved once"
-            )
-        parts = rest.split(",")
-        choice = parts[0].strip()
-        if not choice:
-            raise WildExpectationError(f"recovery preset {spec!r} names an empty choice")
-        params: dict[str, Any] = {}
-        for param in parts[1:]:
-            name, eq, value = param.partition("=")
-            if not eq or not name.strip():
-                raise WildExpectationError(
-                    f"recovery preset {spec!r}: parameter {param!r} must be name=value"
-                )
-            params[name.strip()] = _coerce_preset_value(value)
-        choices[scenario] = {"choice": choice, "parameters": params}
     return choices
-
-
-def _coerce_preset_value(value: str) -> Any:
-    """Coerce a preset parameter value to int, then float, else leave it a string — the CLI's
-    ``--recover`` coercion, so ``species=1:Si 2:O`` stays a string while a numeric parameter
-    reads as a number."""
-    for cast in (int, float):
-        try:
-            return cast(value)
-        except ValueError:
-            continue
-    return value
 
 
 def validate_findings(case: gov.GoldenCase) -> list[str]:

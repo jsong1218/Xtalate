@@ -17,7 +17,7 @@
 # shape.
 
 # --- Stage A: build the frontend standalone bundle ----------------------------------------------
-FROM node:20-slim AS frontend-build
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS frontend-build
 
 WORKDIR /repo
 
@@ -47,7 +47,7 @@ ENV API_PROXY_TARGET=http://localhost:8000 \
 RUN cd frontend && npm run build
 
 # --- Final stage: the co-located runtime --------------------------------------------------------
-FROM python:3.13-slim
+FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a
 
 # tini as PID 1 so the launcher and its two children get clean signals and no zombies; the Node
 # runtime copied from the build stage (python:3.13-slim already carries node's shared libs —

@@ -380,6 +380,36 @@ def test_upload_reference_atom_count_mismatch_refuses() -> None:
     assert exc.value.issues[0].code == "LAMMPSDUMP_MISSING_SPECIES"
 
 
+# --- external invariant: non-zero-origin scaled/unscaled agreement -------------------
+
+
+def _nonzero_origin_dump(coordinates: str) -> bytes:
+    return (
+        b"ITEM: UNITS\nmetal\n"
+        b"ITEM: TIMESTEP\n0\n"
+        b"ITEM: NUMBER OF ATOMS\n1\n"
+        b"ITEM: BOX BOUNDS pp pp pp\n2 12\n-3 7\n4 14\n"
+        + f"ITEM: ATOMS id element {coordinates}\n1 Si ".encode()
+        + (b"0.25 0.5 0.75\n" if coordinates == "xs ys zs" else b"4.5 2.0 11.5\n")
+    )
+
+
+def test_scaled_and_unscaled_coordinates_agree_for_nonzero_origin() -> None:
+    """The self-consistency round-trip oracle re-anchors LAMMPS output at zero, so it cannot
+    detect an origin-frame asymmetry. This external invariant pins both source spellings against
+    hand-computed canonical coordinates instead (MED-2, D187)."""
+    scaled = PARSER.parse(io.BytesIO(_nonzero_origin_dump("xs ys zs")), filename="scaled.dump")
+    unscaled = PARSER.parse(io.BytesIO(_nonzero_origin_dump("x y z")), filename="unscaled.dump")
+
+    expected = [2.5, 5.0, 7.5]  # (0.25, 0.5, 0.75) @ diag(10,10,10), relative to (2,-3,4).
+    assert scaled.canonical.frames[0].atoms.positions[0].tolist() == expected
+    assert unscaled.canonical.frames[0].atoms.positions[0].tolist() == expected
+    np.testing.assert_array_equal(
+        scaled.canonical.frames[0].atoms.positions,
+        unscaled.canonical.frames[0].atoms.positions,
+    )
+
+
 # --- triclinic exactness (end to end through the parser) -----------------------------
 
 

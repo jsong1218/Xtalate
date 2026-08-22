@@ -208,6 +208,8 @@
           "7 bonds",
           "1 bond types"
         ],
+        "declared_atom_types": 2,
+        "atom_types_line_in_counts": false,
         "sections": [
           {
             "section": "Bonds",

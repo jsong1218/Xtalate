@@ -96,6 +96,45 @@ colon-scoped per-atom custom (a dump's `lammps_dump:id`) is dropped from the str
 exactly as the materialized path drops it — a `metadata_preservation` false-fail on every
 `lammps_dump → extxyz` streaming conversion is gone.
 
+### Fixed — the v1.2/v1.3 architectural review
+
+The combined v1.2 + v1.3 architectural review (the v1.2 review was folded in here, having been
+skipped before the v1.3 cut) audited both the VASP-output (M42–M45) and LAMMPS (M46–M49) work and
+folded its fixes back into this release (D64; the package/schema flip was already done at M49-S3, so
+no version re-flip). No public API, schema, or CLI-flag shape changed.
+
+- **LAMMPS dump: scaled coordinates with a non-zero box origin decoded to the wrong absolute
+  positions.** `xs`/`ys`/`zs` coordinates were mapped to absolute Cartesian (`frac @ lattice +
+  origin`) while the unscaled branch worked relative to the lower box corner, so the same
+  configuration written both ways parsed to canonical positions differing by the whole origin vector.
+  The scaled branch now subtracts the origin, and a fixture-level external-invariant test pins the
+  absolute values the self-consistency round-trip oracle structurally could not.
+- **LAMMPS data: two distinct atom types sharing one element symbol collapsed to a single output
+  type,** orphaning the carried atom-type-indexed `Pair Coeffs` / `PairIJ Coeffs` against a
+  renumbered `Atoms` section — silently, falsifying the byte-faithful-topology guarantee. The exporter
+  now preserves the source per-atom type numbering whenever topology is carried, with a defensive
+  declared-vs-emitted type-count cross-check.
+- **vasprun.xml parsed through unguarded stdlib XML.** The reader is hardened with `defusedxml`
+  (entity-expansion / XXE refusal) now that VASP output is the first attacker-suppliable upload routed
+  to an XML parser.
+- **Validation status over-exempted reparse warnings for recovery-assisted targets.** The exemption
+  that keeps a `lammps_data` reparse from downgrading on its own units/species/atom-style recovery
+  notes was scoped to exactly those codes; ordinary carried-topology / carried-section / carried-image
+  warnings now downgrade to `passed_with_warnings` as they do for self-describing targets.
+- **OUTCAR reported no lossy notes while silently dropping several sections** (total-charge table, DAV
+  steps, `E-fermi`, `NELECT`, k-points, timing, INCAR/POTCAR echo); these are now named in
+  `lossy_notes` (P1). The stress sign-convention evidence basis is documented explicitly, with a real
+  VASP OUTCAR+vasprun pair fixture ticketed to v1.4 to replace the synthetic cross-check.
+- **Web UI: the write-side `ambiguous_units` recovery trigger was mis-ranked as parse-time** because
+  the scenario code appeared twice in the resolution-ordering list and `indexOf` returned the first;
+  the write-side occurrence is now stage-distinguished so it orders last as intended. The hosted-demo
+  privacy notice's "blocking" language is corrected to advisory (it is a client-side notice, not a
+  server-enforced gate).
+- **Documentation drift:** the README version badge, `docs/ARCHITECTURE.md` current-status + glossary,
+  and `docs/API.md` §4 supported-formats list are brought current with the VASP and LAMMPS formats and
+  the parser-only extensibility seam; the `[1.2.0]` M43 entry now cites D167 (the OUTCAR intra-step
+  ordering correction that shipped uncited).
+
 ## [1.2.0] — 2026-08-15
 
 Schema version: 1.0.0
@@ -156,7 +195,7 @@ exporter's declared `stress_output_convention` via the shared `_carried_to_canon
 for real — identical to the batch verdict, restoring the streamed==batch invariant (M12 standing
 rule 3). No schema/SDK-ABC/`/v1`/CLI-flag change; `SCHEMA_VERSION` stays `1.0.0`.
 
-### Added — OUTCAR reads label-complete as the second read-only VASP-output format, with version-drift resilience and torn-tail recovery (v1.2 M43-S1/S2/S3; D164–D166)
+### Added — OUTCAR reads label-complete as the second read-only VASP-output format, with version-drift resilience and torn-tail recovery (v1.2 M43-S1/S2/S3; D164–D167)
 
 OUTCAR, VASP's per-run log, joins vasprun.xml as a **parser-only** format (always a *source*, never a conversion target — a code's output is a source). The reader is streaming-first and header-eager / ionic-step-lazy, and its field mapping reuses the shared `_vasp` core verbatim so the two VASP readers cannot diverge (D160): Cartesian positions read as-is, per-step `cell.lattice_vectors` from each step's own `direct lattice vectors` block (the NpT form), `electronic.total_energy` = `energy(sigma->0)` (the same quantity as vasprun.xml's `e_0_energy`, with `energy without entropy` carried verbatim), `dynamics.forces` verbatim, and `simulation.source_code` = the version banner. The `in kB` Voigt-6 stress line carries the *same* compression-positive kBar sign as vasprun.xml's stress varray and maps through the shared `stress_from_vasp_kbar(stress_voigt6_vasp_to_full(...))` — pinned by the OUTCAR↔vasprun cross-check (standing rule 4), never assumed. **Version drift is the central concern:** block location keys off stable anchor substrings with whitespace-split column reads (never fixed byte columns), so both VASP 5.x and 6.x layouts read to identical canonical values; an unrecognized layout (`OUTCAR_UNRECOGNIZED_LAYOUT`) or an atom-count-inconsistent step (`OUTCAR_INCONSISTENT_STEP`) is **refused**, never partial-parsed. A killed job's torn tail refuses without a preset and, under the reused `truncate_corrupt_tail=truncate` choice, keeps the valid prefix with the dropped tail recorded as an `OUTCAR_TRUNCATED` warning — no new recovery scenario. New format-prefixed `OUTCAR_*` codes (`OUTCAR_EMPTY` / `OUTCAR_MISSING_BLOCK` / `OUTCAR_UNRECOGNIZED_LAYOUT` / `OUTCAR_INCONSISTENT_STEP` / `OUTCAR_TRUNCATED` / `OUTCAR_ENCODING_ERROR` + warning `OUTCAR_UNMAPPED_LINE_CARRIED`). No schema, SDK-ABC, `/v1`, or CLI-flag shape change; `SCHEMA_VERSION` stays `1.0.0` (D158; the `1.2.0` package bump is M45's).
 

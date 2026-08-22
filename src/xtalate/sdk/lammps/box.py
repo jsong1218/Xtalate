@@ -30,9 +30,11 @@ The orthogonal box is the tilt=0 special case: the inversion is the identity and
 three edge vectors are diagonal.
 
 Scaled (``xs``/``ys``/``zs``) coordinates are fractional in the tilted box, so the
-scaled→Cartesian mapping is ``r = origin + frac·lattice`` where ``origin = (xlo, ylo,
+scaled→Cartesian helper mapping is ``r = origin + frac·lattice`` where ``origin = (xlo, ylo,
 zlo)`` — the same mapping LAMMPS itself uses (``x = xlo + sx·lx + sy·xy + sz·xz`` etc.,
-per the howto's general-to-restricted discussion).
+per the howto's general-to-restricted discussion). The LAMMPS dump parser subtracts that origin
+after using this helper because canonical dump positions are expressed relative to the lower box
+corner, matching its unscaled-coordinate branch and the exporter.
 """
 
 from __future__ import annotations
@@ -47,7 +49,9 @@ class Box:
     """A LAMMPS box in canonical form: an explicit lattice plus its origin (Å).
 
     ``lattice`` holds the edge vectors as rows (``a``, ``b``, ``c``), so the
-    scaled→Cartesian mapping is the single matrix multiply ``frac @ lattice + origin``.
+    scaled→Cartesian mapping is the single matrix multiply ``frac @ lattice + origin``. The
+    dump parser removes ``origin`` after this absolute helper mapping when constructing canonical
+    positions; data-file coordinates remain absolute as written.
     """
 
     lattice: np.ndarray  # 3×3, row vectors (Å)

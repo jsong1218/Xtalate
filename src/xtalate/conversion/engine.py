@@ -714,8 +714,15 @@ class ConversionEngine:
         # — so the streamed validation expected side would demand them back and false-fail where
         # the materialized path passes (standing rule 3). The keys are eager in the header (both
         # containers are object-level), so the refinement is known before the pass, exactly like the
-        # capability plan itself. `custom_per_frame` stays container-level: no streaming target
-        # per-key-classifies it today (xyz's comment-only list rides a non-streaming target).
+        # capability plan itself. `custom_per_frame` is deliberately *not* refined here — and the
+        # reason is the streaming-eligibility gate, not the absence of a per-key-classifying target
+        # (lammps_dump does per-key-classify custom_per_frame and is a streaming exporter). It is
+        # safe only because `streaming_eligible()` rejects every target that would need it:
+        # lammps_dump is `requires_units_style` and so never streams, and no other
+        # streaming-eligible exporter per-key-classifies custom_per_frame. If one ever does, this
+        # loop cannot fix it — custom_per_frame keys are per-frame, not eager in the header, so the
+        # refinement would have to live in `_filter_stream_frame` (per row), not here. Widen the
+        # eligibility gate or add that per-frame refinement before relying on it.
         for container, keys in (
             ("user_metadata.custom_global", header.custom_global),
             ("user_metadata.custom_per_atom", header.custom_per_atom),

@@ -20,10 +20,11 @@ train→deploy→produce→relabel loop — so every mapping is honest and every
   ``type`` only; the canonical object carries element symbols. The exporter assigns deterministic
   numeric types by first appearance (Si=1, O=2, … in first-seen order, so a round-trip is stable)
   and records the mapping as an export warning — the audit line in the Conversion Report, never a
-  silent renumbering. When the object was *read from a data file* and carries a verbatim ``Masses``
-  section (a declared-but-unused atom type S1 could not fold into ``atoms.masses``), the source's
-  own type numbering is preserved instead, so that carried section stays consistent with the
-  ``Atoms`` rows.
+  silent renumbering. Whenever the object carries the source's ``lammps_data:type`` column, its
+  per-atom type numbering is preserved — not only when a verbatim ``Masses`` section is present —
+  so carried atom-type-indexed sections such as ``Pair Coeffs`` remain aligned even when two used
+  types share one element symbol. A defensive declared-vs-emitted type-count warning covers
+  malformed or over-declared carries.
 * **Masses from the canonical object, or a refusal.** ``atoms.masses`` (amu) is written back as the
   per-type ``Masses`` table, divided by the style's mass factor. A data file *requires* masses, so
   ``atoms.masses`` is a write ``required_field``: an object without them is refused via the existing
@@ -143,17 +144,18 @@ class LammpsDataExporter(ExporterPlugin):
     def export_warnings(self, canonical: Any) -> list[ExporterWarning]:
         """The one transformation this exporter applies that must be audited: it maps element
         symbols to LAMMPS numeric types. The mapping is stated in the Conversion Report as an audit
-        line — deterministic first-appearance order, or the source's own numbering when a verbatim
-        ``Masses`` section pins it (P1). Built over the single frame the write uses, so the reported
-        map is exactly the one written."""
+        line — deterministic first-appearance order, or the source's own numbering when a
+        ``lammps_data:type`` carry is present (including when two used types share one element
+        symbol), or the source's first-appearance numbering when it is absent. Built over the single
+        frame the write uses, so the reported map is exactly the one written."""
         frame = canonical.frames[0]
         header = stream_of(canonical).header
         symbols = list(frame.atoms.symbols)
-        _types, type_map, preserved = _type_numbering(header, symbols)
+        types, type_map, preserved = _type_numbering(header, symbols)
         mapping = ", ".join(f"type {number} → {symbol}" for symbol, number in type_map.items())
         verb = "Preserved source" if preserved else "Assigned"
         order = "" if preserved else " by first appearance"
-        return [
+        warnings = [
             ExporterWarning(
                 code=_TYPES_ASSIGNED,
                 message=(
@@ -162,6 +164,22 @@ class LammpsDataExporter(ExporterPlugin):
                 ),
             )
         ]
+        topology = header.custom_global.get(_TOPOLOGY_KEY)
+        declared = topology.get("declared_atom_types") if isinstance(topology, dict) else None
+        if isinstance(declared, int):
+            emitted_count = len(set(int(value) for value in types))
+            if declared != emitted_count:
+                warnings.append(
+                    ExporterWarning(
+                        code="LAMMPSDATA_DECLARED_TYPE_COUNT_MISMATCH",
+                        message=(
+                            f"source declares {declared} atom types but the emitted object uses "
+                            f"{emitted_count} distinct atom type id(s); this may indicate unused "
+                            "or malformed carried type numbering, so verify type-indexed sections"
+                        ),
+                    )
+                )
+        return warnings
 
     def unrepresentable(self, canonical: Any) -> str | None:
         """Why a data file cannot express ``canonical``'s *values*, or ``None`` when it can (Part 4
@@ -236,10 +254,12 @@ class LammpsDataExporter(ExporterPlugin):
             return None
         frame = canonical.frames[0]
         symbols = list(frame.atoms.symbols)
-        _types, type_map, _preserved = _type_numbering(header, symbols)
+        types, _type_map, _preserved = _type_numbering(header, symbols)
+        species_by_type: dict[int, str] = {}
+        for symbol, type_number in zip(symbols, types, strict=True):
+            species_by_type.setdefault(int(type_number), symbol)
         species = " ".join(
-            f"{number}:{symbol}"
-            for symbol, number in sorted(type_map.items(), key=lambda kv: kv[1])
+            f"{number}:{symbol}" for number, symbol in sorted(species_by_type.items())
         )
         return {
             "ambiguous_units": {"choice": style_code, "parameters": {}},
@@ -322,8 +342,10 @@ class LammpsDataExporter(ExporterPlugin):
                 "user_metadata.custom_per_atom": FieldCapability(
                     level=CapabilityLevel.PARTIAL,
                     notes=(
-                        "Atom ids, molecule-ids (full style), numeric types, and image flags are "
-                        "written back to their format-defined columns; a foreign-scoped key is "
+                        "Atom ids, molecule-ids (full style), and carried numeric types are "
+                        "written back to their format-defined columns; when the type carry is "
+                        "absent, types are assigned by first appearance and reported. Image flags "
+                        "are written back to their format-defined columns; a foreign-scoped key is "
                         "dropped."
                     ),
                 ),
@@ -396,7 +418,13 @@ def _write_block(stream: BinaryIO, frame: Any, header: StreamHeader, style: Unit
     positions = np.asarray(frame.atoms.positions, dtype=float)
 
     topology = header.custom_global.get(_TOPOLOGY_KEY)
-    header_counts, verbatim_masses, other_sections = _split_topology(topology)
+    (
+        header_counts,
+        verbatim_masses,
+        other_sections,
+        declared_atom_types,
+        atom_types_line_in_counts,
+    ) = _split_topology(topology)
 
     types_per_atom, _type_map, _preserved = _type_numbering(header, symbols)
     n_types = int(np.max(types_per_atom)) if n_atoms else 0
@@ -409,9 +437,18 @@ def _write_block(stream: BinaryIO, frame: Any, header: StreamHeader, style: Unit
     lines.append("")
 
     lines.append(f"{n_atoms} atoms")
-    if not _has_atom_types_line(header_counts):
-        lines.append(f"{n_types} atom types")
-    lines.extend(header_counts)
+    if atom_types_line_in_counts:
+        # The parser retained this synthetic line with the carried counts for an over-declared
+        # source. Its late placement is a known byte-order caveat (LOW-DATA3); the explicit flag,
+        # rather than a string heuristic, prevents a duplicate.
+        lines.extend(header_counts)
+    else:
+        # A normal parsed header excluded its atom-types line from ``header_counts``. Reconstruct
+        # it from the explicit parsed declaration when available; otherwise use the emitted type
+        # ids (the object may not have come from a data parser).
+        count = declared_atom_types if declared_atom_types is not None else n_types
+        lines.append(f"{count} atom types")
+        lines.extend(header_counts)
     lines.append("")
 
     lattice = _require_cell(frame)
@@ -463,14 +500,17 @@ def _write_block(stream: BinaryIO, frame: Any, header: StreamHeader, style: Unit
 
 def _split_topology(
     topology: Any,
-) -> tuple[list[str], dict[str, Any] | None, list[dict[str, Any]]]:
+) -> tuple[list[str], dict[str, Any] | None, list[dict[str, Any]], int | None, bool]:
     """Split the carried topology payload into (header count lines, the verbatim Masses section if
     any, every other section). The Masses section is separated so it can be written in its
     conventional position (after the box); it is present only for a declared-but-unused atom type
     (M48-S1)."""
     if not isinstance(topology, dict):
-        return [], None, []
+        return [], None, [], None, False
     header_counts = [str(line) for line in topology.get("header_counts", [])]
+    declared_raw = topology.get("declared_atom_types")
+    declared_atom_types = int(declared_raw) if isinstance(declared_raw, int) else None
+    atom_types_line_in_counts = bool(topology.get("atom_types_line_in_counts", False))
     verbatim_masses: dict[str, Any] | None = None
     other: list[dict[str, Any]] = []
     for section in topology.get("sections", []):
@@ -480,7 +520,7 @@ def _split_topology(
             verbatim_masses = section
         else:
             other.append(section)
-    return header_counts, verbatim_masses, other
+    return header_counts, verbatim_masses, other, declared_atom_types, atom_types_line_in_counts
 
 
 def _type_numbering(
@@ -489,15 +529,21 @@ def _type_numbering(
     """The numeric type per atom, the reported symbol→type map, and whether source numbering was
     preserved.
 
-    When the object carries a verbatim ``Masses`` section (a data source with a declared-but-unused
-    type), the source's own ``lammps_data:type`` numbering is preserved so that carried section
-    stays consistent with the Atoms rows. Otherwise types are assigned deterministically by first
-    appearance (Si=1, O=2, …), exactly as the dump exporter does, so a round-trip is stable."""
-    topology = header.custom_global.get(_TOPOLOGY_KEY)
-    _counts, verbatim_masses, _other = _split_topology(topology)
+    Whenever the object carries ``lammps_data:type``, the source's own per-atom numbering is
+    preserved so every carried atom-type-indexed section stays consistent with the Atoms rows.
+    Otherwise types are assigned deterministically by first appearance (Si=1, O=2, …), exactly as
+    the dump exporter does, so a round-trip is stable."""
     carried = header.custom_per_atom.get(_TYPE_KEY)
-    if verbatim_masses is not None and carried is not None:
-        types = np.asarray(carried).astype(np.int64)
+    if carried is not None:
+        types = np.asarray(carried)
+        if types.shape != (len(symbols),):
+            raise ValueError(
+                "lammps_data: the carried type column has "
+                f"shape {types.shape}, expected ({len(symbols)},)"
+            )
+        if not np.all(np.isfinite(types)) or not np.all(types == np.floor(types)):
+            raise ValueError("lammps_data: the carried type column must contain integer values")
+        types = types.astype(np.int64)
         type_map: dict[str, int] = {}
         for symbol, t in zip(symbols, types, strict=True):
             type_map.setdefault(symbol, int(t))

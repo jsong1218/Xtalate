@@ -39,6 +39,17 @@ from xtalate.validation._shared import require_supported_precision
 from xtalate.validation.report import CheckResult, ValidationReport
 from xtalate.validation.tolerance import ToleranceProfile
 
+# Recovery-assisted LAMMPS-data re-parses emit these notes by construction. They are exempt from
+# the aggregate warning downgrade; every other reparse warning remains evidence of a non-clean
+# output, even when the target required recovery (R4, D189).
+_REPARSE_RECOVERY_NOTE_CODES = frozenset(
+    {
+        "LAMMPSDATA_UNITS_INTERPRETED",
+        "LAMMPSDATA_SPECIES_SUPPLIED",
+        "LAMMPSDATA_ATOM_STYLE_INTERPRETED",
+    }
+)
+
 
 class _Entry(Protocol):
     path: str
@@ -193,13 +204,16 @@ class ValidationEngine:
     ) -> ValidationReport:
         worst = max((_RANK[c.status] for c in checks), default=0)
         # A re-parse that succeeded only with warnings is itself a finding (§3): it cannot pass
-        # clean, only at best passed_with_warnings. The exception is a recovery-assisted re-parse
-        # (D182): a non-self-describing output (a LAMMPS data file) can only be re-read with the
-        # recorded unit/species Assumptions, which emit notes by construction — the expected
-        # mechanism, not a defect — so they are listed for transparency but do not downgrade a
-        # clean diff. Genuine value defects still fail through the checks above.
-        if reparse_issues and worst == 0 and not reparse_assisted:
-            worst = 1
+        # clean, only at best passed_with_warnings. A recovery-assisted re-parse (D182) is exempt
+        # only for the specific unit/species/atom-style notes it necessarily emits; ordinary
+        # warnings such as carried topology, carried sections, or image flags still downgrade the
+        # aggregate (R4, D189). Genuine value defects still fail through the checks above.
+        if reparse_issues and worst == 0:
+            has_non_recovery_warning = any(
+                issue.code not in _REPARSE_RECOVERY_NOTE_CODES for issue in reparse_issues
+            )
+            if not reparse_assisted or has_non_recovery_warning:
+                worst = 1
         return ValidationReport(
             report_id=str(uuid.uuid4()),
             conversion_report_id=report.report_id,
