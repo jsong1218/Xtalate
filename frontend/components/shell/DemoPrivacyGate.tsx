@@ -5,27 +5,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 
 /**
- * The public-demo privacy gate (v1.2): a blocking, must-acknowledge interstitial shown **once per
- * browser** before a visitor can use the hosted demo, so nobody uploads sensitive data without
- * first being told what the demo actually is.
+ * The public-demo privacy notice (v1.2): an advisory, client-only notice shown **once per browser**
+ * before a visitor uses the hosted demo, so nobody uploads sensitive data without first being told
+ * what the demo actually is. It is not server-side enforcement: API callers can bypass this notice.
  *
- * It exists because the hosted demo is a *single, shared, anonymous* instance: history is
- * instance-wide (no per-user scoping in anonymous mode — `XTALATE_API_KEYS=` empty), so any visitor
+ * It exists because the current hosted demo is configured as a *single, shared, anonymous* instance
+ * (`XTALATE_API_KEYS` is empty): history is instance-wide (no per-user scoping), so any visitor
  * can see another visitor's conversions and download their outputs, and the free-tier container is
  * ephemeral with only a lazy expiry horizon — bytes are not erased on a guaranteed schedule. The
  * always-on {@link DemoBanner} states the ephemeral posture in passing; this gate makes the privacy
- * consequence impossible to miss and requires a deliberate acknowledgment (P1: never let a user be
- * surprised by what happens to their data).
+ * consequence hard to miss (P1: never let a user be surprised by what happens to their data).
  *
  * Gated on the **same** `NEXT_PUBLIC_DEMO_BANNER` build flag as the banner (inlined at build time):
  * the baked demo image sets it, a self-host never does — a private instance you control shows no
  * gate at all. The acknowledgment persists in `localStorage` (the app's existing preference
- * pattern), so it blocks once and then stays out of the way; clearing storage re-arms it.
+ * pattern), so it appears once and then stays out of the way; clearing storage re-arms it.
  *
- * A client component on purpose: the flag is a `NEXT_PUBLIC_` value, and the acknowledgment lives in
- * `localStorage`, which is read in an effect — so the server render and the first client render both
- * produce nothing (no hydration mismatch), and the dialog appears immediately after hydration,
- * before any upload interaction is possible.
+ * A client component on purpose: the flag is a `NEXT_PUBLIC_` value, and the notice acknowledgment
+ * lives in `localStorage`, which is read in an effect — so the server render and the first client
+ * render both produce nothing (no hydration mismatch), and the notice appears immediately after
+ * hydration. The notice is advisory only; it does not protect direct API callers.
  */
 
 export const DEMO_PRIVACY_ACK_KEY = "xtalate-demo-privacy-ack";
@@ -59,8 +58,8 @@ export function DemoPrivacyGate() {
     setOpen(false);
   }, []);
 
-  // While open: lock body scroll, move focus into the dialog, and keep Tab within it. Escape does
-  // *not* dismiss — this is a deliberate acknowledgment, not an incidental popover.
+  // While open: lock body scroll, move focus into the notice, and keep Tab within it. Escape does
+  // not dismiss the notice so the advisory warning is deliberate, not an incidental popover.
   useEffect(() => {
     if (!open) return;
     acknowledgeRef.current?.focus();
@@ -102,7 +101,7 @@ export function DemoPrivacyGate() {
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      // A backdrop click must not dismiss: acknowledgment is required, so the scrim is inert.
+      // Keep the notice deliberate without claiming server-side enforcement; direct API callers can bypass it.
     >
       <div
         ref={dialogRef}
@@ -114,15 +113,15 @@ export function DemoPrivacyGate() {
         className="w-full max-w-lg rounded-xl border border-line-strong bg-surface p-6 shadow-xl"
       >
         <p className="text-xs font-semibold uppercase tracking-wide text-warning">
-          Public demo — read before uploading
+          Public demo — privacy notice
         </p>
         <h2 id="demo-privacy-title" className="mt-2 text-xl font-semibold text-strong">
           Don&rsquo;t upload sensitive or private data
         </h2>
         <div id="demo-privacy-body" className="mt-3 space-y-3 text-sm text-body">
           <p>
-            This is a <strong className="text-strong">shared, anonymous demo</strong>. It has no
-            accounts and no per-user privacy: files you convert, their names, and the conversion
+            This is a <strong className="text-strong">shared demo instance</strong> configured
+            without per-user privacy: files you convert, their names, and the conversion
             reports appear in a history that <strong className="text-strong">anyone else using the
             demo can see</strong>, and your converted output can be downloaded by them.
           </p>
@@ -145,7 +144,7 @@ export function DemoPrivacyGate() {
         </div>
         <div className="mt-6 flex justify-end">
           <Button ref={acknowledgeRef} onClick={acknowledge}>
-            I understand — continue
+            I have read the notice — continue
           </Button>
         </div>
       </div>

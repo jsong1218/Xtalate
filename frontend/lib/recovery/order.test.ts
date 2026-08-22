@@ -14,10 +14,10 @@ const vocabulary = JSON.parse(readFileSync(vocabularyPath, "utf-8")) as {
   scenario_resolution_order: string[];
 };
 
-const scenario = (code: string): AwaitingScenario => ({
+const scenario = (code: string, detail: string | null = null): AwaitingScenario => ({
   scenario: code,
   path: null,
-  detail: null,
+  detail,
   options: [],
 });
 
@@ -36,6 +36,19 @@ describe("recovery resolution order", () => {
   it("orders frame_selection before missing_lattice regardless of arrival order", () => {
     const ordered = orderedScenarios([scenario("missing_lattice"), scenario("frame_selection")]);
     expect(ordered.map((s) => s.scenario)).toEqual(["frame_selection", "missing_lattice"]);
+  });
+
+  it("ranks write-side ambiguous units after parse-time recovery", () => {
+    const ordered = orderedScenarios([
+      scenario("ambiguous_units", "target format 'lammps_dump' writes a LAMMPS file"),
+      scenario("missing_lattice"),
+      scenario("ambiguous_units", "the source does not declare a unit style"),
+    ]);
+    expect(ordered.map((s) => s.detail)).toEqual([
+      "the source does not declare a unit style",
+      null,
+      "target format 'lammps_dump' writes a LAMMPS file",
+    ]);
   });
 
   it("keeps an unknown (plugin) scenario after the known ones, in block order", () => {
