@@ -222,6 +222,41 @@ _TAILORED: dict[str, list[tuple[str, bytes]]] = {
             + b"0.0 10.0 ylo yhi\n0.0 10.0 zlo zhi\n",
         ),
     ],
+    # M50-S1: the pw.x input parser — plausible namelist/card skeletons whose bodies break in
+    # different places, reaching the namelist-scanner and card-reader edges that raise MALFORMED.
+    "qe_pw_in": [
+        # no CELL_PARAMETERS at all for ibrav = 0 (the explicit-cell path requires it).
+        (
+            "missing_cell",
+            b"&CONTROL\n  calculation = 'scf'\n/\n&SYSTEM\n  ibrav = 0\n"
+            + b"  nat = 1\n  ntyp = 1\n/\nATOMIC_POSITIONS (angstrom)\nSi 0.0 0.0 0.0\n",
+        ),
+        # an ATOMIC_POSITIONS unit that is not in the QE unit table.
+        (
+            "bad_positions_unit",
+            b"&CONTROL\n/\n&SYSTEM\n  ibrav = 0\n  nat = 1\n  ntyp = 1\n/\n"
+            + b"CELL_PARAMETERS (angstrom)\n1 0 0\n0 1 0\n0 0 1\n"
+            + b"ATOMIC_POSITIONS (furlong)\nSi 0.0 0.0 0.0\n",
+        ),
+        # CELL_PARAMETERS with only two rows instead of three.
+        (
+            "short_cell_parameters",
+            b"&CONTROL\n/\n&SYSTEM\n  ibrav = 0\n  nat = 1\n  ntyp = 1\n/\n"
+            + b"CELL_PARAMETERS (angstrom)\n1 0 0\n0 1 0\n"
+            + b"ATOMIC_POSITIONS (angstrom)\nSi 0.0 0.0 0.0\n",
+        ),
+        # namelists before any card, so the header scan never finds an &-opener.
+        (
+            "no_namelist",
+            b"ATOMIC_POSITIONS (angstrom)\nSi 0.0 0.0 0.0\n",
+        ),
+        # an &SYSTEM namelist that never reaches its closing / before the next card.
+        (
+            "unclosed_namelist",
+            b"&SYSTEM\n  ibrav = 0\n  nat = 1\n  ntyp = 1\n"
+            + b"ATOMIC_POSITIONS (angstrom)\nSi 0.0 0.0 0.0\n",
+        ),
+    ],
 }
 
 

@@ -219,6 +219,34 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** MASTER_SPEC Part 2 §8.2 worked example (VASP-5 POSCAR, Direct coords, NaCl-like)
 
+## `qe_pw_in` / `explicit-alat-positions` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S1 (QE pw.x input parser).
+
+## `qe_pw_in` / `explicit-angstrom` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S1 (QE pw.x input parser).
+
+## `qe_pw_in` / `explicit-bohr-positions` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S1 (QE pw.x input parser).
+
+## `qe_pw_in` / `explicit-crystal-positions` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S1 (QE pw.x input parser).
+
 ## `vasprun` / `relax-h2o` (golden)
 
 - **Source file:** `vasprun.xml`

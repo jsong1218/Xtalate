@@ -60,6 +60,9 @@ def test_builtins_register_without_error() -> None:
         # M48-S1: lammps_data joins as a parser; M48-S2 added the exporter, closing the staging
         # state (D180, D181).
         "lammps_data",
+        # M50-S1: qe_pw_in joins as a parser-only staging state (the exporter is M51's
+        # deliverable; D189) — read row only, never a conversion target.
+        "qe_pw_in",
     }
     # Asymmetric since M42 slice 2: vasprun is the first parser-only format (D159) — Xtalate
     # reads it but does not write it; OUTCAR (M43) is the second — the permanent source-never-

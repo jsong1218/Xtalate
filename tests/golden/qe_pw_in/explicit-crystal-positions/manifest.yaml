@@ -1,0 +1,16 @@
+case: explicit-crystal-positions
+format_id: qe_pw_in
+source_file: pw.in
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: af54e554c20a2d4f6a9f1737842838eb31a9aa3e7539aabffbd1169982869081
+expected_sha256: cee8defa311bfa6aaeca710c6fec16856d8bd1e984be5f87c717b9cc6849034b
+origin:
+  kind: synthetic
+  source: 'Hand-written for M50-S1 (QE pw.x input parser).'
+  license: Apache-2.0
+notes: >-
+  M50-S1 explicit-cell golden: ibrav = 0 with CELL_PARAMETERS angstrom (the shared
+  off-diagonal cell (3,1,0)/(0,4,1)/(1,0,5)) and ATOMIC_POSITIONS in crystal. The expected
+  canonical is hand-verified: positions/units converted at the boundary and recorded in
+  parse_notes; no ambiguous_* scenario fires (QE declares its units).

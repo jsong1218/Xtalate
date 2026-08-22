@@ -18,6 +18,7 @@ from xtalate.parsers.lammps_data import LammpsDataParser, make_lammps_data_parse
 from xtalate.parsers.lammps_dump import LammpsDumpParser, make_lammps_dump_parser
 from xtalate.parsers.outcar import OutcarParser, make_outcar_parser
 from xtalate.parsers.poscar import PoscarParser, make_contcar_parser, make_poscar_parser
+from xtalate.parsers.qe_pw_in import QePwInParser, make_qe_pw_in_parser
 from xtalate.parsers.vasprun import VasprunParser, make_vasprun_parser
 from xtalate.parsers.xdatcar import XdatcarParser, make_xdatcar_parser
 from xtalate.parsers.xyz import XyzParser
@@ -31,6 +32,7 @@ __all__ = [
     "LammpsDumpParser",
     "OutcarParser",
     "PoscarParser",
+    "QePwInParser",
     "VasprunParser",
     "XdatcarParser",
     "XyzParser",
@@ -42,6 +44,7 @@ __all__ = [
     "make_lammps_dump_parser",
     "make_outcar_parser",
     "make_poscar_parser",
+    "make_qe_pw_in_parser",
     "make_vasprun_parser",
     "make_xdatcar_parser",
 ]
@@ -54,9 +57,12 @@ def builtin_parsers() -> list[ParserPlugin]:
     target (D159), so it has no entry in ``builtin_exporters``; v1.2 M43-S1: OUTCAR, the second
     parser-only VASP output (D164); v1.3 M46-S2: lammps_dump, registered **parser-only as a
     staging state** — the exporter is M47's first deliverable, so this is *not* the
-    vasprun/OUTCAR permanent source-never-target seam (D175). v1.3 M48-S1: lammps_data,
+    vasprun/OUTCAR permanent source-never-target seam (D175); v1.3 M48-S1: lammps_data,
     also registered **parser-only as a staging state** — the data exporter is M48-S2's
-    deliverable (D180)."""
+    deliverable (D180). v1.4 M50-S1: qe_pw_in, the Quantum ESPRESSO pw.x input parser,
+    registered **parser-only as a staging state** — the exporter is M51's deliverable (D189),
+    so this is *not* the vasprun/OUTCAR permanent source-never-target seam, and M51 must add
+    the paired exporter."""
     return [
         XyzParser(),
         ExtxyzParser(),
@@ -69,4 +75,5 @@ def builtin_parsers() -> list[ParserPlugin]:
         make_outcar_parser(),
         make_lammps_dump_parser(),
         make_lammps_data_parser(),
+        make_qe_pw_in_parser(),
     ]
