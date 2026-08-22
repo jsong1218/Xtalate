@@ -385,8 +385,10 @@ real-file anomaly must be triaged the way M20 requires: fixed in the parser, or 
 manifest by someone who looked at it — the suite fails on any other outcome. The file's license
 must permit redistribution (record it in `origin.license`; a `published-dataset` origin also needs
 its source URL), and after adding a manifest, regenerate
-`tests/golden/ATTRIBUTIONS.md` with `python tests/golden/_governance.py`. The maintainer files the
-tracking issue for batch 2; this documented call is the standing invitation.
+`tests/golden/ATTRIBUTIONS.md` with `python tests/golden/_governance.py`. The current synthetic
+OUTCAR↔vasprun pair cross-check is useful for mapping consistency but is not first-party proof of
+VASP's stress convention; a **real paired run is explicitly ticketed for v1.4**. The maintainer
+files that evidence ticket for batch 2; this documented call is the standing invitation.
 
 ### 5.6 Contributing real-world LAMMPS files (a standing call)
 

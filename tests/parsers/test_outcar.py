@@ -19,7 +19,7 @@ from xtalate.capabilities import Registry
 from xtalate.cli.main import main
 from xtalate.conversion import ConversionEngine
 from xtalate.parsers import builtin_parsers
-from xtalate.parsers.outcar import FORMAT_ID, make_outcar_parser
+from xtalate.parsers.outcar import FORMAT_ID, OutcarParser, make_outcar_parser
 from xtalate.registry import default_registry
 from xtalate.sdk import CapabilityLevel, ParseError, ParseResult
 from xtalate.sdk.streaming import materialize
@@ -229,6 +229,25 @@ def test_stress_mapping_is_recorded_in_parse_notes_and_source_units() -> None:
     notes = obj.provenance.parse_notes
     assert any("'in kB'" in n and "tension-positive" in n for n in notes)
     assert obj.provenance.source_units.get("stress") == "kbar"
+    assert "pymatgen issue #1388" in (OutcarParser.__doc__ or "")
+    assert "not first-party real-file proof" in (OutcarParser.__doc__ or "")
+
+
+def test_capabilities_name_intentionally_dropped_outcar_sections() -> None:
+    notes = PARSER.capabilities().lossy_notes
+    joined = " ".join(notes)
+    for section in (
+        "total-charge",
+        "DAV electronic-step",
+        "E-fermi",
+        "NELECT",
+        "timing",
+        "per-component stress",
+        "K-point",
+        "INCAR",
+        "POTCAR",
+    ):
+        assert section in joined
 
 
 # --- the magnetic-moments mapping (D171) ------------------------------------------
