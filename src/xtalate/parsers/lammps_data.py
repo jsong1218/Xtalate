@@ -282,6 +282,10 @@ class _Header:
     n_atom_types: int | None
     box: Box
     topology_counts: list[str]
+    # Explicitly records whether the parser had to retain a synthetic ``atom types`` line in
+    # ``topology_counts`` for an over-declared type table. The exporter must not rediscover this
+    # from line spelling (LOW-DATA4); it is parser state carried with the topology payload.
+    atom_types_line_in_counts: bool = False
 
 
 @dataclass
@@ -307,6 +311,7 @@ def _read_header(lines: _Lines) -> tuple[str, _Header]:
 
     n_atoms: int | None = None
     n_atom_types: int | None = None
+    atom_types_line_in_counts = False
     box_edges: dict[str, float] = {}
     topology_counts: list[str] = []
 
@@ -365,6 +370,7 @@ def _read_header(lines: _Lines) -> tuple[str, _Header]:
         n_atom_types=n_atom_types,
         box=box,
         topology_counts=topology_counts,
+        atom_types_line_in_counts=atom_types_line_in_counts,
     )
 
 
@@ -651,6 +657,11 @@ def _build_topology(
     payload: dict[str, object] = {
         "header_counts": list(header.topology_counts),
         "sections": carried,
+        # Keep the numeric declaration and the exact placement state explicit. The exporter
+        # uses these parser facts to reconstruct the header; it must not infer them from a
+        # free-form line spelling (LOW-DATA4).
+        "declared_atom_types": header.n_atom_types,
+        "atom_types_line_in_counts": header.atom_types_line_in_counts,
     }
     issues.append(
         ParseIssue(
@@ -916,7 +927,12 @@ class LammpsDataParser(ParserPlugin):
             if unused or over_declared:
                 extra_masses = masses_section
                 if over_declared:
+                    # Keep the existing byte-order caveat explicit: this synthetic line is
+                    # appended with the carried topology counts rather than reconstructed among
+                    # the original header lines. The exporter receives the flag below instead of
+                    # using a fragile string heuristic (LOW-DATA3/4).
                     header.topology_counts.append(f"{header.n_atom_types} atom types")
+                    header.atom_types_line_in_counts = True
 
         # Per-atom carries (id-sorted order): id + type always, molecule-id for full, and the
         # named image-flag payload when a complete ix/iy/iz triple was present.

@@ -4,7 +4,7 @@ source_file: structure.data
 expected_canonical: expected.canonical.json
 canonical_schema_version: 1.0.0
 sha256: 57fe8fbadb02dc6ea3f6321c67684ac34b3197345ad4a0f9d39e88edae007508
-expected_sha256: a88c988526a193990938989af13d940fe167f56e5739e8b8692eb1d4d78a2057
+expected_sha256: 2ae30fb4bb5ee871f21945e5c99bf89a4b5177be7abb346ddcf0058d80593875
 origin:
   kind: synthetic
   source: 'Hand-written for M48-S1 (LAMMPS data parser).'

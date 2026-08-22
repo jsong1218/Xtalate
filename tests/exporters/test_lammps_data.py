@@ -176,6 +176,51 @@ def _atom_rows(text: str) -> list[list[str]]:
     return rows
 
 
+# --- carried type numbering with shared element symbols ------------------------------
+
+_SHARED_SYMBOL_TYPES_DATA = b"""shared carbon types
+
+2 atoms
+2 atom types
+
+0.0 10.0 xlo xhi
+0.0 10.0 ylo yhi
+0.0 10.0 zlo zhi
+
+Masses
+
+1 12.011
+2 12.011
+
+Pair Coeffs
+
+1 0.10 3.50
+2 0.20 3.60
+
+Atoms # atomic
+
+1 1 0.0 0.0 0.0
+2 2 1.0 0.0 0.0
+"""
+
+
+def test_shared_symbol_types_preserve_ids_and_pair_coeff_alignment() -> None:
+    """Two used atom types may share an element symbol while remaining distinct force-field
+    types. The carried type ids must survive the write so atom-type-indexed Pair Coeffs remain
+    attached to the intended Atoms rows (CRIT-DATA1, R3)."""
+    obj = _reparse(_SHARED_SYMBOL_TYPES_DATA, "metal", "1:C 2:C")
+    exporter = make_lammps_data_exporter()
+    written = _export(obj).decode("utf-8")
+
+    assert "2 atom types" in written
+    atoms = _section_rows(written, "Atoms")
+    assert [row.split()[1] for row in atoms] == ["1", "2"]
+    assert _section_rows(written, "Pair Coeffs") == ["1 0.10 3.50", "2 0.20 3.60"]
+    assert "LAMMPSDATA_DECLARED_TYPE_COUNT_MISMATCH" not in {
+        warning.code for warning in exporter.export_warnings(obj)
+    }
+
+
 # --- a declared-but-unused atom type -------------------------------------------------
 
 # Three atom types are declared but only two (C, H) are used; S1 cannot fold the unused type into
@@ -216,10 +261,10 @@ def test_declared_but_unused_atom_type_is_preserved_verbatim() -> None:
     assert written.count("atom types") == 1
     assert "3 atom types" in written
     # Its numbering is reported as *preserved*, not freshly assigned.
-    warning = next(
-        w for w in make_lammps_data_exporter().export_warnings(obj) if w.code == _TYPES_ASSIGNED
-    )
+    warnings = make_lammps_data_exporter().export_warnings(obj)
+    warning = next(w for w in warnings if w.code == _TYPES_ASSIGNED)
     assert "Preserved source" in warning.message
+    assert any(w.code == "LAMMPSDATA_DECLARED_TYPE_COUNT_MISMATCH" for w in warnings)
 
 
 # --- absence stays absent (P3) -------------------------------------------------------
