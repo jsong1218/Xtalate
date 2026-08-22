@@ -995,7 +995,11 @@ def _build_frame(
         scaled = np.column_stack(
             [_column_floats(rows, _column_index(header, name), header) for name in coords.columns]
         )
-        positions_raw = scaled_to_cartesian(scaled, header.box)
+        # ``scaled_to_cartesian`` returns absolute Cartesian coordinates (including the box
+        # origin), while canonical dump positions use the lower-box-corner frame shared with the
+        # unscaled branch and the exporter. Remove the origin so xs/ys/zs and x/y/z spellings of
+        # the same non-zero-origin box decode identically (CRIT-1, D187).
+        positions_raw = scaled_to_cartesian(scaled, header.box) - header.box.origin
     else:
         positions_raw = np.column_stack(
             [_column_floats(rows, _column_index(header, name), header) for name in coords.columns]
