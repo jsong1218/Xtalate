@@ -79,7 +79,10 @@ These terms are used verbatim across the codebase; they are not interchangeable 
 | **Provenance** | The Canonical Model's record of source software, parser version, and full conversion history (including all Assumptions). |
 | **Plugin SDK** | Stable interface for third-party parsers/exporters/analysis modules; first-party formats hold no privileged API. |
 | **Round-trip** | `Format A → Canonical → Format B → Canonical`, diffed within tolerance; the primary strategy for catching silent bugs. |
-| **Phase 1 formats** | The seven target formats: XYZ, extXYZ, CIF, POSCAR, CONTCAR, XDATCAR, ASE trajectory. |
+| **Phase 1 formats** | The seven read+write formats: XYZ, extXYZ, CIF, POSCAR, CONTCAR, XDATCAR, and ASE trajectory. |
+| **VASP output formats** | `vasprun.xml` and `OUTCAR`, parser-only sources: they can be read but are never conversion targets. |
+| **LAMMPS formats** | `lammps_dump` and `lammps_data`, read+write formats covering trajectories and restart/topology data. |
+| **Parser-only format** | A source format registered with a `ParserPlugin` and no `ExporterPlugin`; it has a read capability row but cannot be a conversion target. |
 
 ## 5. Architecture at a glance
 
@@ -178,7 +181,7 @@ each is a *consumer* of an existing seam, never a modifier of it (P6):
 
 | Future feature | Attachment seam |
 |---|---|
-| **New file formats** | A `ParserPlugin`/`ExporterPlugin` pair via the Plugin SDK plus one Capability Matrix declaration. Third-party formats are discovered through Python **entry points** (`xtalate.parsers` / `xtalate.exporters`) with no fork or edit to Xtalate. |
+| **New file formats** | A `ParserPlugin` and/or `ExporterPlugin` via the Plugin SDK plus the corresponding Capability Matrix declaration. A parser-only source deliberately supplies only the parser side — as `vasprun` and `outcar` do — while read+write formats supply both. Third-party formats are discovered through Python **entry points** (`xtalate.parsers` / `xtalate.exporters`) with no fork or edit to Xtalate. |
 | **Visualization** | A read-only consumer of the Canonical Object and the reports; renders in a future UI route. |
 | **File Repair** | Operates Canonical Object → Canonical Object between parse and export, each repair recorded in Provenance and the Conversion Report. |
 | **Analysis** | Plugins that read a Canonical Object and emit results into namespaced `user_metadata`; they never touch parsers or exporters. |
@@ -190,11 +193,14 @@ project exists to guarantee.
 
 ## 9. Current status
 
-Xtalate is a pure-Python **library + CLI**. **Phase 1 is complete**: all seven Phase 1 formats are
-implemented and registered — XYZ, extXYZ, POSCAR, CONTCAR, XDATCAR, the ASE `.traj` format, and
-CIF — and every pair among them converts. A frame-chunked streaming core keeps pipeline memory
-sub-linear in the number of frames, so large trajectories convert at roughly constant memory with
-a Conversion Report proven identical to the materialized path.
+Xtalate is a pure-Python **library + CLI** with the FastAPI Service layer and Next.js Web UI
+attached to the same conversion core. **Phase 1 is complete**: the seven read+write formats — XYZ,
+extXYZ, POSCAR, CONTCAR, XDATCAR, ASE `.traj`, and CIF — are implemented and registered, and every
+pair among them converts. The v1.2/v1.3 line adds the parser-only VASP output sources `vasprun.xml`
+and `OUTCAR`, plus the read+write LAMMPS formats `lammps_dump` and `lammps_data`; parser-only formats
+appear in capabilities as read-only and are never conversion targets. A frame-chunked streaming core
+keeps pipeline memory sub-linear in the number of frames, so large trajectories convert at roughly
+constant memory with a Conversion Report proven identical to the materialized path.
 
 CIF is the one format whose reader is a **package rather than a module**
 (`src/xtalate/parsers/cif/`), split into four stages with a one-way data flow: tokens (`_lexer`) →
@@ -207,8 +213,7 @@ deleting the first two stages and re-exposing the same calls, leaving the valida
 error contract and the builder untouched. CIF is priced at more than the other six formats
 combined, which is what makes that reversibility worth its cost.
 
-The FastAPI **Service** layer and Next.js **Web UI** attach to this same core without
-re-implementing it. The Plugin SDK is the **frozen 1.x contract** as of the v1.0 contract freeze:
+The Plugin SDK is the **frozen 1.x contract** as of the v1.0 contract freeze:
 the ABCs a plugin builds against evolve additively only within 1.x, so a plugin built against 1.0
 keeps working across the series; a breaking change waits for 2.0. (See
 [CONTRIBUTING.md](../CONTRIBUTING.md) for the promise and its scope.)

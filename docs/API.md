@@ -210,10 +210,13 @@ verbatim in its HTTP responses (no parallel DTOs).
 
 ## 4. Supported formats
 
-Read **and** write: `xyz`, `extxyz`, `poscar`, `contcar`, `xdatcar`, `ase_traj`, `cif` — all seven
-Phase 1 formats, so every pair among them converts. Third-party formats registered
-via entry points (see the [Developer Guide](DEVELOPER_GUIDE.md)) appear here on equal footing —
-`xtalate capabilities` always reflects the live set.
+Read **and** write: `xyz`, `extxyz`, `poscar`, `contcar`, `xdatcar`, `ase_traj`, `cif`,
+`lammps_dump`, and `lammps_data`. The first seven are the Phase 1 formats, and the two LAMMPS
+formats cover read+write trajectories and restart/topology data. Read-only/parser-only sources:
+`vasprun` (VASP `vasprun.xml`) and `outcar` (VASP `OUTCAR`); they are valid conversion sources but
+never targets. Third-party formats registered via entry points (see the [Developer
+Guide](DEVELOPER_GUIDE.md)) appear here on equal footing — `xtalate capabilities` always reflects
+the live set.
 
 ## 5. Service (HTTP API)
 
