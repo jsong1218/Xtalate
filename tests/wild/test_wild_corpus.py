@@ -97,6 +97,16 @@ def _parse(case: gov.GoldenCase) -> ParseResult:
             dump_parser = make_lammps_dump_parser()
             if expectation.parse_recover:
                 context = _wild.parse_recovery_specs(expectation.parse_recover)
+                # The dump parser's parse_recover is single-scenario — it takes one hint/choice and
+                # has no recovery_context seam (only the data parser carries a compound context,
+                # D182). So a dump manifest that declared two presets would have every scenario
+                # past the first silently dropped here; refuse that loudly, never pretend to apply.
+                if len(context) != 1:
+                    raise AssertionError(
+                        f"{case.rel_manifest}: lammps_dump recovery is single-scenario, but the "
+                        f"manifest declares {sorted(context)}; a dump needing compound recovery "
+                        "cannot be expressed through the dump parser's parse_recover"
+                    )
                 scenario, entry = next(iter(context.items()))
                 return dump_parser.parse_recover(
                     fh,
