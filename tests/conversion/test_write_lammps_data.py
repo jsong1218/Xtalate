@@ -122,9 +122,10 @@ def test_convert_writes_a_restart_file_with_the_metal_preset() -> None:
     text = result.output.decode("utf-8")
     assert "Atoms # full" in text
     assert "Bonds" in text
-    # And the engine's own validation passes — the re-parse reproduces the object within tolerance.
+    # The object carries topology, so validation reproduces it while honestly surfacing the
+    # ordinary topology-carry warning as passed_with_warnings.
     assert result.validation is not None
-    assert result.validation.status == "passed"
+    assert result.validation.status == "passed_with_warnings"
 
 
 def test_no_preset_data_write_reparse_is_exact(tmp_path: Path) -> None:

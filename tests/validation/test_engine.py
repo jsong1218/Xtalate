@@ -258,13 +258,53 @@ def test_data_output_validates_via_recovery_aware_reparse() -> None:
     )
     assert result.report.status == "completed"
     assert result.validation is not None
-    # Every diff check ran against a genuinely re-parsed object and passed.
-    assert result.validation.status == "passed"
+    # Every diff check ran against a genuinely re-parsed object and passed. The carried topology
+    # warning is real output evidence, so it downgrades the aggregate without failing the checks.
+    assert result.validation.status == "passed_with_warnings"
     assert all(c.status == "pass" for c in result.validation.checks)
     # The re-read required the recorded unit/species assumptions; those notes are surfaced.
     codes = {getattr(i, "code", None) for i in result.validation.reparse_issues}
     assert "LAMMPSDATA_UNITS_INTERPRETED" in codes
     assert "LAMMPSDATA_SPECIES_SUPPLIED" in codes
+    assert "LAMMPSDATA_TOPOLOGY_CARRIED" in codes
+
+
+def test_data_reparse_recovery_notes_alone_stay_passed() -> None:
+    """The required unit/species notes are mechanism, not defects: without any ordinary parse
+    warning, a recovery-assisted data output remains ``passed``."""
+    reg = _registry()
+    source = (
+        reg.get_parser("lammps_data")
+        .parse_recover(
+            io.BytesIO(
+                (GOLDEN / "lammps_data" / "atomic-metal-ortho" / "structure.data").read_bytes()
+            ),
+            filename="structure.data",
+            hint="ambiguous_units",
+            choice="metal",
+            parameters={},
+            recovery_context={
+                "ambiguous_units": {"choice": "metal", "parameters": {}},
+                "missing_species": {
+                    "choice": "species_map",
+                    "parameters": {"species": "1:Ar 2:Ne"},
+                },
+            },
+        )
+        .canonical
+    )
+    result = ConversionEngine(reg).convert(
+        source,
+        source_format_id="lammps_data",
+        target_format_id="lammps_data",
+        recovery_choices={"ambiguous_units": {"choice": "metal", "parameters": {}}},
+    )
+    assert result.validation is not None
+    assert result.validation.status == "passed"
+    assert {issue.code for issue in result.validation.reparse_issues} == {
+        "LAMMPSDATA_UNITS_INTERPRETED",
+        "LAMMPSDATA_SPECIES_SUPPLIED",
+    }
 
 
 def test_self_describing_exporter_keeps_the_reparse_recovery_default() -> None:
