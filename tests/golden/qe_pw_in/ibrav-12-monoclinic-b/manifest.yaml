@@ -1,0 +1,13 @@
+case: ibrav-12-monoclinic-b
+format_id: qe_pw_in
+source_file: pw.in
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: b1e324a45b5cb8e333dc70aec7dc8a083cd56898a9133621f5365276152e1279
+expected_sha256: b7ee8771bda3a897fb0d828db7d712e9a53d9d167b6dc595548fad4d5053fbeb
+origin:
+  kind: synthetic
+  source: 'Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).'
+  license: Apache-2.0
+notes: >-
+  M50-S2 ibrav golden: ibrav = -12 (monoclinic P, unique axis b), A = 4.0, B = 5.0, C = 6.0 A, cosAC = 0.25. Hand-pinned: v1=(a,0,0), v2=(0,b,0), v3=(c*cos(beta),0,c*sin(beta)) -> ((4,0,0),(0,5,0),(1.5,0,6*sqrt(0.9375))) A.

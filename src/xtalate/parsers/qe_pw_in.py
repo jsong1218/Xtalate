@@ -1,4 +1,4 @@
-"""Quantum ESPRESSO pw.x input parser (MASTER_SPEC Part 3 §3; v1.4 M50-S1).
+"""Quantum ESPRESSO pw.x input parser (MASTER_SPEC Part 3 §3; v1.4 M50-S1/S2).
 
 The pw.x **input** file — the namelist + card grammar that defines a QE calculation. It is
 the structural ground truth of the whole QE trilogy: the pw.x *output* parser (M52) must
@@ -25,14 +25,19 @@ conventions get pinned, and this reader feeds it (the ``_vasp`` precedent, D160)
        0.0 5.0 0.0
        0.0 0.0 5.0
 
-**M50-S1 scope (the explicit-cell path).** ``ibrav = 0`` with an explicit
-``CELL_PARAMETERS`` block parses end to end; an ``ibrav ≠ 0`` input **refuses**
-``QEIN_UNSUPPORTED_IBRAV`` — the Bravais-lattice expansion lands in M50-S2, and this
-reader's stub is replaced by the real dispatch there. QE declares its per-card units in
-the file (``{angstrom|bohr|alat|crystal}``), so every conversion is a deterministic
-boundary mapping recorded in ``parse_notes`` — **never a scenario**: no
-``ambiguous_units``/``ambiguous_*`` issue exists for a QE source (the VASP contrast of
-v1.2, not the LAMMPS ambiguity of v1.3).
+**M50-S1 scope (the explicit-cell path) + M50-S2 (the ``ibrav`` expansion).** ``ibrav =
+0`` with an explicit ``CELL_PARAMETERS`` block parses end to end (S1); ``ibrav ≠ 0`` in
+the hand-pinned supported set (``1, 2, 3, 4, 6, 8, 12, -12, 14``) expands to
+``cell.lattice_vectors`` via the shared ``_qe`` core (S2, D190), the derivation recorded
+in ``parse_notes``. An ``ibrav`` outside the supported set **refuses**
+``QEIN_UNSUPPORTED_IBRAV`` naming the value — the set grows by corpus evidence (M53),
+and the lattice is never guessed (P4). ``CELL_PARAMETERS`` alongside ``ibrav ≠ 0`` is a
+QE contradiction and **refuses** ``QEIN_MALFORMED_CARD`` naming the conflict (D190 — a
+silent preference between two disagreeing sources is the rejected alternative). QE
+declares its per-card units in the file (``{angstrom|bohr|alat|crystal}``), so every
+conversion is a deterministic boundary mapping recorded in ``parse_notes`` — **never a
+scenario**: no ``ambiguous_units``/``ambiguous_*`` issue exists for a QE source (the
+VASP contrast of v1.2, not the LAMMPS ambiguity of v1.3).
 
 **Registered parser-only as a staging state** (the lammps_dump/lammps_data precedent,
 D175/D180 — *not* the vasprun/OUTCAR permanent source-never-target seam, D159/D164): the
@@ -63,7 +68,8 @@ Capability Matrix until then. M51 must add the paired exporter and close the sta
   the byte offset; a malformed namelist/card reports the line and the offending construct.
 
 Format-prefixed codes (Part 3 §5): ``QEIN_EMPTY``, ``QEIN_MALFORMED_NAMELIST``,
-``QEIN_MALFORMED_CARD``, and the ``QEIN_UNSUPPORTED_IBRAV`` stub (S1; real expansion in S2).
+``QEIN_MALFORMED_CARD``, and ``QEIN_UNSUPPORTED_IBRAV`` (an ``ibrav`` outside the
+hand-pinned supported set).
 """
 
 from __future__ import annotations
@@ -77,9 +83,11 @@ from pydantic import JsonValue
 
 from xtalate.parsers._common import build_provenance, decode_text
 from xtalate.parsers._qe import (
+    UnsupportedIbravError,
     alat_angstrom,
     coordinate_system,
     lattice_from_cell_parameters,
+    lattice_from_ibrav,
     pbc_note,
     positions_cartesian,
 )
@@ -145,7 +153,9 @@ _CARD_KEYWORDS = frozenset(
 
 #: The &system facts S1 consumes; everything else in &system (and every other namelist)
 #: rides the carry.
-_CONSUMED_SYSTEM_KEYS = frozenset({"ibrav", "nat", "ntyp", "celldm", "a"})
+_CONSUMED_SYSTEM_KEYS = frozenset(
+    {"ibrav", "nat", "ntyp", "celldm", "a", "b", "c", "cosab", "cosac", "cosbc"}
+)
 
 # A Fortran number: optional sign, digits with optional fraction, optional [eEdD] exponent.
 _NUMBER_RE = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eEdD][+-]?\d+)?$")
@@ -479,6 +489,59 @@ def _parse_cell(block: list[str], *, location: str) -> list[list[float]]:
     return rows
 
 
+def _system_number(system: dict[str, _NamelistEntry], key: str) -> float | None:
+    """A numeric &system fact, or ``None`` when absent; a non-numeric value is malformed."""
+    value = system.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise _error(
+            _MALFORMED_NAMELIST,
+            f"&system {key} must be numeric, found {value!r}",
+            location="&system",
+        )
+    return float(value)
+
+
+def _system_celldm(system: dict[str, _NamelistEntry]) -> dict[int, float] | None:
+    """The ``celldm(1..6)`` values as ``{index: value}``, or ``None`` when absent. A scalar
+    ``celldm`` (no indices) or a non-numeric element is malformed."""
+    entry = system.get("celldm")
+    if entry is None:
+        return None
+    if not isinstance(entry, dict):
+        raise _error(
+            _MALFORMED_NAMELIST,
+            "&system celldm must be an indexed array (celldm(1), celldm(2), …)",
+            location="&system",
+        )
+    out: dict[int, float] = {}
+    for index, value in entry.items():
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise _error(
+                _MALFORMED_NAMELIST,
+                f"&system celldm({index}) must be numeric, found {value!r}",
+                location="&system",
+            )
+        out[int(index)] = float(value)
+    return out
+
+
+def _system_abc(
+    system: dict[str, _NamelistEntry],
+) -> tuple[float | None, float | None, float | None, float | None, float | None, float | None]:
+    """The ``A, B, C, cosAB, cosAC, cosBC`` crystallographic spelling as a 6-tuple of
+    floats (``None`` when a value is not declared)."""
+    return (
+        _system_number(system, "a"),
+        _system_number(system, "b"),
+        _system_number(system, "c"),
+        _system_number(system, "cosab"),
+        _system_number(system, "cosac"),
+        _system_number(system, "cosbc"),
+    )
+
+
 def _jsonify_namelist(entries: dict[str, _NamelistEntry]) -> dict[str, JsonValue]:
     """A namelist entry map as JSON values for the verbatim carry (Part 2 §3.10).
 
@@ -618,20 +681,10 @@ class QePwInParser(ParserPlugin):
                     f"&system ibrav must be an integer, found {ibrav!r}",
                     location="&system",
                 )
-            if ibrav != 0:
-                # S1 stub: the Bravais expansion is M50-S2's deliverable. The refusal is
-                # deliberately NOT recoverable (no recovery scenario exists — the plan's
-                # "recovery_hint noting S2" is carried in the message instead, because an
-                # unmapped hint would corrupt the hint→scenario contract, Part 4 §3.3).
-                raise _error(
-                    _UNSUPPORTED_IBRAV,
-                    f"ibrav = {ibrav} is not supported by qe_pw_in in this milestone: the "
-                    "Bravais-lattice expansion (celldm/A,B,C → lattice vectors) lands in "
-                    "M50-S2. Only an explicit cell (ibrav = 0 + CELL_PARAMETERS) parses "
-                    "here — the lattice is never guessed",
-                    location="&system",
-                )
         else:
+            # S1's reading (unchanged in S2): an absent ibrav is treated as the explicit-
+            # cell path. QE marks ibrav REQUIRED; the refusal-of-missing-ibrav decision
+            # is noted in D190 for a later milestone to pick up.
             ibrav = 0
 
         # --- cards --------------------------------------------------------------------
@@ -736,15 +789,6 @@ class QePwInParser(ParserPlugin):
                 "missing required card ATOMIC_POSITIONS (positions are required, never defaulted)",
                 location="card section",
             )
-        if ibrav == 0 and cell_rows is None:
-            raise _error(
-                _MALFORMED_CARD,
-                "missing required card CELL_PARAMETERS: ibrav = 0 declares an explicit cell, "
-                "and the lattice is never defaulted (P3)",
-                location="card section",
-            )
-        assert cell_rows is not None and cell_unit is not None  # refused above
-
         # --- species labels -> symbols (S1: plain element labels only) -----------------
         species_labels = {label for label, _, _ in species_rows}
         symbols: list[str] = []
@@ -766,49 +810,88 @@ class QePwInParser(ParserPlugin):
                 )
             symbols.append(symbol)
 
-        # --- per-card unit conversions (the deterministic boundary, recorded) ----------
-        needs_alat = positions_unit == "alat" or cell_unit == "alat"
-        alat: float | None = None
-        alat_note: str | None = None
-        if needs_alat:
-            celldm1: float | None = None
-            celldm_entry = system.get("celldm")
-            if isinstance(celldm_entry, dict):
-                celldm1_value = celldm_entry.get(1)
-                if celldm1_value is not None and (
-                    not isinstance(celldm1_value, (int, float)) or isinstance(celldm1_value, bool)
-                ):
-                    raise _error(
-                        _MALFORMED_NAMELIST,
-                        f"&system celldm(1) must be numeric, found {celldm1_value!r}",
-                        location="&system",
-                    )
-                celldm1 = float(celldm1_value) if celldm1_value is not None else None
-            a_value = system.get("a")
-            if a_value is not None and (
-                not isinstance(a_value, (int, float)) or isinstance(a_value, bool)
-            ):
-                raise _error(
-                    _MALFORMED_NAMELIST,
-                    f"&system A must be numeric, found {a_value!r}",
-                    location="&system",
-                )
-            alat, alat_note = alat_angstrom(
-                celldm1=celldm1, a=float(a_value) if a_value is not None else None
+        # --- the two lattice-parameter spellings (celldm(1..6) / A,B,C,cosAB,cosAC,cosBC)
+        # QE's documented contract is "specify either, NOT both" (INPUT_PW &system ibrav);
+        # D190 corrects S1's note (which claimed "A wins"): both-present is refused, never
+        # silently resolved (P4).
+        celldm_map = _system_celldm(system)
+        abc_values = _system_abc(system)
+        # ``_system_abc`` always returns the 6-tuple (possibly all ``None``); the core
+        # wants ``None`` for the absent spelling.
+        abc_declared = any(value is not None for value in abc_values)
+        abc_spelling = abc_values if abc_declared else None
+        celldm1 = celldm_map.get(1) if celldm_map else None
+        a_value = abc_values[0]
+        if celldm1 is not None and a_value is not None:
+            raise _error(
+                _MALFORMED_NAMELIST,
+                "&system declares both celldm(1) and A — QE's documented contract is "
+                "'specify either, not both' (INPUT_PW &system ibrav); refusing rather than "
+                "silently preferring one (D190)",
+                location="&system",
             )
-            if alat is None:
+        alat: float | None
+        alat_note: str | None
+        alat, alat_note = alat_angstrom(celldm1=celldm1, a=a_value)
+
+        # --- the lattice: explicit cell (ibrav = 0) or the ibrav expansion (S2) --------
+        lattice: np.ndarray
+        cell_note: str
+        lattice_source: str
+        if ibrav == 0:
+            if cell_rows is None:
                 raise _error(
                     _MALFORMED_CARD,
-                    "an alat-relative card is declared but &system carries neither celldm(1) "
-                    "nor A to resolve alat; refusing rather than assuming QE's 1-bohr default "
-                    "(P3)",
+                    "missing required card CELL_PARAMETERS: ibrav = 0 declares an explicit cell, "
+                    "and the lattice is never defaulted (P3)",
+                    location="card section",
+                )
+            assert cell_unit is not None  # a CELL_PARAMETERS card always carries a unit
+            try:
+                lattice, cell_note = lattice_from_cell_parameters(
+                    np.asarray(cell_rows, dtype=float), cell_unit, alat=alat
+                )
+            except ValueError as exc:
+                raise _error(_MALFORMED_CARD, str(exc), location="card section") from exc
+            lattice_source = cell_unit
+        else:
+            if cell_rows is not None:
+                raise _error(
+                    _MALFORMED_CARD,
+                    f"CELL_PARAMETERS contradicts ibrav = {ibrav}: a pw.x input declares the "
+                    "cell either explicitly (ibrav = 0) or through the Bravais lattice "
+                    "(ibrav ≠ 0), never both — refusing the contradiction rather than "
+                    "silently preferring one (D190)",
+                    location="CELL_PARAMETERS",
+                )
+            if alat is None:
+                raise _error(
+                    _MALFORMED_NAMELIST,
+                    f"ibrav = {ibrav} requires the lattice scale: &system must declare "
+                    "celldm(1) (bohr) or A (angstrom) — the expansion is never run without "
+                    "a scale (P3)",
                     location="&system",
                 )
+            try:
+                lattice, cell_note = lattice_from_ibrav(
+                    ibrav, celldm=celldm_map, abc=abc_spelling, alat=alat
+                )
+            except UnsupportedIbravError as exc:
+                raise _error(_UNSUPPORTED_IBRAV, str(exc), location="&system") from exc
+            except ValueError as exc:
+                raise _error(_MALFORMED_NAMELIST, str(exc), location="&system") from exc
+            lattice_source = f"ibrav={ibrav}"
 
-        try:
-            lattice, cell_note = lattice_from_cell_parameters(
-                np.asarray(cell_rows, dtype=float), cell_unit, alat=alat
+        # --- positions (the deterministic boundary, recorded) ---------------------------
+        if positions_unit == "alat" and alat is None:
+            raise _error(
+                _MALFORMED_CARD,
+                "an alat-relative card is declared but &system carries neither celldm(1) "
+                "nor A to resolve alat; refusing rather than assuming QE's 1-bohr default "
+                "(P3)",
+                location="&system",
             )
+        try:
             raw_xyz = np.asarray([[x, y, z] for _, x, y, z in position_rows], dtype=float)
             cartesian, pos_note = positions_cartesian(
                 raw_xyz, positions_unit, lattice=lattice, alat=alat
@@ -856,7 +939,7 @@ class QePwInParser(ParserPlugin):
             format_id=FORMAT_ID,
             filename=filename,
             original_coordinate_system=coordinate_system(positions_unit),
-            source_units={"positions": positions_unit, "lattice_vectors": cell_unit},
+            source_units={"positions": positions_unit, "lattice_vectors": lattice_source},
             parse_notes=parse_notes,
         )
         canonical = CanonicalObject(

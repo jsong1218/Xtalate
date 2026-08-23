@@ -1,0 +1,10 @@
+&CONTROL
+/
+&SYSTEM
+   ibrav = 8, nat = 1, ntyp = 1,
+   A = 4.0, B = 5.0, C = 6.0,
+/
+ATOMIC_SPECIES
+   Fe 55.845 fe.pbe.UPF
+ATOMIC_POSITIONS {angstrom}
+   Fe 0.0 0.0 0.0

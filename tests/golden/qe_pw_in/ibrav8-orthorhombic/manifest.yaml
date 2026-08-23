@@ -1,0 +1,13 @@
+case: ibrav8-orthorhombic
+format_id: qe_pw_in
+source_file: pw.in
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 671277aeb8265863736eb94bbb314c0df690b4ed4f217e7d38f8bba6296c9e44
+expected_sha256: bc21b4e6ffc8b05358bc9c16b4681c9a785e4452791d37a230606280cecd438b
+origin:
+  kind: synthetic
+  source: 'Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).'
+  license: Apache-2.0
+notes: >-
+  M50-S2 ibrav golden: ibrav = 8 (orthorhombic P), A = 4.0, B = 5.0, C = 6.0 A. Hand-pinned: v1=(a,0,0), v2=(0,b,0), v3=(0,0,c) -> diag(4,5,6) A.

@@ -1,0 +1,11 @@
+&CONTROL
+/
+&SYSTEM
+   ibrav = 14, nat = 1, ntyp = 1,
+   A = 4.0, B = 5.0, C = 6.0,
+   cosAB = 0.6, cosAC = 0.6, cosBC = 0.36,
+/
+ATOMIC_SPECIES
+   Fe 55.845 fe.pbe.UPF
+ATOMIC_POSITIONS {angstrom}
+   Fe 0.0 0.0 0.0

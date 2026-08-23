@@ -13,9 +13,9 @@
         ],
         "positions": [
           [
-            1.0,
-            1.0,
-            1.0
+            0.0,
+            0.0,
+            0.0
           ]
         ],
         "masses": null,
@@ -24,19 +24,19 @@
       "cell": {
         "lattice_vectors": [
           [
-            3.0,
-            1.0,
+            4.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.25,
+            4.841229182759271,
             0.0
           ],
           [
             0.0,
-            4.0,
-            1.0
-          ],
-          [
-            1.0,
             0.0,
-            5.0
+            6.0
           ]
         ],
         "pbc": [
@@ -66,14 +66,14 @@
     "source_filename": "pw.in",
     "source_format": "qe_pw_in",
     "source_units": {
-      "positions": "alat",
-      "lattice_vectors": "angstrom"
+      "positions": "angstrom",
+      "lattice_vectors": "ibrav=12"
     },
     "original_coordinate_system": "cartesian",
     "parse_notes": [
       "alat resolved from &system A (angstrom).",
-      "CELL_PARAMETERS {angstrom}: lattice vectors read as-is (Å).",
-      "ATOMIC_POSITIONS {alat}: positions scaled to Å via alat (4.0 Å).",
+      "lattice vectors derived from ibrav=12 (monoclinic P, unique axis c) per QE's documented conventions (INPUT_PW v7.5 / Modules/latgen.f90): v1=a(1,0,0), v2=b(cosγ,sinγ,0), v3=c(0,0,1); parameter spelling: A,B,C (A = 4.0 Å), alat = 4.0 Å; the derivation is recorded — the explicit vectors are re-expressed, never guessed (P1/D190).",
+      "ATOMIC_POSITIONS {angstrom}: Cartesian positions read as-is (Å).",
       "pbc set to (true,true,true): a pw.x input carries no PBC declaration and QE is always fully periodic (format-defined, not assumed).",
       "ATOMIC_SPECIES labels resolve to element symbols; the mass and pseudopotential columns are carried verbatim in user_metadata.custom_global['qe_pw_in:atomic_species'] (masses promote to atoms.masses in M50-S3)."
     ],

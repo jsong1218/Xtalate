@@ -1,14 +1,16 @@
-"""QE pw.x input parser tests (v1.4 M50-S1; Part 3 §3).
+"""QE pw.x input parser tests (v1.4 M50-S1/S2; Part 3 §3).
 
-The unit tests pin the S1 boundaries the goldens do not reach: the ibrav refusal stub,
-the malformed/empty refusals, the never-defaulted required cards, the alat spellings, the
-verbatim carries (nothing dropped, P1), and the staging-state registration (parser-only;
-no exporter until M51).
+The unit tests pin the boundaries the goldens do not reach: the hand-pinned ibrav
+expansion formulas (S2), the unsupported-ibrav / CELL_PARAMETERS-conflict / both-spellings
+refusals, the malformed/empty refusals, the never-defaulted required cards, the alat
+spellings, the verbatim carries (nothing dropped, P1), and the staging-state registration
+(parser-only; no exporter until M51).
 """
 
 from __future__ import annotations
 
 import io
+import math
 
 import pytest
 
@@ -112,16 +114,28 @@ def test_alat_positions_resolve_through_celldm1_bohr() -> None:
     assert any("celldm(1)" in note for note in obj.provenance.parse_notes)
 
 
-def test_alat_prefers_a_over_celldm1() -> None:
+def test_both_lattice_spellings_refuse() -> None:
+    # QE's documented contract is "specify either, NOT both" (INPUT_PW &system ibrav);
+    # D190 corrects S1's note, which claimed "A wins" — both-present is refused, never
+    # silently resolved (P4).
     src = (
         "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n   celldm(1) = 2.0, A = 4.0,\n/\n"
         "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n"
         + _positions("alat", "0.25", "0.25", "0.25")
         + _cell_block()
     )
-    obj = _parse(src).canonical
-    assert obj.frames[0].atoms.positions[0].tolist() == [1.0, 1.0, 1.0]
-    assert any("QE prefers A over celldm(1)" in note for note in obj.provenance.parse_notes)
+    with pytest.raises(ParseError) as exc:
+        _parse(src)
+    assert exc.value.issues[0].code == "QEIN_MALFORMED_NAMELIST"
+    assert "both celldm(1) and A" in exc.value.issues[0].message
+
+
+def test_alat_angstrom_refuses_both_spellings() -> None:
+    # The core's own guard (the reader resolves the refusal first; this pins the core).
+    from xtalate.parsers._qe import alat_angstrom
+
+    with pytest.raises(ValueError, match="specify either, not both"):
+        alat_angstrom(celldm1=2.0, a=4.0)
 
 
 def test_alat_positions_without_an_alat_declaration_refuse() -> None:
@@ -182,22 +196,10 @@ def test_symbols_follow_position_order() -> None:
     assert obj.frames[0].atoms.positions[1].tolist() == [0.0, 1.0, 0.0]
 
 
-def test_ibrav_nonzero_refuses_unsupported_ibrav_stub() -> None:
-    src = (
-        "&SYSTEM\n   ibrav = 1, nat = 1, ntyp = 1,\n/\n"
-        "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n" + _positions("angstrom") + _cell_block()
-    )
-    with pytest.raises(ParseError) as exc:
-        _parse(src)
-    issue = exc.value.issues[0]
-    assert issue.code == "QEIN_UNSUPPORTED_IBRAV"
-    assert "M50-S2" in issue.message
-    assert issue.recovery_hint is None  # no recovery scenario exists; S2 replaces the stub
-
-
 def test_ibrav_absent_reads_as_zero() -> None:
-    # QE's documented ibrav default is 0; with CELL_PARAMETERS present the explicit-cell
-    # path holds and the default is recorded.
+    # S1's reading (noted in D190): an absent ibrav is treated as the explicit-cell path;
+    # with CELL_PARAMETERS present the explicit cell holds. (QE marks ibrav REQUIRED; the
+    # refusal-of-missing-ibrav decision is left to a later milestone.)
     obj = _parse(_NAKED_CELL + _positions("angstrom") + _cell_block()).canonical
     assert obj.frames[0].cell is not None
     assert obj.frames[0].cell.lattice_vectors.tolist() == [
@@ -205,6 +207,144 @@ def test_ibrav_absent_reads_as_zero() -> None:
         [0.0, 4.0, 1.0],
         [1.0, 0.0, 5.0],
     ]
+
+
+# --- ibrav expansion (M50-S2; D190) --------------------------------------------------
+
+
+def _ibrav_src(
+    ibrav: int,
+    system_extra: str,
+    *,
+    positions_unit: str = "angstrom",
+    xyz: tuple[str, ...] = (),
+) -> str:
+    return (
+        f"&SYSTEM\n   ibrav = {ibrav}, nat = 1, ntyp = 1,\n   {system_extra}\n/\n"
+        "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n" + _positions(positions_unit, *xyz)
+    )
+
+
+@pytest.mark.parametrize(
+    ("ibrav", "system_extra", "expected"),
+    [
+        # Hand-computed from QE's documented conventions (INPUT_PW v7.5 ibrav table;
+        # Modules/latgen.f90) — every supported value is pinned, never eyeballed.
+        (1, "A = 4.0", [[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]]),
+        (2, "A = 4.0", [[-2.0, 0.0, 2.0], [0.0, 2.0, 2.0], [-2.0, 2.0, 0.0]]),
+        (3, "A = 4.0", [[2.0, 2.0, 2.0], [-2.0, 2.0, 2.0], [-2.0, -2.0, 2.0]]),
+        (
+            4,
+            "A = 4.0, C = 6.0",
+            [[4.0, 0.0, 0.0], [-2.0, 2.0 * math.sqrt(3.0), 0.0], [0.0, 0.0, 6.0]],
+        ),
+        (6, "A = 4.0, C = 6.0", [[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 6.0]]),
+        (8, "A = 4.0, B = 5.0, C = 6.0", [[4.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 6.0]]),
+        (
+            12,
+            "A = 4.0, B = 5.0, C = 6.0, cosAB = 0.25",
+            [[4.0, 0.0, 0.0], [1.25, 5.0 * math.sqrt(0.9375), 0.0], [0.0, 0.0, 6.0]],
+        ),
+        (
+            -12,
+            "A = 4.0, B = 5.0, C = 6.0, cosAC = 0.25",
+            [[4.0, 0.0, 0.0], [0.0, 5.0, 0.0], [1.5, 0.0, 6.0 * math.sqrt(0.9375)]],
+        ),
+        (
+            14,
+            "A = 4.0, B = 5.0, C = 6.0, cosAB = 0.6, cosAC = 0.6, cosBC = 0.36",
+            [[4.0, 0.0, 0.0], [3.0, 4.0, 0.0], [3.6, 0.0, 4.8]],
+        ),
+    ],
+)
+def test_ibrav_expansion_is_hand_pinned(
+    ibrav: int, system_extra: str, expected: list[list[float]]
+) -> None:
+    obj = _parse(_ibrav_src(ibrav, system_extra)).canonical
+    assert obj.frames[0].cell is not None
+    assert obj.frames[0].cell.lattice_vectors.tolist() == [pytest.approx(row) for row in expected]
+    notes = obj.provenance.parse_notes
+    assert any(f"ibrav={ibrav}" in note for note in notes)  # the derivation is recorded
+    assert obj.provenance.source_units["lattice_vectors"] == f"ibrav={ibrav}"
+
+
+def test_ibrav_both_parameter_spellings_reach_identical_vectors() -> None:
+    # Done-means #2: the celldm spelling (alat in bohr + ratios + cosines) and the
+    # A,B,C,cosAB,cosAC,cosBC spelling (Å) reach the same 3×3 for the same lattice.
+    a_bohr = 4.0 / 0.52917720859  # a = 4 Å expressed in bohr, QE's own conversion
+    celldm_src = _ibrav_src(
+        14,
+        f"celldm(1) = {a_bohr}, celldm(2) = 1.25, celldm(3) = 1.5, "
+        "celldm(4) = 0.36, celldm(5) = 0.6, celldm(6) = 0.6",
+    )
+    abc_src = _ibrav_src(14, "A = 4.0, B = 5.0, C = 6.0, cosAB = 0.6, cosAC = 0.6, cosBC = 0.36")
+    celldm_cell = _parse(celldm_src).canonical.frames[0].cell
+    abc_cell = _parse(abc_src).canonical.frames[0].cell
+    assert celldm_cell is not None and abc_cell is not None
+    for row_celldm, row_abc in zip(
+        celldm_cell.lattice_vectors.tolist(), abc_cell.lattice_vectors.tolist(), strict=True
+    ):
+        assert row_celldm == pytest.approx(row_abc)
+
+
+def test_ibrav_outside_supported_set_refuses_naming_the_value() -> None:
+    # ibrav = 5 (trigonal R) is deliberately outside the S2 hand-pinned set; the refusal
+    # names the value and never guesses a lattice (P4). The set grows by corpus evidence.
+    with pytest.raises(ParseError) as exc:
+        _parse(_ibrav_src(5, "A = 4.0"))
+    issue = exc.value.issues[0]
+    assert issue.code == "QEIN_UNSUPPORTED_IBRAV"
+    assert "ibrav = 5" in issue.message
+    assert issue.recovery_hint is None
+
+
+def test_cell_parameters_with_ibrav_nonzero_refuses_the_conflict() -> None:
+    # A CELL_PARAMETERS card alongside ibrav ≠ 0 is a QE contradiction — refused, never
+    # silently resolved (D190's rejected alternative (b)).
+    with pytest.raises(ParseError) as exc:
+        _parse(_ibrav_src(4, "A = 4.0, C = 6.0") + _cell_block())
+    issue = exc.value.issues[0]
+    assert issue.code == "QEIN_MALFORMED_CARD"
+    assert "contradicts ibrav" in issue.message
+
+
+def test_ibrav_without_a_scale_refuses() -> None:
+    # The expansion needs celldm(1) or A; neither declared -> refused, never a guessed
+    # scale (P3).
+    with pytest.raises(ParseError) as exc:
+        _parse(_ibrav_src(1, ""))
+    issue = exc.value.issues[0]
+    assert issue.code == "QEIN_MALFORMED_NAMELIST"
+    assert "lattice scale" in issue.message
+
+
+def test_ibrav_requires_its_ratios() -> None:
+    # ibrav = 4 needs c/a > 0; C missing -> refused, mirroring QE's "wrong celldm(3)".
+    with pytest.raises(ParseError) as exc:
+        _parse(_ibrav_src(4, "A = 4.0"))
+    issue = exc.value.issues[0]
+    assert issue.code == "QEIN_MALFORMED_NAMELIST"
+    assert "c/a" in issue.message
+
+
+def test_crystal_positions_convert_against_the_derived_lattice() -> None:
+    # The S2 cross case: fractional -> Cartesian runs against the *derived* ibrav lattice.
+    src = _ibrav_src(4, "A = 4.0, C = 6.0", positions_unit="crystal", xyz=("0.25", "0.25", "0.25"))
+    obj = _parse(src).canonical
+    # frac 0.25·v1 + 0.25·v2 + 0.25·v3 with v1=(4,0,0), v2=(-2,2√3,0), v3=(0,0,6):
+    # (0.5, √3/2, 1.5) — hand-computed.
+    assert obj.frames[0].atoms.positions[0].tolist() == pytest.approx(
+        [0.5, math.sqrt(3.0) / 2.0, 1.5]
+    )
+    assert obj.provenance.original_coordinate_system == "fractional"
+
+
+def test_ibrav_positions_in_alat_scale_with_the_derived_alat() -> None:
+    # ATOMIC_POSITIONS {alat} with ibrav ≠ 0 scales against the same resolved alat the
+    # expansion used (A here).
+    src = _ibrav_src(1, "A = 4.0", positions_unit="alat", xyz=("0.5", "0.5", "0.5"))
+    obj = _parse(src).canonical
+    assert obj.frames[0].atoms.positions[0].tolist() == [2.0, 2.0, 2.0]
 
 
 def test_missing_cell_parameters_refuses_never_defaults() -> None:

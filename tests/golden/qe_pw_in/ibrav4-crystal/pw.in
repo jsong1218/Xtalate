@@ -1,0 +1,10 @@
+&CONTROL
+/
+&SYSTEM
+   ibrav = 4, nat = 1, ntyp = 1,
+   A = 4.0, C = 6.0,
+/
+ATOMIC_SPECIES
+   Fe 55.845 fe.pbe.UPF
+ATOMIC_POSITIONS {crystal}
+   Fe 0.25 0.25 0.25
