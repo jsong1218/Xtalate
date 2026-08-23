@@ -1,0 +1,24 @@
+case: relax-7x-h2o-out
+format_id: qe_pw_out
+source_file: pw.out
+sha256: "d800d7de1f1dd83dc3115b0ff3259361f2f8e725dc86d6841f84417adc2cc524"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE 7.x pw.x relax output (M53-S1), generalizing the committed M52 relax golden's known-good bytes (7.x banner, species + site tables, per-step iteration / forces / stress / positions blocks) to a two-step fixed-cell relax run with varied energies and forces."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - QEOUT_UNMAPPED_BLOCK_CARRIED
+    - QEOUT_UNMAPPED_BLOCK_CARRIED
+  frame_count: 2
+  pair: relax-7x-h2o
+notes: >-
+  The relax-7x-h2o input's output half (M53-S1 dimensions 1/2/7): QE 7.x layout, two ionic
+  steps of H2O in the fixed 5 Å cubic cell, each carrying the '!    total energy' line, the
+  Forces acting on atoms block, the tension-positive-mapped total stress, and an angstrom
+  positions card. The two QEOUT_UNMAPPED_BLOCK_CARRIED warnings are the recognized-but-unmapped
+  per-step 'total force' scalar carried verbatim (P1) — one per step. The header's setup echo
+  repeats the input's cell / species / positions, so the pair oracle asserts the M50 input
+  parser and this M52 output parser agree on the shared initial structure. qe_pw_out is
+  parser-only (D159): no exporter, so roundtrip is structurally not applicable and is not
+  declared.

@@ -52,11 +52,23 @@ byte-identity: a wild file's arbitrary formatting is not preserved byte-for-byte
 identity is itself gainy, D178), so byte-identity would be a false-red.
 
 ``roundtrip`` is format-gated exactly like ``stoichiometry``: ``ROUNDTRIP_FORMATS`` declares
-which formats the oracle applies to, and a non-LAMMPS manifest declaring it is rejected. A
-refused case (``parse_error: true``) produces no object to round-trip, so it sets neither
-oracle. A LAMMPS case whose export is deliberately lossy (e.g. the dump exporter does not write
-``ITEM: TIME`` carries) declares ``roundtrip: skipped`` with a stated reason — never a silent
-pass.
+which formats the oracle applies to, and a manifest declaring it for a format outside that set
+is rejected. A refused case (``parse_error: true``) produces no object to round-trip, so it
+sets neither oracle. A round-trip case whose export is deliberately lossy (e.g. the dump
+exporter does not write ``ITEM: TIME`` carries) declares ``roundtrip: skipped`` with a stated
+reason — never a silent pass.
+
+The QE pw.x pair (v1.4 M53-S1, D198) reuses both machineries. ``qe_pw_in`` is full read+write
+(the M51 exporter), so it joins ``ROUNDTRIP_FORMATS`` — a wild input that parses cleanly is
+re-exported and re-parsed, and the two canonical objects asserted scientifically equal, the
+LAMMPS pattern. ``qe_pw_out`` is parser-only (D159) — no exporter, so it is never a round-trip
+case, structurally. In place of a second reader's *agreement* on values (there is none — the
+input reader and the output reader are the two readers of one run), a QE input/output pair
+declares ``expectation.pair`` exactly like a VASP pair, and the suite asserts the **input-echo
+agreement**: the M50 input parser and the M52 output parser land the same cell / species /
+positions for the same run (the ``_qe_run`` cross-check assertion, reused — standing rule 4's
+guard that a silent unit or sign disagreement between the two QE readers of one calculation
+cannot slip through).
 """
 
 from __future__ import annotations
@@ -91,24 +103,36 @@ SKIP_REASONS = ("partial_occupancy", "formula_absent", "z_absent", "formula_disa
 #: carries ``_chemical_formula_sum``/``Z``; VASP output has no self-declared composition tag, so
 #: the stoichiometry check is format-gated (D172). For a non-CIF format it is structurally
 #: absent — not a skip reason, which is a recorded judgement about a check that *could* have
-#: run. The pair-agreement oracle (``expectation.pair``) takes its place for VASP.
+#: run. The pair-agreement oracle (``expectation.pair``) takes its place for VASP and QE.
 STOICH_FORMATS = frozenset({"cif"})
 STOICH_NOT_APPLICABLE = "not_applicable"
 
-#: The formats the round-trip self-consistency oracle applies to (M49-S1, D184): the two full
-#: read+write LAMMPS formats. They carry no self-declared composition (no stoichiometry) and have
-#: no sibling second-reader of one run (no pair-agreement) — but being full read+write, the
-#: format-native ground truth is a scientific round-trip through each format's own exporter,
-#: canonical ≈ canonical within tolerance. For a non-LAMMPS format the oracle is structurally
-#: absent, exactly like stoichiometry is for a non-CIF format.
-ROUNDTRIP_FORMATS = frozenset({"lammps_dump", "lammps_data"})
+#: The formats the round-trip self-consistency oracle applies to (M49-S1, D184; M53-S1 for
+#: ``qe_pw_in``): the two full read+write LAMMPS formats plus the full read+write QE pw.x input.
+#: They carry no self-declared composition (no stoichiometry) and have no sibling second-reader
+#: of one run (no pair-agreement — ``qe_pw_in``'s sibling is the *output* reader, covered by the
+#: input-echo pair oracle) — but being full read+write, the format-native ground truth is a
+#: scientific round-trip through each format's own exporter, canonical ≈ canonical within
+#: tolerance. For a format outside this set the oracle is structurally absent, exactly like
+#: stoichiometry is for a non-CIF format. ``qe_pw_out`` is parser-only (D159), so it is never a
+#: member: a read-only output has no exporter to round-trip through.
+ROUNDTRIP_FORMATS = frozenset({"lammps_dump", "lammps_data", "qe_pw_in"})
 ROUNDTRIP_NOT_APPLICABLE = "not_applicable"
 
-#: The parse-time recovery scenarios a LAMMPS wild manifest may declare via ``parse_recover`` /
-#: ``roundtrip_recover`` (the M46/M48 parse-time scenarios — units, species, atom style). The
-#: spelling is the engine/CLI scenario name, not the parser's recovery *hint* (which differs for
-#: species: ``supply_species``).
-_PARSE_TIME_SCENARIOS = frozenset({"ambiguous_units", "missing_species", "ambiguous_atom_style"})
+#: The recovery scenarios a wild manifest may declare via ``parse_recover`` /
+#: ``roundtrip_recover`` (the engine/CLI scenario names — units/species/atom-style for the
+#: LAMMPS formats, species for ``qe_pw_in``, torn-tail truncation for ``qe_pw_out``). The
+#: spelling is the engine/CLI scenario name, not the parser's recovery *hint* (which differs:
+#: ``supply_species`` for species, ``truncate_at_last_valid_frame`` for the torn tail).
+_PARSE_TIME_SCENARIOS = frozenset(
+    {"ambiguous_units", "missing_species", "ambiguous_atom_style", "truncate_corrupt_tail"}
+)
+
+#: The formats a wild manifest may declare ``parse_recover`` for: the round-trip formats (the
+#: LAMMPS pair + ``qe_pw_in``, whose files may need units/species presets) and ``qe_pw_out``
+#: (whose torn tail recovers through ``truncate_corrupt_tail``, M53-S1). A refused case may not
+#: declare a preset (a declared preset would parse it successfully and contradict the refusal).
+_RECOVERY_FORMATS = frozenset((*ROUNDTRIP_FORMATS, "qe_pw_out"))
 
 
 class WildExpectationError(ValueError):
@@ -139,29 +163,31 @@ class WildExpectation:
     the assertion honest if a future format enters this corpus."""
 
     pair: str | None
-    """The ``case`` name of the sibling VASP file of the *other* format for the same run, or
-    ``None``. Drives the OUTCAR↔vasprun pair-agreement oracle (D172): the suite parses both
-    and asserts agreement on energy/forces/stress/cell/positions, with
-    ``electronic.magnetic_moments`` excluded (an OUTCAR-only field — vasprun.xml carries no
-    per-ion magnetization block)."""
+    """The ``case`` name of the sibling file of the *other* format for the same run, or
+    ``None``. Drives the pair-agreement oracle (D172): a VASP pair is OUTCAR↔vasprun
+    (agreement on energy/forces/stress/cell/positions, with
+    ``electronic.magnetic_moments`` excluded — an OUTCAR-only field), and a QE pair is
+    ``qe_pw_in``↔``qe_pw_out`` (the input-echo agreement on the shared initial structure —
+    cell / species / positions — reusing the M52 ``_qe_run`` cross-check assertion, M53-S1)."""
 
     parse_recover: tuple[str, ...]
     """CLI-style recovery preset strings (``SCENARIO=CHOICE[,param=value…]``) the manifest
     declares this file needs to parse at all — e.g. ``ambiguous_units=metal`` for an
-    undeclared-units dump, or ``missing_species=species_map,species=1:Si 2:O`` for a typed
-    one. Empty when the file self-describes (a declared ``ITEM: UNITS`` dump, an
-    element-labeled dump). A LAMMPS file that needs a preset refuses a bare parse, so a
-    manifest that names a preset here commits the suite to driving ``parse_recover`` (M49-S1);
-    the recovery's own note warnings (``LAMMPSDUMP_UNITS_INTERPRETED`` /
-    ``LAMMPSDUMP_SPECIES_SUPPLIED`` / ``LAMMPSDATA_ATOM_STYLE_INTERPRETED`` …) then appear in
-    the exact issue-code multiset, because a recovery is never silent (P1)."""
+    undeclared-units dump, ``missing_species=species_map,species=1:Si 2:O`` for a typed
+    one, or ``truncate_corrupt_tail=truncate`` for a torn ``qe_pw_out`` tail. Empty when the
+    file self-describes. A file that needs a preset refuses a bare parse, so a manifest that
+    names a preset here commits the suite to driving ``parse_recover`` (M49-S1, M53-S1); the
+    recovery's own note warnings (``LAMMPSDUMP_UNITS_INTERPRETED`` /
+    ``QEIN_SPECIES_SUPPLIED`` / ``QEOUT_TRUNCATED`` …) then appear in the exact issue-code
+    multiset, because a recovery is never silent (P1)."""
 
     roundtrip: str
     """``"checked"``, one of :data:`SKIP_REASONS`-style stated judgements via
-    ``roundtrip_note``, or ``not_applicable`` for a non-LAMMPS format. The round-trip
-    self-consistency oracle (M49-S1, D184): the file is parsed (with its declared
-    ``parse_recover``), re-exported through its own exporter, re-parsed, and the two canonical
-    objects asserted scientifically equal — the parser and exporter agreeing on meaning."""
+    ``roundtrip_note``, or ``not_applicable`` for a format outside :data:`ROUNDTRIP_FORMATS`
+    (M49-S1, D184; M53-S1 adds ``qe_pw_in``). The round-trip self-consistency oracle: the file
+    is parsed (with its declared ``parse_recover``), re-exported through its own exporter,
+    re-parsed, and the two canonical objects asserted scientifically equal — the parser and
+    exporter agreeing on meaning."""
 
     roundtrip_note: str
     """Prose reason, required whenever ``roundtrip`` is not ``"checked"`` — a skipped
@@ -267,21 +293,23 @@ def load_expectation(case: gov.GoldenCase) -> WildExpectation:
             )
         stoichiometry = STOICH_NOT_APPLICABLE
         note = (
-            "the file's-own-chemistry oracle is CIF-only; VASP output has no self-declared "
-            "composition (the pair-agreement oracle applies instead)"
+            "the file's-own-chemistry oracle is CIF-only; a VASP or QE case has no "
+            "self-declared composition (its own oracle — pair-agreement or round-trip — "
+            "applies instead)"
         )
 
     pair = raw.get("pair")
     if pair is not None and (not isinstance(pair, str) or not pair.strip()):
         raise WildExpectationError(f"{where}: 'expectation.pair' must be a non-empty case name")
 
-    # The parse-time recovery presets (M49-S1): how this file parses at all, if it does not
-    # self-describe. Only the LAMMPS formats have parse-time scenarios in this corpus.
+    # The recovery presets (M49-S1; M53-S1 adds the QE formats): how this file parses at all,
+    # if it does not self-describe. Only the round-trip formats (the LAMMPS pair + qe_pw_in)
+    # and qe_pw_out have recovery scenarios in this corpus.
     parse_recover = _recovery_specs(raw.get("parse_recover"), where=where, field="parse_recover")
-    if parse_recover and format_id not in ROUNDTRIP_FORMATS:
+    if parse_recover and format_id not in _RECOVERY_FORMATS:
         raise WildExpectationError(
-            f"{where}: 'parse_recover' applies only to the LAMMPS formats "
-            f"{sorted(ROUNDTRIP_FORMATS)} — no other wild format has a parse-time recovery"
+            f"{where}: 'parse_recover' applies only to the recovery-capable formats "
+            f"{sorted(_RECOVERY_FORMATS)} — no other wild format has a recovery scenario"
         )
 
     # The round-trip self-consistency oracle (M49-S1, D184): format-gated to the two full
@@ -314,13 +342,15 @@ def load_expectation(case: gov.GoldenCase) -> WildExpectation:
             if field in raw:
                 raise WildExpectationError(
                     f"{where}: '{field}' does not apply to format_id {format_id!r} — the "
-                    "round-trip oracle is LAMMPS-only (the two full read+write formats); a "
-                    "non-LAMMPS case is checked by its own oracle instead"
+                    "round-trip oracle is for the full read+write formats "
+                    f"{sorted(ROUNDTRIP_FORMATS)}; a parser-only case ("
+                    "qe_pw_out, a VASP output) is checked by its own oracle instead"
                 )
         roundtrip = ROUNDTRIP_NOT_APPLICABLE
         r_note = (
             "the round-trip self-consistency oracle applies only to the full read+write "
-            "LAMMPS formats; this format has no exporter round-trip in the wild corpus"
+            "formats (the LAMMPS pair + qe_pw_in); a parser-only format has no exporter "
+            "round-trip in the wild corpus"
         )
         roundtrip_recover = ()
 

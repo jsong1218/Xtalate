@@ -1,0 +1,14 @@
+&CONTROL
+   calculation = 'scf',
+/
+&SYSTEM
+   ibrav = 0, nat = 1, ntyp = 1,
+/
+ATOMIC_SPECIES
+   Jx 55.845 jx.pbe.UPF
+ATOMIC_POSITIONS {angstrom}
+   Jx 0.0 0.0 0.0
+CELL_PARAMETERS {angstrom}
+   5.0 0.0 0.0
+   0.0 5.0 0.0
+   0.0 0.0 5.0

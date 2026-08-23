@@ -1,0 +1,22 @@
+case: md-6x-h2o
+format_id: qe_pw_out
+source_file: pw.out
+sha256: "db1a3e5ec2e5d5a7fa6ee657b9cd09f44cf31eb2c0ab0dfde1674418c8a0be50"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE 6.x pw.x MD output (M53-S1), generalizing the committed M52 md-6x golden (v.6.8 banner, lowercase species table, G-vectors block, per-step energy/forces/stress/positions) to a three-step NVT-style run with drifting positions."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - QEOUT_UNMAPPED_BLOCK_CARRIED
+    - QEOUT_UNMAPPED_BLOCK_CARRIED
+    - QEOUT_UNMAPPED_BLOCK_CARRIED
+  frame_count: 3
+notes: >-
+  The MD + 6.x dimensions (M53-S1 dimensions 1/2): a QE 6.x molecular-dynamics run of H2O in
+  the fixed 5 Å cell, three frames, each with energy, forces, tension-positive stress and an
+  angstrom positions card (no per-step cells — fixed-cell MD). The three
+  QEOUT_UNMAPPED_BLOCK_CARRIED warnings are the per-step 'total force' scalar carries (P1),
+  one per frame. The version-drift axis is exercised on a realistic file: the 6.x banner,
+  lowercase 'atomic species' header, looser column widths and the extra G-vectors diagnostic
+  block must all read cleanly.

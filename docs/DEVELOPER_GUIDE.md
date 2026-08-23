@@ -421,6 +421,42 @@ manifest, regenerate `tests/golden/ATTRIBUTIONS.md` with `python tests/golden/_g
 The maintainer files the tracking issue for real batch files; this documented call is the
 standing invitation.
 
+### 5.7 Contributing real-world QE pw.x files (a standing call)
+
+The QE cases under `tests/wild/qe/` are **authored-realistic fixtures** — self-licensed
+Apache-2.0 files generalizing the M50–M52 QE goldens to real-world shapes, spanning QE 6.x and
+7.x layouts across SCF / ionic `relax` / `vc-relax` (per-step cells) / MD runs, an unconverged
+SCF (`QEOUT_UNCONVERGED` — the energy is still read and flagged, P3), a killed run torn
+mid-write (refuses `QEOUT_TRUNCATED`; a companion case recovers under
+`truncate_corrupt_tail=truncate`), decorated species labels (`Fe1` → Fe, `O_vac` → O, each
+resolution recorded) plus the unresolvable-label refusal, two nonzero-`ibrav` inputs (2 fcc,
+4 hexagonal), and a carried-payload input proving the K_POINTS / pseudopotential carry
+survives the round-trip. Their oracles: the **round-trip self-consistency** check for
+`qe_pw_in` (a full read+write format — parse, re-export through its own exporter, re-parse,
+assert scientifically equal) and the **input-echo agreement** for an input/output pair (the
+M50 input parser and the M52 output parser are the two readers of one run and must agree on
+the shared initial structure — cell / species / positions — the `_qe_run` cross-check
+assertion reused, standing rule 4). `qe_pw_out` is parser-only (D159), so it is never a
+round-trip case.
+
+**Real-world QE pw.x input/output files are welcome into the same harness.** Drop the files
+under `tests/wild/qe/<case>/` together with a `manifest.yaml` declaring the **exact**
+`expectation.issue_codes` set (plus `frame_count`), the `parse_recover` preset(s) the file
+needs (`missing_species=species_map,species=Fe1:Fe O_vac:O` for an unresolvable label, or
+`truncate_corrupt_tail=truncate` for a torn output), and the oracle declarations: `roundtrip:
+checked` for a `qe_pw_in` whose re-export must agree with it, and `pair: <sibling case>`
+naming the other half of the same run when you contribute the input *and* its output. A
+refused file (`parse_error`) produces no object, so it declares neither oracle. Every
+real-file anomaly must be triaged the way M20 requires — fixed in the parser, or named in the
+manifest by someone who looked at it — and the supported `ibrav` set and recognized QE
+layouts grow **only** by this corpus evidence, never speculatively from the QE docs (roadmap
+§13 rule 2). The file's license must permit redistribution (record it in `origin.license`;
+a `published-dataset` origin also needs its source URL), and after adding a manifest,
+regenerate `tests/golden/ATTRIBUTIONS.md` with `python tests/golden/_governance.py`. The
+maintainer files the tracking issue for real batch files; this documented call is the
+standing invitation — batch 1 is authored-realistic, and real contributions are what make the
+hybrid corpus honest.
+
 ## 6. Coding conventions (the non-negotiables)
 
 These invariants are what make Xtalate trustworthy. A change that breaks one will not merge, however

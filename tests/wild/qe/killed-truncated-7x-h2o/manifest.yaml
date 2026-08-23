@@ -1,0 +1,24 @@
+case: killed-truncated-7x-h2o
+format_id: qe_pw_out
+source_file: pw.out
+sha256: "478c6d74cba6f0c967a8b4ce5102bce550eae85f9891da0085bdb3943cd0a793"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE 7.x pw.x output of a run killed mid-write (M53-S1): step 1 complete, step 2 torn inside its force table, authored by cutting a two-step known-good run at the point a scheduler kill would land (the M52-S3 truncation-shape discipline)."
+  license: "Apache-2.0"
+expectation:
+  parse_error: QEOUT_TRUNCATED
+findings:
+  - >-
+    The honest refusal for a job killed mid-write (M52-S3/D197): the file ends inside step 2's
+    force block — a torn tail indistinguishable from a complete step. The reader refuses with
+    QEOUT_TRUNCATED (never a partial silent parse, P1/P4) and offers the
+    truncate_corrupt_tail recovery, which keeps step 1 as good science. This is a *correct*
+    refusal, not a bug: the corpus pins it so the reader can neither start silently keeping
+    corrupt tails nor stop offering the truncation recovery.
+notes: >-
+  The killed/truncated dimension (M53-S1 dimension 4). The declared parse_error is the whole
+  expectation: a refused file produces no ParseIssues and no structure, so there is no
+  issue-code set and no frame count to declare. The companion case
+  killed-truncated-7x-h2o-recovered declares the same file's recovery under
+  truncate_corrupt_tail=truncate.

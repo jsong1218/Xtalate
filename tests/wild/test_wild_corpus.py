@@ -1,17 +1,20 @@
 """The real-world corpus suite (v0.4 M20, D70; VASP cases added in v1.2 M45-S2, D172; LAMMPS
-cases added in v1.3 M49-S1, D184).
+cases added in v1.3 M49-S1, D184; QE cases added in v1.4 M53-S1, D198).
 
 Runs each case's parser over its vendored file and asserts the two things M20 asks for:
 **zero silent anomalies** (the issue set a file produces is exactly the set its manifest names)
 and the format's own oracle — **right stoichiometry** for CIF (the expansion agrees with the
 cell composition the file itself declares — see ``_wild.declared_cell_composition``), the
 **OUTCAR↔vasprun pair-agreement** for VASP output (two readers of one run must agree on
-energy/forces/stress/cell/positions, the mechanized form of v1.2 §4 rule 4), or the
-**round-trip self-consistency** for the two full read+write LAMMPS formats (a wild file that
-parses cleanly under its declared preset is re-exported through its own exporter, re-parsed,
-and the two canonical objects asserted scientifically equal — the parser and exporter agreeing
-on meaning, the format-native ground truth for formats with no composition tag and no sibling
-reader, D184).
+energy/forces/stress/cell/positions, the mechanized form of v1.2 §4 rule 4), the
+**round-trip self-consistency** for the full read+write formats — the LAMMPS pair and
+``qe_pw_in`` (a wild file that parses cleanly under its declared preset is re-exported through
+its own exporter, re-parsed, and the two canonical objects asserted scientifically equal — the
+parser and exporter agreeing on meaning, the format-native ground truth for formats with no
+composition tag and no sibling reader, D184/D198), or the **QE input-echo agreement** for a
+``qe_pw_in``↔``qe_pw_out`` pair (the M50 input parser and the M52 output parser are the two
+readers of one run and must agree on the shared initial structure — cell / species /
+positions — the ``_qe_run`` cross-check assertion reused on realistic files, M53-S1).
 
 Both assertions are deliberately unforgiving in the same direction: they fail when the parser
 changes behaviour on a committed file, whether the change looks like an improvement or not. A
@@ -23,10 +26,12 @@ tag, so for ``format_id`` in ``{vasprun, outcar}`` it is structurally absent (no
 ``electronic.magnetic_moments`` is **excluded** from the pair agreement: it is an OUTCAR-only
 field (vasprun.xml has no per-ion magnetization block, D171), so the pair oracle asserts the
 honest asymmetry (OUTCAR populates, vasprun leaves ``None``), never agreement — agreement would
-be a fake green. The round-trip oracle is LAMMPS-only, and it is a **scientific** round-trip
-(canonical ≈ canonical), never byte-identity: a wild file's formatting is not preserved
-byte-for-byte (the dump identity is gainy, D178), and a refused case produces no object to
-round-trip at all.
+be a fake green. The round-trip oracle is a **scientific** round-trip (canonical ≈ canonical),
+never byte-identity: a wild file's formatting is not preserved byte-for-byte (the dump identity
+is gainy, D178), and a refused case produces no object to round-trip at all. The QE input-echo
+agreement is a **self-consistency** oracle — two QE readers of one run agree on meaning — not
+correctness against an external truth; the exact issue-code + frame-count expectations cover the
+rest, exactly as they do alongside the VASP pair and LAMMPS round-trip oracles.
 """
 
 from __future__ import annotations
@@ -39,14 +44,18 @@ import pytest
 
 from tests._format_helpers import assert_scientifically_equal, scientific_dump
 from tests.golden import _governance as gov
+from tests.parsers.test_qe_pw_out_crosscheck import _assert_shared_structure_agrees
 from tests.wild import _wild
 from xtalate.conversion import ConversionEngine
 from xtalate.exporters.lammps_data import make_lammps_data_exporter
 from xtalate.exporters.lammps_dump import make_lammps_dump_exporter
+from xtalate.exporters.qe_pw_in import make_qe_pw_in_exporter
 from xtalate.parsers.cif import make_cif_parser
 from xtalate.parsers.lammps_data import make_lammps_data_parser
 from xtalate.parsers.lammps_dump import make_lammps_dump_parser
 from xtalate.parsers.outcar import make_outcar_parser
+from xtalate.parsers.qe_pw_in import make_qe_pw_in_parser
+from xtalate.parsers.qe_pw_out import make_qe_pw_out_parser
 from xtalate.parsers.vasprun import make_vasprun_parser
 from xtalate.registry import default_registry
 from xtalate.schema import CanonicalObject
@@ -60,17 +69,21 @@ _IDS = [c.rel_manifest for c in _CASES]
 _CIF_CASES = [c for c in _CASES if c.data["format_id"] == "cif"]
 _CIF_IDS = [c.rel_manifest for c in _CIF_CASES]
 
-#: The round-trip self-consistency oracle applies only to the two full read+write LAMMPS formats
-#: (M49-S1, D184) — the only wild formats with an exporter to round-trip through.
-_LAMMPS_CASES = [c for c in _CASES if c.data["format_id"] in _wild.ROUNDTRIP_FORMATS]
-_LAMMPS_IDS = [c.rel_manifest for c in _LAMMPS_CASES]
+#: The round-trip self-consistency oracle applies to the full read+write formats
+#: (ROUNDTRIP_FORMATS: the LAMMPS pair, M49-S1 D184, plus ``qe_pw_in``, M53-S1 D198) — the
+#: only wild formats with an exporter to round-trip through.
+_ROUNDTRIP_CASES = [c for c in _CASES if c.data["format_id"] in _wild.ROUNDTRIP_FORMATS]
+_ROUNDTRIP_IDS = [c.rel_manifest for c in _ROUNDTRIP_CASES]
 
-#: The parser's recovery hint for each parse-time scenario (the scenario name is the manifest /
-#: engine spelling; the dump parser's species hint is ``supply_species``, not ``missing_species``).
+#: The parser's recovery hint for each scenario (the scenario name is the manifest / engine
+#: spelling; the dump parser's species hint is ``supply_species``, not ``missing_species``;
+#: the qe_pw_out torn-tail hint is ``truncate_at_last_valid_frame``).
 _DUMP_HINT_BY_SCENARIO = {
     "ambiguous_units": "ambiguous_units",
     "missing_species": "supply_species",
 }
+_QEIN_HINT_BY_SCENARIO = {"missing_species": "supply_species"}
+_QEOUT_HINT_BY_SCENARIO = {"truncate_corrupt_tail": "truncate_at_last_valid_frame"}
 
 
 #: The per-atom type carry the dump exporter *gains* on a round-trip — assigned deterministically
@@ -130,6 +143,45 @@ def _parse(case: gov.GoldenCase) -> ParseResult:
                     recovery_context=context,
                 )
             return data_parser.parse(fh, filename=case.source_path.name)
+        if fmt == "qe_pw_in":
+            qein_parser = make_qe_pw_in_parser()
+            if expectation.parse_recover:
+                context = _wild.parse_recovery_specs(expectation.parse_recover)
+                # A qe_pw_in recovery is single-scenario (supply_species via missing_species,
+                # D191): a manifest that declared two presets would silently drop every scenario
+                # past the first in the parser's parameter mapping — refuse that loudly.
+                if len(context) != 1:
+                    raise AssertionError(
+                        f"{case.rel_manifest}: qe_pw_in recovery is single-scenario, but the "
+                        f"manifest declares {sorted(context)}"
+                    )
+                scenario, entry = next(iter(context.items()))
+                return qein_parser.parse_recover(
+                    fh,
+                    filename=case.source_path.name,
+                    hint=_QEIN_HINT_BY_SCENARIO[scenario],
+                    choice=entry["choice"],
+                    parameters=entry["parameters"],
+                )
+            return qein_parser.parse(fh, filename=case.source_path.name)
+        if fmt == "qe_pw_out":
+            qeout_parser = make_qe_pw_out_parser()
+            if expectation.parse_recover:
+                context = _wild.parse_recovery_specs(expectation.parse_recover)
+                if len(context) != 1:
+                    raise AssertionError(
+                        f"{case.rel_manifest}: qe_pw_out recovery is single-scenario, but the "
+                        f"manifest declares {sorted(context)}"
+                    )
+                scenario, entry = next(iter(context.items()))
+                return qeout_parser.parse_recover(
+                    fh,
+                    filename=case.source_path.name,
+                    hint=_QEOUT_HINT_BY_SCENARIO[scenario],
+                    choice=entry["choice"],
+                    parameters=entry["parameters"],
+                )
+            return qeout_parser.parse(fh, filename=case.source_path.name)
     raise AssertionError(f"unknown wild-corpus format_id {fmt!r} in {case.rel_manifest}")
 
 
@@ -231,7 +283,7 @@ def test_expansion_matches_the_files_own_declared_composition(case: gov.GoldenCa
     )
 
 
-# --- the LAMMPS round-trip self-consistency oracle (M49-S1, D184) -------------------
+# --- the round-trip self-consistency oracle (M49-S1, D184; M53-S1 adds qe_pw_in) -----
 
 
 def _exporter_for(case: gov.GoldenCase) -> Any:
@@ -240,6 +292,8 @@ def _exporter_for(case: gov.GoldenCase) -> Any:
         return make_lammps_dump_exporter()
     if fmt == "lammps_data":
         return make_lammps_data_exporter()
+    if fmt == "qe_pw_in":
+        return make_qe_pw_in_exporter()
     raise AssertionError(f"no wild-corpus exporter for format_id {fmt!r}")
 
 
@@ -253,6 +307,10 @@ def _reparse_export(
     written."""
     if case.data["format_id"] == "lammps_dump":
         return make_lammps_dump_parser().parse(io.BytesIO(output), filename=None).canonical
+    if case.data["format_id"] == "qe_pw_in":
+        # A pw.x input export always declares its units (angstrom positions / cell), so it
+        # re-parses bare — the exporter writes a self-describing file (M51).
+        return make_qe_pw_in_parser().parse(io.BytesIO(output), filename=None).canonical
     recovery = exporter.reparse_recovery(first)
     assert recovery is not None, (
         f"{case.rel_manifest}: the data exporter produced no re-parse context"
@@ -287,16 +345,17 @@ def _dump_scientific_dump(obj: CanonicalObject) -> dict[str, Any]:
     return dumped
 
 
-@pytest.mark.parametrize("case", _LAMMPS_CASES, ids=_LAMMPS_IDS)
-def test_lammps_cases_round_trip_self_consistently(case: gov.GoldenCase) -> None:
+@pytest.mark.parametrize("case", _ROUNDTRIP_CASES, ids=_ROUNDTRIP_IDS)
+def test_roundtrip_cases_round_trip_self_consistently(case: gov.GoldenCase) -> None:
     """The parser and the exporter agree on meaning for a real file.
 
-    ``dump → Canonical → dump' → Canonical'`` (and the data twin) must be a scientific
-    identity: the file parses cleanly under its declared preset, its own exporter re-writes it,
-    the output re-parses (bare for a dump — the export declares its units; via ``reparse_recovery``
+    ``source → Canonical → source' → Canonical'`` must be a scientific identity: the file parses
+    cleanly under its declared preset, its own exporter re-writes it, the output re-parses (bare
+    for a dump and for a pw.x input — the exports declare their units; via ``reparse_recovery``
     for a data file), and the two objects are equal within the strict tolerance profile — the
-    M47/M48 identity-round-trip logic, reused. A file whose export is deliberately lossy declares
-    ``roundtrip: skipped`` with the reason; a refused file produces no object at all.
+    M47/M48 identity-round-trip logic, reused (M49-S1 for LAMMPS; M53-S1 for ``qe_pw_in``). A
+    file whose export is deliberately lossy declares ``roundtrip: skipped`` with the reason; a
+    refused file produces no object at all.
     """
     expectation = _wild.load_expectation(case)
     if expectation.parse_error is not None:
@@ -310,7 +369,9 @@ def test_lammps_cases_round_trip_self_consistently(case: gov.GoldenCase) -> None
     exporter.export(first, out)
     second = _reparse_export(case, exporter, first, out.getvalue())
 
-    if case.data["format_id"] == "lammps_data":
+    if case.data["format_id"] != "lammps_dump":
+        # lammps_data and qe_pw_in: the full scientific identity — nothing may appear or
+        # disappear (the M51 identity discipline for a QE-originated object).
         assert_scientifically_equal(first, second)
         return
     # lammps_dump: the type carry is the one audited gain (D178) — nothing else may appear or
@@ -390,6 +451,8 @@ def _resolve_pairs() -> list[tuple[gov.GoldenCase, gov.GoldenCase]]:
     by_name = {c.data["case"]: c for c in _CASES}
     pairs: list[tuple[gov.GoldenCase, gov.GoldenCase]] = []
     for case in _CASES:
+        if case.data["format_id"] not in {"outcar", "vasprun"}:
+            continue  # a QE pair is resolved by the input-echo resolver (M53-S1)
         pair_name = _wild.load_expectation(case).pair
         if pair_name is None:
             continue
@@ -459,3 +522,69 @@ def test_paired_vasp_cases_agree(pair: tuple[gov.GoldenCase, gov.GoldenCase]) ->
             "a spin-polarized OUTCAR maps the moments on every frame — a partial mapping "
             "would be a silent per-frame loss"
         )
+
+
+# --- the QE input-echo agreement (M53-S1, D198) -----------------------------------
+
+
+def _resolve_qe_pairs() -> list[tuple[gov.GoldenCase, gov.GoldenCase]]:
+    """Every declared QE ``expectation.pair``, resolved to its sibling case, in manifest order.
+
+    A QE pair is a ``qe_pw_in`` case naming the sibling ``qe_pw_out`` case of the same run
+    (or the reverse). The ``pair`` slot is shared with VASP — it already means "two files of
+    one run agree" — and this is its QE reading (M53-S1; the VASP reading is D172).
+    Resolution is eager so a dangling or same-format pair fails loudly rather than silently
+    leaving the oracle unexercised.
+    """
+    by_name = {c.data["case"]: c for c in _CASES}
+    pairs: list[tuple[gov.GoldenCase, gov.GoldenCase]] = []
+    for case in _CASES:
+        if case.data["format_id"] not in {"qe_pw_in", "qe_pw_out"}:
+            continue
+        pair_name = _wild.load_expectation(case).pair
+        if pair_name is None:
+            continue
+        sibling = by_name.get(pair_name)
+        assert sibling is not None, f"{case.rel_manifest}: QE pair {pair_name!r} not found"
+        formats = {case.data["format_id"], sibling.data["format_id"]}
+        assert formats == {"qe_pw_in", "qe_pw_out"}, (
+            f"{case.rel_manifest}: QE pair {pair_name!r} must be the *other* QE format "
+            f"(qe_pw_in ↔ qe_pw_out), got {sorted(formats)}"
+        )
+        pairs.append((case, sibling))
+    return pairs
+
+
+_QE_PAIRS = _resolve_qe_pairs()
+
+
+def test_the_corpus_has_at_least_one_qe_pair() -> None:
+    """The input-echo agreement must be exercised on a realistic file: without a committed
+    pair, standing rule 4's guard that the two QE readers of one run agree would be
+    unexercised in the wild corpus."""
+    assert _QE_PAIRS, (
+        "no qe_pw_in↔qe_pw_out pair declared in the wild corpus — the input-echo agreement "
+        "(v1.4 standing rule 4) would be unexercised on a realistic file"
+    )
+
+
+@pytest.mark.parametrize(
+    "pair", _QE_PAIRS, ids=lambda p: f"{p[0].data['case']}↔{p[1].data['case']}"
+)
+def test_paired_qe_cases_agree_on_the_shared_initial_structure(
+    pair: tuple[gov.GoldenCase, gov.GoldenCase],
+) -> None:
+    """The input-echo agreement (v1.4 standing rule 4, exercised on realistic files, M53-S1).
+
+    The M50 input parser and the M52 output parser are the two readers of one run, and they
+    must agree on the shared initial structure — cell / species / positions — within the
+    strict tolerance profile. The assertion is the ``_qe_run`` cross-check's own (imported,
+    never duplicated): a silent unit or sign disagreement between the two QE readers is the
+    cardinal bug at MLIP scale.
+    """
+    a_case, b_case = pair
+    a = _parse(a_case).canonical
+    b = _parse(b_case).canonical
+    qe_in = a if a_case.data["format_id"] == "qe_pw_in" else b
+    qe_out = b if a_case.data["format_id"] == "qe_pw_in" else a
+    _assert_shared_structure_agrees(qe_in, qe_out)

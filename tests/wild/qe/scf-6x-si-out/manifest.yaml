@@ -1,0 +1,20 @@
+case: scf-6x-si-out
+format_id: qe_pw_out
+source_file: pw.out
+sha256: "2831ca80ca4c9a4f53be380473781d66b631daa69e7971c180504c585ef0dac1"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE 6.x pw.x SCF output for fcc Si (M53-S1), generalizing the committed M52 scf-6x golden's known-good 6.x bytes (v.6.8 banner, lowercase 'atomic species' table, the extra G-vectors diagnostic block) to the fcc Si lattice and a one-step single-point run."
+  license: "Apache-2.0"
+expectation:
+  issue_codes: []
+  frame_count: 1
+notes: >-
+  The 6.x + SCF-only dimension (M53-S1 dimensions 1/2): a QE 6.x single-point run whose
+  output carries no forces/stress/positions blocks — just the iteration preamble, the
+  '!    total energy' line, and the 'End of self-consistent calculation' trailer. A
+  label-complete read: energy (Ry→eV), the initial cell (the fcc crystal-axes block ×
+  alat 10.261212901569 bohr = 5.43 Å), species (Si) and positions from the site table. The
+  expected issue set is **empty** — any parser warning here would be an anomaly (the exact-set
+  rule cuts both ways). qe_pw_out is parser-only: roundtrip is not applicable and not
+  declared.

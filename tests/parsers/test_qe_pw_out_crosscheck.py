@@ -55,10 +55,18 @@ def _parse_output(layout: str) -> CanonicalObject:
 def _assert_shared_structure_agrees(
     input_obj: CanonicalObject, output_obj: CanonicalObject
 ) -> None:
+    """The two QE readers of one run land the same shared initial structure.
+
+    Generic in the composition (the wild corpus reuses it for its own QE pairs, M53-S1):
+    the input resolves ATOMIC_SPECIES labels, the output resolves the site-table labels,
+    and both must land the same per-atom symbols — the H2O composition itself is pinned by
+    ``test_output_parser_lands_the_hand_pinned_initial_values`` and the byte-for-byte
+    golden tie.
+    """
     fin, fout = input_obj.frames[0], output_obj.frames[0]
     # Species: the input resolves ATOMIC_SPECIES labels; the output resolves the site-table
     # labels — both must land the same per-atom symbols.
-    assert fin.atoms.symbols == fout.atoms.symbols == ["O", "H", "H"]
+    assert fin.atoms.symbols == fout.atoms.symbols
     # The initial cell: input celldm(1)-derived alat × identity == output crystal-axes × alat.
     assert fin.cell is not None and fout.cell is not None
     np.testing.assert_allclose(fin.cell.lattice_vectors, fout.cell.lattice_vectors, atol=1e-9)
@@ -102,8 +110,9 @@ def test_input_parser_parse_is_warning_free() -> None:
 
 def test_output_parser_lands_the_hand_pinned_initial_values() -> None:
     """The cross-check is only meaningful because both sides land the same hand-verifiable
-    values: 5.0 Å cell, O at the cell centre, H at 3.25 Å on the x/y axes."""
+    values: H2O composition, 5.0 Å cell, O at the cell centre, H at 3.25 Å on the x/y axes."""
     obj = _parse_output("7x")
+    assert obj.frames[0].atoms.symbols == ["O", "H", "H"]
     assert obj.frames[0].cell is not None
     np.testing.assert_allclose(
         obj.frames[0].cell.lattice_vectors, [[5.0, 0, 0], [0, 5.0, 0], [0, 0, 5.0]], atol=1e-9

@@ -1,0 +1,21 @@
+case: unconverged-7x-h2o
+format_id: qe_pw_out
+source_file: pw.out
+sha256: "773d80e30565134b4236a5156295b9725a30e7b3ac2cea34407c38f2320cc026"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE 7.x pw.x output of a run whose SCF did not converge (M53-S1), generalizing the committed M52 relax golden bytes with QE's own 'convergence NOT achieved after 100 iterations' statement in place of the achieved line."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - QEOUT_UNCONVERGED
+    - QEOUT_UNMAPPED_BLOCK_CARRIED
+  frame_count: 1
+notes: >-
+  The unconverged-run dimension (M53-S1 dimension 3): one ionic step whose SCF never
+  converged — QE's own 'convergence NOT achieved after 100 iterations' fires the
+  QEOUT_UNCONVERGED warning while the present-with-value energy (P3) is still read and
+  converted (Ry→eV), so a training set sees the flag, never a withheld value. The
+  QEOUT_UNMAPPED_BLOCK_CARRIED is the step's 'total force' scalar carry (P1). The exact-set
+  rule pins both: a parser that stopped flagging the unconverged SCF, or one that invented a
+  warning for an ordinary 7.x file, would fail here.

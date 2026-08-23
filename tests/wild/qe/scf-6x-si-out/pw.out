@@ -1,0 +1,65 @@
+     Program PWSCF v.6.8 (enter)
+
+     Current dimensions of program PWSCF are:
+     ...
+
+     Parallel version (MPI), running on     1 processors
+
+     ...
+
+     atomic species   valence    mass     pseudopotential
+        Si          4.000      28.08500     Si( 1.00)
+
+     number of atoms/cell      =            1
+     number of atomic types   =            1
+     number of electrons      =        4.00
+     number of Kohn-Sham states =           4
+
+     kinetic-energy cutoff =  30.0000  Ry
+     charge density cutoff = 240.0000  Ry
+
+     celldm(1)=   10.261212901569  celldm(2)=   0.000000  celldm(3)=   0.000000
+     celldm(4)=   0.000000  celldm(5)=   0.000000  celldm(6)=   0.000000
+
+     lattice parameter (alat)  =       10.261212901569  a.u.
+
+     crystal axes: (cart. coord. in units of alat)
+       a(1) = (  -0.500000   0.000000   0.500000 )  
+       a(2) = (   0.000000   0.500000   0.500000 )  
+       a(3) = (  -0.500000   0.500000   0.000000 )  
+
+     reciprocal axes: (cart. coord. in units 2 pi/alat)
+       b(1) = (   0.000000   1.000000   1.000000 )  
+       b(2) = (   1.000000   0.000000   1.000000 )  
+       b(3) = (   1.000000   1.000000   0.000000 )  
+
+     G-vectors are generated in parallel using a custom distribution
+
+     P =     0.000000000000E+00    0.000000000000E+00    0.000000000000E+00
+
+     Cartesian axes
+
+     site n.     atom                  positions (bohr units)
+        1           Si  tau(   1) = (   0.000000000000   0.000000000000   0.000000000000  )
+
+     number of k points=     1
+                       cart. coord. in units 2pi/alat
+        k(    1) = (   0.000000000   0.000000000   0.000000000), wk =   2.0000000
+
+     iteration #  1     ecut=    30.00 Ry   beta=0.70
+     the density functional is:
+     the exchange-correlation functional is: PBE
+     ...
+
+             total energy              =     -15.80000000 Ry
+             estimated scf accuracy    <       0.00000001 Ry
+
+          convergence has been achieved in   8 iterations
+
+     !
+     !    total energy =     -15.80000000 Ry
+     !
+
+          End of self-consistent calculation
+
+     JOB DONE.

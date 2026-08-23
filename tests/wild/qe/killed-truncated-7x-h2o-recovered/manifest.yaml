@@ -1,0 +1,23 @@
+case: killed-truncated-7x-h2o-recovered
+format_id: qe_pw_out
+source_file: pw.out
+sha256: "478c6d74cba6f0c967a8b4ce5102bce550eae85f9891da0085bdb3943cd0a793"
+origin:
+  kind: synthetic
+  source: "Same bytes as killed-truncated-7x-h2o (M53-S1): the QE 7.x pw.x output of a run killed mid-write, declared here under its truncate_corrupt_tail recovery."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - QEOUT_UNMAPPED_BLOCK_CARRIED
+    - QEOUT_TRUNCATED
+  frame_count: 1
+  parse_recover:
+    - truncate_corrupt_tail=truncate
+notes: >-
+  The recovery half of the killed/truncated dimension (M53-S1 dimension 4): the same torn
+  file read under the shared truncate_corrupt_tail scenario (truncate_at_last_valid_frame →
+  truncate, Revision 1.15; the xdatcar/outcar pattern, M52-S3). The kept prefix is step 1
+  (frame_count 1); the dropped tail is recorded as the QEOUT_TRUNCATED warning and the kept
+  step's 'total force' carry fires QEOUT_UNMAPPED_BLOCK_CARRIED — the exact set a reader must
+  reproduce, so a recovery that silently kept a different prefix or stopped recording the
+  truncation fails here.
