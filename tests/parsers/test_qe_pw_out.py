@@ -1,9 +1,10 @@
-"""qe_pw_out parser unit tests (v1.4 M52-S1).
+"""qe_pw_out parser unit tests (v1.4 M52-S1/S2).
 
-The error contract (Part 3 §5; the base ``QEOUT_*`` code set of D195), the streaming/materialized
-identity (D56), the unmapped-block carries (P1), the parser-only capability seam (D159), and the
-shared-core mapping choices (D195) — pinned here with inline synthetic files, on top of the
-governed goldens in ``tests/golden/``.
+The error contract (Part 3 §5; the base ``QEOUT_*`` code set of D195 plus S2's
+``QEOUT_UNRECOGNIZED_LAYOUT`` / ``QEOUT_INCONSISTENT_STEP`` / ``QEOUT_UNCONVERGED`` of D196),
+the streaming/materialized identity (D56), the unmapped-block carries (P1), the parser-only
+capability seam (D159), and the shared-core mapping choices (D195) — pinned here with inline
+synthetic files, on top of the governed goldens in ``tests/golden/``.
 """
 
 from __future__ import annotations
@@ -67,13 +68,26 @@ def test_empty_file_raises_qeout_empty() -> None:
     assert exc.value.issues[0].code == "QEOUT_EMPTY"
 
 
-def test_unrecognizable_file_raises_qeout_empty() -> None:
-    """No version banner and no energy line — not a recognizable pw.x run (S1's reading; S2
-    reclassifies the no-banner case into the QEOUT_UNRECOGNIZED_LAYOUT refusal)."""
+def test_unrecognizable_file_raises_qeout_unrecognized_layout() -> None:
+    """No version banner and no energy line — not a recognizable pw.x run. S2's
+    QEOUT_UNRECOGNIZED_LAYOUT refusal: never a silent partial parse (P1), with the
+    corpus-contribution call (D196)."""
     text = "some random text\nwithout any pw.x anchors\n"
     with pytest.raises(ParseError) as exc:
         PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
-    assert exc.value.issues[0].code == "QEOUT_EMPTY"
+    issue = exc.value.issues[0]
+    assert issue.code == "QEOUT_UNRECOGNIZED_LAYOUT"
+    assert "corpus" in issue.message
+
+
+def test_banner_but_unrecognizable_header_raises_unrecognized_layout() -> None:
+    """A real banner with a header that cannot be recognized (no species / counts / cell /
+    positions) is QEOUT_UNRECOGNIZED_LAYOUT — a QE layout beyond 6.x/7.x is refused, never
+    partial-parsed (P1), and this is the S2 reclassification of S1's missing-block raises."""
+    text = "     Program PWSCF v.7.2 (enter)\nstarting calculation\ngarbage that is not a layout\n"
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    assert exc.value.issues[0].code == "QEOUT_UNRECOGNIZED_LAYOUT"
 
 
 def test_recognized_header_with_zero_steps_raises_qeout_empty() -> None:
@@ -84,31 +98,107 @@ def test_recognized_header_with_zero_steps_raises_qeout_empty() -> None:
     assert exc.value.issues[0].code == "QEOUT_EMPTY"
 
 
-def test_missing_species_table_raises_qeout_missing_block() -> None:
+def test_missing_species_table_raises_unrecognized_layout() -> None:
+    """A header whose species table is missing cannot be recognized as a 6.x/7.x run — S2
+    reclassifies S1's QEOUT_MISSING_BLOCK raises here (D196)."""
     text = _MINIMAL.replace("     Atomic species   valence    mass     pseudopotential\n", "")
     with pytest.raises(ParseError) as exc:
         PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
-    assert exc.value.issues[0].code == "QEOUT_MISSING_BLOCK"
+    assert exc.value.issues[0].code == "QEOUT_UNRECOGNIZED_LAYOUT"
 
 
-def test_missing_cell_raises_qeout_missing_block() -> None:
+def test_missing_cell_raises_unrecognized_layout() -> None:
     text = _MINIMAL.replace("     crystal axes: (cart. coord. in units of alat)\n", "")
     with pytest.raises(ParseError) as exc:
         PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
-    assert exc.value.issues[0].code == "QEOUT_MISSING_BLOCK"
+    assert exc.value.issues[0].code == "QEOUT_UNRECOGNIZED_LAYOUT"
 
 
-def test_missing_initial_positions_raises_qeout_missing_block() -> None:
+def test_missing_initial_positions_raises_unrecognized_layout() -> None:
     text = _MINIMAL.replace("     site n.     atom                  positions (bohr units)\n", "")
     with pytest.raises(ParseError) as exc:
         PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
-    assert exc.value.issues[0].code == "QEOUT_MISSING_BLOCK"
+    assert exc.value.issues[0].code == "QEOUT_UNRECOGNIZED_LAYOUT"
 
 
 def test_non_utf8_bytes_raise_the_encoding_error() -> None:
     with pytest.raises(ParseError) as exc:
         list(PARSER.parse_stream(io.BytesIO(b"\xff\xfe bad"), filename="pw.out").frames())
     assert exc.value.issues[0].code == "QEOUT_ENCODING_ERROR"
+
+
+# --- M52-S2: the drift refusals + the convergence flag (D196) ---------------------------
+
+
+def test_force_block_longer_than_the_header_atom_count_refuses() -> None:
+    """A step whose force rows exceed the header's atom count is QEOUT_INCONSISTENT_STEP —
+    never silently truncated to the shorter (P3)."""
+    text = _MINIMAL.replace(
+        "     atom 3 type 2   force =     -0.00500000   +0.00900000   -0.00100000\n",
+        "     atom 3 type 2   force =     -0.00500000   +0.00900000   -0.00100000\n"
+        "     atom 4 type 2   force =     -0.00600000   +0.00800000   -0.00200000\n",
+    )
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    assert exc.value.issues[0].code == "QEOUT_INCONSISTENT_STEP"
+
+
+def test_force_block_shorter_than_the_header_atom_count_refuses() -> None:
+    """A step whose force rows fall short of the header's atom count (the block ends on a
+    blank while the stream continues — not a torn tail) is QEOUT_INCONSISTENT_STEP, never a
+    silently accepted shorter block (P3)."""
+    text = _MINIMAL.replace(
+        "     atom 3 type 2   force =     -0.00500000   +0.00900000   -0.00100000\n",
+        "",
+    )
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    assert exc.value.issues[0].code == "QEOUT_INCONSISTENT_STEP"
+
+
+def test_positions_card_longer_than_the_header_atom_count_refuses() -> None:
+    text = _MINIMAL.replace(
+        "     H   2.500000000   3.250000000   2.500000000\n",
+        "     H   2.500000000   3.250000000   2.500000000\n"
+        "     H   2.500000000   3.300000000   2.500000000\n",
+    )
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    assert exc.value.issues[0].code == "QEOUT_INCONSISTENT_STEP"
+
+
+def test_malformed_step_block_raises_unrecognized_layout() -> None:
+    """A step block that is present but unparseable — not a torn tail — is the layout
+    refusal: a 6.x/7.x force row is the recognized form, and a layout that prints something
+    else is refused, never partially read (P1)."""
+    text = _MINIMAL.replace(
+        "     atom 1 type 1   force =     +0.01000000   -0.02000000   +0.00000000\n",
+        "     atom 1 type 1   force =     NaN   NaN   NaN\n",
+    )
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    assert exc.value.issues[0].code == "QEOUT_UNRECOGNIZED_LAYOUT"
+
+
+def test_unconverged_run_warns_and_still_reads_the_energy() -> None:
+    """QE's own 'convergence NOT achieved after N iterations' statement fires the
+    QEOUT_UNCONVERGED warning carrying it verbatim, while the step's energy is still read
+    present-with-value (P3) — the honesty is in surfacing the flag, never withholding the
+    value (D196)."""
+    text = _MINIMAL.replace(
+        "convergence has been achieved in  10 iterations",
+        "convergence NOT achieved after  50 iterations",
+        1,  # only the first SCF of the three-step run is unconverged
+    )
+    result = PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    warnings = [i for i in result.issues if i.code == "QEOUT_UNCONVERGED"]
+    assert len(warnings) == 1
+    assert warnings[0].severity == "warning"
+    assert "convergence NOT achieved after  50 iterations" in warnings[0].message
+    assert result.canonical.frames[0].electronic.total_energy is not None
+    assert result.canonical.frames[0].electronic.total_energy == pytest.approx(
+        -49.12345678 * 13.605693122994
+    )
 
 
 # --- streamed == materialized (D56) ---------------------------------------------------

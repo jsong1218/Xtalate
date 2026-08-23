@@ -1,0 +1,12 @@
+case: vc-relax-6x
+format_id: qe_pw_out
+source_file: pw.out
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: a1100eb26ee77bedc99df613ded1c23073a4a4e8764f67ffa0d336fd70a151c7
+expected_sha256: 9167164bef5ba051a7a61775a06194c6c911aeec468492c653b322e3c175efdc
+origin:
+  kind: synthetic
+  source: Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+  license: Apache-2.0
+notes: 'M52-S2 variable-cell relaxation golden (QE 6.x layout): the same 3-step vc-relax run as the 7.x case (per-step CELL_PARAMETERS cards) in the 6.x spelling.'

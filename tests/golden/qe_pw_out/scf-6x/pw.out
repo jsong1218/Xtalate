@@ -1,0 +1,68 @@
+     Program PWSCF v.6.8 (enter)
+
+     Current dimensions of program PWSCF are:
+     ...
+
+     Parallel version (MPI), running on     1 processors
+
+     ...
+
+     atomic species   valence    mass     pseudopotential
+        O           6.000      15.99900     O( 1.00)
+        H           1.000       1.00800     H( 1.00)
+
+     number of atoms/cell      =            3
+     number of atomic types   =            2
+     number of electrons      =        8.00
+     number of Kohn-Sham states =           4
+
+     kinetic-energy cutoff =  40.0000  Ry
+     charge density cutoff = 320.0000  Ry
+
+     celldm(1)=   9.448630664428  celldm(2)=   0.000000  celldm(3)=   0.000000
+     celldm(4)=   0.000000  celldm(5)=   0.000000  celldm(6)=   0.000000
+
+     lattice parameter (alat)  =       9.448630664428  a.u.
+
+     crystal axes: (cart. coord. in units of alat)
+       a(1) = (   1.000000   0.000000   0.000000 )  
+       a(2) = (   0.000000   1.000000   0.000000 )  
+       a(3) = (   0.000000   0.000000   1.000000 )  
+
+     reciprocal axes: (cart. coord. in units 2 pi/alat)
+       b(1) = (   1.000000   0.000000   0.000000 )  
+       b(2) = (   0.000000   1.000000   0.000000 )  
+       b(3) = (   0.000000   0.000000   1.000000 )  
+
+     G-vectors are generated in parallel using a custom distribution
+
+     P =     0.000000000000E+00    0.000000000000E+00    0.000000000000E+00
+
+     Cartesian axes
+
+     site n.     atom                  positions (bohr units)
+        1           O  tau(   1) = (  4.724315332214  4.724315332214  4.724315332214 )
+        2           H  tau(   2) = (  6.141609931878  4.724315332214  4.724315332214 )
+        3           H  tau(   3) = (  4.724315332214  6.141609931878  4.724315332214 )
+
+     number of k points=     1
+                       cart. coord. in units 2pi/alat
+        k(    1) = (   0.000000000   0.000000000   0.000000000), wk =   2.0000000
+
+     iteration #  1     ecut=    40.00 Ry   beta=0.70
+     the density functional is:
+     the exchange-correlation functional is: PBE
+     ...
+
+             total energy              =     -49.12345678 Ry
+             estimated scf accuracy    <       0.00000001 Ry
+
+          convergence has been achieved in  10 iterations
+
+     !
+     !    total energy =     -49.12345678 Ry
+     !
+
+          End of self-consistent calculation
+
+     JOB DONE.

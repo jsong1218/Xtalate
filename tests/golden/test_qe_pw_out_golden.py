@@ -1,9 +1,16 @@
-"""qe_pw_out golden fidelity (v1.4 M52-S1; Part 8 §3).
+"""qe_pw_out golden fidelity (v1.4 M52-S1/S2; Part 8 §3).
 
 Each case's parse is diffed against its hand-verified ``expected.canonical.json``. The
 expectations are external truth, not snapshots of parser output — every value below is
 hand-computed from the declared unit/sign at the boundary, exactly as the M50 goldens pin
 the input parser's.
+
+**M52-S2: the go/no-go cross-layout set.** The same four runs are committed twice — the QE
+7.x spelling and the QE 6.x spelling (the documented drift: banner version, ``atomic
+species`` capitalization, column widths, an extra diagnostic block) — and both must parse
+to **identical** label-complete objects (only the declared program banner differs). That
+two-layout agreement, plus the input-parser agreement the cross-check asserts, is the
+milestone's go/no-go gate.
 
 **The M52 trap, pinned here.** The output label mappings do not exist in the ``_qe`` core
 before M52 — S1 adds them (D195), and these goldens are where they are pinned:
@@ -32,6 +39,7 @@ every step's ``total force`` scalar rides the ``QEOUT_UNMAPPED_BLOCK_CARRIED`` c
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 import pytest
@@ -47,8 +55,10 @@ from xtalate.sdk import ParseResult
 
 GOLDEN = Path(__file__).parent / "qe_pw_out"
 
-#: The four S1 cases — one canonical QE 7.x layout, read completely (S2 adds the 6.x set).
+#: The four S1 cases — one canonical QE 7.x layout, read completely.
 CASES = ["scf", "relax", "vc-relax", "md"]
+#: M52-S2's second-layout set — the same four runs in the QE 6.x spelling.
+_SIX_X = [case + "-6x" for case in CASES]
 
 #: The shared H2O setup: O + 2×H in a 5 Å cubic cell (alat = 9.448630664428 bohr).
 _CELL = [[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 5.0]]
@@ -68,6 +78,32 @@ def _parse(case: str) -> ParseResult:
 def test_parse_matches_golden(case: str) -> None:
     expected = (GOLDEN / case / "expected.canonical.json").read_text()
     assert_matches_golden(_parse(case).canonical, expected)
+
+
+@pytest.mark.parametrize("case", _SIX_X)
+def test_6x_layout_matches_golden(case: str) -> None:
+    """The QE 6.x spelling of each run parses to its hand-verified expectation — the
+    go/no-go set's second half (S2)."""
+    expected = (GOLDEN / case / "expected.canonical.json").read_text()
+    assert_matches_golden(_parse(case).canonical, expected)
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_6x_and_7x_layouts_agree_except_source_code(case: str) -> None:
+    """The go/no-go cross-layout agreement: both QE major layouts read the same run to
+    **identical** label-complete objects — only the declared program banner (source_code)
+    differs. A layout whose scrape diverged from the other's would fail here."""
+    seven = json.loads(_parse(case).canonical.model_dump_json())
+    six = json.loads(_parse(case + "-6x").canonical.model_dump_json())
+    assert seven["simulation"]["source_code"] != six["simulation"]["source_code"]
+    seven["simulation"]["source_code"] = six["simulation"]["source_code"]
+    assert seven == six
+
+
+def test_6x_source_code_is_the_declared_6x_banner() -> None:
+    obj = _parse("scf-6x").canonical
+    assert obj.simulation is not None
+    assert obj.simulation.source_code == "Program PWSCF v.6.8 (enter)"
 
 
 @pytest.mark.parametrize("case", CASES)
@@ -199,7 +235,7 @@ def test_scf_run_carries_no_warnings() -> None:
 
 
 def test_every_golden_records_the_mappings_in_parse_notes() -> None:
-    for case in CASES:
+    for case in CASES + _SIX_X:
         notes = _parse(case).canonical.provenance.parse_notes
         assert any("RYTOEV" in note for note in notes)
         assert any("Ry/bohr" in note for note in notes)

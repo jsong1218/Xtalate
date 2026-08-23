@@ -47,18 +47,26 @@ tracks the resident step, not the file.
   supplies that step's cell; a step without one reuses the running cell (the fixed-cell form).
 * **``pbc = (T,T,T)``** by format definition, as a ``parse_notes`` entry.
 
-**Error contract (Part 3 §5; D195).** ``QEOUT_EMPTY`` (empty file, or no recognizable pw.x run
-— no version banner, or a recognized header with no ``!    total energy`` line at all),
-``QEOUT_MISSING_BLOCK`` (an expected block — the species table, the counts, the initial
-cell/positions, the energy line — absent in an otherwise-recognized context: a ``ParseError``,
-never a defaulted field, **P3**), and the warning ``QEOUT_UNMAPPED_BLOCK_CARRIED`` (a
-recognized-but-unmapped diagnostic — the per-step ``total force`` scalar — carried verbatim,
-**P1**). ``QEOUT_UNRECOGNIZED_LAYOUT`` / ``QEOUT_INCONSISTENT_STEP`` / the ``QEOUT_UNCONVERGED``
-warning are M52-S2; ``QEOUT_TRUNCATED`` (the torn-tail recovery) is M52-S3 — the codes land
-where the behaviour lands.
+**Error contract (Part 3 §5; D195/D196).** ``QEOUT_EMPTY`` (a truly empty file, or a
+recognized header with no ``!    total energy`` line at all — a run with zero steps),
+``QEOUT_UNRECOGNIZED_LAYOUT`` (the header cannot be recognized — no parseable version banner,
+species table, counts, initial cell, or positions — or a step block is present-but-unparseable
+in a way that is **not** a torn tail: refused, never a silent partial parse, **P1**; QE
+layouts beyond 6.x/7.x land here with a corpus-contribution call), ``QEOUT_INCONSISTENT_STEP``
+(an atom-keyed step block — force rows / position rows — whose row count disagrees with the
+header's atom count: refused, never silently truncated to the shorter, **P3**),
+``QEOUT_MISSING_BLOCK`` (the file ends mid-block — the torn-tail case, whose ``QEOUT_TRUNCATED``
+recovery is M52-S3), the warning ``QEOUT_UNCONVERGED`` (QE's own statement that an SCF did not
+converge; the step's energy is still read present-with-value and flagged, **P3**), and the
+warning ``QEOUT_UNMAPPED_BLOCK_CARRIED`` (a recognized-but-unmapped diagnostic — the per-step
+``total force`` scalar — carried verbatim, **P1**).
 
-**S1 scope.** One canonical QE layout (target QE 7.x) is read completely; the version-drift
-refusal discipline and the second (6.x) layout are S2's.
+**S2 scope.** Both QE major layouts (6.x and 7.x) are read completely. The scanning anchors on
+stable substrings and whitespace-splits (``str.split()``), never fixed byte columns, so the
+documented 6.x↔7.x drift — whitespace/column differences, minor label wording (e.g.
+``atomic species`` vs ``Atomic species``), header ordering — is tolerated; an unrecognized
+layout or an atom-count-inconsistent step refuses; an unconverged SCF is flagged. The input-
+echo cross-check runs against **both** layout renderings of the run (the go/no-go gate).
 """
 
 from __future__ import annotations
@@ -152,6 +160,14 @@ _AXES_ROW_RE = re.compile(rf"[abc]\(\d+\)\s*=\s*{_TRIPLE}")
 _FORCE_ROW_RE = re.compile(rf"force\s*=\s*({_FLOAT})\s+({_FLOAT})\s+({_FLOAT})")
 #: The recognized-but-unmapped `total force = …` scalar (carried verbatim per frame, P1).
 _TOTAL_FORCE_RE = re.compile(rf"total\s+force\s*=\s*({_FLOAT})")
+#: QE's own statement that an SCF did not converge — `convergence NOT achieved after N
+#: iterations` (printed when ``scf_must_converge = .false.``, or when a relaxation step's SCF
+#: is allowed to run on): the QEOUT_UNCONVERGED warning anchor (D196). The energy of the step
+#: is still read present-with-value (P3) — the honesty is in surfacing the flag, never in
+#: withholding the value.
+_UNCONVERGED_RE = re.compile(
+    r"convergence\s+not\s+achieved\s+after\s+(\d+)\s+iterations", re.IGNORECASE
+)
 
 #: The per-card unit annotation, the input parser's spelling (brace/paren/bare) — the output
 #: uses the paren form (`ATOMIC_POSITIONS (angstrom)`).
@@ -224,12 +240,58 @@ def _line_reader(stream: BinaryIO) -> Iterator[str]:
             ) from exc
 
 
-def _next_nonblank(lines: Iterator[str]) -> str | None:
-    """The next non-blank line — the blocks this reader keys on are separated by blank lines."""
-    for line in lines:
-        if line.strip():
+class _Lookahead:
+    """One-line lookahead over the decoded line stream.
+
+    The atom-count guard (QEOUT_INCONSISTENT_STEP) must inspect the line *after* a block's
+    rows without consuming it — a block that continues past the header's atom count is
+    refused, never silently truncated — so the step scanner reads through this wrapper.
+    ``peek_nonblank`` inspects the next non-blank line without consuming (it is buffered and
+    returned by the next consume); ``next_raw`` consumes the next line *as-is*, blank or not
+    — the row readers need the blanks, because a blank line before a block's declared row
+    count means the block ended short (a count disagreement), while a *non-blank* line that
+    is not a row means the block is malformed (an unrecognized layout).
+    """
+
+    def __init__(self, lines: Iterator[str]) -> None:
+        self._lines = iter(lines)
+        self._buffered: str | None = None
+
+    def peek_nonblank(self) -> str | None:
+        while self._buffered is None:
+            line = next(self._lines, None)
+            if line is None:
+                return None
+            if line.strip():
+                self._buffered = line
+                break
+        return self._buffered
+
+    def next_raw(self) -> str | None:
+        if self._buffered is not None:
+            line = self._buffered
+            self._buffered = None
             return line
-    return None
+        return next(self._lines, None)
+
+    def next_nonblank(self) -> str | None:
+        line = self.peek_nonblank()
+        self._buffered = None
+        return line
+
+
+def _is_float_row(line: str, *, col_offset: int, ncols: int) -> bool:
+    """Whether the line carries ``ncols`` numeric tokens at ``col_offset`` — the row
+    predicate shared by the float-block readers (and the over-long-block guard)."""
+    tokens = line.split()
+    if len(tokens) < col_offset + ncols:
+        return False
+    try:
+        for token in tokens[col_offset : col_offset + ncols]:
+            float(token)
+    except ValueError:
+        return False
+    return True
 
 
 def _card_unit(rest: str) -> str | None:
@@ -272,70 +334,163 @@ def _triple_values(line: str, pattern: re.Pattern[str]) -> list[float] | None:
 
 
 def _read_float_rows(
-    lines: Iterator[str],
+    lines: _Lookahead,
     count: int,
     *,
     ncols: int,
     what: str,
     location: str,
     col_offset: int = 0,
+    atom_keyed: bool = False,
 ) -> np.ndarray:
     """``count`` rows of ``ncols`` numeric columns starting at ``col_offset`` (blank lines
-    skipped; an ATOMIC_POSITIONS row's leading label is skipped with ``col_offset=1``). A block
-    that ends before its rows complete, or carries a non-numeric row, is a
-    ``QEOUT_MISSING_BLOCK`` ParseError (P3 — never a silently shortened table, never a
-    defaulted field)."""
+    skipped; an ATOMIC_POSITIONS row's leading label is skipped with ``col_offset=1``).
+
+    M52-S2's drift discipline (D196):
+
+    * a **non-numeric / too-short row** while the stream continues — a block that is
+      present-but-unparseable — is a ``QEOUT_UNRECOGNIZED_LAYOUT`` refusal (a layout beyond
+      6.x/7.x; never a silent partial read, P1);
+    * a block that **ends before ``count`` rows** while the stream continues is the same
+      refusal (the shorter form is never silently accepted);
+    * a block that **continues past ``count`` rows** is refused with
+      ``QEOUT_INCONSISTENT_STEP`` for an *atom-keyed* block (force/position rows — the step's
+      atom count disagrees with the header, P3) or ``QEOUT_UNRECOGNIZED_LAYOUT`` for a
+      fixed-size block (the 3×3 cell/tensor);
+    * only the stream **ending** mid-block stays ``QEOUT_MISSING_BLOCK`` — the torn-tail
+      case, whose ``QEOUT_TRUNCATED`` recovery is M52-S3.
+    """
     rows: list[list[float]] = []
-    for _ in range(count):
-        line = _next_nonblank(lines)
+    while len(rows) < count:
+        line = lines.next_raw()
         if line is None:
             raise _error(
                 "QEOUT_MISSING_BLOCK",
-                f"{what} ended after {len(rows)} of {count} rows ({location}) — an expected "
-                "block is absent, never defaulted (P3)",
+                f"{what} ended after {len(rows)} of {count} rows ({location}) — the file "
+                "ends mid-block (a torn tail; QEOUT_TRUNCATED recovery is M52-S3), never a "
+                "defaulted field (P3)",
                 location=location,
             )
-        tokens = line.split()
-        if len(tokens) < col_offset + ncols:
+        if not line.strip():
+            if not rows:
+                continue  # a blank between the block header and its first row is formatting noise
+            # A blank line once rows have begun: the block ended short (the stream
+            # continues with other blocks) — a count disagreement, never a shorter block.
+            _raise_block_disagreement(
+                atom_keyed=atom_keyed,
+                what=what,
+                detail=f"the block ended after {len(rows)} of {count} rows ({location})",
+                location=location,
+                n_expected=count,
+                n_found=len(rows),
+            )
+        if not _is_float_row(line, col_offset=col_offset, ncols=ncols):
             raise _error(
-                "QEOUT_MISSING_BLOCK",
-                f"{what} row {len(rows) + 1} has {len(tokens)} components, expected at least "
-                f"{col_offset + ncols} ({location}): {line.strip()!r}",
+                "QEOUT_UNRECOGNIZED_LAYOUT",
+                f"{what} is present but unparseable as a 6.x/7.x block ({location}): row "
+                f"{len(rows) + 1} is not numeric ({line.strip()!r}) — refused, never a "
+                "silent partial read (P1); a QE layout beyond 6.x/7.x should be contributed "
+                "to the golden corpus to extend the read (M53)",
                 location=location,
             )
-        try:
-            rows.append([float(t) for t in tokens[col_offset : col_offset + ncols]])
-        except ValueError:
-            raise _error(
-                "QEOUT_MISSING_BLOCK",
-                f"{what} row {len(rows) + 1} is not numeric ({location}): {line.strip()!r}",
-                location=location,
-            ) from None
+        rows.append([float(t) for t in line.split()[col_offset : col_offset + ncols]])
+    extra = lines.peek_nonblank()
+    if extra is not None and _is_float_row(extra, col_offset=col_offset, ncols=ncols):
+        _raise_block_disagreement(
+            atom_keyed=atom_keyed,
+            what=what,
+            detail=f"a {count + 1}-th row follows the declared {count} ({location}): "
+            f"{extra.strip()!r}",
+            location=location,
+            n_expected=count,
+            n_found=count,
+        )
     return np.asarray(rows, dtype=float)
 
 
-def _read_force_rows(lines: Iterator[str], n_atoms: int, *, location: str) -> np.ndarray:
+def _raise_block_disagreement(
+    *,
+    atom_keyed: bool,
+    what: str,
+    detail: str,
+    location: str,
+    n_expected: int,
+    n_found: int,
+) -> None:
+    """The refusal for a present-but-unparseable / wrong-sized block (D196). An atom-keyed
+    block whose row count disagrees with the header's atom count is the
+    ``QEOUT_INCONSISTENT_STEP`` refusal — a structural inconsistency, never a torn tail (P3);
+    a fixed-size block that is malformed is ``QEOUT_UNRECOGNIZED_LAYOUT`` — a layout beyond
+    6.x/7.x, refused rather than partial-parsed (P1)."""
+    if atom_keyed:
+        raise _error(
+            "QEOUT_INCONSISTENT_STEP",
+            f"{what} carries {n_found} rows but the header declares {n_expected} atoms "
+            f"({location}): {detail} — a step whose atom count disagrees with the header is "
+            "refused, never silently truncated to the shorter (P3)",
+            location=location,
+        )
+    raise _error(
+        "QEOUT_UNRECOGNIZED_LAYOUT",
+        f"{what} is present but unparseable as a 6.x/7.x block ({location}): {detail} — "
+        "refused, never a silent partial read (P1); a QE layout beyond 6.x/7.x should be "
+        "contributed to the golden corpus to extend the read (M53)",
+        location=location,
+    )
+
+
+def _read_force_rows(lines: _Lookahead, n_atoms: int, *, location: str) -> np.ndarray:
     """The ``n_atoms`` rows of the ``Forces acting on atoms`` block — each
-    ``atom N type T   force =   x   y   z`` (Ry/bohr) — as the (N, 3) numeric matrix."""
+    ``atom N type T   force =   x   y   z`` (Ry/bohr) — as the (N, 3) numeric matrix, with
+    M52-S2's atom-count guard: a step whose force rows disagree with the header atom count is
+    refused ``QEOUT_INCONSISTENT_STEP`` (never silently truncated, P3)."""
     rows: list[list[float]] = []
-    for _ in range(n_atoms):
-        line = _next_nonblank(lines)
+    while len(rows) < n_atoms:
+        line = lines.next_raw()
         if line is None:
             raise _error(
                 "QEOUT_MISSING_BLOCK",
                 f"the force block ended after {len(rows)} of {n_atoms} atoms ({location}) — "
-                "an expected block is absent, never defaulted (P3)",
+                "the file ends mid-block (a torn tail; QEOUT_TRUNCATED recovery is M52-S3), "
+                "never a defaulted field (P3)",
                 location=location,
+            )
+        if not line.strip():
+            if not rows:
+                continue  # a blank between the header and its first row is formatting noise
+            # A blank line once rows have begun: the block ended short (the stream
+            # continues) — a count disagreement, never a silently shorter block.
+            _raise_block_disagreement(
+                atom_keyed=True,
+                what="the force block",
+                detail=f"the block ended after {len(rows)} of {n_atoms} atoms ({location})",
+                location=location,
+                n_expected=n_atoms,
+                n_found=len(rows),
             )
         match = _FORCE_ROW_RE.search(line)
         if match is None:
             raise _error(
-                "QEOUT_MISSING_BLOCK",
-                f"force row is not the recognized 'atom N type T force = x y z' form "
-                f"({location}): {line.strip()!r}",
+                "QEOUT_UNRECOGNIZED_LAYOUT",
+                f"the force block is present but unparseable as a 6.x/7.x block ({location}): "
+                f"row {len(rows) + 1} is not the recognized 'atom N type T force = x y z' form "
+                f"({line.strip()!r}) — refused, never a silent partial read (P1); a QE layout "
+                "beyond 6.x/7.x should be contributed to the golden corpus to extend the read "
+                "(M53)",
                 location=location,
             )
         rows.append([float(match.group(1)), float(match.group(2)), float(match.group(3))])
+    extra = lines.peek_nonblank()
+    if extra is not None and _FORCE_ROW_RE.search(extra) is not None:
+        _raise_block_disagreement(
+            atom_keyed=True,
+            what="the force block",
+            detail=f"a {n_atoms + 1}-th force row follows the header's {n_atoms} atoms "
+            f"({location}): {extra.strip()!r}",
+            location=location,
+            n_expected=n_atoms,
+            n_found=n_atoms,
+        )
     return np.asarray(rows, dtype=float)
 
 
@@ -384,39 +539,50 @@ def _finalize_header(
     """
     if version is None:
         raise _error(
-            "QEOUT_EMPTY",
-            "file contains no recognizable pw.x run (no Program PWSCF version banner found)",
+            "QEOUT_UNRECOGNIZED_LAYOUT",
+            "file contains no recognizable pw.x run (no Program PWSCF version banner found); "
+            "QE layouts beyond 6.x/7.x are refused, never a silent partial parse (P1) — "
+            "contribute the file to the golden corpus to extend the read (M53)",
         )
     if not species:
         raise _error(
-            "QEOUT_MISSING_BLOCK",
+            "QEOUT_UNRECOGNIZED_LAYOUT",
             "no atomic species found (an 'atomic species   valence    mass   pseudopotential' "
-            "table is required)",
+            "table is required) — the header cannot be recognized as a 6.x/7.x pw.x run; "
+            "refused, never a silent partial parse (P1); contribute the file to the golden "
+            "corpus to extend the read (M53)",
         )
     if n_atoms is None:
         raise _error(
-            "QEOUT_MISSING_BLOCK",
-            "the atom count is missing ('number of atoms/cell' is required)",
+            "QEOUT_UNRECOGNIZED_LAYOUT",
+            "the atom count is missing ('number of atoms/cell' is required) — the header "
+            "cannot be recognized as a 6.x/7.x pw.x run; refused, never a silent partial "
+            "parse (P1); contribute the file to the golden corpus to extend the read (M53)",
         )
     if n_atoms == 0:
-        raise _error("QEOUT_MISSING_BLOCK", "header declares zero atoms")
+        raise _error("QEOUT_UNRECOGNIZED_LAYOUT", "header declares zero atoms — not a run")
     if n_types is not None and n_types != len(species):
         raise _error(
-            "QEOUT_MISSING_BLOCK",
+            "QEOUT_UNRECOGNIZED_LAYOUT",
             f"header declares {n_types} atomic types but the species table lists "
-            f"{len(species)} species",
+            f"{len(species)} species — the header cannot be recognized as a 6.x/7.x pw.x run; "
+            "refused, never a silent partial parse (P1)",
         )
     species_by_label = {label: (valence, mass, pseudo) for label, valence, mass, pseudo in species}
     if positions is None or positions_unit is None:
         raise _error(
-            "QEOUT_MISSING_BLOCK",
-            "no initial positions found (the 'positions (<unit> units)' site table is required)",
+            "QEOUT_UNRECOGNIZED_LAYOUT",
+            "no initial positions found (the 'positions (<unit> units)' site table is "
+            "required) — the header cannot be recognized as a 6.x/7.x pw.x run; refused, "
+            "never a silent partial parse (P1); contribute the file to the golden corpus to "
+            "extend the read (M53)",
         )
     if len(positions) != n_atoms:
         raise _error(
-            "QEOUT_MISSING_BLOCK",
+            "QEOUT_UNRECOGNIZED_LAYOUT",
             f"the initial positions table carries {len(positions)} rows for "
-            f"{n_atoms} atoms — counts must agree, never defaulted (P3)",
+            f"{n_atoms} atoms — counts must agree; the header cannot be recognized as a "
+            "6.x/7.x pw.x run, never a silent partial parse (P1)",
         )
     symbols: list[str] = []
     masses: list[float] = []
@@ -424,17 +590,20 @@ def _finalize_header(
     for label, _xyz in positions:
         if label not in species_by_label:
             raise _error(
-                "QEOUT_MISSING_BLOCK",
+                "QEOUT_UNRECOGNIZED_LAYOUT",
                 f"site table labels an atom {label!r} that the atomic species table does not "
-                f"declare (species: {', '.join(sorted(species_by_label))})",
+                f"declare (species: {', '.join(sorted(species_by_label))}) — the header "
+                "cannot be recognized as a 6.x/7.x pw.x run; refused, never a silent partial "
+                "parse (P1)",
                 location="initial positions table",
             )
         symbol, _ = species_symbol(label)
         if symbol is None:
             raise _error(
-                "QEOUT_MISSING_BLOCK",
+                "QEOUT_UNRECOGNIZED_LAYOUT",
                 f"site table label {label!r} resolves to no element (QE's label rule: the "
-                "leading 1–2 characters that form an element symbol); supply a label→element "
+                "leading 1–2 characters that form an element symbol) — the species table "
+                "cannot be recognized as a 6.x/7.x pw.x run; supply a label→element "
                 "species_map through the existing missing_species recovery to complete the read",
                 location="initial positions table",
             )
@@ -452,15 +621,20 @@ def _finalize_header(
     )
     if alat_bohr is None:
         raise _error(
-            "QEOUT_MISSING_BLOCK",
-            "the initial lattice scale is missing ('lattice parameter (alat)' is required)",
+            "QEOUT_UNRECOGNIZED_LAYOUT",
+            "the initial lattice scale is missing ('lattice parameter (alat)' is required) — "
+            "the header cannot be recognized as a 6.x/7.x pw.x run; refused, never a silent "
+            "partial parse (P1); contribute the file to the golden corpus to extend the read "
+            "(M53)",
         )
     alat = alat_bohr * BOHR_TO_ANGSTROM
     if axes_rows is None:
         raise _error(
-            "QEOUT_MISSING_BLOCK",
+            "QEOUT_UNRECOGNIZED_LAYOUT",
             "no initial cell found (the 'crystal axes: (cart. coord. in units of alat)' block "
-            "is required)",
+            "is required) — the header cannot be recognized as a 6.x/7.x pw.x run; refused, "
+            "never a silent partial parse (P1); contribute the file to the golden corpus to "
+            "extend the read (M53)",
         )
     lattice = axes_rows * alat
     notes.append(
@@ -473,7 +647,13 @@ def _finalize_header(
             coords, positions_unit, lattice=lattice, alat=alat
         )
     except ValueError as exc:
-        raise _error("QEOUT_MISSING_BLOCK", str(exc), location="initial positions table") from exc
+        raise _error(
+            "QEOUT_UNRECOGNIZED_LAYOUT",
+            f"the declared positions unit {positions_unit!r} cannot be converted — the "
+            f"header cannot be recognized as a 6.x/7.x pw.x run ({exc}); refused, never a "
+            "silent partial parse (P1)",
+            location="initial positions table",
+        ) from exc
     notes.append(_POSITIONS_NOTE_LEAD + pos_note)
     return _Header(
         version=version,
@@ -489,17 +669,20 @@ def _finalize_header(
     )
 
 
-def _read_header(lines: Iterator[str]) -> tuple[_Header | None, str | None]:
+def _read_header(lines: Iterator[str]) -> tuple[_Header | None, str | None, list[str]]:
     """Scan the header eagerly and stop at the first ``!    total energy`` line (the first
     ionic step's energy — the step region begins there).
 
-    Returns ``(header, pending_line)``: ``pending_line`` is the already-consumed step line
-    (the first ``!    total energy``) the step loop must start from — it is handed back,
-    never dropped. ``header`` is ``None`` when the file ends with a recognized banner but no
-    energy line ever appears (the caller raises ``QEOUT_EMPTY`` — a recognized header with
-    zero steps). All header anchors are collected wherever they appear (the banner, the
-    species table, the counts, alat, the crystal-axes block, the initial-positions table);
-    everything else in the preamble is skipped as diagnostic noise.
+    Returns ``(header, pending_line, unconverged)``: ``pending_line`` is the already-consumed
+    step line (the first ``!    total energy``) the step loop must start from — it is handed
+    back, never dropped; ``unconverged`` collects QE's own ``convergence NOT achieved``
+    statements verbatim, because the **first step's SCF preamble is consumed by this scan**
+    and its unconverged flag must not be lost (D196). ``header`` is ``None`` when the file
+    ends with a recognized banner but no energy line ever appears (the caller raises
+    ``QEOUT_EMPTY`` — a recognized header with zero steps). All header anchors are collected
+    wherever they appear (the banner, the species table, the counts, alat, the crystal-axes
+    block, the initial-positions table); everything else in the preamble is skipped as
+    diagnostic noise.
     """
     version: str | None = None
     species: list[tuple[str, float, float, str]] = []
@@ -512,6 +695,7 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, str | None]:
     reading_species = False
     reading_axes = False
     reading_positions = False
+    unconverged: list[str] = []
     for line in lines:
         if _ENERGY_RE.search(line):
             return (
@@ -526,7 +710,12 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, str | None]:
                     positions_unit,
                 ),
                 line,
+                unconverged,
             )
+        if _UNCONVERGED_RE.search(line) is not None:
+            # The first step's SCF preamble lives in the header region — its unconverged
+            # statement is collected here so the flag survives (D196).
+            unconverged.append(line.strip())
         if version is None and _VERSION_RE.search(line):
             version = line.strip()
         if "atomic species" in line.lower():
@@ -577,12 +766,26 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, str | None]:
             if positions and len(positions) >= 1:
                 reading_positions = False
     if version is not None:
-        # A recognized banner but the file ends before any energy line: no ionic step at all.
-        return None, None
+        # A recognized banner but the file ends before any energy line. Validate the header
+        # first: a *complete* header is a recognized run with zero steps (QEOUT_EMPTY — no
+        # ionic step at all), while an incomplete/unparseable one is an unrecognized layout
+        # (QEOUT_UNRECOGNIZED_LAYOUT — M52-S2's refusal, never a silent partial parse, P1).
+        _finalize_header(
+            version,
+            species,
+            n_atoms,
+            n_types,
+            alat_bohr,
+            np.asarray(axes_rows, dtype=float) if axes_rows else None,
+            positions if positions else None,
+            positions_unit,
+        )
+        return None, None, unconverged
     raise _error(
-        "QEOUT_EMPTY",
+        "QEOUT_UNRECOGNIZED_LAYOUT",
         "file contains no recognizable pw.x run (no Program PWSCF version banner and no "
-        "energy line found)",
+        "energy line found); QE layouts beyond 6.x/7.x are refused, never a silent partial "
+        "parse (P1) — contribute the file to the golden corpus to extend the read (M53)",
     )
 
 
@@ -605,15 +808,19 @@ def _tau_row(line: str) -> tuple[str, list[float] | None]:
     return label, values
 
 
-def _read_stress_block(lines: Iterator[str], *, location: str) -> np.ndarray:
+def _read_stress_block(lines: _Lookahead, *, location: str) -> np.ndarray:
     """The step's ``total   stress`` 3×3 tensor — three rows of three Ry/bohr³ values plus the
     per-row kbar column — mapped to canonical tension-positive eV/Å³.
 
     QE's **kbar** column is the within-file cross-check (D195): the file's own two statements
     of the same tensor must agree after conversion, so a disagreement beyond rounding is a
-    structural inconsistency in the file itself and is refused (never silently trusted).
+    present-but-unparseable block — refused ``QEOUT_UNRECOGNIZED_LAYOUT``, never silently
+    trusted (P1). A malformed/oversized stress block is the same refusal (a 3×3 tensor is
+    fixed-size, so a wrong row count is a layout problem, not an atom-count one).
     """
-    rows = _read_float_rows(lines, 3, ncols=4, what="stress block", location=location)
+    rows = _read_float_rows(
+        lines, 3, ncols=4, what="stress block", location=location, atom_keyed=False
+    )
     kbar_col = rows[:, 3]
     for r, printed_kbar in enumerate(kbar_col):
         computed = kbar_value(float(rows[r][0]))
@@ -621,10 +828,11 @@ def _read_stress_block(lines: Iterator[str], *, location: str) -> np.ndarray:
         # the file's own two statements of the tensor disagree.
         if abs(printed_kbar - computed) > max(1e-3, abs(computed) * 1e-3):
             raise _error(
-                "QEOUT_MISSING_BLOCK",
+                "QEOUT_UNRECOGNIZED_LAYOUT",
                 f"the stress kbar column ({printed_kbar!r}) disagrees with the Ry/bohr³ value "
                 f"({computed!r} kbar after conversion) beyond rounding ({location}) — the "
-                "file's own two statements of the tensor disagree",
+                "file's own two statements of the tensor disagree and the block cannot be "
+                "read as a 6.x/7.x stress block; refused, never silently trusted (P1)",
                 location=location,
             )
     return stress_from_qe(rows[:, :3])
@@ -667,8 +875,14 @@ def _steps(
     ``ATOMIC_POSITIONS`` card and (for ``vc-relax``/``vc-md``) the updated ``CELL_PARAMETERS``
     card. The ``!`` line is the frame boundary: blocks are accumulated into the current step
     until the next ``!`` line (or EOF) arrives, then the frame is emitted. The SCF-iteration
-    preamble of the next step (before its ``!`` line) is skipped as diagnostic noise.
+    preamble of the next step (before its ``!`` line) is skipped as diagnostic noise — except
+    QE's own ``convergence NOT achieved`` statement, which fires the ``QEOUT_UNCONVERGED``
+    warning (D196) while the step's energy is still read present-with-value (P3).
+
+    Lines are read through ``_Lookahead`` so the atom-count guard can inspect the line after a
+    block's rows without consuming it (QEOUT_INCONSISTENT_STEP, D196).
     """
+    lookahead = _Lookahead(lines)
     frame_index = 0
     energy: float | None = None
     forces: np.ndarray | None = None
@@ -676,7 +890,7 @@ def _steps(
     step_positions: np.ndarray | None = None
     cell: np.ndarray | None = None
     carry: dict[str, Any] = {}
-    for line in lines:
+    while (line := lookahead.next_nonblank()) is not None:
         match = _ENERGY_RE.search(line)
         if match is not None:
             if energy is not None:
@@ -698,23 +912,39 @@ def _steps(
                 carry = {}
             energy = float(match.group(1))
             continue
+        unconverged = _UNCONVERGED_RE.search(line)
+        if unconverged is not None:
+            issues.append(
+                ParseIssue(
+                    severity="warning",
+                    code="QEOUT_UNCONVERGED",
+                    message=(
+                        "QE states the SCF did not converge: "
+                        f"{line.strip()!r} — the step's energy is still read "
+                        "(present-with-value, P3) and flagged so a training set sees it"
+                    ),
+                    location=f"frame {frame_index}",
+                )
+            )
+            continue
         if energy is None:
             continue  # preamble between steps (the next step's SCF iterations)
         if "Forces acting on atoms" in line:
             forces = forces_from_ry_bohr(
-                _read_force_rows(lines, header.n_atoms, location=f"frame {frame_index}")
+                _read_force_rows(lookahead, header.n_atoms, location=f"frame {frame_index}")
             )
         elif "total   stress" in line:
-            stress = _read_stress_block(lines, location=f"frame {frame_index}")
+            stress = _read_stress_block(lookahead, location=f"frame {frame_index}")
         elif "ATOMIC_POSITIONS" in line:
             unit = _card_unit(line.split("ATOMIC_POSITIONS", 1)[1]) or "alat"
             rows = _read_float_rows(
-                lines,
+                lookahead,
                 header.n_atoms,
                 ncols=3,
                 what="ATOMIC_POSITIONS card",
                 location=f"frame {frame_index}",
                 col_offset=1,
+                atom_keyed=True,
             )
             try:
                 step_positions, _ = positions_cartesian(
@@ -722,23 +952,30 @@ def _steps(
                 )
             except ValueError as exc:
                 raise _error(
-                    "QEOUT_MISSING_BLOCK", str(exc), location=f"frame {frame_index}"
+                    "QEOUT_UNRECOGNIZED_LAYOUT",
+                    f"the step's ATOMIC_POSITIONS card is present but unparseable as a 6.x/7.x "
+                    f"block ({exc}); refused, never a silent partial read (P1)",
+                    location=f"frame {frame_index}",
                 ) from exc
         elif "CELL_PARAMETERS" in line:
             unit, alat_bohr = _cell_card_unit(line.split("CELL_PARAMETERS", 1)[1])
             rows = _read_float_rows(
-                lines,
+                lookahead,
                 3,
                 ncols=3,
                 what="CELL_PARAMETERS card",
                 location=f"frame {frame_index}",
+                atom_keyed=False,
             )
             alat_ang = alat_bohr * BOHR_TO_ANGSTROM if alat_bohr is not None else header.alat
             try:
                 cell, _ = lattice_from_cell_parameters(rows, unit or "alat", alat=alat_ang)
             except ValueError as exc:
                 raise _error(
-                    "QEOUT_MISSING_BLOCK", str(exc), location=f"frame {frame_index}"
+                    "QEOUT_UNRECOGNIZED_LAYOUT",
+                    f"the step's CELL_PARAMETERS card is present but unparseable as a 6.x/7.x "
+                    f"block ({exc}); refused, never a silent partial read (P1)",
+                    location=f"frame {frame_index}",
                 ) from exc
         else:
             total_force = _TOTAL_FORCE_RE.search(line)
@@ -795,11 +1032,24 @@ class QePwOutParser(ParserPlugin):
         stream.seek(0)
         lines = _line_reader(stream)
         issues: list[ParseIssue] = []
-        header, pending_line = _read_header(lines)
+        header, pending_line, unconverged = _read_header(lines)
         if header is None:
             raise _error(
                 "QEOUT_EMPTY",
                 "file contains no ionic step (no '!    total energy' line)",
+            )
+        for statement in unconverged:
+            issues.append(
+                ParseIssue(
+                    severity="warning",
+                    code="QEOUT_UNCONVERGED",
+                    message=(
+                        "QE states the SCF did not converge: "
+                        f"{statement!r} — the step's energy is still read "
+                        "(present-with-value, P3) and flagged so a training set sees it"
+                    ),
+                    location="frame 0",
+                )
             )
         stream_header = _build_stream_header(header, filename)
         if pending_line is not None:

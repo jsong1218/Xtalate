@@ -338,7 +338,21 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
 
+## `qe_pw_out` / `md-6x` (golden)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+
 ## `qe_pw_out` / `relax` (golden)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+
+## `qe_pw_out` / `relax-6x` (golden)
 
 - **Source file:** `pw.out`
 - **Origin:** synthetic
@@ -352,7 +366,21 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
 
+## `qe_pw_out` / `scf-6x` (golden)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+
 ## `qe_pw_out` / `vc-relax` (golden)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+
+## `qe_pw_out` / `vc-relax-6x` (golden)
 
 - **Source file:** `pw.out`
 - **Origin:** synthetic

@@ -1,0 +1,407 @@
+{
+  "schema_version": "1.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "O",
+          "H",
+          "H"
+        ],
+        "atomic_numbers": [
+          8,
+          1,
+          1
+        ],
+        "positions": [
+          [
+            2.5,
+            2.5,
+            2.5
+          ],
+          [
+            3.25,
+            2.5,
+            2.5
+          ],
+          [
+            2.5,
+            3.25,
+            2.5
+          ]
+        ],
+        "masses": [
+          15.999,
+          1.008,
+          1.008
+        ],
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            4.999999997656689,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            4.999999997656689,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            4.999999997656689
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.2571103385054424,
+            -0.5142206770108848,
+            0.0
+          ],
+          [
+            -0.10284413540217696,
+            0.2571103385054424,
+            0.02571103385054424
+          ],
+          [
+            -0.1285551692527212,
+            0.23139930465489814,
+            -0.02571103385054424
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -668.3586780893389,
+        "stress": [
+          [
+            0.0009181576942881021,
+            -0.000045907884714405095,
+            -0.0
+          ],
+          [
+            -0.000045907884714405095,
+            0.0018363153885762042,
+            -0.00002754473082864306
+          ],
+          [
+            -0.0,
+            -0.00002754473082864306,
+            0.00045907884714405106
+          ]
+        ],
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 1,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "O",
+          "H",
+          "H"
+        ],
+        "atomic_numbers": [
+          8,
+          1,
+          1
+        ],
+        "positions": [
+          [
+            2.48,
+            2.5,
+            2.5
+          ],
+          [
+            3.26,
+            2.5,
+            2.5
+          ],
+          [
+            2.5,
+            3.27,
+            2.5
+          ]
+        ],
+        "masses": [
+          15.999,
+          1.008,
+          1.008
+        ],
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            5.000724621175499,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            5.000724621175499,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            5.000724621175499
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.23139930465489814,
+            -0.46279860930979627,
+            0.0
+          ],
+          [
+            -0.08998861847690484,
+            0.23139930465489814,
+            0.02571103385054424
+          ],
+          [
+            -0.11569965232744907,
+            0.20568827080435392,
+            -0.02571103385054424
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -668.3889115721414,
+        "stress": [
+          [
+            0.0008263419248592918,
+            -0.000045907884714405095,
+            -0.0
+          ],
+          [
+            -0.000045907884714405095,
+            0.0017444996191473938,
+            -0.00002754473082864306
+          ],
+          [
+            -0.0,
+            -0.00002754473082864306,
+            0.0004131709624296459
+          ]
+        ],
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 2,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "O",
+          "H",
+          "H"
+        ],
+        "atomic_numbers": [
+          8,
+          1,
+          1
+        ],
+        "positions": [
+          [
+            2.47,
+            2.5,
+            2.5
+          ],
+          [
+            3.27,
+            2.5,
+            2.5
+          ],
+          [
+            2.5,
+            3.28,
+            2.5
+          ]
+        ],
+        "masses": [
+          15.999,
+          1.008,
+          1.008
+        ],
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            4.999137089549729,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            4.999137089549729,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            4.999137089549729
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.20568827080435392,
+            -0.41137654160870785,
+            0.0
+          ],
+          [
+            -0.07713310155163272,
+            0.20568827080435392,
+            0.02571103385054424
+          ],
+          [
+            -0.10284413540217696,
+            0.17997723695380968,
+            -0.02571103385054424
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -668.4493827555112,
+        "stress": [
+          [
+            0.0007345261554304815,
+            -0.000045907884714405095,
+            -0.0
+          ],
+          [
+            -0.000045907884714405095,
+            0.0016526838497185835,
+            -0.00002754473082864306
+          ],
+          [
+            -0.0,
+            -0.00002754473082864306,
+            0.00036726307771524076
+          ]
+        ],
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": {
+    "timestep": null
+  },
+  "simulation": {
+    "source_code": "Program PWSCF v.6.8 (enter)",
+    "calculator": null,
+    "xc_functional": null,
+    "pseudopotentials": null,
+    "thermostat": null,
+    "md_ensemble": null,
+    "temperature": null,
+    "extra": {}
+  },
+  "provenance": {
+    "source_filename": "pw.out",
+    "source_format": "qe_pw_out",
+    "source_units": {
+      "positions": "bohr",
+      "lattice_vectors": "alat",
+      "energy": "rydberg",
+      "forces": "rydberg/bohr",
+      "stress": "rydberg/bohr^3"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "site-table label 'O' resolves to element O (QE's documented label rule); its declared mass 15.999 u is promoted to atoms.masses.",
+      "site-table label 'H' resolves to element H (QE's documented label rule); its declared mass 1.008 u is promoted to atoms.masses.",
+      "site-table label 'H' resolves to element H (QE's documented label rule); its declared mass 1.008 u is promoted to atoms.masses.",
+      "The declared atomic-species table (label → valence, mass, pseudopotential) rides verbatim in user_metadata.custom_global['qe_pw_out:atomic_species'] — nothing declared is dropped (P1).",
+      "Initial cell read from the 'crystal axes' block in units of alat and converted to Å (alat = 9.448630664428 bohr × 0.52917720859 = 4.999999999999885 Å).",
+      "Initial positions read from the site table (site n. atom …), which declares its unit: ATOMIC_POSITIONS {bohr}: positions converted Bohr → Å (× 0.52917720859, QE's CODATA bohr radius).",
+      "pbc set to (true,true,true): a pw.x input carries no PBC declaration and QE is always fully periodic (format-defined, not assumed).",
+      "electronic.total_energy read from the '!    total energy' line in Rydberg and converted to eV (× 13.605693122994, QE's RYTOEV — Modules/constants.f90).",
+      "dynamics.forces read from the 'Forces acting on atoms' block in Ry/bohr and converted to eV/Å (× RYTOEV / bohr_radius_angs = × 25.71103385054424). Forces are the forces acting on the atoms (-dE/dr), the same convention as VASP's TOTAL-FORCE column, so no sign flip.",
+      "simulation.source_code set to the PWSCF program banner (verbatim).",
+      "Each ionic step's own CELL_PARAMETERS card (when present) supplies that step's cell at its declared unit; a step without one reuses the running cell (the fixed-cell form).",
+      "Each ionic step's own ATOMIC_POSITIONS card (when present) supplies that step's positions at its declared unit; a step without one reuses the initial configuration.",
+      "electronic.stress mapped from the 'total   stress' 3×3 tensor in Ry/bohr³: QE prints compression-positive (the ASE reference reader confirms 'sign convention is opposite'), so the tensor is sign-flipped to canonical tension-positive and converted × 91.8157694288102 eV/Å³ per Ry/bohr³. The per-row kbar column is cross-checked against the Ry/bohr³ value (× 147105.07919960306 kBar per Ry/bohr³) and the agreement recorded. A step without a stress block leaves electronic.stress None (P3 — never a defaulted zero tensor).",
+      "Declared atomic-species masses promote to atoms.masses (present-with-value, P3); the valence and pseudopotential columns of the declared species table are carried verbatim in user_metadata.custom_global['qe_pw_out:atomic_species'] (label → [valence, mass, pseudopotential])."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-08-23T07:12:23Z",
+        "operation": "parse",
+        "source_format": "qe_pw_out",
+        "target_format": null,
+        "tool_version": "1.3.0",
+        "parser_version": "qe_pw_out-parser 1.3.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {
+      "qe_pw_out:atomic_species": {
+        "O": [
+          6.0,
+          15.999,
+          "O( 1.00)"
+        ],
+        "H": [
+          1.0,
+          1.008,
+          "H( 1.00)"
+        ]
+      }
+    },
+    "custom_per_atom": {},
+    "custom_per_frame": {
+      "qe_pw_out:total_force": [
+        0.00141421,
+        0.00141421,
+        0.00141421
+      ]
+    }
+  }
+}

@@ -79,6 +79,65 @@ _HEADER = f"""\
 
 """
 
+#: The same run's QE **6.x** spelling (M52-S2) — the documented 6.x↔7.x drift the reader
+#: must tolerate, in one header: a 6.x banner (``v.6.8``, no ``(v.6.8)`` suffix), the
+#: lowercase ``atomic species`` table header, looser column widths in the species and site
+#: tables, and an extra 6.x diagnostic block between the reciprocal axes and the site table.
+#: Every number is identical to the 7.x header — only the *layout* drifts.
+_HEADER_6X = f"""\
+     Program PWSCF v.6.8 (enter)
+
+     Current dimensions of program PWSCF are:
+     ...
+
+     Parallel version (MPI), running on     1 processors
+
+     ...
+
+     atomic species   valence    mass     pseudopotential
+        O           6.000      15.99900     O( 1.00)
+        H           1.000       1.00800     H( 1.00)
+
+     number of atoms/cell      =            3
+     number of atomic types   =            2
+     number of electrons      =        8.00
+     number of Kohn-Sham states =           4
+
+     kinetic-energy cutoff =  40.0000  Ry
+     charge density cutoff = 320.0000  Ry
+
+     celldm(1)=   {ALAT_BOHR}  celldm(2)=   0.000000  celldm(3)=   0.000000
+     celldm(4)=   0.000000  celldm(5)=   0.000000  celldm(6)=   0.000000
+
+     lattice parameter (alat)  =       {ALAT_BOHR}  a.u.
+
+     crystal axes: (cart. coord. in units of alat)
+       a(1) = (   1.000000   0.000000   0.000000 )  
+       a(2) = (   0.000000   1.000000   0.000000 )  
+       a(3) = (   0.000000   0.000000   1.000000 )  
+
+     reciprocal axes: (cart. coord. in units 2 pi/alat)
+       b(1) = (   1.000000   0.000000   0.000000 )  
+       b(2) = (   0.000000   1.000000   0.000000 )  
+       b(3) = (   0.000000   0.000000   1.000000 )  
+
+     G-vectors are generated in parallel using a custom distribution
+
+     P =     0.000000000000E+00    0.000000000000E+00    0.000000000000E+00
+
+     Cartesian axes
+
+     site n.     atom                  positions (bohr units)
+        1           O  tau(   1) = (  {X_BOHR}  {X_BOHR}  {X_BOHR} )
+        2           H  tau(   2) = (  {H_BOHR}  {X_BOHR}  {X_BOHR} )
+        3           H  tau(   3) = (  {X_BOHR}  {H_BOHR}  {X_BOHR} )
+
+     number of k points=     1
+                       cart. coord. in units 2pi/alat
+        k(    1) = (   0.000000000   0.000000000   0.000000000), wk =   2.0000000
+
+"""
+
 #: The three ionic steps of the run: (energy Ry, forces Ry/bohr, stress diag Ry/bohr³, Å
 #: positions) — the same numbers the committed relax golden carries.
 STEPS: list[
@@ -185,18 +244,17 @@ def _positions_card(positions: list[tuple[float, float, float]]) -> str:
 
 def render_pw_out(layout: str = "7x") -> str:
     """The run's pw.x output — the 7.x spelling (byte-for-byte the committed relax golden) or
-    the 6.x spelling (M52-S2)."""
-    if layout == "7x":
-        text = _HEADER
-        for i, (energy, forces, diag, positions) in enumerate(STEPS):
-            text += _scf_iteration(i + 1, energy)
-            text += "     convergence has been achieved in  10 iterations\n\n"
-            text += _energy_line(energy)
-            text += _forces_block(forces, 0.00141421)
-            text += _stress_block(diag)
-            text += _positions_card(positions)
-        return text + "\n     JOB DONE.\n"
-    raise ValueError(f"unknown qe_pw_out layout {layout!r}")
+    the 6.x spelling (M52-S2, byte-for-byte the committed ``relax-6x`` golden) — the same
+    numbers, only the layout drifting (banner, capitalization, column widths, extra noise)."""
+    header = _HEADER if layout == "7x" else _HEADER_6X
+    for i, (energy, forces, diag, positions) in enumerate(STEPS):
+        header += _scf_iteration(i + 1, energy)
+        header += "     convergence has been achieved in  10 iterations\n\n"
+        header += _energy_line(energy)
+        header += _forces_block(forces, 0.00141421)
+        header += _stress_block(diag)
+        header += _positions_card(positions)
+    return header + "\n     JOB DONE.\n"
 
 
 def render_pw_in() -> str:

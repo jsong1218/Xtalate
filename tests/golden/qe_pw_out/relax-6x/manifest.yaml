@@ -1,0 +1,12 @@
+case: relax-6x
+format_id: qe_pw_out
+source_file: pw.out
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 7f27b3c26689cbb8d71d1692f0179d89b3189a20ae954d56f155e3422deacb2c
+expected_sha256: ff8fb7aec585f660a4d4f634e46902c3c760e5cd2dffd307fb54d9f7c3e43ffb
+origin:
+  kind: synthetic
+  source: Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+  license: Apache-2.0
+notes: 'M52-S2 ionic relaxation golden (QE 6.x layout): the same 3-step H2O relax run as the 7.x case in the 6.x spelling (byte-for-byte the cross-check''s render_pw_out(''6x'') rendering). The go/no-go gate: the 6.x rendering must agree with the 7.x rendering and with the M50 input parser on the shared initial structure.'

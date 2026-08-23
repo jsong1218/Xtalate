@@ -1,4 +1,4 @@
-"""The pw.x input↔output echo cross-check (v1.4 M52-S1; standing rule 4).
+"""The pw.x input↔output echo cross-check (v1.4 M52-S1/S2; standing rule 4).
 
 One synthetic run is authored as *both* a pw.x input and its pw.x output (the output's setup
 echo repeats the input's cell / species / positions), then read by the **M50 input parser**
@@ -7,9 +7,11 @@ shared initial structure — ``cell.lattice_vectors``, ``atoms.symbols``, ``atom
 
 This is the milestone's central correctness proof: a silent unit or sign disagreement between
 the two QE readers of one calculation is the exact bug that poisons an MLIP training set at
-scale, and the shared ``_qe`` core exists so QE's conventions are discovered once. The 7.x
-rendering of the output is byte-for-byte the committed ``relax`` golden; S2 adds the 6.x
-rendering of the same run (the go/no-go gate).
+scale, and the shared ``_qe`` core exists so QE's conventions are discovered once. Both
+output layouts — the 7.x rendering (byte-for-byte the committed ``relax`` golden) and the
+6.x rendering (byte-for-byte the committed ``relax-6x`` golden, M52-S2) — must agree with
+the input parser and with **each other**; that two-layout agreement is the go/no-go gate
+(D196).
 
 **What the cross-check exercises:** the alat resolution (input from ``celldm(1)``, output from
 the ``lattice parameter (alat)`` line — both must land 5.0 Å), the bohr→Å boundary (input
@@ -31,6 +33,7 @@ from xtalate.parsers.qe_pw_out import make_qe_pw_out_parser
 from xtalate.schema import CanonicalObject
 
 _GOLDEN_RELAX = Path(__file__).parent.parent / "golden" / "qe_pw_out" / "relax" / "pw.out"
+_GOLDEN_RELAX_6X = Path(__file__).parent.parent / "golden" / "qe_pw_out" / "relax-6x" / "pw.out"
 
 
 def _parse_input() -> CanonicalObject:
@@ -69,11 +72,25 @@ def test_the_output_rendering_is_byte_for_byte_the_committed_golden() -> None:
     """The cross-check and the golden share one source of truth — a drift between them would
     mean the golden and the rule-4 guard are no longer the same run."""
     assert render_pw_out("7x").encode() == _GOLDEN_RELAX.read_bytes()
+    assert render_pw_out("6x").encode() == _GOLDEN_RELAX_6X.read_bytes()
 
 
-@pytest.mark.parametrize("layout", ["7x"])
+@pytest.mark.parametrize("layout", ["7x", "6x"])
 def test_input_and_output_parsers_agree_on_the_initial_structure(layout: str) -> None:
+    """Both QE layouts' output parsings agree with the input parser — the go/no-go gate's
+    rule-4 half (D196)."""
     _assert_shared_structure_agrees(_parse_input(), _parse_output(layout))
+
+
+def test_both_output_layouts_agree_with_each_other() -> None:
+    """The go/no-go gate's cross-layout half: the 6.x and 7.x output parsings of the same
+    run agree on the shared initial structure (and the full objects agree modulo the declared
+    banner — the golden suite pins that)."""
+    seven = _parse_output("7x")
+    six = _parse_output("6x")
+    _assert_shared_structure_agrees(seven, six)
+    assert seven.simulation is not None and six.simulation is not None
+    assert seven.simulation.source_code != six.simulation.source_code
 
 
 def test_input_parser_parse_is_warning_free() -> None:
