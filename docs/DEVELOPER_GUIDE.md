@@ -232,6 +232,46 @@ registration + the option list). Three disciplines bind this variant:
 See also the *Contributing real-world LAMMPS files* call (§5.6) — real files into the wild corpus
 are how the evidence that grows these option lists is gathered.
 
+### 5.1.3 The "structured input + log output" pairing variant (one calculation, two artifacts)
+
+A code can present **two** artifacts of one calculation: an *input* that is a structured grammar
+with declared per-card units (full read+write — a deterministic boundary mapping, never a
+scenario), and an *output* that is a version-drifting log read **parser-only** through the
+source-never-target seam (§5.1.1, D159). The two readers must **agree** on the shared initial
+structure of the same run — a silent unit or sign disagreement between them is the cardinal bug at
+MLIP scale (standing rule 4).
+
+The in-tree precedent is the Quantum ESPRESSO pw.x pair (v1.4 M50–M52): `qe_pw_in` is the
+structured input (the namelist + card grammar; every card declares `{angstrom|bohr|alat|crystal}`, so
+conversion is a recorded boundary mapping and no unit ambiguity ever fires for a QE source), and
+`qe_pw_out` is the log output (a version-drifting text log read parser-only, anchoring on stable
+substrings and whitespace-splits so the QE 6.x ↔ 7.x layout drift parses to identical objects). The
+shared mapping core `src/xtalate/parsers/_qe/` is where QE's structural conventions get pinned once
+(`ibrav` expansion, per-card unit conversion, Bohr radius, species-label resolution) and both readers
+consume it — the discovery happens once, never forked. The agreement is machine-checked by the
+**input-echo cross-check** (`tests/parsers/_qe_run.py` + `test_qe_pw_out_crosscheck.py`, extended to
+the wild corpus in M53): one run authored as both its input and its output, read by both parsers,
+asserted equal on cell / species / positions within the strict tolerance profile.
+
+Three disciplines bind this variant (mirroring the parser-only and required-preset variants):
+
+1. **The two artifacts of one calculation must agree.** The input parser and the output parser are
+two readers of one run; a disagreement — especially a stress-sign or position-unit one — is a
+stop-the-line defect, not a style difference.
+2. **The log parser refuses an unrecognized layout rather than partial-parsing it (P1).** QE
+layouts beyond 6.x/7.x land in `QEOUT_UNRECOGNIZED_LAYOUT` with a corpus-contribution call — never a
+silent partial read of a file the reader half-understands.
+3. **Physics is never invented on export (P4).** A pw.x input written from a canonical object
+carries exactly what the object had; run-required entries it lacks (cutoff, k-points, pseudopotential
+files) are named in the honest-incompleteness warning, never defaulted.
+
+The machinery to copy lives in `src/xtalate/parsers/_qe/`, `src/xtalate/parsers/qe_pw_in.py` +
+`src/xtalate/exporters/qe_pw_in.py`, `src/xtalate/parsers/qe_pw_out.py`, and
+`tests/parsers/_qe_run.py` (the agreement harness). Cross-reference (do not duplicate) the QE
+real-world contribution call (§5.7) — a real input/output pair is exactly how the version-drift
+axis gains evidence — and the CP2K handoff pointer (README), the first plugin expected to follow
+this exact pairing pattern.
+
 ### 5.2 Ship it as an installable plugin (no fork)
 
 A third-party distribution advertises its parser/exporter under Xtalate's entry-point groups;
