@@ -127,6 +127,14 @@ from xtalate.sdk import (
     ParseResult,
     ParserPlugin,
 )
+from xtalate.sdk.qe import (
+    _ATOMIC_SPECIES_KEY,
+    _CONSUMED_SYSTEM_KEYS,
+    _NAMELISTS_KEY,
+    _PSEUDOPOTENTIALS_KEY,
+    _SIMULATION_EXTRA_KEYS,
+    _UNMAPPED_CARDS_KEY,
+)
 
 FORMAT_ID = "qe_pw_in"
 
@@ -143,22 +151,6 @@ _SPECIES_SUPPLIED = "QEIN_SPECIES_SUPPLIED"
 #: hint the LAMMPS parsers raise — the hazard is identical, so it is one scenario reused,
 #: never a QE-specific recovery invented (D191).
 _SPECIES_HINT = "supply_species"
-
-#: The custom_global key the full ATOMIC_SPECIES table rides under: the mass and
-#: pseudopotential columns have no canonical home in this milestone and are **never
-#: dropped** (P1). M50-S3 additionally promotes masses → atoms.masses and
-#: pseudopotential filenames → user_metadata.custom_global["qe:pseudopotentials"] (label →
-#: filename); the verbatim declared table stays here.
-_ATOMIC_SPECIES_KEY = "qe_pw_in:atomic_species"
-#: The custom_global key pseudopotential filenames ride under (label → filename), the
-#: carry-through routing for scientifically load-bearing content with no canonical model.
-_PSEUDOPOTENTIALS_KEY = "qe:pseudopotentials"
-#: The custom_global key unconsumed namelist entries ride under (per-namelist dict), and
-#: the key unrecognized cards ride under (list of {card, unit, lines}). M50-S3 routes
-#: these under the Part 2 §6.1 carry-through rule with the QEIN_UNMAPPED_ENTRY_CARRIED
-#: warning.
-_NAMELISTS_KEY = "qe_pw_in:namelists"
-_UNMAPPED_CARDS_KEY = "qe_pw_in:unmapped_cards"
 
 #: The QE namelists a pw.x input may carry (S1 reads &system's facts; the rest parse for
 #: grammar validation and ride the carry). ``fcp`` is the fixed-cell-potential namelist.
@@ -181,24 +173,6 @@ _CARD_KEYWORDS = frozenset(
         "CONSTRAINTS",
     }
 )
-
-#: The &system facts S1/S2 consume; everything else in &system (and every other
-#: namelist) rides the carry under the Part 2 §6.1 routing rule.
-_CONSUMED_SYSTEM_KEYS = frozenset(
-    {"ibrav", "nat", "ntyp", "celldm", "a", "b", "c", "cosab", "cosac", "cosbc"}
-)
-
-#: The namelist entries M50-S3 *recognizes* as simulation context and promotes to
-#: ``simulation.extra`` (the §6.1 routing rule: recognized simulation/method properties live
-#: in ``simulation.extra``; everything else rides the carry). Promoted here means consumed —
-#: the entry is not also carried in ``qe_pw_in:namelists`` (no double-report). QE's
-#: calculation type + the convergence/cutoff parameters per the plan (D191); values are
-#: stored as strings per the ``SimulationMetadata.extra: dict[str, str]`` contract.
-_SIMULATION_EXTRA_KEYS: Mapping[str, frozenset[str]] = {
-    "control": frozenset({"calculation", "ecutwfc", "ecutrho"}),
-    "system": frozenset({"degauss", "smearing", "occupations"}),
-    "electrons": frozenset({"conv_thr"}),
-}
 
 # A Fortran number: optional sign, digits with optional fraction, optional [eEdD] exponent.
 _NUMBER_RE = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eEdD][+-]?\d+)?$")

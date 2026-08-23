@@ -20,6 +20,7 @@ from xtalate.exporters.poscar import (
     make_contcar_exporter,
     make_poscar_exporter,
 )
+from xtalate.exporters.qe_pw_in import QePwInExporter, make_qe_pw_in_exporter
 from xtalate.exporters.xdatcar import XdatcarExporter, make_xdatcar_exporter
 from xtalate.exporters.xyz import XyzExporter
 from xtalate.sdk import ExporterPlugin
@@ -31,6 +32,7 @@ __all__ = [
     "LammpsDataExporter",
     "LammpsDumpExporter",
     "PoscarExporter",
+    "QePwInExporter",
     "XdatcarExporter",
     "XyzExporter",
     "builtin_exporters",
@@ -40,13 +42,15 @@ __all__ = [
     "make_lammps_data_exporter",
     "make_lammps_dump_exporter",
     "make_poscar_exporter",
+    "make_qe_pw_in_exporter",
     "make_xdatcar_exporter",
 ]
 
 
 def builtin_exporters() -> list[ExporterPlugin]:
     """The exporters shipped so far (v0.1: M3a XYZ, M3b POSCAR/CONTCAR, M3c extXYZ; v0.3: M13
-    XDATCAR, M14 ASE trajectory; v0.4: M19 CIF)."""
+    XDATCAR, M14 ASE trajectory; v0.4: M19 CIF; v1.4 M51: the QE pw.x input exporter, closing
+    M50's parser-only staging state into a full read+write format)."""
     return [
         XyzExporter(),
         ExtxyzExporter(),
@@ -57,4 +61,5 @@ def builtin_exporters() -> list[ExporterPlugin]:
         make_xdatcar_exporter(),
         make_ase_traj_exporter(),
         make_cif_exporter(),
+        make_qe_pw_in_exporter(),
     ]
