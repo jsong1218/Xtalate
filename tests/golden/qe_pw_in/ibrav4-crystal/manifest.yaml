@@ -1,0 +1,14 @@
+case: ibrav4-crystal
+format_id: qe_pw_in
+source_file: pw.in
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 024ce36337c0b45f3c76362e17319704e8b89ee1517ba6cbb300a032d6cd654d
+expected_sha256: e612c5b164edae6352899bc2e9ab119b8dbed510848bba948dc77518fdb5c702
+origin:
+  kind: synthetic
+  source: Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+  license: Apache-2.0
+notes: "M50-S2 cross golden: ibrav = 4 (hexagonal P), A = 4.0, C = 6.0 A, with ATOMIC_POSITIONS\
+  \ {crystal} \u2014 fractional coordinates convert against the *derived* lattice:\
+  \ 0.25*v1 + 0.25*v2 + 0.25*v3 = (0.5, sqrt(3)/2, 1.5) A (hand-pinned)."

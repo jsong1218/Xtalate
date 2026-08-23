@@ -219,6 +219,118 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** MASTER_SPEC Part 2 §8.2 worked example (VASP-5 POSCAR, Direct coords, NaCl-like)
 
+## `qe_pw_in` / `carry-kpoints` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50 (QE pw.x input parser).
+
+## `qe_pw_in` / `decorated-labels` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50 (QE pw.x input parser).
+
+## `qe_pw_in` / `explicit-alat-positions` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S1 (QE pw.x input parser).
+
+## `qe_pw_in` / `explicit-angstrom` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S1 (QE pw.x input parser).
+
+## `qe_pw_in` / `explicit-bohr-positions` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S1 (QE pw.x input parser).
+
+## `qe_pw_in` / `explicit-crystal-positions` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S1 (QE pw.x input parser).
+
+## `qe_pw_in` / `ibrav-12-monoclinic-b` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+
+## `qe_pw_in` / `ibrav1-sc` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+
+## `qe_pw_in` / `ibrav12-monoclinic-c` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+
+## `qe_pw_in` / `ibrav14-triclinic` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+
+## `qe_pw_in` / `ibrav2-fcc` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+
+## `qe_pw_in` / `ibrav3-bcc` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+
+## `qe_pw_in` / `ibrav4-crystal` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+
+## `qe_pw_in` / `ibrav4-hex` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+
+## `qe_pw_in` / `ibrav6-tetragonal` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+
+## `qe_pw_in` / `ibrav8-orthorhombic` (golden)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+
 ## `vasprun` / `relax-h2o` (golden)
 
 - **Source file:** `vasprun.xml`

@@ -1,0 +1,13 @@
+case: ibrav3-bcc
+format_id: qe_pw_in
+source_file: pw.in
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 5d57e955570873d5fb458e140d00a08189b39fce18f66d53ebd137b8772bcbe7
+expected_sha256: ea5927f17743d18f811dc28050235a64c0f9d91e9cd0fcbb605a779cd24d5de1
+origin:
+  kind: synthetic
+  source: Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+  license: Apache-2.0
+notes: 'M50-S2 ibrav golden: ibrav = 3 (cubic I, bcc), A = 4.0 A. Hand-pinned: v1=(a/2)(1,1,1),
+  v2=(a/2)(-1,1,1), v3=(a/2)(-1,-1,1) -> ((2,2,2),(-2,2,2),(-2,-2,2)) A.'

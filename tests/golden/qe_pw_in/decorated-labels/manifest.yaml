@@ -1,0 +1,16 @@
+case: decorated-labels
+format_id: qe_pw_in
+source_file: pw.in
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+origin:
+  kind: synthetic
+  source: Hand-written for M50 (QE pw.x input parser).
+  license: Apache-2.0
+notes: 'M50-S3 golden: ATOMIC_SPECIES decorated labels (Fe1, O_vac) resolve via QE''s
+  documented label rule to Fe and O (each resolution recorded in parse_notes); masses
+  promote to atoms.masses (55.845, 15.999 u, present-with-value P3); pseudopotential
+  filenames ride custom_global[''qe:pseudopotentials''] label -> filename; the verbatim
+  declared table stays under qe_pw_in:atomic_species.'
+sha256: 452d52d623a90e8f8824b77eb7cd9719fe1c27ee24314789f9b520678443b786
+expected_sha256: b57e81dcfa53495fea2cc58c3a9e59c4717ddb9be04791a41c15238982bf9e5b

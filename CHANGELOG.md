@@ -17,6 +17,43 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+### Added — the QE pw.x input parser (v1.4 M50; D188–D191)
+
+Quantum ESPRESSO enters the format family: the **pw.x input** reader (`qe_pw_in`, schema line
+`1.0.0` — the `1.4.0` package bump is M53's) parses the namelist + card grammar end to end over a
+shared `_qe` mapping core the M52 pw.x output parser will reuse. Per-card units are converted
+deterministically at the boundary (never a scenario — QE declares its units in the file), the
+`ibrav` Bravais encodings expand to explicit lattices hand-pinned per supported value
+(`1, 2, 3, 4, 6, 8, 12, −12, 14`; an unsupported value refuses, never a guessed lattice), species
+labels resolve through QE's documented label rule (`Fe1` → Fe, `O_vac` → O, each resolution
+recorded), declared masses promote to `atoms.masses`, and pseudopotential filenames ride
+`user_metadata.custom_global["qe:pseudopotentials"]`. An unresolvable label refuses
+`QEIN_UNRESOLVED_SPECIES_LABEL`, completable through the existing `missing_species` recovery
+(`species_map`/`upload_reference`) — no QE-specific scenario invented. Recognized simulation context
+routes to `simulation.extra`; `K_POINTS` and every other unconsumed entry/card are carried verbatim
+with the `QEIN_UNMAPPED_ENTRY_CARRIED` warning (kept + reported, never refused). Registered
+**parser-only as a staging state** — the exporter is M51's deliverable.
+
+### Fixed — M50 code-review follow-ups
+
+- **Bare and paren-wrapped card units are read faithfully instead of silently defaulting to alat.**
+  QE writes the per-card unit in three interchangeable spellings — `ATOMIC_POSITIONS {angstrom}`,
+  `(angstrom)`, or bare `angstrom` — but the reader recognized only the braced form, so a bare
+  `ATOMIC_POSITIONS crystal` / `CELL_PARAMETERS angstrom` fell through to the alat default and
+  silently misread the geometry (P1/P3). `_card_unit` now accepts all three; a header with no
+  remainder still applies (and records) QE's documented alat default, and a bare *unrecognized*
+  token now refuses `QEIN_MALFORMED_CARD` rather than defaulting.
+- **A bare `K_POINTS` mode is carried, not dropped.** The same braces-only gap dropped an unmapped
+  card's bare header modifier — `K_POINTS automatic` lost the `automatic` mode despite the
+  "carried verbatim" contract (P1). The mode now rides the carried entry exactly as `{automatic}` does.
+- **Fortran logicals (`.true.`/`.false.`) parse instead of refusing the file.** A namelist logical
+  begins with `.`, so it reached the tokenizer's numeric branch and was rejected as a malformed
+  number — refusing any pw.x input carrying `tprnfor = .true.`, `tstress = .false.`, etc. The
+  logical is now recognized there; the previously unreachable handling in the identifier branch is
+  removed.
+- **Card error locations point at the correct line** when a card block contains blank lines (the
+  count no longer under-shoots by the skipped blanks).
+
 ## [1.3.0] — 2026-08-21
 
 Schema version: 1.0.0

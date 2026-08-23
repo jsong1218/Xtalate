@@ -1,0 +1,13 @@
+case: ibrav6-tetragonal
+format_id: qe_pw_in
+source_file: pw.in
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 41efa1613a06d3077457f245d9302fcccccb73c42fdb8d9a7a129f1a8813799a
+expected_sha256: c4f4465f301bc5a4eca8b41491c3ed2503b3bddd9e06d0786ee59922e69853b2
+origin:
+  kind: synthetic
+  source: Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
+  license: Apache-2.0
+notes: 'M50-S2 ibrav golden: ibrav = 6 (tetragonal P), A = 4.0, C = 6.0 A. Hand-pinned:
+  v1=a(1,0,0), v2=a(0,1,0), v3=c(0,0,1) -> diag(4,4,6) A.'

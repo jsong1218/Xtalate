@@ -1,0 +1,15 @@
+case: explicit-bohr-positions
+format_id: qe_pw_in
+source_file: pw.in
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 46a699c8254f6de56dbce2fe99ba35f0e1f31f536e3b3231664ddadd5a18d170
+expected_sha256: f6679b99631886a4735f79633bba087a645abd3a28b20ea69691ebdc40a3a5b1
+origin:
+  kind: synthetic
+  source: Hand-written for M50-S1 (QE pw.x input parser).
+  license: Apache-2.0
+notes: 'M50-S1 explicit-cell golden: ibrav = 0 with CELL_PARAMETERS angstrom (the
+  shared off-diagonal cell (3,1,0)/(0,4,1)/(1,0,5)) and ATOMIC_POSITIONS in bohr.
+  The expected canonical is hand-verified: positions/units converted at the boundary
+  and recorded in parse_notes; no ambiguous_* scenario fires (QE declares its units).'

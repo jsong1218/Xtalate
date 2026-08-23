@@ -1,0 +1,15 @@
+case: explicit-angstrom
+format_id: qe_pw_in
+source_file: pw.in
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 3a9eff5db4221659d919ec74cbb53a183267ea340dc865c0c5d65f2404dcd18a
+expected_sha256: 12f96fe0974fd7a9721732fe7184ab98ebcb52907e14648c22935e4de8133b41
+origin:
+  kind: synthetic
+  source: Hand-written for M50-S1 (QE pw.x input parser).
+  license: Apache-2.0
+notes: 'M50-S1 explicit-cell golden: ibrav = 0 with CELL_PARAMETERS angstrom (the
+  shared off-diagonal cell (3,1,0)/(0,4,1)/(1,0,5)) and ATOMIC_POSITIONS in angstrom.
+  The expected canonical is hand-verified: positions/units converted at the boundary
+  and recorded in parse_notes; no ambiguous_* scenario fires (QE declares its units).'

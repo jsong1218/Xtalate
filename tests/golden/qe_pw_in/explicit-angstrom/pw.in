@@ -1,0 +1,17 @@
+&CONTROL
+/
+&SYSTEM
+   ibrav = 0,
+   nat = 1,
+   ntyp = 1,
+/
+&ELECTRONS
+/
+ATOMIC_SPECIES
+   Fe 55.845 fe.pbe.UPF
+ATOMIC_POSITIONS {angstrom}
+   Fe 1.0 2.0 3.0
+CELL_PARAMETERS {angstrom}
+   3.0 1.0 0.0
+   0.0 4.0 1.0
+   1.0 0.0 5.0
