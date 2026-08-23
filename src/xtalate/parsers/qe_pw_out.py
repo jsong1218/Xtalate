@@ -55,11 +55,13 @@ in a way that is **not** a torn tail: refused, never a silent partial parse, **P
 layouts beyond 6.x/7.x land here with a corpus-contribution call), ``QEOUT_INCONSISTENT_STEP``
 (an atom-keyed step block — force rows / position rows — whose row count disagrees with the
 header's atom count: refused, never silently truncated to the shorter, **P3**),
-``QEOUT_MISSING_BLOCK`` (the file ends mid-block — the torn-tail case, whose ``QEOUT_TRUNCATED``
-recovery is M52-S3), the warning ``QEOUT_UNCONVERGED`` (QE's own statement that an SCF did not
-converge; the step's energy is still read present-with-value and flagged, **P3**), and the
-warning ``QEOUT_UNMAPPED_BLOCK_CARRIED`` (a recognized-but-unmapped diagnostic — the per-step
-``total force`` scalar — carried verbatim, **P1**).
+``QEOUT_TRUNCATED`` (the file ends mid-step-block — a run killed while writing: recoverable
+through the shared ``truncate_corrupt_tail`` scenario (Revision 1.15) via
+``recovery_hint="truncate_at_last_valid_frame"`` and ``parse_recover`` (M52-S3, D197), never
+by default — the plain read refuses, P1/P4), the warning ``QEOUT_UNCONVERGED`` (QE's own
+statement that an SCF did not converge; the step's energy is still read present-with-value and
+flagged, **P3**), and the warning ``QEOUT_UNMAPPED_BLOCK_CARRIED`` (a recognized-but-unmapped
+diagnostic — the per-step ``total force`` scalar — carried verbatim, **P1**).
 
 **S2 scope.** Both QE major layouts (6.x and 7.x) are read completely. The scanning anchors on
 stable substrings and whitespace-splits (``str.split()``), never fixed byte columns, so the
@@ -67,13 +69,21 @@ documented 6.x↔7.x drift — whitespace/column differences, minor label wordin
 ``atomic species`` vs ``Atomic species``), header ordering — is tolerated; an unrecognized
 layout or an atom-count-inconsistent step refuses; an unconverged SCF is flagged. The input-
 echo cross-check runs against **both** layout renderings of the run (the go/no-go gate).
+
+**S3 scope (D197).** A torn pw.x output — a run killed mid-step, leaving complete steps behind
+a corrupt tail — refuses by default (``QEOUT_TRUNCATED`` with the shared
+``truncate_at_last_valid_frame`` hint) and recovers through the existing ``truncate_corrupt_tail``
+scenario, reusing the xdatcar/outcar ``truncate``-switch + ``parse_recover`` pattern verbatim:
+no new recovery machinery. The streamed read holds one step resident at 10⁴-step scale, the
+MLIP flagship example converts a ``vc-relax`` run to a validated extXYZ training file, and the
+benchmark harness gains the two QE rows (measured, not gated).
 """
 
 from __future__ import annotations
 
 import itertools
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any, BinaryIO
 
@@ -133,6 +143,12 @@ FORMAT_ID = "qe_pw_out"
 _ATOMIC_SPECIES_KEY = "qe_pw_out:atomic_species"
 #: The per-frame carry key for the recognized-but-unmapped ``total force`` scalar.
 _TOTAL_FORCE_KEY = "total_force"
+#: The shared recovery hint a torn pw.x output carries: a run killed mid-step leaves the
+#: complete steps as good science behind a corrupt tail, so the error is recoverable through
+#: the existing ``truncate_corrupt_tail`` scenario (Revision 1.15; the xdatcar/outcar
+#: pattern, D166/D197). ``conversion.parse_recovery`` maps this hint to that scenario — no
+#: new recovery machinery.
+_TRUNCATE_HINT = "truncate_at_last_valid_frame"
 
 # A single float token, including Fortran exponent forms (-0.12345678E+02).
 _FLOAT = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
@@ -364,12 +380,19 @@ def _read_float_rows(
     while len(rows) < count:
         line = lines.next_raw()
         if line is None:
+            # The file ends mid-block: a run killed while writing this step leaves the earlier
+            # complete steps as good science — the recoverable torn tail (QEOUT_TRUNCATED,
+            # M52-S3, D197), routed through the shared truncate_corrupt_tail scenario. The
+            # honest *default* read still refuses (a recoverable error is an error until the
+            # user chooses recovery), and a structurally wrong block is never this (D196).
             raise _error(
-                "QEOUT_MISSING_BLOCK",
+                "QEOUT_TRUNCATED",
                 f"{what} ended after {len(rows)} of {count} rows ({location}) — the file "
-                "ends mid-block (a torn tail; QEOUT_TRUNCATED recovery is M52-S3), never a "
-                "defaulted field (P3)",
+                "ends mid-block (a run killed while writing this step); the complete earlier "
+                "steps are kept only under the explicit truncate_corrupt_tail choice, never by "
+                "default (P1/P4)",
                 location=location,
+                hint=_TRUNCATE_HINT,
             )
         if not line.strip():
             if not rows:
@@ -449,11 +472,13 @@ def _read_force_rows(lines: _Lookahead, n_atoms: int, *, location: str) -> np.nd
         line = lines.next_raw()
         if line is None:
             raise _error(
-                "QEOUT_MISSING_BLOCK",
+                "QEOUT_TRUNCATED",
                 f"the force block ended after {len(rows)} of {n_atoms} atoms ({location}) — "
-                "the file ends mid-block (a torn tail; QEOUT_TRUNCATED recovery is M52-S3), "
-                "never a defaulted field (P3)",
+                "the file ends mid-block (a run killed while writing this step); the complete "
+                "earlier steps are kept only under the explicit truncate_corrupt_tail choice, "
+                "never by default (P1/P4)",
                 location=location,
+                hint=_TRUNCATE_HINT,
             )
         if not line.strip():
             if not rows:
@@ -1024,8 +1049,51 @@ class QePwOutParser(ParserPlugin):
     def supports_streaming(self) -> bool:
         return True
 
-    def parse_stream(self, stream: BinaryIO, *, filename: str | None) -> FrameStream:
-        """Header-eager, step-lazy pw.x output parse (M52-S1; Part 3 §2)."""
+    def parse_recover(
+        self,
+        stream: BinaryIO,
+        *,
+        filename: str | None,
+        hint: str,
+        choice: str,
+        parameters: dict[str, object],
+        recovery_context: Mapping[str, object] | None = None,
+    ) -> ParseResult:
+        """Recover a pw.x output whose tail is a torn write by keeping the valid prefix
+        (``truncate_at_last_valid_frame`` → ``truncate``, Part 4 §3.3; v1.4 M52-S3, D197).
+
+        The characteristic pw.x failure: a run killed while writing ionic step *k*, so steps
+        0..k-1 are perfectly good science behind a corrupt tail. Only ``truncate`` reaches
+        here — ``abort`` is the caller declining to recover, handled in the orchestration
+        (``conversion.parse_recovery``) — and only the ``truncate_at_last_valid_frame`` hint
+        is handled. Re-reads through the *same* streaming path in truncate mode, so the kept
+        prefix is read by exactly the code that reads an intact file, and the truncation is
+        recorded as a warning ``ParseIssue`` — the dropped tail is never silent (P1). No new
+        recovery machinery: the shared ``truncate_corrupt_tail`` scenario (Revision 1.15) is
+        reused verbatim, the xdatcar/outcar pattern (D166) applied to ``qe_pw_out``.
+        """
+        if hint != _TRUNCATE_HINT:
+            raise NotImplementedError(f"qe_pw_out parse_recover does not handle hint {hint!r}")
+        if choice != "truncate":
+            raise NotImplementedError(
+                f"qe_pw_out parse_recover applies only the 'truncate' choice (got {choice!r})"
+            )
+        frame_stream = self.parse_stream(stream, filename=filename, truncate=True)
+        canonical, issues = materialize(frame_stream)
+        return ParseResult(canonical=canonical, issues=issues)
+
+    def parse_stream(
+        self, stream: BinaryIO, *, filename: str | None, truncate: bool = False
+    ) -> FrameStream:
+        """Header-eager, step-lazy pw.x output parse (M52-S1/S3; Part 3 §2).
+
+        ``truncate`` is the internal switch ``parse_recover`` sets to apply the caller's
+        ``truncate_at_last_valid_frame`` choice: a recoverable mid-stream error then *ends*
+        the stream at the last good step (recording a ``QEOUT_TRUNCATED`` warning) instead of
+        propagating. It is not part of the ``ParserPlugin.parse_stream`` contract — callers
+        reach it through ``parse_recover``, so the default read stays the honest one that
+        refuses a corrupt file.
+        """
         head = stream.read(4096)
         if not head.strip():
             raise _error("QEOUT_EMPTY", "file is empty")
@@ -1058,7 +1126,37 @@ class QePwOutParser(ParserPlugin):
             lines = itertools.chain((pending_line,), lines)
 
         def _frames() -> Iterator[StreamFrame]:
-            yield from _steps(lines, header, issues)
+            yielded = 0
+            try:
+                for frame in _steps(lines, header, issues):
+                    yielded += 1
+                    yield frame
+            except ParseError as exc:
+                # Truncate mode: a *recoverable* mid-stream error ends the stream at the last
+                # good step instead of propagating. Two guards keep this honest: only errors
+                # the parser itself marked recoverable are swallowed — a structurally wrong
+                # file (a QEOUT_INCONSISTENT_STEP) still raises, because that is not a torn
+                # tail — and the truncation is recorded as a warning so the dropped tail is
+                # never silent (P1).
+                issue = exc.issues[0]
+                if not (truncate and issue.recovery_hint == _TRUNCATE_HINT):
+                    raise
+                if yielded == 0:
+                    # Truncating to nothing is not a recovery: there is no valid prefix to
+                    # keep, so the honest answer is the original error — never an empty frame
+                    # list that would escape the §5 contract into a raw pydantic error.
+                    raise
+                issues.append(
+                    ParseIssue(
+                        severity="warning",
+                        code="QEOUT_TRUNCATED",
+                        message=(
+                            "kept the valid ionic steps and discarded the corrupt tail "
+                            f"({issue.code}: {issue.message})"
+                        ),
+                        location=issue.location,
+                    )
+                )
 
         return FrameStream(stream_header, _frames(), issues=issues)
 

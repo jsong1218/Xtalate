@@ -8,6 +8,9 @@ rather than an anecdote. Ten benchmarks reproduce the spec's performance table e
 * ``parse_vasprun_10k`` — parse vasprun.xml, 10,000 ionic steps × 100 atoms — ≤ 30 s, ≤ 2 GB.
 * ``parse_outcar_10k`` — parse OUTCAR, 10,000 ionic steps × 100 atoms — ≤ 30 s, ≤ 2 GB.
 * ``convert_outcar_to_extxyz_10k`` — the flagship VASP→MLIP conversion, same file — ≤ 90 s, ≤ 2 GB.
+* ``parse_qeout_10k`` — parse a pw.x output, 10,000 ionic steps × 100 atoms (M52) — ≤ 30 s, ≤ 2 GB.
+* ``convert_qeout_to_extxyz_10k`` — the QE→MLIP reference-data conversion, same file —
+  ≤ 90 s, ≤ 2 GB.
 * ``parse_lammpsdump_10k`` — parse a LAMMPS dump, 10,000 frames × 100 atoms — ≤ 30 s, ≤ 2 GB.
 * ``convert_lammpsdump_to_extxyz_10k`` — the deployment-format→MLIP conversion, same file —
   ≤ 90 s, ≤ 2 GB.
@@ -67,6 +70,7 @@ from tests.streaming._generators import (
     write_extxyz_trajectory,
     write_lammps_dump_trajectory,
     write_outcar_trajectory,
+    write_qe_pw_out_trajectory,
     write_vasprun_trajectory,
     write_xdatcar_trajectory,
 )
@@ -207,6 +211,42 @@ def _bench_convert_outcar_to_extxyz_10k(workdir: Path, scale: str) -> dict[str, 
     return {"frames": float(sz.n_frames), "atoms": float(sz.n_atoms)}
 
 
+def _bench_parse_qeout_10k(workdir: Path, scale: str) -> dict[str, float]:
+    """Materialize a full 10k-step pw.x output — the QE log's ordinary MD scale (D197).
+
+    A pw.x MD output is a line-scanned log that reaches 10⁴ ionic steps exactly like OUTCAR;
+    ``parse`` materializes the streamed read, so this is the whole-object cost the ≤2 GB
+    bound guards, measured against the same generator the M52 streaming gate uses."""
+    sz = _sized(scale, full=Scale(10_000, 100), micro=Scale(20, 8))
+    src = write_qe_pw_out_trajectory(workdir / "pw.out", n_frames=sz.n_frames, n_atoms=sz.n_atoms)
+    parser = default_registry().get_parser("qe_pw_out")
+    with src.open("rb") as fh:
+        obj = parser.parse(fh, filename=src.name).canonical
+    return {"frames": float(obj.frame_count), "atoms": float(sz.n_atoms)}
+
+
+def _bench_convert_qeout_to_extxyz_10k(workdir: Path, scale: str) -> dict[str, float]:
+    """The QE → MLIP reference-data conversion at 10⁴ scale (D197), via the real CLI with
+    validation: parse → convert → re-parse-and-diff. The ``--validation-report`` flag forces
+    the post-conversion re-parse, so this is the end-to-end pipeline cost of producing a
+    label-complete QE training file (energy/forces/stress per step), not just the write."""
+    sz = _sized(scale, full=Scale(10_000, 100), micro=Scale(20, 8))
+    src = write_qe_pw_out_trajectory(workdir / "pw.out", n_frames=sz.n_frames, n_atoms=sz.n_atoms)
+    _cli_ok(
+        [
+            "convert",
+            str(src),
+            "--to",
+            "extxyz",
+            "-o",
+            str(workdir / "out.xyz"),
+            "--validation-report",
+            str(workdir / "validation.json"),
+        ]
+    )
+    return {"frames": float(sz.n_frames), "atoms": float(sz.n_atoms)}
+
+
 def _bench_parse_lammpsdump_10k(workdir: Path, scale: str) -> dict[str, float]:
     """Materialize a full 10k-frame LAMMPS dump — the ``∝ frames`` cost the ≤2 GB bound guards.
 
@@ -329,6 +369,16 @@ BENCHMARKS: tuple[Benchmark, ...] = (
     Benchmark(
         "convert_outcar_to_extxyz_10k",
         _bench_convert_outcar_to_extxyz_10k,
+        (Budget("wall_seconds", 90.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
+    ),
+    Benchmark(
+        "parse_qeout_10k",
+        _bench_parse_qeout_10k,
+        (Budget("wall_seconds", 30.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
+    ),
+    Benchmark(
+        "convert_qeout_to_extxyz_10k",
+        _bench_convert_qeout_to_extxyz_10k,
         (Budget("wall_seconds", 90.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
     ),
     Benchmark(
