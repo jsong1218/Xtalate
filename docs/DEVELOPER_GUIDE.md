@@ -404,7 +404,7 @@ resolved round-trip deserves the same governed proof a format's identity round-t
 contributor adding a scenario should expect to touch `src/xtalate/recovery/` +
 `conversion/preflight.py`, the scenario's tests, and the spec row — the whole point of this worked
 example is that the seam is documented end to end, so the community can contribute scenarios the
-way §5.1 lets them contribute formats (roadmap §13 rule 2).
+way §5.1 lets them contribute formats (**P6** — extensibility over optimization).
 
 ### 5.5 Contributing real-world VASP files (a standing call)
 
@@ -455,7 +455,7 @@ carries) or that is refused. A refused file (`parse_error`) produces no object, 
 neither oracle. Every real-file anomaly must be triaged the way M20 requires — fixed in the
 parser, or named in the manifest by someone who looked at it — and the unit/atom-style option
 lists (`ambiguous_units` metal/real/si, `ambiguous_atom_style` atomic/charge/full) grow **only**
-by this corpus evidence, never speculatively from LAMMPS's documentation (roadmap §13 rule 2).
+by this corpus evidence, never speculatively from LAMMPS's documentation.
 The file's license must permit redistribution (record it in `origin.license`), and after adding a
 manifest, regenerate `tests/golden/ATTRIBUTIONS.md` with `python tests/golden/_governance.py`.
 The maintainer files the tracking issue for real batch files; this documented call is the
@@ -489,8 +489,8 @@ naming the other half of the same run when you contribute the input *and* its ou
 refused file (`parse_error`) produces no object, so it declares neither oracle. Every
 real-file anomaly must be triaged the way M20 requires — fixed in the parser, or named in the
 manifest by someone who looked at it — and the supported `ibrav` set and recognized QE
-layouts grow **only** by this corpus evidence, never speculatively from the QE docs (roadmap
-§13 rule 2). The file's license must permit redistribution (record it in `origin.license`;
+layouts grow **only** by this corpus evidence, never speculatively from the QE docs. The file's
+license must permit redistribution (record it in `origin.license`;
 a `published-dataset` origin also needs its source URL), and after adding a manifest,
 regenerate `tests/golden/ATTRIBUTIONS.md` with `python tests/golden/_governance.py`. The
 maintainer files the tracking issue for real batch files; this documented call is the
