@@ -1,0 +1,26 @@
+case: scf-6x-si-in
+format_id: qe_pw_in
+source_file: pw.in
+sha256: "ac623eb2e1420b5e6d959fab9dbaa7b34684b7a267da8e6c62016d1a166afc31"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE pw.x SCF input for fcc Si (M53-S1), generalizing the committed M50 ibrav2-fcc golden (ibrav = 2, A-spelling, crystal positions) to a realistic 6.x-era Si setup with run bookkeeping and an explicit band count."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+  frame_count: 1
+  roundtrip: checked
+notes: >-
+  The first nonzero-ibrav dimension (M53-S1 dimension 6): ibrav = 2 (cubic F, fcc) with
+  A = 5.43 Å, one Si atom at the crystal origin, positions in {crystal} (fractional) units.
+  The ibrav expansion to cell.lattice_vectors is recorded in parse_notes (the M50-S2
+  derivation, never guessed). The five declared QEIN_UNMAPPED_ENTRY_CARRIED warnings are the
+  honest carries: &control prefix / pseudo_dir, and &system ecutwfc / ecutrho / nbnd — each
+  carried verbatim (P1). roundtrip: checked — the M51 exporter rewrites the file (ibrav = 0
+  with the derived cell in angstrom) and the re-parse is scientifically equal, proving the
+  ibrav-derived lattice survives the round-trip.

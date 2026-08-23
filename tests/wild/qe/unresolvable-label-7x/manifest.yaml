@@ -1,0 +1,22 @@
+case: unresolvable-label-7x
+format_id: qe_pw_in
+source_file: pw.in
+sha256: "2e50771ee457792a62e457a3a08a827cbaae84a17b323987c57d35794364953d"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE pw.x input whose ATOMIC_SPECIES label resolves to no element (M53-S1), authored alongside the decorated-labels-7x case to pin the refusal half of the species-label dimension."
+  license: "Apache-2.0"
+expectation:
+  parse_error: QEIN_UNRESOLVED_SPECIES_LABEL
+findings:
+  - >-
+    The honest refusal for a label that forms no element (M50-S3/D191): 'Jx' — neither the
+    two-character prefix nor the one-character prefix is an element symbol, so the reader
+    refuses QEIN_UNRESOLVED_SPECIES_LABEL with the supply_species recovery hint
+    (missing_species / species_map / upload_reference) rather than guessing an element
+    (P4). This is a *correct* refusal, not a bug: the corpus pins it so the reader can
+    neither start guessing elements for unknown labels nor stop offering the recovery.
+notes: >-
+  The unresolvable side of the decorated-label dimension (M53-S1 dimension 5). A refused file
+  produces no object, so the whole expectation is the parse_error; there is no issue-code set
+  and no frame count to declare.

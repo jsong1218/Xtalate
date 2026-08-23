@@ -232,6 +232,46 @@ registration + the option list). Three disciplines bind this variant:
 See also the *Contributing real-world LAMMPS files* call (§5.6) — real files into the wild corpus
 are how the evidence that grows these option lists is gathered.
 
+### 5.1.3 The "structured input + log output" pairing variant (one calculation, two artifacts)
+
+A code can present **two** artifacts of one calculation: an *input* that is a structured grammar
+with declared per-card units (full read+write — a deterministic boundary mapping, never a
+scenario), and an *output* that is a version-drifting log read **parser-only** through the
+source-never-target seam (§5.1.1, D159). The two readers must **agree** on the shared initial
+structure of the same run — a silent unit or sign disagreement between them is the cardinal bug at
+MLIP scale (standing rule 4).
+
+The in-tree precedent is the Quantum ESPRESSO pw.x pair (v1.4 M50–M52): `qe_pw_in` is the
+structured input (the namelist + card grammar; every card declares `{angstrom|bohr|alat|crystal}`, so
+conversion is a recorded boundary mapping and no unit ambiguity ever fires for a QE source), and
+`qe_pw_out` is the log output (a version-drifting text log read parser-only, anchoring on stable
+substrings and whitespace-splits so the QE 6.x ↔ 7.x layout drift parses to identical objects). The
+shared mapping core `src/xtalate/parsers/_qe/` is where QE's structural conventions get pinned once
+(`ibrav` expansion, per-card unit conversion, Bohr radius, species-label resolution) and both readers
+consume it — the discovery happens once, never forked. The agreement is machine-checked by the
+**input-echo cross-check** (`tests/parsers/_qe_run.py` + `test_qe_pw_out_crosscheck.py`, extended to
+the wild corpus in M53): one run authored as both its input and its output, read by both parsers,
+asserted equal on cell / species / positions within the strict tolerance profile.
+
+Three disciplines bind this variant (mirroring the parser-only and required-preset variants):
+
+1. **The two artifacts of one calculation must agree.** The input parser and the output parser are
+two readers of one run; a disagreement — especially a stress-sign or position-unit one — is a
+stop-the-line defect, not a style difference.
+2. **The log parser refuses an unrecognized layout rather than partial-parsing it (P1).** QE
+layouts beyond 6.x/7.x land in `QEOUT_UNRECOGNIZED_LAYOUT` with a corpus-contribution call — never a
+silent partial read of a file the reader half-understands.
+3. **Physics is never invented on export (P4).** A pw.x input written from a canonical object
+carries exactly what the object had; run-required entries it lacks (cutoff, k-points, pseudopotential
+files) are named in the honest-incompleteness warning, never defaulted.
+
+The machinery to copy lives in `src/xtalate/parsers/_qe/`, `src/xtalate/parsers/qe_pw_in.py` +
+`src/xtalate/exporters/qe_pw_in.py`, `src/xtalate/parsers/qe_pw_out.py`, and
+`tests/parsers/_qe_run.py` (the agreement harness). Cross-reference (do not duplicate) the QE
+real-world contribution call (§5.7) — a real input/output pair is exactly how the version-drift
+axis gains evidence — and the CP2K handoff pointer (README), the first plugin expected to follow
+this exact pairing pattern.
+
 ### 5.2 Ship it as an installable plugin (no fork)
 
 A third-party distribution advertises its parser/exporter under Xtalate's entry-point groups;
@@ -364,7 +404,7 @@ resolved round-trip deserves the same governed proof a format's identity round-t
 contributor adding a scenario should expect to touch `src/xtalate/recovery/` +
 `conversion/preflight.py`, the scenario's tests, and the spec row — the whole point of this worked
 example is that the seam is documented end to end, so the community can contribute scenarios the
-way §5.1 lets them contribute formats (roadmap §13 rule 2).
+way §5.1 lets them contribute formats (**P6** — extensibility over optimization).
 
 ### 5.5 Contributing real-world VASP files (a standing call)
 
@@ -415,11 +455,47 @@ carries) or that is refused. A refused file (`parse_error`) produces no object, 
 neither oracle. Every real-file anomaly must be triaged the way M20 requires — fixed in the
 parser, or named in the manifest by someone who looked at it — and the unit/atom-style option
 lists (`ambiguous_units` metal/real/si, `ambiguous_atom_style` atomic/charge/full) grow **only**
-by this corpus evidence, never speculatively from LAMMPS's documentation (roadmap §13 rule 2).
+by this corpus evidence, never speculatively from LAMMPS's documentation.
 The file's license must permit redistribution (record it in `origin.license`), and after adding a
 manifest, regenerate `tests/golden/ATTRIBUTIONS.md` with `python tests/golden/_governance.py`.
 The maintainer files the tracking issue for real batch files; this documented call is the
 standing invitation.
+
+### 5.7 Contributing real-world QE pw.x files (a standing call)
+
+The QE cases under `tests/wild/qe/` are **authored-realistic fixtures** — self-licensed
+Apache-2.0 files generalizing the M50–M52 QE goldens to real-world shapes, spanning QE 6.x and
+7.x layouts across SCF / ionic `relax` / `vc-relax` (per-step cells) / MD runs, an unconverged
+SCF (`QEOUT_UNCONVERGED` — the energy is still read and flagged, P3), a killed run torn
+mid-write (refuses `QEOUT_TRUNCATED`; a companion case recovers under
+`truncate_corrupt_tail=truncate`), decorated species labels (`Fe1` → Fe, `O_vac` → O, each
+resolution recorded) plus the unresolvable-label refusal, two nonzero-`ibrav` inputs (2 fcc,
+4 hexagonal), and a carried-payload input proving the K_POINTS / pseudopotential carry
+survives the round-trip. Their oracles: the **round-trip self-consistency** check for
+`qe_pw_in` (a full read+write format — parse, re-export through its own exporter, re-parse,
+assert scientifically equal) and the **input-echo agreement** for an input/output pair (the
+M50 input parser and the M52 output parser are the two readers of one run and must agree on
+the shared initial structure — cell / species / positions — the `_qe_run` cross-check
+assertion reused, standing rule 4). `qe_pw_out` is parser-only (D159), so it is never a
+round-trip case.
+
+**Real-world QE pw.x input/output files are welcome into the same harness.** Drop the files
+under `tests/wild/qe/<case>/` together with a `manifest.yaml` declaring the **exact**
+`expectation.issue_codes` set (plus `frame_count`), the `parse_recover` preset(s) the file
+needs (`missing_species=species_map,species=Fe1:Fe O_vac:O` for an unresolvable label, or
+`truncate_corrupt_tail=truncate` for a torn output), and the oracle declarations: `roundtrip:
+checked` for a `qe_pw_in` whose re-export must agree with it, and `pair: <sibling case>`
+naming the other half of the same run when you contribute the input *and* its output. A
+refused file (`parse_error`) produces no object, so it declares neither oracle. Every
+real-file anomaly must be triaged the way M20 requires — fixed in the parser, or named in the
+manifest by someone who looked at it — and the supported `ibrav` set and recognized QE
+layouts grow **only** by this corpus evidence, never speculatively from the QE docs. The file's
+license must permit redistribution (record it in `origin.license`;
+a `published-dataset` origin also needs its source URL), and after adding a manifest,
+regenerate `tests/golden/ATTRIBUTIONS.md` with `python tests/golden/_governance.py`. The
+maintainer files the tracking issue for real batch files; this documented call is the
+standing invitation — batch 1 is authored-realistic, and real contributions are what make the
+hybrid corpus honest.
 
 ## 6. Coding conventions (the non-negotiables)
 

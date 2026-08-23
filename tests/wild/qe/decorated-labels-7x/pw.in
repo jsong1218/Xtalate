@@ -1,0 +1,17 @@
+&CONTROL
+   calculation = 'scf',
+/
+&SYSTEM
+   ibrav = 0, nat = 2, ntyp = 2,
+   celldm(1) = 9.448630664428,
+/
+ATOMIC_SPECIES
+   Fe1 55.845 fe.pbe.UPF
+   O_vac 15.999 o.pbe.UPF
+ATOMIC_POSITIONS {bohr}
+   Fe1 4.724315332214  4.724315332214  4.724315332214
+   O_vac 6.141609931878  4.724315332214  4.724315332214
+CELL_PARAMETERS {alat}
+   1.0 0.0 0.0
+   0.0 1.0 0.0
+   0.0 0.0 1.0

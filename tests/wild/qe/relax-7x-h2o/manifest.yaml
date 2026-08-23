@@ -1,0 +1,38 @@
+case: relax-7x-h2o
+format_id: qe_pw_in
+source_file: pw.in
+sha256: "44d0126a5247db3e1fc1b75c7761a564a2edfa5fd8549bfc5962975dc408ed3c"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE 7.x pw.x relax input (M53-S1), generalizing the committed M50 explicit-bohr-positions golden (real namelist spellings, bohr positions, alat-unit cell) to a realistic single-point relax setup with run bookkeeping (prefix/outdir/pseudo_dir/tprnfor/verbosity), cutoffs, smearing and an automatic k-point grid."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+  frame_count: 1
+  roundtrip: checked
+  pair: relax-7x-h2o-out
+notes: >-
+  The flagship realistic input (M53-S1 dimension 2, relax, and the input-echo agreement
+  dimension 7). 3 atoms of H2O in a 5 Å cubic cell (celldm(1) = 9.448630664428 bohr = 5 Å),
+  positions in bohr, cell in alat units — the same numbers the paired output's setup echo
+  carries, so the M50 input parser and the M52 output parser must land the same canonical
+  cell/species/positions. The eight declared QEIN_UNMAPPED_ENTRY_CARRIED warnings are honest
+  carries (P1): the &control run-bookkeeping entries (prefix, outdir, pseudo_dir, tprnfor,
+  verbosity), the &system cutoffs (ecutwfc, ecutrho — no canonical field this milestone), and
+  the K_POINTS card (no canonical k-point model, M50-S3) — each carried verbatim, never
+  dropped. roundtrip: checked — the M51 exporter rewrites this file and the re-parse is
+  scientifically equal, carrying the same payload (the M51 identity discipline).
+findings:
+  - >-
+    The input-echo pair on a realistic file is the milestone's central correctness proof:
+    the two QE readers of one run agree on the shared initial structure (cell / species /
+    positions within the strict tolerance profile). A silent position-unit or stress-sign
+    disagreement here would poison an MLIP training set at scale — the corpus pins it.

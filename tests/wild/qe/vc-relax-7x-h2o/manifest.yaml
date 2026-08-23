@@ -1,0 +1,21 @@
+case: vc-relax-7x-h2o
+format_id: qe_pw_out
+source_file: pw.out
+sha256: "a37fe9d590defde058b4acf7b04ca9fc47730ecff8c6e99c564aef57cd4b49fa"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE 7.x pw.x vc-relax output (M53-S1), generalizing the committed M52 vc-relax golden (per-step CELL_PARAMETERS cards) to a two-step run whose alat drifts between steps."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - QEOUT_UNMAPPED_BLOCK_CARRIED
+    - QEOUT_UNMAPPED_BLOCK_CARRIED
+  frame_count: 2
+notes: >-
+  The vc-relax dimension (M53-S1 dimension 2, variable-cell): two ionic steps of H2O, each
+  with its own CELL_PARAMETERS card — step 1's alat stays 9.44863066 bohr (5 Å), step 2's
+  drifts to 9.45000000 bohr with a non-identity y-row — so each frame carries its own cell
+  (the per-step-cell read, M52-S1). The two QEOUT_UNMAPPED_BLOCK_CARRIED warnings are the
+  per-step 'total force' scalar carries (P1), one per frame. The MLIP flagship conversion
+  (xtalate convert pw.out --to extxyz) reads this shape into a label-complete multi-frame
+  training file.

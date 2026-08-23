@@ -621,6 +621,104 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Authored-realistic spin-polarized VASP 6.3.2 OUTCAR (paired with spin-h2o-v6-vasprun; M45-S2).
 
+## `qe_pw_in` / `carry-kpoints-7x` (wild)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE pw.x input carrying pseudopotential filenames + a K_POINTS card verbatim (M53-S1), generalizing the committed M50 carry-kpoints golden with spin + vdW context for realism.
+
+## `qe_pw_in` / `decorated-labels-7x` (wild)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE pw.x input with QE-decorated ATOMIC_SPECIES labels (M53-S1), generalizing the committed M50 decorated-labels golden (Fe1 → Fe, O_vac → O) onto the 5 Å cubic cell the paired output echoes.
+
+## `qe_pw_in` / `ibrav4-hex-mg` (wild)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE pw.x input with an ibrav = 4 (hexagonal) lattice (M53-S1), generalizing the committed M50 ibrav4-hex golden to a Mg cell with realistic A/C ratio and crystal positions.
+
+## `qe_pw_in` / `relax-7x-h2o` (wild)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE 7.x pw.x relax input (M53-S1), generalizing the committed M50 explicit-bohr-positions golden (real namelist spellings, bohr positions, alat-unit cell) to a realistic single-point relax setup with run bookkeeping (prefix/outdir/pseudo_dir/tprnfor/verbosity), cutoffs, smearing and an automatic k-point grid.
+
+## `qe_pw_in` / `scf-6x-si-in` (wild)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE pw.x SCF input for fcc Si (M53-S1), generalizing the committed M50 ibrav2-fcc golden (ibrav = 2, A-spelling, crystal positions) to a realistic 6.x-era Si setup with run bookkeeping and an explicit band count.
+
+## `qe_pw_in` / `unresolvable-label-7x` (wild)
+
+- **Source file:** `pw.in`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE pw.x input whose ATOMIC_SPECIES label resolves to no element (M53-S1), authored alongside the decorated-labels-7x case to pin the refusal half of the species-label dimension.
+
+## `qe_pw_out` / `decorated-labels-7x-out` (wild)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE 7.x pw.x output echoing the decorated Fe1 / O_vac labels of the same run as decorated-labels-7x (M53-S1), generalizing the committed M52 relax golden bytes to the two-atom decorated-label run.
+
+## `qe_pw_out` / `killed-truncated-7x-h2o` (wild)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE 7.x pw.x output of a run killed mid-write (M53-S1): step 1 complete, step 2 torn inside its force table, authored by cutting a two-step known-good run at the point a scheduler kill would land (the M52-S3 truncation-shape discipline).
+
+## `qe_pw_out` / `killed-truncated-7x-h2o-recovered` (wild)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Same bytes as killed-truncated-7x-h2o (M53-S1): the QE 7.x pw.x output of a run killed mid-write, declared here under its truncate_corrupt_tail recovery.
+
+## `qe_pw_out` / `md-6x-h2o` (wild)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE 6.x pw.x MD output (M53-S1), generalizing the committed M52 md-6x golden (v.6.8 banner, lowercase species table, G-vectors block, per-step energy/forces/stress/positions) to a three-step NVT-style run with drifting positions.
+
+## `qe_pw_out` / `relax-7x-h2o-out` (wild)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE 7.x pw.x relax output (M53-S1), generalizing the committed M52 relax golden's known-good bytes (7.x banner, species + site tables, per-step iteration / forces / stress / positions blocks) to a two-step fixed-cell relax run with varied energies and forces.
+
+## `qe_pw_out` / `scf-6x-si-out` (wild)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE 6.x pw.x SCF output for fcc Si (M53-S1), generalizing the committed M52 scf-6x golden's known-good 6.x bytes (v.6.8 banner, lowercase 'atomic species' table, the extra G-vectors diagnostic block) to the fcc Si lattice and a one-step single-point run.
+
+## `qe_pw_out` / `unconverged-7x-h2o` (wild)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE 7.x pw.x output of a run whose SCF did not converge (M53-S1), generalizing the committed M52 relax golden bytes with QE's own 'convergence NOT achieved after 100 iterations' statement in place of the achieved line.
+
+## `qe_pw_out` / `vc-relax-7x-h2o` (wild)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Authored-realistic QE 7.x pw.x vc-relax output (M53-S1), generalizing the committed M52 vc-relax golden (per-step CELL_PARAMETERS cards) to a two-step run whose alat drifts between steps.
+
 ## `vasprun` / `spin-h2o-v6-vasprun` (wild)
 
 - **Source file:** `vasprun.xml`

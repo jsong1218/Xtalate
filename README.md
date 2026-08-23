@@ -52,6 +52,41 @@ golden source — a data file declares no units or symbols, so it cannot bare-pa
 and its source-side fidelity is proven instead by a dedicated identity round-trip; `lammps_dump` enrols
 as a full source **and** target.
 
+**Plus the Quantum ESPRESSO pw.x pair — one full read+write format and one read-only output format.**
+`qe_pw_in` (the pw.x **input** — the namelist + card grammar that defines a QE calculation) is
+**full read+write**: it appears read **and** write in `xtalate capabilities`, `convert --to qe_pw_in`
+is a real conversion (the extXYZ → QE relabeling-setup arrow, with an honest-incompleteness warning
+naming exactly what physics — plane-wave cutoff, k-points, pseudopotential files — you must still
+supply before pw.x will run, never invented for you), and it enrols in the nightly matrix as a
+source **and** target. `qe_pw_out` (the pw.x **output**) joins the VASP read-only class: parser-only
+via the source-never-target seam, so there is no `convert --to qe_pw_out` — the flagship MLIP
+conversion reads a pw.x run into a **label-complete extXYZ training file** (`xtalate convert
+pw.out --to extxyz`): per-frame energy (Ry → eV), per-atom forces (Ry/bohr → eV/Å),
+tension-positive stress (QE prints compression-positive; the sign is mapped, never assumed), and
+per-step cells from each `CELL_PARAMETERS` card in a variable-cell run. Both readers tolerate the
+QE 6.x ↔ 7.x layout drift, refuse an unrecognized layout rather than partial-parsing it, and — the
+pair's central honesty guard — the input and output parsers must **agree** on the same run's cell /
+species / positions (a silent unit or sign disagreement between the two QE readers of one
+calculation is exactly the bug that poisons a training set at scale). With the read-only VASP
+formats and the LAMMPS pair, QE closes the DFT-relabel loop: **production frames → re-label with
+DFT (QE or VASP) → label-complete canonical training data.** The QE formats declare their own
+per-card units, so no unit scenario ever fires for a QE source — but a label that resolves to no
+element (and a torn pw.x output) refuse by default and recover through the same presets the LAMMPS
+formats use.
+
+**CP2K: shipped as an advertised community-plugin handoff — not an in-tree parser.** The three
+dominant periodic-DFT ecosystems for MLIP reference data are VASP (in-tree since v1.2), Quantum
+ESPRESSO (in-tree since v1.4), and CP2K — and CP2K ships via the **post-1.0 contributor model**: a
+public "CP2K plugin wanted" call pointing at the frozen SDK seam (`xtalate.parsers` /
+`xtalate.exporters` entry-point groups + the stable parser/exporter base classes — no core change
+is needed to add CP2K out-of-tree), with the reference plugin (`plugins/example-format/`) as the
+template to copy and the v1.2–v1.4 parser families as three worked examples of the exact patterns a
+CP2K plugin would follow: **structured input** (`qe_pw_in`, POSCAR, CIF), **log output**
+(`qe_pw_out`, OUTCAR, vasprun — parser-only via the source-never-target seam), and the **input +
+output pairing** the QE pair demonstrates end to end. The maintainer reviews a well-formed CP2K
+plugin contribution. CP2K in-tree, if it ever happens, is a new milestone — not a silent gap in
+this version.
+
 **CIF is treated as real crystallography.** Cell parameters become lattice vectors, fractional coordinates become Cartesian at the parser boundary, and symmetry is expanded **from the operations the file declares** — parsed as exact affine maps over rationals, with sites on a symmetry element merged on a physical 0.05 Å threshold. A file that names a space group but declares *no* operations is **refused**, never read as a partial structure. Site occupancy is a first-class canonical field (`atoms.occupancies`); a target that cannot represent a partial occupancy says so in the report rather than dropping it silently. The exporter writes every atom explicitly under an identity symmetry loop with no space-group symbol — the coordinates it emits are the already-expanded cell, and any symbol above them would assert a setting they no longer encode.
 
 ## What every conversion gives you

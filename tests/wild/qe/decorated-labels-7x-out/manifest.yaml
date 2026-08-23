@@ -1,0 +1,21 @@
+case: decorated-labels-7x-out
+format_id: qe_pw_out
+source_file: pw.out
+sha256: "ca28eca0e9b07264b401c9910639659d5ac3b5771c3d3ddf0f1b1360ea669c27"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE 7.x pw.x output echoing the decorated Fe1 / O_vac labels of the same run as decorated-labels-7x (M53-S1), generalizing the committed M52 relax golden bytes to the two-atom decorated-label run."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - QEOUT_UNMAPPED_BLOCK_CARRIED
+  frame_count: 1
+  pair: decorated-labels-7x
+notes: >-
+  The output half of the decorated-label pair (M53-S1 dimensions 5/7): the setup echo carries
+  the Fe1 / O_vac species table (valence / mass / pseudopotential columns) and the site table
+  labels each atom Fe1 / O_vac, which resolve through the same documented label rule the input
+  parser uses — so the pair oracle asserts the M50 input parser and the M52 output parser land
+  the same per-atom symbols (Fe, O), cell and positions for the same run. The one
+  QEOUT_UNMAPPED_BLOCK_CARRIED is the step's 'total force' scalar carry (P1). qe_pw_out is
+  parser-only: roundtrip is structurally not applicable and is not declared.

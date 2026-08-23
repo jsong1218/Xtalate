@@ -1,0 +1,24 @@
+case: carry-kpoints-7x
+format_id: qe_pw_in
+source_file: pw.in
+sha256: "7e8ab4304225eae3be718a61aaae6659988b330ab4f9a4df7b55dca74a86a67d"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE pw.x input carrying pseudopotential filenames + a K_POINTS card verbatim (M53-S1), generalizing the committed M50 carry-kpoints golden with spin + vdW context for realism."
+  license: "Apache-2.0"
+expectation:
+  issue_codes:
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+    - QEIN_UNMAPPED_ENTRY_CARRIED
+  frame_count: 1
+  roundtrip: checked
+notes: >-
+  The carried-payload dimension (M53-S1 dimension 8): a spin-polarized FeO input carrying
+  pseudopotential filenames (qe:pseudopotentials) and a K_POINTS {automatic} card, plus the
+  &control prefix and &system nspin / vdw_corr entries — the four declared
+  QEIN_UNMAPPED_ENTRY_CARRIED warnings are those verbatim carries (P1; K_POINTS has no
+  canonical k-point model, M50-S3). roundtrip: checked — the exporter writes the
+  pseudopotential filenames back into ATOMIC_SPECIES and the K_POINTS card verbatim, and the
+  re-parse is scientifically equal, proving the carry survives a QE-originated round-trip.

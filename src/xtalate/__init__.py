@@ -21,4 +21,4 @@ explorer and history, the rendered docs site, and a first-class self-hosting dep
 plugin SDK and the ``/v1`` contract remain unfrozen until v1.0.
 """
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"

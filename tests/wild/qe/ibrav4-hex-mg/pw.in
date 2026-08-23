@@ -1,0 +1,13 @@
+&CONTROL
+   calculation = 'scf',
+/
+&SYSTEM
+   ibrav = 4, nat = 1, ntyp = 1,
+   A = 3.2, C = 5.2,
+   ecutwfc = 40.0,
+   nosym = .true.,
+/
+ATOMIC_SPECIES
+   Mg 24.305 mg.pbe-n-kjpaw_psl.1.0.0.UPF
+ATOMIC_POSITIONS {crystal}
+   Mg 0.333333 0.666667 0.25

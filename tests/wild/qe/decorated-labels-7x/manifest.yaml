@@ -1,0 +1,22 @@
+case: decorated-labels-7x
+format_id: qe_pw_in
+source_file: pw.in
+sha256: "69203f81673b6d387128ffcddd2f407418627db4d752e1fdb378d1f7e20b098a"
+origin:
+  kind: synthetic
+  source: "Authored-realistic QE pw.x input with QE-decorated ATOMIC_SPECIES labels (M53-S1), generalizing the committed M50 decorated-labels golden (Fe1 → Fe, O_vac → O) onto the 5 Å cubic cell the paired output echoes."
+  license: "Apache-2.0"
+expectation:
+  issue_codes: []
+  frame_count: 1
+  roundtrip: checked
+  pair: decorated-labels-7x-out
+notes: >-
+  The decorated-species-label dimension (M53-S1 dimension 5): labels Fe1 and O_vac resolve
+  through QE's documented label rule (sdk.qe.species_symbol — the leading 1–2 characters that
+  form an element symbol, each resolution recorded in parse_notes), and the resolved symbols
+  are what the input-echo pair asserts against the output's site-table labels. The expected
+  issue set is empty: the calculation entry is recognized context, the labels resolve, and
+  nothing is carried — a clean realistic input. roundtrip: checked — the exporter writes the
+  source's own labels back and the re-parse is scientifically equal. The unresolvable side of
+  this dimension is the separate unresolvable-label-7x case.
