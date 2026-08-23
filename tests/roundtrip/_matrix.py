@@ -76,6 +76,15 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     # accounting. Its one recovery need on the way *in* to dump is write-side ``ambiguous_units``
     # (FIXED_PRESETS below); the coordinate family and image flags round-trip without a preset.
     "lammps_dump": ("lammps_dump/metal-ortho-declared", "dump.lammpstrj"),
+    # M51: the QE pw.x input exporter closes M50's parser-only staging state (D192), so qe_pw_in
+    # enrols as a full source *and* target — unlike the D159 VASP-output seam. The hexagonal
+    # ibrav=4 anchor is the matrix source: it bare-parses without recovery (the matrix reads
+    # sources with a bare `parse`) and its cell is restricted triclinic, so the LAMMPS box
+    # targets (which refuse non-restricted cells, D43) can represent it. The complete identity
+    # fixture — carry-kpoints, with masses + pseudos + K_POINTS + ecutwfc — lives in the
+    # dedicated round-trip suite (test_qe_pw_in_roundtrip), which drives the exporter directly
+    # because the write plan drops simulation.* by design (D192 rejected alternative (d)).
+    "qe_pw_in": ("qe_pw_in/ibrav4-hex", "pw.in"),
     # M36: exfmt, the *installed reference plugin* (plugins/example-format/), enrolled as a source
     # so the compatibility canary participates in the full matrix — the milestone's "appears in the
     # nightly matrix with zero core changes" (Part 8 §2). Its parser lives in a separate

@@ -61,8 +61,9 @@ def builtin_parsers() -> list[ParserPlugin]:
     also registered **parser-only as a staging state** — the data exporter is M48-S2's
     deliverable (D180). v1.4 M50-S1: qe_pw_in, the Quantum ESPRESSO pw.x input parser,
     registered **parser-only as a staging state** — the exporter is M51's deliverable (D189),
-    so this is *not* the vasprun/OUTCAR permanent source-never-target seam, and M51 must add
-    the paired exporter."""
+    so this is *not* the vasprun/OUTCAR permanent source-never-target seam. **The staging
+    state is now closed**: M51-S1 added the paired exporter (`exporters/qe_pw_in.py`, D192),
+    so `qe_pw_in` is a full read+write format and the Capability Matrix shows both directions."""
     return [
         XyzParser(),
         ExtxyzParser(),

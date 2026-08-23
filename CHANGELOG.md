@@ -34,6 +34,25 @@ routes to `simulation.extra`; `K_POINTS` and every other unconsumed entry/card a
 with the `QEIN_UNMAPPED_ENTRY_CARRIED` warning (kept + reported, never refused). Registered
 **parser-only as a staging state** — the exporter is M51's deliverable.
 
+### Added — the QE pw.x input exporter (v1.4 M51; D192–D194)
+
+The QE input pair closes: `qe_pw_in` is now a full **read+write** format (the M50 staging state
+closes; `xtalate capabilities` shows both directions). The exporter writes explicit
+`CELL_PARAMETERS {angstrom}` with **`ibrav = 0` always** (never a reverse-derived `ibrav` code),
+`ATOMIC_POSITIONS`/`ATOMIC_SPECIES`, and the three required namelist shells, carrying back a
+QE-originated object's pseudopotentials, `K_POINTS` card, namelist entries, and recognized
+simulation context **only when present** (never fabricated onto a non-QE object). It carries the
+version's honest-incompleteness policy: a *runnable* pw.x input needs physics the object
+legitimately lacks, so the exporter invents none of it — no defaulted cutoff, no defaulted mesh —
+and raises the **`QEIN_INCOMPLETE_INPUT`** warning naming every entry the user must supply before
+pw.x will run; an absent pseudopotential writes an unmistakable placeholder token, never a
+plausible filename. Absent masses resolve through the existing `missing_masses` recovery
+(IUPAC standard weights); lattice and trajectory gaps through `missing_lattice`/
+`frame_selection`. The identity round-trip (`input → canonical → input`) is proven for a complete
+QE input — no incompleteness warning — and `qe_pw_in` joins the nightly round-trip matrix as a
+source and target, with a relabeling flagship (`examples/convert_extxyz_to_qe_pw_in.py`) showing
+the reported incompleteness. Schema line stays `1.0.0`; the `1.4.0` package bump is M53's.
+
 ### Fixed — M50 code-review follow-ups
 
 - **Bare and paren-wrapped card units are read faithfully instead of silently defaulting to alat.**

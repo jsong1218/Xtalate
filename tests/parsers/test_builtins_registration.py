@@ -81,6 +81,9 @@ def test_builtins_register_without_error() -> None:
         "lammps_dump",
         # M48-S2: the data exporter lands, closing the M48-S1 parser-only staging state (D181).
         "lammps_data",
+        # M51-S1: the qe_pw_in exporter lands, closing the M50 parser-only staging state (D192)
+        # — qe_pw_in is now a full read+write format.
+        "qe_pw_in",
     }
 
 

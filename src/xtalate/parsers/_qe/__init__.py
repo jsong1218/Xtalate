@@ -70,7 +70,7 @@ from typing import TypeAlias
 import numpy as np
 
 from xtalate.schema.cell import to_cartesian
-from xtalate.schema.elements import normalize_symbol
+from xtalate.sdk.qe import species_symbol as species_symbol  # explicit re-export (M51-S1, D192)
 
 #: The exact Bohr radius (in Å) QE uses in ``Modules/constants.f90``
 #: (``bohr_radius_angs = 0.52917720859_dp``). Pinned by hand-computed fixtures in the
@@ -222,29 +222,11 @@ def positions_cartesian(
 
 
 # --- species labels (M50-S3; D191) ---------------------------------------------------
-
-
-def species_symbol(label: str) -> tuple[str | None, str]:
-    """QE's documented label → element rule: the element is the leading 1–2 characters of
-    an ``ATOMIC_SPECIES`` label that form an element symbol, matched case-insensitively
-    (the 2-character prefix is tried first, then the 1-character — so ``Fe1`` → Fe,
-    ``O_vac`` → O, ``fe`` → Fe, and ``NaCl`` → Na, while ``Zz`` → None). Composes the
-    shared ``normalize_symbol`` — the element table stays the single authority; only QE's
-    *decoration* rule (labels are element symbols with optional trailing characters,
-    per QE's documented ``ATOMIC_SPECIES`` convention) lives here, so M52's output parser
-    resolves labels identically. Note that the reserved pseudo-element ``X`` (the schema's
-    unknown-species marker) is a symbol in that table, so ``Xx`` resolves to the marker
-    ``X`` (recorded), never to a real element. Returns ``(symbol, decoration)`` where
-    ``decoration`` is the label's trailing characters beyond the matched prefix (``""``
-    for a plain label) and ``(None, label)`` when no leading 1–2 characters form an
-    element.
-    """
-    stripped = label.strip()
-    for n in (2, 1):
-        symbol = normalize_symbol(stripped[:n])
-        if symbol is not None:
-            return symbol, stripped[n:]
-    return None, stripped
+# ``species_symbol`` (QE's documented label → element rule) is defined in the shared
+# ``xtalate.sdk.qe`` module — the one layer both the pw.x input parser (M50) and the pw.x
+# input exporter (M51) may import (``exporters`` is an independent layer from ``parsers``
+# under the import-linter contract; M51-S1, D192). It is re-exported here so every existing
+# import site — and M52's pw.x output parser — keeps reading it from the mapping core.
 
 
 # --- ibrav expansion (M50-S2; D190) --------------------------------------------------
