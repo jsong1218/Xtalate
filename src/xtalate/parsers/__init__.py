@@ -19,6 +19,7 @@ from xtalate.parsers.lammps_dump import LammpsDumpParser, make_lammps_dump_parse
 from xtalate.parsers.outcar import OutcarParser, make_outcar_parser
 from xtalate.parsers.poscar import PoscarParser, make_contcar_parser, make_poscar_parser
 from xtalate.parsers.qe_pw_in import QePwInParser, make_qe_pw_in_parser
+from xtalate.parsers.qe_pw_out import QePwOutParser, make_qe_pw_out_parser
 from xtalate.parsers.vasprun import VasprunParser, make_vasprun_parser
 from xtalate.parsers.xdatcar import XdatcarParser, make_xdatcar_parser
 from xtalate.parsers.xyz import XyzParser
@@ -33,6 +34,7 @@ __all__ = [
     "OutcarParser",
     "PoscarParser",
     "QePwInParser",
+    "QePwOutParser",
     "VasprunParser",
     "XdatcarParser",
     "XyzParser",
@@ -45,6 +47,7 @@ __all__ = [
     "make_outcar_parser",
     "make_poscar_parser",
     "make_qe_pw_in_parser",
+    "make_qe_pw_out_parser",
     "make_vasprun_parser",
     "make_xdatcar_parser",
 ]
@@ -63,7 +66,10 @@ def builtin_parsers() -> list[ParserPlugin]:
     registered **parser-only as a staging state** — the exporter is M51's deliverable (D189),
     so this is *not* the vasprun/OUTCAR permanent source-never-target seam. **The staging
     state is now closed**: M51-S1 added the paired exporter (`exporters/qe_pw_in.py`, D192),
-    so `qe_pw_in` is a full read+write format and the Capability Matrix shows both directions."""
+    so `qe_pw_in` is a full read+write format and the Capability Matrix shows both directions.
+    v1.4 M52-S1: qe_pw_out, the Quantum ESPRESSO pw.x **output** reader, the fourth
+    **parser-only** format (the permanent source-never-target seam, D159/D195) — an output is
+    never a conversion target (D195)."""
     return [
         XyzParser(),
         ExtxyzParser(),
@@ -77,4 +83,5 @@ def builtin_parsers() -> list[ParserPlugin]:
         make_lammps_dump_parser(),
         make_lammps_data_parser(),
         make_qe_pw_in_parser(),
+        make_qe_pw_out_parser(),
     ]

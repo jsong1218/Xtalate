@@ -1,0 +1,12 @@
+case: relax
+format_id: qe_pw_out
+source_file: pw.out
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 3b272c7d930e5c3fac378afa52d0248262ce0559e29a16e1fd5e95c433fcbb69
+expected_sha256: 2da0314de1a0bd01c4dfc1c648c22675e655899b7be77e8d4ec41d425b9100ff
+origin:
+  kind: synthetic
+  source: Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+  license: Apache-2.0
+notes: 'M52-S1 ionic relaxation golden (QE 7.x): 3 ionic steps of H2O in a fixed 5 Å cubic cell. Per step: energy (Ry), the ''Forces acting on atoms'' block (Ry/bohr), the ''total   stress'' 3×3 tensor (Ry/bohr³ + kbar column), and an ATOMIC_POSITIONS card in angstrom; the ''total force'' scalar is carried per frame (QEOUT_UNMAPPED_BLOCK_CARRIED). Hand-verifiable: the header cell is alat × identity with alat = 9.448630664428 bohr = 5 Å; energies ×13.605693122994; forces ×25.71103385054424; stress = -tensor × 91.8157694288102 (QE compression-positive → canonical tension-positive, the ASE-verified sign).'

@@ -669,7 +669,16 @@ class QePwInParser(ParserPlugin):
         # other text format in the registry writes — plus, at full confidence, the
         # ATOMIC_POSITIONS card. 0.7 for the namelist alone: a bare &system opener is
         # already unambiguous (nothing else starts a file with a QE namelist).
+        #
+        # M52-S1 (D195): a **pw.x output** also carries ATOMIC_POSITIONS cards (and is the
+        # only file that carries the `Program PWSCF` banner), so once qe_pw_out registers,
+        # the bare ATOMIC_POSITIONS signal is no longer input-unique. The banner is the
+        # discriminator — a pw.x *input* never contains it — and an output is the output
+        # parser's, so the input parser defers to it (never a 1.0-vs-1.0 ambiguity on every
+        # pw.out).
         text = head.decode("utf-8", errors="replace")
+        if "Program PWSCF" in text:
+            return 0.0
         significant: list[str] = []
         for line in text.splitlines():
             stripped = line.strip()

@@ -1,0 +1,12 @@
+case: scf
+format_id: qe_pw_out
+source_file: pw.out
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 234b36490b0de13fef0736873079f3a5cf912df2cc7e9afead3554f230f067e2
+expected_sha256: fa0160e75392f0d9029071d06582b8265df534c302d25b766e1971d6fcc62dde
+origin:
+  kind: synthetic
+  source: Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+  license: Apache-2.0
+notes: 'M52-S1 SCF-only golden (QE 7.x): a single self-consistent run — one ''!    total energy'' line and no ionic loop, so the single frame carries energy only; forces/stress are None (P3 — absence is never defaulted) and positions/cell reuse the initial configuration.'

@@ -331,6 +331,34 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
 
+## `qe_pw_out` / `md` (golden)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+
+## `qe_pw_out` / `relax` (golden)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+
+## `qe_pw_out` / `scf` (golden)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+
+## `qe_pw_out` / `vc-relax` (golden)
+
+- **Source file:** `pw.out`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+
 ## `vasprun` / `relax-h2o` (golden)
 
 - **Source file:** `vasprun.xml`
