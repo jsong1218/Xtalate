@@ -257,6 +257,24 @@ _TAILORED: dict[str, list[tuple[str, bytes]]] = {
             + b"ATOMIC_POSITIONS (angstrom)\nSi 0.0 0.0 0.0\n",
         ),
     ],
+    "qe_pw_out": [
+        # a real PWSCF banner but nothing recognizable after it — the record-level refuse.
+        ("banner_only", b"Program PWSCF v.7.2 (enter)\nstarting calculation\n" + b"\x00" * 16),
+        # CELL_PARAMETERS with only two rows instead of three.
+        (
+            "short_cell_parameters",
+            b"Program PWSCF v.7.2 (enter)\n\n"
+            + b"CELL_PARAMETERS (alat= 5.00000000)\n1 0 0\n0 1 0\n"
+            + b"ATOMIC_POSITIONS (angstrom)\nSi 0.0 0.0 0.0\n",
+        ),
+        # an ATOMIC_POSITIONS row whose coordinate is not a number.
+        (
+            "nonnumeric_position",
+            b"Program PWSCF v.7.2 (enter)\n\n"
+            + b"CELL_PARAMETERS (alat= 5.00000000)\n1 0 0\n0 1 0\n0 0 1\n"
+            + b"ATOMIC_POSITIONS (angstrom)\nSi x y z\n",
+        ),
+    ],
 }
 
 

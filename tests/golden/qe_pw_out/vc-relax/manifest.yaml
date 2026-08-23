@@ -1,0 +1,12 @@
+case: vc-relax
+format_id: qe_pw_out
+source_file: pw.out
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: c3d6132b46deede3cbaeb4165b7fdd82502e53cf18ddc747ee4e30cb3f974f17
+expected_sha256: c48fcf83fa990270df0ea56ecfd807167f9306e65ec44cbcd7735177b5a8bfb9
+origin:
+  kind: synthetic
+  source: Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+  license: Apache-2.0
+notes: 'M52-S1 variable-cell relaxation golden (QE 7.x): 3 ionic steps, each with its own CELL_PARAMETERS card (alat= …) — the per-step-cell form. Same labels as the relax case; step 1''s alat drifts to 9.45000000 bohr and step 2''s to 9.44700000 bohr, so the per-step lattices differ from the initial 5 Å cell.'

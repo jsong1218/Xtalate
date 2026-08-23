@@ -249,6 +249,111 @@ def write_vasprun_trajectory(path: Path, *, n_frames: int, n_atoms: int, seed: i
     return path
 
 
+def write_qe_pw_out_trajectory(
+    path: Path, *, n_frames: int, n_atoms: int, seed: int = 1234
+) -> Path:
+    """Write a deterministic ``n_frames × n_atoms`` pw.x output to ``path``, one ionic step at
+    a time (never buffering the whole file).
+
+    Emits the **real QE intra-step order** the reader keys on (D195): per step, the SCF
+    iterations, the ``!    total energy`` line (Ry), the ``Forces acting on atoms`` block
+    (Ry/bohr), the ``total   stress`` 3×3 tensor (Ry/bohr³ + the per-row kbar column), and
+    an ``ATOMIC_POSITIONS (angstrom)`` card, against a fixed 20 Å cubic cell (alat = 20 Å /
+    ``bohr_radius_angs``). Every label the ``_qe`` output core maps is present per frame
+    (energy / forces / stress / positions), so the label-complete trajectory the streaming
+    gate and the ``parse_qeout_10k`` / ``convert_qeout_to_extxyz_10k`` benchmarks share
+    mirrors the ``md`` golden's real byte layout rather than hand-inventing one. Fully
+    reproducible from ``(seed, n_frames, n_atoms)``.
+    """
+    #: The species the QE header's ATOMIC_SPECIES-style table declares (O/H — the shared
+    #: ``_SYMBOLS`` is Si/O, which would label atoms the table does not declare).
+    symbols = ("O", "H")
+    #: The declared lattice scale in bohr: × 0.52917720859 (QE's bohr_radius_angs) = 20 Å.
+    alat_bohr = 20.0 / 0.52917720859
+    #: QE's own kBar-per-Ry/bohr³ factor (the stress kbar column is row[0]'s kbar, D195).
+    kbar_per_ry_bohr3 = 147105.07919960306
+    with path.open("w", encoding="utf-8") as fh:
+        fh.write("     Program PWSCF v.7.2 (enter) (v.7.2)\n\n")
+        fh.write("     Current dimensions of program PWSCF are:\n     ...\n\n")
+        fh.write(
+            "     atomic species   valence    mass     pseudopotential\n"
+            "        O            6.000     15.99900     O( 1.00)\n"
+            "        H            1.000      1.00800     H( 1.00)\n\n"
+        )
+        fh.write(f"     number of atoms/cell      =        {n_atoms}\n")
+        fh.write("     number of atomic types   =            2\n")
+        fh.write("     number of electrons      =        8.00\n\n")
+        fh.write("     kinetic-energy cutoff =  40.0000  Ry\n\n")
+        fh.write(f"     lattice parameter (alat)  =       {alat_bohr:.10f}  a.u.\n\n")
+        fh.write("     crystal axes: (cart. coord. in units of alat)\n")
+        for i, axis in enumerate(((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), start=1):
+            fh.write(f"       a({i}) = (   {axis[0]:.6f}   {axis[1]:.6f}   {axis[2]:.6f} )\n")
+        fh.write("\n     reciprocal axes: (cart. coord. in units 2 pi/alat)\n")
+        for i, axis in enumerate(((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), start=1):
+            fh.write(f"       b({i}) = (   {axis[0]:.6f}   {axis[1]:.6f}   {axis[2]:.6f} )\n")
+        fh.write("\n     P =     0.000000000000E+00    0.000000000000E+00    0.000000000000E+00\n")
+        fh.write("\n     Cartesian axes\n\n     site n.     atom   positions (angstrom units)\n")
+        for a in range(n_atoms):
+            sym = symbols[a % len(symbols)]
+            base = (seed * 131 + a * 17) % 1000 / 100.0
+            fh.write(
+                f"        {a + 1}           {sym}  tau(  {a + 1:3d}) = "
+                f"(  {base:.6f}  {base * 1.3 % 20.0:.6f}  {base * 0.7 % 20.0:.6f} )\n"
+            )
+        fh.write("\n     number of k points=     1\n\n")
+        for f in range(n_frames):
+            energy = -1.0 * n_atoms + 0.001 * f
+            fh.write(f"     iteration #  {f + 1:5d}     ecut=    40.00 Ry   beta=0.70\n")
+            fh.write(
+                f"             total energy              =     {energy:.8f} Ry\n"
+                "             estimated scf accuracy    <       0.00000001 Ry\n\n"
+            )
+            fh.write("     convergence has been achieved in  10 iterations\n\n")
+            fh.write(f"     !\n     !    total energy =     {energy:.8f} Ry\n     !\n\n")
+            fh.write("     Forces acting on atoms (Ry/au):\n")
+            total_force = 0.00141421 + 0.0001 * f
+            for a in range(n_atoms):
+                sym = symbols[a % len(symbols)]
+                t = 1 if sym == "O" else 2
+                base = (seed * 131 + a * 17 + f * 7) % 1000 / 100.0
+                fx = math.sin(base + f * 0.01)
+                fy = math.cos(base + a * 0.01)
+                fz = math.sin(base * 0.5)
+                fh.write(
+                    f"     atom {a + 1} type {t}   force =     {fx:+.8f}   {fy:+.8f}   {fz:+.8f}\n"
+                )
+            fh.write(
+                "\n     total force =     "
+                f"{total_force:.8f}"
+                "     total SCF correction =     0.00007000\n\n"
+            )
+            diag = (-0.00001000 - 0.000001 * f, -0.00002000, -0.00000500)
+            tensor = [
+                [diag[0], 0.00000050, 0.00000000],
+                [0.00000050, diag[1], 0.00000030],
+                [0.00000000, 0.00000030, diag[2]],
+            ]
+            fh.write(
+                "     total   stress  (Ry/bohr**3)                   (kbar)     P=  -1.47 kbar\n\n"
+            )
+            for row in tensor:
+                kbar = row[0] * kbar_per_ry_bohr3
+                fh.write(
+                    f"     {row[0]: .8f}   {row[1]: .8f}   {row[2]: .8f}         {kbar: .5f}\n"
+                )
+            fh.write("\n     ATOMIC_POSITIONS (angstrom)\n")
+            for a in range(n_atoms):
+                sym = symbols[a % len(symbols)]
+                base = (seed * 131 + a * 17 + f * 7) % 1000 / 100.0
+                x = (base + 0.01 * f) % 20.0
+                y = (base * 1.3 + 0.02 * a) % 20.0
+                z = (base * 0.7 + 0.005 * f) % 20.0
+                fh.write(f"     {sym}   {x:.9f}   {y:.9f}   {z:.9f}\n")
+            fh.write("\n")
+        fh.write("\n     JOB DONE.\n")
+    return path
+
+
 def write_outcar_trajectory(path: Path, *, n_frames: int, n_atoms: int, seed: int = 1234) -> Path:
     """Write a deterministic ``n_frames × n_atoms`` OUTCAR to ``path``, one ionic step at a time
     (never buffering the whole file).

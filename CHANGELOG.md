@@ -53,6 +53,29 @@ QE input — no incompleteness warning — and `qe_pw_in` joins the nightly roun
 source and target, with a relabeling flagship (`examples/convert_extxyz_to_qe_pw_in.py`) showing
 the reported incompleteness. Schema line stays `1.0.0`; the `1.4.0` package bump is M53's.
 
+### Added — the QE pw.x output parser (v1.4 M52; D195–D197)
+
+The QE pw.x **output** reader (`qe_pw_out`, parser-only — a read format, never a conversion target)
+completes the M50/M51 input pair into a full input+output story: a `pw.out` log parses end to end
+over the shared `_qe` mapping core, which gains the three output label mappings pinned by
+hand-computed fixtures — `RY_TO_EV` (`13.605693122994`, QE's own `RYTOEV`), forces
+`Ry/bohr → eV/Å`, and stress from the native `Ry/bohr³` 3×3 tensor (never via VASP's core) flipped
+from QE's compression-positive convention to canonical tension-positive `eV/Å³`, with the kbar
+column cross-checked within the file (D195). The reader is **version-drift resilient** — both QE
+major layouts (6.x and 7.x) parse, keyed on stable anchors + whitespace splits; an unrecognized
+layout refuses `QEOUT_UNRECOGNIZED_LAYOUT` and an atom-count-inconsistent step refuses
+`QEOUT_INCONSISTENT_STEP` (never a silent partial parse). Convergence is reported honestly: an
+unconverged SCF's energy is read present-with-value and flagged with QE's own statement
+(`QEOUT_UNCONVERGED` warning). The output's setup echo cross-checks against the input parser's
+read of the same run — two parsers, one run, must agree. A torn `pw.out` from a killed run refuses
+by default (`QEOUT_TRUNCATED`) and recovers through the existing `truncate_corrupt_tail` scenario
+(`truncate_at_last_valid_frame` → `truncate`, keeping the valid prefix, never silent, never the
+default). The MLIP flagship (`examples/convert_qe_pw_out_to_extxyz.py`) converts a `vc-relax` run
+to a label-complete, validated extXYZ training file (energy/forces/stress/per-step cells); a 10⁴-step
+generated MD output streams byte-identical to the whole-file read, and the benchmark harness gains
+the `parse_qeout_10k` / `convert_qeout_to_extxyz_10k` rows (measured, not gated). Schema line stays
+`1.0.0`; the `1.4.0` package bump is M53's.
+
 ### Fixed — M50 code-review follow-ups
 
 - **Bare and paren-wrapped card units are read faithfully instead of silently defaulting to alat.**

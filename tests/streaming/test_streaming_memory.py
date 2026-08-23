@@ -32,6 +32,7 @@ from tests.streaming._generators import (
     write_extxyz_trajectory,
     write_lammps_dump_trajectory,
     write_outcar_trajectory,
+    write_qe_pw_out_trajectory,
     write_vasprun_trajectory,
     write_xdatcar_trajectory,
 )
@@ -174,6 +175,23 @@ def test_outcar_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
 
     stream_peak = _peak_traced_bytes(lambda: _stream(src, out_stream, "outcar", "extxyz"))
     material_peak = _peak_traced_bytes(lambda: _materialize(src, out_material, "outcar", "extxyz"))
+    _assert_sublinear(stream_peak, material_peak, out_stream, out_material)
+
+
+def test_qe_pw_out_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
+    """The M52 QE-output gate (D197): a generated multi-frame pw.x output — the QE
+    counterpart of the OUTCAR half, a line-scanned log whose ordinary MD scale reaches 10⁴
+    steps — must stream to extXYZ with peak memory bounded by one ionic step, not the frame
+    count. Same contrast as the XDATCAR proof, driven through the header-eager / step-lazy
+    streaming parser (M52-S1; D56 at scale)."""
+    src = write_qe_pw_out_trajectory(tmp_path / "pw.out", n_frames=_N_FRAMES, n_atoms=_N_ATOMS)
+    out_stream = tmp_path / "qeout_stream.xyz"
+    out_material = tmp_path / "qeout_material.xyz"
+
+    stream_peak = _peak_traced_bytes(lambda: _stream(src, out_stream, "qe_pw_out", "extxyz"))
+    material_peak = _peak_traced_bytes(
+        lambda: _materialize(src, out_material, "qe_pw_out", "extxyz")
+    )
     _assert_sublinear(stream_peak, material_peak, out_stream, out_material)
 
 

@@ -1,0 +1,12 @@
+case: md-6x
+format_id: qe_pw_out
+source_file: pw.out
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 7cec4cc8541acb7e5606da537416ac36e5739dcfa2dac77b47970357a4348860
+expected_sha256: d0a5079c0ecfece74c59601984c6474af52c6ad3c0517e5d50df77ec1ac503bc
+origin:
+  kind: synthetic
+  source: Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).
+  license: Apache-2.0
+notes: 'M52-S2 molecular-dynamics golden (QE 6.x layout): the same 5-step MD run as the 7.x case in the 6.x spelling.'

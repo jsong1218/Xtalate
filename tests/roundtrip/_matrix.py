@@ -85,6 +85,11 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     # dedicated round-trip suite (test_qe_pw_in_roundtrip), which drives the exporter directly
     # because the write plan drops simulation.* by design (D192 rejected alternative (d)).
     "qe_pw_in": ("qe_pw_in/ibrav4-hex", "pw.in"),
+    # M52: the QE pw.x **output** parser enrols as a source — the fourth parser-only format
+    # (D159/D195), so like vasprun/outcar it stays out of the target axis automatically. Its
+    # fixture is label-complete (per-step energy/forces/stress/positions/cells — the vc-relax
+    # flagship), so every hop out of it exercises the full QE label triple through the matrix.
+    "qe_pw_out": ("qe_pw_out/vc-relax", "pw.out"),
     # M36: exfmt, the *installed reference plugin* (plugins/example-format/), enrolled as a source
     # so the compatibility canary participates in the full matrix — the milestone's "appears in the
     # nightly matrix with zero core changes" (Part 8 §2). Its parser lives in a separate
