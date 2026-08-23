@@ -34,6 +34,26 @@ routes to `simulation.extra`; `K_POINTS` and every other unconsumed entry/card a
 with the `QEIN_UNMAPPED_ENTRY_CARRIED` warning (kept + reported, never refused). Registered
 **parser-only as a staging state** — the exporter is M51's deliverable.
 
+### Fixed — M50 code-review follow-ups
+
+- **Bare and paren-wrapped card units are read faithfully instead of silently defaulting to alat.**
+  QE writes the per-card unit in three interchangeable spellings — `ATOMIC_POSITIONS {angstrom}`,
+  `(angstrom)`, or bare `angstrom` — but the reader recognized only the braced form, so a bare
+  `ATOMIC_POSITIONS crystal` / `CELL_PARAMETERS angstrom` fell through to the alat default and
+  silently misread the geometry (P1/P3). `_card_unit` now accepts all three; a header with no
+  remainder still applies (and records) QE's documented alat default, and a bare *unrecognized*
+  token now refuses `QEIN_MALFORMED_CARD` rather than defaulting.
+- **A bare `K_POINTS` mode is carried, not dropped.** The same braces-only gap dropped an unmapped
+  card's bare header modifier — `K_POINTS automatic` lost the `automatic` mode despite the
+  "carried verbatim" contract (P1). The mode now rides the carried entry exactly as `{automatic}` does.
+- **Fortran logicals (`.true.`/`.false.`) parse instead of refusing the file.** A namelist logical
+  begins with `.`, so it reached the tokenizer's numeric branch and was rejected as a malformed
+  number — refusing any pw.x input carrying `tprnfor = .true.`, `tstress = .false.`, etc. The
+  logical is now recognized there; the previously unreachable handling in the identifier branch is
+  removed.
+- **Card error locations point at the correct line** when a card block contains blank lines (the
+  count no longer under-shoots by the skipped blanks).
+
 ## [1.3.0] — 2026-08-21
 
 Schema version: 1.0.0

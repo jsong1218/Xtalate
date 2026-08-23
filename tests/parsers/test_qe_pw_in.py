@@ -103,6 +103,38 @@ def test_crystal_positions_map_through_the_lattice() -> None:
     assert obj.provenance.original_coordinate_system == "fractional"
 
 
+def test_bare_unbraced_card_unit_is_read_faithfully() -> None:
+    # QE accepts the per-card unit bare (no braces) — a very common real-world spelling.
+    # It must be read as declared, never silently defaulted to alat (P1/P3): a bare
+    # `crystal` maps fractional coords through the lattice exactly like `{crystal}`.
+    src = (
+        _NAKED_CELL
+        + "ATOMIC_POSITIONS crystal\n   Fe 0.25 0.25 0.25\n"
+        + "CELL_PARAMETERS angstrom\n   3.0 1.0 0.0\n   0.0 4.0 1.0\n   1.0 0.0 5.0\n"
+    )
+    obj = _parse(src).canonical
+    assert obj.frames[0].atoms.positions[0].tolist() == [1.0, 1.25, 1.5]
+    assert obj.provenance.original_coordinate_system == "fractional"
+    assert obj.provenance.source_units["lattice_vectors"] == "angstrom"
+
+
+def test_paren_wrapped_card_unit_is_read_faithfully() -> None:
+    # The paren spelling `ATOMIC_POSITIONS (angstrom)` is equivalent to the braced form.
+    src = _NAKED_CELL + "ATOMIC_POSITIONS (angstrom)\n   Fe 1.0 2.0 3.0\n" + _cell_block()
+    obj = _parse(src).canonical
+    assert obj.frames[0].atoms.positions[0].tolist() == [1.0, 2.0, 3.0]
+
+
+def test_bare_unrecognized_unit_refuses_rather_than_defaulting() -> None:
+    # A bare token that is not a known unit is refused (QEIN_MALFORMED_CARD), never
+    # silently read as the alat default — the honest failure over a silent misread.
+    src = _NAKED_CELL + "ATOMIC_POSITIONS angstroms\n   Fe 1.0 2.0 3.0\n" + _cell_block()
+    with pytest.raises(ParseError) as exc:
+        _parse(src)
+    assert exc.value.issues[0].code == "QEIN_MALFORMED_CARD"
+    assert "angstroms" in exc.value.issues[0].message
+
+
 def test_alat_positions_resolve_through_celldm1_bohr() -> None:
     # celldm(1) = 2.0 bohr -> alat = 2 × 0.52917720859 = 1.05835441718 Å (hand-computed).
     src = (
@@ -523,6 +555,22 @@ def test_occupations_card_carried_verbatim() -> None:
     assert carried == [{"card": "OCCUPATIONS", "unit": None, "lines": ["1.0 1.0"]}]
 
 
+def test_bare_kpoints_mode_is_carried_not_dropped() -> None:
+    # The bare (unbraced) K_POINTS mode `automatic` must survive the carry (P1) — the
+    # mode word is essential to interpret the grid and rides in the "unit" field, exactly
+    # as the braced `{automatic}` form does.
+    src = (
+        _NAKED_CELL
+        + _positions("angstrom")
+        + _cell_block()
+        + "K_POINTS automatic\n   4 4 4 0 0 0\n"
+    )
+    result = _parse(src)
+    assert [i.code for i in result.issues] == ["QEIN_UNMAPPED_ENTRY_CARRIED"]
+    carried = result.canonical.user_metadata.custom_global["qe_pw_in:unmapped_cards"]
+    assert carried == [{"card": "K_POINTS", "unit": "automatic", "lines": ["4 4 4 0 0 0"]}]
+
+
 def test_recognized_simulation_context_routes_to_simulation_extra() -> None:
     src = (
         "&CONTROL\n   calculation = 'scf', ecutwfc = 30.0,\n/\n"
@@ -547,6 +595,21 @@ def test_unrecognized_namelist_entries_carried_verbatim_with_a_warning() -> None
     carried = result.canonical.user_metadata.custom_global["qe_pw_in:namelists"]
     assert carried == {"system": {"nspin": 2}}
     assert any("nspin" in i.message for i in result.issues)
+
+
+def test_fortran_logical_values_parse_and_carry() -> None:
+    # Fortran logicals (.true./.false.) begin with '.', so they must be recognized in the
+    # tokenizer's numeric branch rather than refused as malformed numbers — a namelist
+    # logical is ubiquitous in real pw.x inputs (tprnfor, tstress, nosym, ...).
+    src = (
+        "&CONTROL\n   tprnfor = .true., tstress = .FALSE.,\n/\n"
+        "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n/\n"
+        "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n" + _positions("angstrom") + _cell_block()
+    )
+    result = _parse(src)
+    # Unrecognized &control entries carry verbatim (no exception, values preserved as bool).
+    carried = result.canonical.user_metadata.custom_global["qe_pw_in:namelists"]
+    assert carried == {"control": {"tprnfor": True, "tstress": False}}
 
 
 # --- provenance / capabilities / registration ----------------------------------------

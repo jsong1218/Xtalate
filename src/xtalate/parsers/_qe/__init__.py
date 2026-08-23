@@ -143,8 +143,8 @@ def alat_angstrom(
         alat = float(celldm1) * BOHR_TO_ANGSTROM
         return alat, (
             f"alat resolved from &system celldm(1) ({celldm1!r} bohr) × {BOHR_TO_ANGSTROM} "
-            "(QE's CODATA bohr radius) → {alat!r} Å."
-        ).format(alat=alat)
+            f"(QE's CODATA bohr radius) → {alat!r} Å."
+        )
     return None, None
 
 

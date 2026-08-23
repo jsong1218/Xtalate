@@ -287,18 +287,20 @@ def _namelist_tokens(body: str) -> list[tuple[str, _NamelistValue]]:
             j = i
             while j < n and (body[j].isalnum() or body[j] in "_."):
                 j += 1
-            word = body[i:j]
-            low = word.lower()
-            if low in (".true.", ".false."):
-                tokens.append(("logical", low == ".true."))
-            else:
-                tokens.append(("ident", word))
+            tokens.append(("ident", body[i:j]))
             i = j
         elif ch.isdigit() or ch in "+-.":
             j = i + 1
             while j < n and (body[j].isalnum() or body[j] in "+-."):
                 j += 1
             raw = body[i:j]
+            # Fortran logicals (.true./.false.) begin with '.', so they arrive here rather
+            # than in the ident branch; recognize them before the numeric contract.
+            low = raw.lower()
+            if low in (".true.", ".false."):
+                tokens.append(("logical", low == ".true."))
+                i = j
+                continue
             if not _NUMBER_RE.match(raw):
                 raise ValueError(f"invalid numeric value {raw!r}")
             text = raw.lower().replace("d", "e")
@@ -409,14 +411,32 @@ def _read_namelist(lines: Sequence[str], i: int) -> tuple[str, dict[str, _Nameli
 
 
 def _card_unit(rest: str) -> str | None:
-    """The ``{unit}`` annotation on a card header line's remainder, or ``None``. QE writes
-    the declared per-card unit in braces after the card name (``ATOMIC_POSITIONS
-    {angstrom}``); a card without braces uses the format's documented default (alat for
-    ATOMIC_POSITIONS/CELL_PARAMETERS), which the reader applies and records."""
-    match = re.match(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", rest.strip())
+    """The unit/option annotation on a card header line's remainder, or ``None`` when the
+    remainder is empty. QE writes the per-card option after the card name in any of three
+    interchangeable spellings — brace-wrapped (``ATOMIC_POSITIONS {angstrom}``),
+    paren-wrapped (``ATOMIC_POSITIONS (angstrom)``), or bare (``ATOMIC_POSITIONS
+    angstrom``) — and all three name the same option; the leading token is returned
+    lowercased for whichever spelling is used (this is also how an unmapped card's mode,
+    e.g. ``K_POINTS automatic``, is captured). Only a header with no remainder at all
+    returns ``None``, which for ATOMIC_POSITIONS/CELL_PARAMETERS means QE's documented
+    default (alat) applies — recorded by the caller."""
+    match = re.match(r"[{(]?\s*([A-Za-z_][A-Za-z0-9_]*)", rest.strip())
     if match is None:
         return None
     return match.group(1).lower()
+
+
+def _unmapped_card_lead(keyword: str) -> str:
+    """The shared leading clause naming why a card carries verbatim, single-sourced for
+    both the ``parse_notes`` entry and the QEIN_UNMAPPED_ENTRY_CARRIED warning so the two
+    surfaces cannot drift."""
+    if keyword == "K_POINTS":
+        return (
+            "card K_POINTS has no canonical k-point model in the schema (M50-S3 "
+            "states that rather than inventing one); carried verbatim as structured "
+            "custom data"
+        )
+    return f"card {keyword} has no canonical mapping in this milestone; carried verbatim"
 
 
 def _read_card_block(lines: Sequence[str], i: int) -> tuple[list[str], int]:
@@ -840,8 +860,9 @@ class QePwInParser(ParserPlugin):
                     location=f"line {i + 1}",
                 )
             rest = line[len(tokens[0]) :].strip()
+            location = f"line {i + 1}"  # the card header line; block-relative blanks
+            # (skipped by _read_card_block) make an i-minus-len(block) count wrong.
             block, i = _read_card_block(lines, i + 1)
-            location = f"line {i - len(block)}"
             if keyword == "ATOMIC_SPECIES":
                 if species_rows is not None:
                     raise _error(
@@ -893,20 +914,17 @@ class QePwInParser(ParserPlugin):
                 unmapped_cards.append(
                     {"card": keyword, "unit": _card_unit(rest), "lines": list(block)}
                 )
+                # M50-S3 (D191): the schema has no canonical k-point model — stated, not
+                # modeled; the card rides verbatim as structured custom data.
+                lead = _unmapped_card_lead(keyword)
                 if keyword == "K_POINTS":
-                    # M50-S3 (D191): the schema has no canonical k-point model — stated,
-                    # not modeled; the card rides verbatim as structured custom data.
                     unmapped_notes.append(
-                        "card K_POINTS has no canonical k-point model in the schema (M50-S3 "
-                        "states that rather than inventing one); carried verbatim as structured "
-                        f"custom data in user_metadata.custom_global[{_UNMAPPED_CARDS_KEY!r}]."
+                        f"{lead} in user_metadata.custom_global[{_UNMAPPED_CARDS_KEY!r}]."
                     )
                 else:
                     unmapped_notes.append(
-                        f"card {keyword} has no canonical mapping in this milestone; "
-                        "carried verbatim in "
-                        f"user_metadata.custom_global[{_UNMAPPED_CARDS_KEY!r}] (M50-S3 "
-                        "routes it under the Part 2 §6.1 carry-through rule)."
+                        f"{lead} in user_metadata.custom_global[{_UNMAPPED_CARDS_KEY!r}] "
+                        "(M50-S3 routes it under the Part 2 §6.1 carry-through rule)."
                     )
 
         if species_rows is None:
@@ -1150,16 +1168,7 @@ class QePwInParser(ParserPlugin):
             custom_global[_NAMELISTS_KEY] = cast(JsonValue, carried_namelists)
         for entry in unmapped_cards:
             keyword = str(entry["card"])
-            if keyword == "K_POINTS":
-                wording = (
-                    "card K_POINTS has no canonical k-point model in the schema (M50-S3 "
-                    "states that rather than inventing one); carried verbatim as structured "
-                    "custom data"
-                )
-            else:
-                wording = (
-                    f"card {keyword} has no canonical mapping in this milestone; carried verbatim"
-                )
+            wording = _unmapped_card_lead(keyword)
             issues.append(
                 ParseIssue(
                     severity="warning",
