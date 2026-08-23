@@ -17,6 +17,50 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+## [1.4.0] — 2026-08-23
+
+Schema version: 1.0.0
+
+### Added — QE real-world hardening as a hybrid corpus (v1.4 M53-S1; D198)
+
+The real-world test corpus (`tests/wild/`) admits the QE pw.x pair under the corpus-governance
+rules, with two existing oracles wired in: **`qe_pw_in` joins the round-trip self-consistency
+oracle** (a full read+write format — parse, re-export through its own exporter, re-parse, assert
+scientifically equal, the LAMMPS pattern; `qe_pw_out` is parser-only, so it is never a round-trip
+case), and a **`qe_pw_in`↔`qe_pw_out` pair asserts the input-echo agreement** — the M50 input
+parser and the M52 output parser are the two readers of one run and must land the same cell /
+species / positions (the `_qe_run` cross-check assertion, reused). An **authored-realistic batch**
+spans QE 6.x and 7.x layouts across SCF / ionic `relax` / `vc-relax` (per-step cells) / MD runs,
+an **unconverged** SCF (energy read present-with-value and flagged `QEOUT_UNCONVERGED`), a
+**killed run** (refuses `QEOUT_TRUNCATED`; a companion case recovers under
+`truncate_corrupt_tail=truncate`), **decorated species labels** (`Fe1` → Fe, `O_vac` → O) plus the
+unresolvable-label refusal, two **nonzero-`ibrav`** inputs (2 fcc, 4 hexagonal), and a
+carried-payload input proving the pseudopotential + `K_POINTS` carry survives the round-trip —
+every file parses clean-or-flagged with zero silent anomalies, each anomaly named in its manifest.
+Batch 1 is self-authored (Apache-2.0, each fixture generalizing a committed M50–M52 golden's
+known-good bytes); **real community-contributed QE pw.x files are welcome** into the same harness
+(developer guide §5.7). The release is honest about provenance: batch 1 is **authored-realistic**
+broadness across QE 6.x/7.x with a standing call for real-world contributions, not "validated
+against real wild files."
+
+### Added — the CP2K gate resolves to the community-plugin handoff, and the QE pair is documented (v1.4 M53-S2; D199)
+
+The CP2K question is settled honestly: the effort condition (≈ 5.6 cumulative weekends through
+M52, over the ≤ 5.5 in-tree threshold) and the budget reality resolve the gate to the
+**pre-authorized community-plugin handoff** — shipped as a deliverable, the first test of the
+post-1.0 contributor model, not a silent omission. The README carries a "CP2K plugin wanted" call
+pointing at the frozen SDK seam (`xtalate.parsers` / `xtalate.exporters` entry points + the stable
+base classes — no core change needed out-of-tree), the reference plugin as template, the v1.2–v1.4
+parser families as three worked examples (structured input / log output / input-output pairing),
+and a named maintainer-review commitment. In-tree CP2K, if ever wanted, is a new milestone. The
+same slice documents the QE pair to the world: the README scope statement grows to the seven
+Phase-1 formats plus the read-only VASP-output formats plus the full read+write LAMMPS pair plus
+the **QE pw.x pair** — `qe_pw_in` full read+write (the extXYZ → QE relabeling-setup arrow with the
+honest-incompleteness warning) and `qe_pw_out` read-only output (the MLIP flagship reads a pw.x
+run into a label-complete extXYZ training file) — closing the DFT-relabel loop with the VASP
+formats, and the add-a-format guide gains the "structured input + log output" pairing worked
+variant (developer guide §5.1.3).
+
 ### Added — the QE pw.x input parser (v1.4 M50; D188–D191)
 
 Quantum ESPRESSO enters the format family: the **pw.x input** reader (`qe_pw_in`, schema line
