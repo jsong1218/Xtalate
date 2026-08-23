@@ -4,10 +4,10 @@ source_file: pw.in
 expected_canonical: expected.canonical.json
 canonical_schema_version: 1.0.0
 sha256: 1f752b05f5b2713678a169fce161ac9f296141600620b1a9326cb1dfe0031df9
-expected_sha256: 42e52b451a887bf2e892ef0ed98049939eb54e31ff522a242483f60d25b8cd82
+expected_sha256: 7d85d6b9f439748c6bb5122b594cdbbeb915beddb728e7eec0d4bcec67539578
 origin:
   kind: synthetic
-  source: 'Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).'
+  source: Hand-written for M50-S2 (QE pw.x input parser, ibrav expansion).
   license: Apache-2.0
-notes: >-
-  M50-S2 ibrav golden: ibrav = 2 (cubic F, fcc), A = 4.0 A. Hand-pinned: v1=(a/2)(-1,0,1), v2=(a/2)(0,1,1), v3=(a/2)(-1,1,0) -> ((-2,0,2),(0,2,2),(-2,2,0)) A.
+notes: 'M50-S2 ibrav golden: ibrav = 2 (cubic F, fcc), A = 4.0 A. Hand-pinned: v1=(a/2)(-1,0,1),
+  v2=(a/2)(0,1,1), v3=(a/2)(-1,1,0) -> ((-2,0,2),(0,2,2),(-2,2,0)) A.'

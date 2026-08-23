@@ -40,6 +40,18 @@ The core owns the mapping *decisions* so they are pinned in exactly one place:
   speculatively. Both parameter spellings — ``celldm(1..6)`` (alat in Bohr, ratios +
   cosines) and ``A,B,C,cosAB,cosAC,cosBC`` (Å + cosines, mapped per ``abc2celldm``) — reach
   identical vectors for the same lattice.
+* **Species labels → elements (M50-S3)** — ``species_symbol`` applies QE's documented
+  label rule (the element is the leading 1–2 characters of the ``ATOMIC_SPECIES`` label
+  that form an element symbol, case-insensitively — try the 2-character prefix first,
+  then the 1-character; ``Fe1`` → Fe, ``O_vac`` → O), composed with
+  ``schema.elements.normalize_symbol`` — the shared element table stays the single
+  authority, and QE's *decoration* rule lives here (M52's output parser reuses it). The
+  reserved pseudo-element ``X`` (the schema's unknown-species marker) is a symbol in that
+  table, so a label whose leading character is X resolves to the marker (``Xx`` → ``X``,
+  recorded — never silently a real element); a label whose leading 1–2 characters form
+  *no* symbol at all resolves to ``None`` — the reader turns that into
+  ``QEIN_UNRESOLVED_SPECIES_LABEL``, recoverable through the existing ``missing_species``
+  scenario (D191).
 * **Provenance** — per-card ``source_units`` as read, ``original_coordinate_system``
   (``"cartesian"`` for angstrom/bohr/alat; ``"fractional"`` for crystal — the POSCAR
   precedent), and the ``parse_notes`` entries recording every conversion and every
@@ -58,6 +70,7 @@ from typing import TypeAlias
 import numpy as np
 
 from xtalate.schema.cell import to_cartesian
+from xtalate.schema.elements import normalize_symbol
 
 #: The exact Bohr radius (in Å) QE uses in ``Modules/constants.f90``
 #: (``bohr_radius_angs = 0.52917720859_dp``). Pinned by hand-computed fixtures in the
@@ -206,6 +219,32 @@ def positions_cartesian(
             "via the lattice matrix."
         )
     raise ValueError(f"{what} declares unsupported unit {unit!r} (angstrom|bohr|alat|crystal)")
+
+
+# --- species labels (M50-S3; D191) ---------------------------------------------------
+
+
+def species_symbol(label: str) -> tuple[str | None, str]:
+    """QE's documented label → element rule: the element is the leading 1–2 characters of
+    an ``ATOMIC_SPECIES`` label that form an element symbol, matched case-insensitively
+    (the 2-character prefix is tried first, then the 1-character — so ``Fe1`` → Fe,
+    ``O_vac`` → O, ``fe`` → Fe, and ``NaCl`` → Na, while ``Zz`` → None). Composes the
+    shared ``normalize_symbol`` — the element table stays the single authority; only QE's
+    *decoration* rule (labels are element symbols with optional trailing characters,
+    per QE's documented ``ATOMIC_SPECIES`` convention) lives here, so M52's output parser
+    resolves labels identically. Note that the reserved pseudo-element ``X`` (the schema's
+    unknown-species marker) is a symbol in that table, so ``Xx`` resolves to the marker
+    ``X`` (recorded), never to a real element. Returns ``(symbol, decoration)`` where
+    ``decoration`` is the label's trailing characters beyond the matched prefix (``""``
+    for a plain label) and ``(None, label)`` when no leading 1–2 characters form an
+    element.
+    """
+    stripped = label.strip()
+    for n in (2, 1):
+        symbol = normalize_symbol(stripped[:n])
+        if symbol is not None:
+            return symbol, stripped[n:]
+    return None, stripped
 
 
 # --- ibrav expansion (M50-S2; D190) --------------------------------------------------

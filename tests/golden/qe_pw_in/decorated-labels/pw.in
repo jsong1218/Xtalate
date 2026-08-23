@@ -1,0 +1,13 @@
+&SYSTEM
+   ibrav = 0, nat = 2, ntyp = 2,
+/
+ATOMIC_SPECIES
+   Fe1 55.845 fe.pbe.UPF
+   O_vac 15.999 o.pbe.UPF
+ATOMIC_POSITIONS {angstrom}
+   Fe1 1.0 2.0 3.0
+   O_vac 3.0 2.0 1.0
+CELL_PARAMETERS {angstrom}
+   3.0 1.0 0.0
+   0.0 4.0 1.0
+   1.0 0.0 5.0

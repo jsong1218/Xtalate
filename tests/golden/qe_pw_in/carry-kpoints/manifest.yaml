@@ -1,0 +1,16 @@
+case: carry-kpoints
+format_id: qe_pw_in
+source_file: pw.in
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+origin:
+  kind: synthetic
+  source: Hand-written for M50 (QE pw.x input parser).
+  license: Apache-2.0
+notes: 'M50-S3 golden: recognized simulation context (calculation, ecutwfc, ecutrho,
+  smearing, occupations, conv_thr) routes to simulation.extra; the unrecognized &system
+  entry nspin and the K_POINTS card (no canonical k-point model in the schema - stated,
+  not modeled) carry verbatim under qe_pw_in:namelists / qe_pw_in:unmapped_cards,
+  each with the QEIN_UNMAPPED_ENTRY_CARRIED warning (kept + reported, never refused).'
+sha256: 05866e81d98d6e76173cd8c9c6587134ea33d858191bfa88ff16fda5aa191fac
+expected_sha256: 013ee1e2cbac2393a7ca267a2cdd993e8ff9993c8abbdb3ee8d91639cd9afc4a

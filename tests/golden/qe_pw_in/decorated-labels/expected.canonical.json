@@ -6,20 +6,28 @@
       "time": null,
       "atoms": {
         "symbols": [
-          "Fe"
+          "Fe",
+          "O"
         ],
         "atomic_numbers": [
-          26
+          26,
+          8
         ],
         "positions": [
           [
-            0.52917720859,
-            0.52917720859,
-            0.52917720859
+            1.0,
+            2.0,
+            3.0
+          ],
+          [
+            3.0,
+            2.0,
+            1.0
           ]
         ],
         "masses": [
-          55.845
+          55.845,
+          15.999
         ],
         "occupancies": null
       },
@@ -68,15 +76,16 @@
     "source_filename": "pw.in",
     "source_format": "qe_pw_in",
     "source_units": {
-      "positions": "bohr",
+      "positions": "angstrom",
       "lattice_vectors": "angstrom"
     },
     "original_coordinate_system": "cartesian",
     "parse_notes": [
       "CELL_PARAMETERS {angstrom}: lattice vectors read as-is (\u00c5).",
-      "ATOMIC_POSITIONS {bohr}: positions converted Bohr \u2192 \u00c5 (\u00d7 0.52917720859, QE's CODATA bohr radius).",
+      "ATOMIC_POSITIONS {angstrom}: Cartesian positions read as-is (\u00c5).",
       "pbc set to (true,true,true): a pw.x input carries no PBC declaration and QE is always fully periodic (format-defined, not assumed).",
-      "ATOMIC_SPECIES label 'Fe' resolves to element Fe (QE's documented label rule); its declared mass 55.845 u and pseudopotential 'fe.pbe.UPF' are carried verbatim.",
+      "ATOMIC_SPECIES label 'Fe1' resolves to element Fe (QE's documented label rule); its declared mass 55.845 u and pseudopotential 'fe.pbe.UPF' are carried verbatim.",
+      "ATOMIC_SPECIES label 'O_vac' resolves to element O (QE's documented label rule); its declared mass 15.999 u and pseudopotential 'o.pbe.UPF' are carried verbatim.",
       "Declared ATOMIC_SPECIES masses promote to atoms.masses (present-with-value, P3); pseudopotential filenames ride user_metadata.custom_global['qe:pseudopotentials'] (label \u2192 filename)."
     ],
     "history": [
@@ -96,13 +105,18 @@
     "annotations": {},
     "custom_global": {
       "qe_pw_in:atomic_species": {
-        "Fe": [
+        "Fe1": [
           55.845,
           "fe.pbe.UPF"
+        ],
+        "O_vac": [
+          15.999,
+          "o.pbe.UPF"
         ]
       },
       "qe:pseudopotentials": {
-        "Fe": "fe.pbe.UPF"
+        "Fe1": "fe.pbe.UPF",
+        "O_vac": "o.pbe.UPF"
       }
     },
     "custom_per_atom": {},

@@ -17,6 +17,23 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+### Added — the QE pw.x input parser (v1.4 M50; D188–D191)
+
+Quantum ESPRESSO enters the format family: the **pw.x input** reader (`qe_pw_in`, schema line
+`1.0.0` — the `1.4.0` package bump is M53's) parses the namelist + card grammar end to end over a
+shared `_qe` mapping core the M52 pw.x output parser will reuse. Per-card units are converted
+deterministically at the boundary (never a scenario — QE declares its units in the file), the
+`ibrav` Bravais encodings expand to explicit lattices hand-pinned per supported value
+(`1, 2, 3, 4, 6, 8, 12, −12, 14`; an unsupported value refuses, never a guessed lattice), species
+labels resolve through QE's documented label rule (`Fe1` → Fe, `O_vac` → O, each resolution
+recorded), declared masses promote to `atoms.masses`, and pseudopotential filenames ride
+`user_metadata.custom_global["qe:pseudopotentials"]`. An unresolvable label refuses
+`QEIN_UNRESOLVED_SPECIES_LABEL`, completable through the existing `missing_species` recovery
+(`species_map`/`upload_reference`) — no QE-specific scenario invented. Recognized simulation context
+routes to `simulation.extra`; `K_POINTS` and every other unconsumed entry/card are carried verbatim
+with the `QEIN_UNMAPPED_ENTRY_CARRIED` warning (kept + reported, never refused). Registered
+**parser-only as a staging state** — the exporter is M51's deliverable.
+
 ## [1.3.0] — 2026-08-21
 
 Schema version: 1.0.0

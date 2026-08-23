@@ -54,7 +54,17 @@ IBRAV_CASES = [
     "ibrav4-crystal",
 ]
 
-CASES = EXPLICIT_CASES + IBRAV_CASES
+#: The M50-S3 case that parses warning-free (only &system + the three structural cards,
+#: all recognized): decorated ATOMIC_SPECIES labels resolving through QE's label rule.
+DECORATED_CASES = ["decorated-labels"]
+
+#: The M50-S3 case that *intentionally* fires the QEIN_UNMAPPED_ENTRY_CARRIED warnings:
+#: recognized simulation context routes to simulation.extra, the unrecognized &system
+#: entry and the K_POINTS card carry verbatim with the warning (kept + reported).
+WARNING_CASES = ["carry-kpoints"]
+
+CASES = EXPLICIT_CASES + IBRAV_CASES + DECORATED_CASES
+ALL_CASES = CASES + WARNING_CASES
 
 #: The shared explicitly-declared cell every S1 golden carries (rows a, b, c, Å).
 _CELL = [[3.0, 1.0, 0.0], [0.0, 4.0, 1.0], [1.0, 0.0, 5.0]]
@@ -83,10 +93,59 @@ def _parse(case: str) -> ParseResult:
     return make_qe_pw_in_parser().parse(io.BytesIO(_source(case)), filename="pw.in")
 
 
-@pytest.mark.parametrize("case", CASES)
+@pytest.mark.parametrize("case", ALL_CASES)
 def test_parse_matches_golden(case: str) -> None:
     expected = (GOLDEN / case / "expected.canonical.json").read_text()
     assert_matches_golden(_parse(case).canonical, expected)
+
+
+def test_decorated_labels_resolve_with_masses_and_pseudopotentials() -> None:
+    """M50-S3 done-means #1: Fe1 → Fe and O_vac → O (recorded), declared masses promote
+    to atoms.masses (present-with-value, P3), pseudopotential filenames land under
+    qe:pseudopotentials, and the verbatim declared table still rides — nothing dropped."""
+    obj = _parse("decorated-labels").canonical
+    frame = obj.frames[0]
+    assert frame.atoms.symbols == ["Fe", "O"]
+    assert frame.atoms.masses is not None
+    assert frame.atoms.masses.tolist() == [55.845, 15.999]
+    assert obj.user_metadata.custom_global["qe:pseudopotentials"] == {
+        "Fe1": "fe.pbe.UPF",
+        "O_vac": "o.pbe.UPF",
+    }
+    assert obj.user_metadata.custom_global["qe_pw_in:atomic_species"] == {
+        "Fe1": [55.845, "fe.pbe.UPF"],
+        "O_vac": [15.999, "o.pbe.UPF"],
+    }
+    notes = obj.provenance.parse_notes
+    assert any("Fe1" in note and "resolves to element Fe" in note for note in notes)
+    assert any("O_vac" in note and "resolves to element O" in note for note in notes)
+    assert any("promote to atoms.masses" in note for note in notes)
+
+
+def test_carry_kpoints_routes_and_warns_never_refuses() -> None:
+    """M50-S3 done-means #3: recognized simulation context routes to simulation.extra, the
+    unrecognized &system entry and K_POINTS carry verbatim as structured custom data, and
+    each carried item emits the QEIN_UNMAPPED_ENTRY_CARRIED warning — kept + reported."""
+    result = _parse("carry-kpoints")
+    obj = result.canonical
+    assert obj.simulation is not None
+    assert obj.simulation.extra == {
+        "calculation": "scf",
+        "ecutwfc": "40.0",
+        "ecutrho": "320.0",
+        "smearing": "gaussian",
+        "occupations": "smearing",
+        "conv_thr": "1e-08",
+    }
+    assert obj.user_metadata.custom_global["qe_pw_in:namelists"] == {"system": {"nspin": 2}}
+    assert obj.user_metadata.custom_global["qe_pw_in:unmapped_cards"] == [
+        {"card": "K_POINTS", "unit": "automatic", "lines": ["4 4 4 0 0 0"]}
+    ]
+    codes = [issue.code for issue in result.issues]
+    assert codes == ["QEIN_UNMAPPED_ENTRY_CARRIED", "QEIN_UNMAPPED_ENTRY_CARRIED"]
+    assert all(issue.severity == "warning" for issue in result.issues)
+    assert any("no canonical k-point model" in note for note in obj.provenance.parse_notes)
+    assert any("simulation.extra" in note for note in obj.provenance.parse_notes)
 
 
 @pytest.mark.parametrize("case", EXPLICIT_CASES)

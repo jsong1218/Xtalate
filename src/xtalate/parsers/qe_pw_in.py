@@ -1,4 +1,4 @@
-"""Quantum ESPRESSO pw.x input parser (MASTER_SPEC Part 3 §3; v1.4 M50-S1/S2).
+"""Quantum ESPRESSO pw.x input parser (MASTER_SPEC Part 3 §3; v1.4 M50-S1/S2/S3).
 
 The pw.x **input** file — the namelist + card grammar that defines a QE calculation. It is
 the structural ground truth of the whole QE trilogy: the pw.x *output* parser (M52) must
@@ -52,30 +52,47 @@ Capability Matrix until then. M51 must add the paired exporter and close the sta
   ``celldm(1)``/``A`` refuses rather than assume QE's 1-Bohr default. The *unit* default —
   a bare ``ATOMIC_POSITIONS``/``CELL_PARAMETERS`` reads as ``alat`` per QE's documented
   convention — is a format-defined fact, applied and recorded in ``parse_notes``.
-* **Species labels are plain element symbols in S1.** ``atoms.symbols`` is required and
-  must hold valid element symbols, so S1 resolves labels that *are* element symbols
-  (through ``schema.elements.normalize_symbol``) and refuses a decorated label (``Fe1``,
-  ``O_vac``) naming that its resolution lands in M50-S3.
-* **Nothing is dropped (P1).** The full ``ATOMIC_SPECIES`` table (masses + pseudopotential
-  filenames), any namelist entries beyond the consumed ``&system`` facts, and any
-  unrecognized card (``K_POINTS``, ``OCCUPATIONS``, ``CONSTRAINTS``, …) are carried
-  verbatim in ``user_metadata.custom_global`` under ``qe_pw_in:`` keys — the carry-through
-  routing rule (Part 2 §6.1) admits carried-through content without a warning; M50-S3 adds
-  the ``QEIN_UNMAPPED_ENTRY_CARRIED`` warning, routes recognized simulation context to
-  ``simulation.extra``, promotes masses to ``atoms.masses`` and pseudopotentials to
-  ``qe:pseudopotentials``, and carries ``K_POINTS`` as structured custom data.
+* **Species labels resolve through QE's documented label rule (M50-S3, D191).**
+  ``atoms.symbols`` is required, so ``ATOMIC_SPECIES`` labels resolve to elements via the
+  shared ``_qe`` core's ``species_symbol`` (QE's rule: the element is the leading 1–2
+  characters that form an element symbol — ``Fe1`` → Fe, ``O_vac`` → O, tried as
+  ``normalize_symbol`` over the label, never guessed), each resolution recorded in
+  ``parse_notes``. A label whose leading characters form **no** element refuses
+  ``QEIN_UNRESOLVED_SPECIES_LABEL`` with the ``supply_species`` recovery hint (the
+  **existing** ``missing_species`` scenario, Part 4 §3.3 — no QE-specific recovery is
+  invented, D191): ``--recover missing_species=species_map=…`` or ``upload_reference``
+  re-reads and completes, recorded with the ``QEIN_SPECIES_SUPPLIED`` warning.
+* **Masses are present-with-value (P3, D191).** Declared ``ATOMIC_SPECIES`` masses promote
+  to ``atoms.masses`` — a declared value is never a fabricated default, and absence stays
+  ``None``. Pseudopotential filenames land under
+  ``user_metadata.custom_global["qe:pseudopotentials"]`` (label → filename) and the full
+  declared table still rides ``qe_pw_in:atomic_species`` verbatim.
+* **Nothing is dropped (P1).** Any namelist entry beyond the consumed structural facts and
+  the recognized simulation context, and any unrecognized card (``K_POINTS``,
+  ``OCCUPATIONS``, ``CONSTRAINTS``, …) is carried verbatim in ``user_metadata.custom_global``
+  under ``qe_pw_in:`` keys — the carry-through routing rule (Part 2 §6.1) — and **each**
+  carried item emits the ``QEIN_UNMAPPED_ENTRY_CARRIED`` **warning** (kept + reported,
+  never refused). Recognized simulation context (``calculation``, cutoffs/convergence:
+  ``ecutwfc``/``ecutrho``/``conv_thr``/``degauss``/``smearing``/``occupations``) routes to
+  ``simulation.extra`` (the vasprun precedent). ``K_POINTS`` is carried verbatim as
+  structured custom data — the schema has no canonical k-point model, and M50-S3 states
+  that rather than inventing one.
 * **Encoding errors name their location** (the RF-A1 discipline): a decode failure reports
   the byte offset; a malformed namelist/card reports the line and the offending construct.
 
 Format-prefixed codes (Part 3 §5): ``QEIN_EMPTY``, ``QEIN_MALFORMED_NAMELIST``,
-``QEIN_MALFORMED_CARD``, and ``QEIN_UNSUPPORTED_IBRAV`` (an ``ibrav`` outside the
-hand-pinned supported set).
+``QEIN_MALFORMED_CARD``, ``QEIN_UNSUPPORTED_IBRAV`` (an ``ibrav`` outside the
+hand-pinned supported set), ``QEIN_UNRESOLVED_SPECIES_LABEL`` (an ``ATOMIC_SPECIES``
+label no element — recoverable through the existing ``missing_species`` scenario),
+``QEIN_UNMAPPED_ENTRY_CARRIED`` (a carried-through namelist entry / unrecognized card —
+warning, never a refusal), and ``QEIN_SPECIES_SUPPLIED`` (the recovery-completion note
+when a species_map / upload_reference completes the read).
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import BinaryIO, TypeAlias, cast
 
 import numpy as np
@@ -90,12 +107,14 @@ from xtalate.parsers._qe import (
     lattice_from_ibrav,
     pbc_note,
     positions_cartesian,
+    species_symbol,
 )
 from xtalate.schema import (
     AtomsBlock,
     CanonicalObject,
     Cell,
     Frame,
+    SimulationMetadata,
     UserMetadata,
 )
 from xtalate.schema.elements import normalize_symbol
@@ -116,12 +135,24 @@ _EMPTY = "QEIN_EMPTY"
 _MALFORMED_NAMELIST = "QEIN_MALFORMED_NAMELIST"
 _MALFORMED_CARD = "QEIN_MALFORMED_CARD"
 _UNSUPPORTED_IBRAV = "QEIN_UNSUPPORTED_IBRAV"
+_UNRESOLVED_SPECIES_LABEL = "QEIN_UNRESOLVED_SPECIES_LABEL"
+_UNMAPPED_ENTRY_CARRIED = "QEIN_UNMAPPED_ENTRY_CARRIED"
+_SPECIES_SUPPLIED = "QEIN_SPECIES_SUPPLIED"
 
-#: The custom_global key the full ATOMIC_SPECIES table rides under in S1: the mass and
+#: The recovery hint of the shared ``missing_species`` scenario (Part 4 §3.3), the same
+#: hint the LAMMPS parsers raise — the hazard is identical, so it is one scenario reused,
+#: never a QE-specific recovery invented (D191).
+_SPECIES_HINT = "supply_species"
+
+#: The custom_global key the full ATOMIC_SPECIES table rides under: the mass and
 #: pseudopotential columns have no canonical home in this milestone and are **never
-#: dropped** (P1). M50-S3 promotes masses → atoms.masses and pseudopotentials →
-#: user_metadata.custom_global["qe:pseudopotentials"].
+#: dropped** (P1). M50-S3 additionally promotes masses → atoms.masses and
+#: pseudopotential filenames → user_metadata.custom_global["qe:pseudopotentials"] (label →
+#: filename); the verbatim declared table stays here.
 _ATOMIC_SPECIES_KEY = "qe_pw_in:atomic_species"
+#: The custom_global key pseudopotential filenames ride under (label → filename), the
+#: carry-through routing for scientifically load-bearing content with no canonical model.
+_PSEUDOPOTENTIALS_KEY = "qe:pseudopotentials"
 #: The custom_global key unconsumed namelist entries ride under (per-namelist dict), and
 #: the key unrecognized cards ride under (list of {card, unit, lines}). M50-S3 routes
 #: these under the Part 2 §6.1 carry-through rule with the QEIN_UNMAPPED_ENTRY_CARRIED
@@ -151,11 +182,23 @@ _CARD_KEYWORDS = frozenset(
     }
 )
 
-#: The &system facts S1 consumes; everything else in &system (and every other namelist)
-#: rides the carry.
+#: The &system facts S1/S2 consume; everything else in &system (and every other
+#: namelist) rides the carry under the Part 2 §6.1 routing rule.
 _CONSUMED_SYSTEM_KEYS = frozenset(
     {"ibrav", "nat", "ntyp", "celldm", "a", "b", "c", "cosab", "cosac", "cosbc"}
 )
+
+#: The namelist entries M50-S3 *recognizes* as simulation context and promotes to
+#: ``simulation.extra`` (the §6.1 routing rule: recognized simulation/method properties live
+#: in ``simulation.extra``; everything else rides the carry). Promoted here means consumed —
+#: the entry is not also carried in ``qe_pw_in:namelists`` (no double-report). QE's
+#: calculation type + the convergence/cutoff parameters per the plan (D191); values are
+#: stored as strings per the ``SimulationMetadata.extra: dict[str, str]`` contract.
+_SIMULATION_EXTRA_KEYS: Mapping[str, frozenset[str]] = {
+    "control": frozenset({"calculation", "ecutwfc", "ecutrho"}),
+    "system": frozenset({"degauss", "smearing", "occupations"}),
+    "electrons": frozenset({"conv_thr"}),
+}
 
 # A Fortran number: optional sign, digits with optional fraction, optional [eEdD] exponent.
 _NUMBER_RE = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eEdD][+-]?\d+)?$")
@@ -443,6 +486,61 @@ def _parse_atomic_species(
     return rows
 
 
+# --- the missing_species recovery presets (Part 4 §3.3; D191) ---------------------------
+
+
+def _recover_label_map(parameters: dict[str, object]) -> Mapping[str, str]:
+    """Parse the ``species_map`` choice's ``species`` parameter for a QE source: a
+    **label**→symbol mapping (QE species are names, not numeric types — the LAMMPS
+    type→symbol shape does not apply, so an ordered list is honestly not accepted). A
+    dict passes through with string keys; the CLI's string form (``"Fe1:Fe O_vac:O"`` —
+    colon-delimited label:symbol pairs, space-separated, since commas are the
+    ``--recover`` separator) is split into a mapping. Commas inside the string are
+    tolerated too, so a direct API caller can pass ``"Fe1:Fe,O_vac:O"``. The values are
+    resolved through ``normalize_symbol`` at use time — a non-element value is refused
+    there, never guessed."""
+    raw = parameters.get("species")
+    if isinstance(raw, dict):
+        return {str(k): str(v) for k, v in raw.items()}
+    if isinstance(raw, str):
+        tokens = raw.replace(":", " ").replace(",", " ").split()
+        if len(tokens) == 0 or len(tokens) % 2 != 0:
+            raise _error(
+                _UNRESOLVED_SPECIES_LABEL,
+                "species_map needs label:symbol pairs "
+                f"(e.g. species='Fe1:Fe O_vac:O'), got {raw!r}",
+                hint=_SPECIES_HINT,
+            )
+        mapping: dict[str, str] = {}
+        for i in range(0, len(tokens), 2):
+            mapping[tokens[i]] = tokens[i + 1]
+        return mapping
+    raise _error(
+        _UNRESOLVED_SPECIES_LABEL,
+        "species_map needs a 'species' parameter (a label→symbol map or 'Fe1:Fe O_vac:O')",
+        hint=_SPECIES_HINT,
+    )
+
+
+def _recover_reference_symbols(parameters: dict[str, object]) -> list[str]:
+    """The per-atom symbols for the ``upload_reference`` choice, drawn from a matching
+    reference structure (Part 4 §3.3): the CLI injects a parsed ``reference``
+    CanonicalObject (``cli._inject_references``); its frame-0 per-atom symbols are
+    returned in order, indexed by atom, and applied directly (never collapsed into a
+    label→symbol map). A reference whose atom count does not match this input is refused
+    in ``_parse_core``, never silently trimmed."""
+    ref = parameters.get("reference")
+    if ref is None:
+        raise _error(
+            _UNRESOLVED_SPECIES_LABEL,
+            "upload_reference needs a 'reference' parameter (the parsed reference structure); "
+            "pass --recover missing_species=upload_reference,file=PATH",
+            hint=_SPECIES_HINT,
+        )
+    reference = cast(CanonicalObject, ref)
+    return [str(s) for s in reference.frames[0].atoms.symbols]
+
+
 def _parse_positions(
     block: list[str], nat: int, *, location: str
 ) -> list[tuple[str, float, float, float]]:
@@ -600,6 +698,31 @@ class QePwInParser(ParserPlugin):
     # -- parse ------------------------------------------------------------------------
 
     def parse(self, stream: BinaryIO, *, filename: str | None) -> ParseResult:
+        """Whole-file read: ``ATOMIC_SPECIES`` labels resolve through QE's documented
+        label rule (M50-S3), masses promote to ``atoms.masses``, recognized simulation
+        context routes to ``simulation.extra``, and everything else is carried verbatim
+        under the Part 2 §6.1 routing rule with the ``QEIN_UNMAPPED_ENTRY_CARRIED``
+        warning (kept + reported, never refused)."""
+        canonical, issues = self._parse_core(stream, filename=filename)
+        return ParseResult(canonical=canonical, issues=issues)
+
+    def _parse_core(
+        self,
+        stream: BinaryIO,
+        *,
+        filename: str | None,
+        label_map: Mapping[str, str] | None = None,
+        per_atom_symbols: list[str] | None = None,
+    ) -> tuple[CanonicalObject, list[ParseIssue]]:
+        """The one read path, shared by ``parse`` and ``parse_recover`` (D191).
+
+        ``label_map`` (the ``missing_species=species_map`` preset: label → element) and
+        ``per_atom_symbols`` (the ``upload_reference`` preset: the reference's per-atom
+        symbols) are the parse-time recovery inputs; the defaults honour the file's own
+        declarations and refuse honestly when an ``ATOMIC_SPECIES`` label resolves to no
+        element (P4 — never guessed, and the existing ``missing_species`` scenario is
+        reused, never a QE-specific recovery).
+        """
         text = decode_text(stream.read(), format_id=FORMAT_ID)
         lines = text.splitlines()
         if not any(_strip_comment(line).strip() for line in lines):
@@ -770,11 +893,21 @@ class QePwInParser(ParserPlugin):
                 unmapped_cards.append(
                     {"card": keyword, "unit": _card_unit(rest), "lines": list(block)}
                 )
-                unmapped_notes.append(
-                    f"card {keyword} has no canonical mapping in this milestone; carried verbatim "
-                    f"in user_metadata.custom_global[{_UNMAPPED_CARDS_KEY!r}] (M50-S3 routes it "
-                    "under the Part 2 §6.1 carry-through rule)."
-                )
+                if keyword == "K_POINTS":
+                    # M50-S3 (D191): the schema has no canonical k-point model — stated,
+                    # not modeled; the card rides verbatim as structured custom data.
+                    unmapped_notes.append(
+                        "card K_POINTS has no canonical k-point model in the schema (M50-S3 "
+                        "states that rather than inventing one); carried verbatim as structured "
+                        f"custom data in user_metadata.custom_global[{_UNMAPPED_CARDS_KEY!r}]."
+                    )
+                else:
+                    unmapped_notes.append(
+                        f"card {keyword} has no canonical mapping in this milestone; "
+                        "carried verbatim in "
+                        f"user_metadata.custom_global[{_UNMAPPED_CARDS_KEY!r}] (M50-S3 "
+                        "routes it under the Part 2 §6.1 carry-through rule)."
+                    )
 
         if species_rows is None:
             raise _error(
@@ -789,9 +922,51 @@ class QePwInParser(ParserPlugin):
                 "missing required card ATOMIC_POSITIONS (positions are required, never defaulted)",
                 location="card section",
             )
-        # --- species labels -> symbols (S1: plain element labels only) -----------------
+        # --- species labels -> elements (M50-S3, D191) --------------------------------
+        # QE's documented label rule lives in the shared _qe core (species_symbol): the
+        # element is the leading 1–2 characters that form an element symbol, tried 2 then
+        # 1 (Fe1 → Fe, O_vac → O). Each resolution is recorded; a label whose leading
+        # characters form no element refuses QEIN_UNRESOLVED_SPECIES_LABEL with the
+        # shared supply_species hint (the existing missing_species scenario, Part 4 §3.3)
+        # unless parse_recover supplied a label_map (species_map) or per-atom symbols
+        # (upload_reference) — never guessed, never a QE-specific recovery invented (D191).
         species_labels = {label for label, _, _ in species_rows}
-        symbols: list[str] = []
+        label_symbols: dict[str, str] = {}
+        species_notes: list[str] = []
+        for label, mass, pseudo in species_rows:
+            symbol, _ = species_symbol(label)
+            source = "QE's documented label rule"
+            if symbol is None and label_map is not None:
+                mapped = label_map.get(label)
+                if mapped is not None:
+                    symbol = normalize_symbol(mapped)
+                    source = "the supplied species_map"
+            if symbol is not None:
+                label_symbols[label] = symbol
+                species_notes.append(
+                    f"ATOMIC_SPECIES label {label!r} resolves to element {symbol} "
+                    f"({source}); its declared mass {mass} u and pseudopotential "
+                    f"{pseudo!r} are carried verbatim."
+                )
+            elif per_atom_symbols is None:
+                raise _error(
+                    _UNRESOLVED_SPECIES_LABEL,
+                    f"ATOMIC_SPECIES label {label!r} resolves to no element (QE's label "
+                    "rule: the leading 1–2 characters that form an element symbol); supply "
+                    "a label→element species_map or upload_reference through the existing "
+                    "missing_species recovery to complete the read",
+                    location="ATOMIC_SPECIES",
+                    hint=_SPECIES_HINT,
+                )
+            else:
+                # upload_reference is active: per-atom symbols supersede label resolution;
+                # the declared table still rides verbatim with its mass and pseudopotential.
+                species_notes.append(
+                    f"ATOMIC_SPECIES label {label!r} resolves to no element under QE's "
+                    "label rule; element symbols come from the uploaded reference per atom "
+                    "(the declared table rides verbatim)."
+                )
+
         for label, *_ in position_rows:
             if label not in species_labels:
                 raise _error(
@@ -800,15 +975,19 @@ class QePwInParser(ParserPlugin):
                     f"declare (species: {', '.join(sorted(species_labels))})",
                     location="ATOMIC_POSITIONS",
                 )
-            symbol = normalize_symbol(label)
-            if symbol is None:
+        if per_atom_symbols is not None:
+            if len(per_atom_symbols) != nat:
                 raise _error(
-                    _MALFORMED_CARD,
-                    f"species label {label!r} is not a plain element symbol; decorated-label "
-                    "resolution (e.g. Fe1 → Fe) lands in M50-S3",
-                    location="ATOMIC_SPECIES",
+                    _UNRESOLVED_SPECIES_LABEL,
+                    f"upload_reference supplies {len(per_atom_symbols)} element symbols for "
+                    f"nat = {nat} atoms; the reference must match the input's atom count — "
+                    "refusing rather than silently trimming",
+                    location="ATOMIC_POSITIONS",
+                    hint=_SPECIES_HINT,
                 )
-            symbols.append(symbol)
+            symbols = list(per_atom_symbols)
+        else:
+            symbols = [label_symbols[label] for label, *_ in position_rows]
 
         # --- the two lattice-parameter spellings (celldm(1..6) / A,B,C,cosAB,cosAC,cosBC)
         # QE's documented contract is "specify either, NOT both" (INPUT_PW &system ibrav);
@@ -899,6 +1078,24 @@ class QePwInParser(ParserPlugin):
         except ValueError as exc:
             raise _error(_MALFORMED_CARD, str(exc), location="card section") from exc
 
+        # --- masses + pseudopotentials (present-with-value, P3; never dropped, P1) -----
+        # QE requires a numeric mass per ATOMIC_SPECIES line (enforced in
+        # ``_parse_atomic_species``), so atoms.masses is always the declared values —
+        # never a fabricated default, and absence stays None (P3).
+        mass_by_label = {label: mass for label, mass, _ in species_rows}
+        masses = np.asarray([mass_by_label[label] for label, *_ in position_rows], dtype=float)
+        pseudopotentials = {label: pseudo for label, _, pseudo in species_rows}
+
+        # --- simulation metadata (recognized context -> simulation.extra, §6.1) --------
+        sim_extra: dict[str, str] = {}
+        for name, keys in _SIMULATION_EXTRA_KEYS.items():
+            entries_for_name = namelists.get(name)
+            if entries_for_name is None:
+                continue
+            for key in keys:
+                if key in entries_for_name:
+                    sim_extra[key] = str(entries_for_name[key])
+
         # --- provenance (the conversions are never silent) ----------------------------
         parse_notes: list[str] = []
         parse_notes.extend(default_unit_notes)
@@ -907,31 +1104,73 @@ class QePwInParser(ParserPlugin):
         parse_notes.append(cell_note)
         parse_notes.append(pos_note)
         parse_notes.append(pbc_note())
+        parse_notes.extend(species_notes)
         parse_notes.append(
-            "ATOMIC_SPECIES labels resolve to element symbols; the mass and pseudopotential "
-            f"columns are carried verbatim in user_metadata.custom_global[{_ATOMIC_SPECIES_KEY!r}] "
-            "(masses promote to atoms.masses in M50-S3)."
+            "Declared ATOMIC_SPECIES masses promote to atoms.masses (present-with-value, "
+            "P3); pseudopotential filenames ride "
+            f"user_metadata.custom_global[{_PSEUDOPOTENTIALS_KEY!r}] (label → filename)."
         )
+        if sim_extra:
+            parse_notes.append(
+                "Recognized simulation context routes to simulation.extra under the Part 2 "
+                f"§6.1 carry-through routing rule: {', '.join(sorted(sim_extra))}."
+            )
         parse_notes.extend(unmapped_notes)
 
         # --- carries (nothing is dropped, P1) -----------------------------------------
         custom_global: dict[str, JsonValue] = {
-            _ATOMIC_SPECIES_KEY: {label: [mass, pseudo] for label, mass, pseudo in species_rows}
+            _ATOMIC_SPECIES_KEY: {label: [mass, pseudo] for label, mass, pseudo in species_rows},
+            _PSEUDOPOTENTIALS_KEY: dict(pseudopotentials),
         }
+        issues: list[ParseIssue] = []
         carried_namelists: dict[str, dict[str, JsonValue]] = {}
         for name, entries in namelists.items():
-            if name == "system":
-                remaining = {
-                    key: value for key, value in entries.items() if key not in _CONSUMED_SYSTEM_KEYS
-                }
-                if remaining:
-                    carried_namelists["system"] = _jsonify_namelist(remaining)
-            elif entries:
-                carried_namelists[name] = _jsonify_namelist(entries)
+            consumed = set(_CONSUMED_SYSTEM_KEYS) if name == "system" else set()
+            consumed |= set(_SIMULATION_EXTRA_KEYS.get(name, frozenset()))
+            remaining = {key: value for key, value in entries.items() if key not in consumed}
+            if remaining:
+                carried_namelists[name] = _jsonify_namelist(remaining)
+                for key in remaining:
+                    issues.append(
+                        ParseIssue(
+                            severity="warning",
+                            code=_UNMAPPED_ENTRY_CARRIED,
+                            message=(
+                                f"&{name} entry {key!r} has no canonical schema field in this "
+                                "milestone; carried verbatim in "
+                                f"user_metadata.custom_global[{_NAMELISTS_KEY!r}] under the "
+                                "Part 2 §6.1 carry-through routing — kept, never dropped (P1)."
+                            ),
+                            location=f"&{name}",
+                        )
+                    )
         if carried_namelists:
             # Recursive JsonValue aliases do not narrow on assignment; the nested dict is
             # structurally JsonValue (string keys, JSON scalars/values throughout).
             custom_global[_NAMELISTS_KEY] = cast(JsonValue, carried_namelists)
+        for entry in unmapped_cards:
+            keyword = str(entry["card"])
+            if keyword == "K_POINTS":
+                wording = (
+                    "card K_POINTS has no canonical k-point model in the schema (M50-S3 "
+                    "states that rather than inventing one); carried verbatim as structured "
+                    "custom data"
+                )
+            else:
+                wording = (
+                    f"card {keyword} has no canonical mapping in this milestone; carried verbatim"
+                )
+            issues.append(
+                ParseIssue(
+                    severity="warning",
+                    code=_UNMAPPED_ENTRY_CARRIED,
+                    message=(
+                        f"{wording} in user_metadata.custom_global[{_UNMAPPED_CARDS_KEY!r}] "
+                        "under the Part 2 §6.1 carry-through routing — kept, never dropped (P1)."
+                    ),
+                    location=f"card {keyword}",
+                )
+            )
         if unmapped_cards:
             custom_global[_UNMAPPED_CARDS_KEY] = cast(JsonValue, unmapped_cards)
 
@@ -946,17 +1185,78 @@ class QePwInParser(ParserPlugin):
             frames=[
                 Frame(
                     index=0,
-                    atoms=AtomsBlock(symbols=symbols, positions=cartesian),
+                    atoms=AtomsBlock(symbols=symbols, positions=cartesian, masses=masses),
                     cell=Cell(lattice_vectors=lattice, pbc=(True, True, True)),
                 )
             ],
             trajectory=None,  # a pw.x input is a single structure, no time axis (§3.2)
-            # The input declares no program string; M50-S3 routes &control metadata.
-            simulation=None,
+            # The input declares no program string (a pw.x input never does); recognized
+            # simulation context routes to simulation.extra (M50-S3, D191).
+            simulation=SimulationMetadata(extra=sim_extra) if sim_extra else None,
             provenance=provenance,
             user_metadata=UserMetadata(custom_global=custom_global),
         )
-        return ParseResult(canonical=canonical, issues=[])
+        return canonical, issues
+
+    def parse_recover(
+        self,
+        stream: BinaryIO,
+        *,
+        filename: str | None,
+        hint: str,
+        choice: str,
+        parameters: dict[str, object],
+        recovery_context: Mapping[str, object] | None = None,
+    ) -> ParseResult:
+        """Re-read under a parse-time recovery choice (Part 4 §3.3; D191).
+
+        The only recoverable need is the shared ``supply_species`` hint (the existing
+        ``missing_species`` scenario — the hazard is identical to the LAMMPS parsers', so
+        one scenario is reused, never a QE-specific one invented): ``species_map`` applies
+        the caller's label→element map, ``upload_reference`` applies the per-atom symbols
+        of a matching reference structure. Either way the re-read goes through the *same*
+        ``_parse_core`` path the ordinary parse uses, and the recovery is recorded with the
+        ``QEIN_SPECIES_SUPPLIED`` warning (never silent, P1).``recovery_context`` is
+        accepted and ignored: a QE input ever needs at most one parse-time recovery at a
+        time (the M48 compound-recovery seam, additive with a default on the ABC).
+        """
+        if hint != _SPECIES_HINT:
+            raise _error(
+                _UNRESOLVED_SPECIES_LABEL,
+                f"parse_recover does not handle hint {hint!r} (this parser's only "
+                f"recoverable need is {_SPECIES_HINT!r}, the existing missing_species "
+                "scenario)",
+            )
+        label_map: Mapping[str, str] | None = None
+        per_atom_symbols: list[str] | None = None
+        if choice == "species_map":
+            label_map = _recover_label_map(parameters)
+            wording = "a label→element species_map preset"
+        elif choice == "upload_reference":
+            per_atom_symbols = _recover_reference_symbols(parameters)
+            wording = "the per-atom symbols of a matching reference structure"
+        else:
+            raise _error(
+                _UNRESOLVED_SPECIES_LABEL,
+                f"supply_species has no choice {choice!r} (offered: species_map, upload_reference)",
+                hint=_SPECIES_HINT,
+            )
+        canonical, issues = self._parse_core(
+            stream,
+            filename=filename,
+            label_map=label_map,
+            per_atom_symbols=per_atom_symbols,
+        )
+        note = ParseIssue(
+            severity="warning",
+            code=_SPECIES_SUPPLIED,
+            message=(
+                "element symbols supplied via recovery choice "
+                f"{choice!r} ({wording}); the ATOMIC_SPECIES labels that resolve to no "
+                "element were completed from the supplied symbols"
+            ),
+        )
+        return ParseResult(canonical=canonical, issues=[*issues, note])
 
     # -- capabilities ------------------------------------------------------------------
 
@@ -968,18 +1268,20 @@ class QePwInParser(ParserPlugin):
             direction="read",
             fields={
                 "atoms.symbols": FieldCapability(
-                    level=CapabilityLevel.PARTIAL,
+                    level=CapabilityLevel.FULL,
                     notes=(
-                        "Plain element species labels resolve in M50-S1; decorated labels "
-                        "(Fe1, O_vac) resolve from M50-S3."
+                        "ATOMIC_SPECIES labels resolve through QE's documented label rule "
+                        "(decorated labels Fe1 → Fe, O_vac → O; each resolution recorded); "
+                        "an unresolvable label refuses QEIN_UNRESOLVED_SPECIES_LABEL, "
+                        "completable through the existing missing_species recovery."
                     ),
                 ),
                 "atoms.positions": full,
                 "atoms.masses": FieldCapability(
-                    level=CapabilityLevel.PARTIAL,
+                    level=CapabilityLevel.FULL,
                     notes=(
-                        "Declared in ATOMIC_SPECIES; carried verbatim in M50-S1, promoted "
-                        "to atoms.masses in M50-S3."
+                        "Declared ATOMIC_SPECIES masses promote to atoms.masses "
+                        "(present-with-value, P3)."
                     ),
                 ),
                 "cell.lattice_vectors": full,
@@ -987,11 +1289,21 @@ class QePwInParser(ParserPlugin):
                     level=CapabilityLevel.FULL,
                     notes="Always (T,T,T) by format definition; a pw.x input carries no PBC.",
                 ),
+                "simulation.extra": FieldCapability(
+                    level=CapabilityLevel.PARTIAL,
+                    notes=(
+                        "Recognized calculation/cutoff-convergence context (calculation, "
+                        "ecutwfc, ecutrho, conv_thr, degauss, smearing, occupations) routes "
+                        "here when declared (the §6.1 routing rule, M50-S3)."
+                    ),
+                ),
                 "user_metadata.custom_global": FieldCapability(
                     level=CapabilityLevel.FULL,
                     notes=(
-                        "The ATOMIC_SPECIES table, unconsumed namelist entries, and "
-                        "unrecognized cards carried verbatim (never dropped, P1)."
+                        "The ATOMIC_SPECIES table, pseudopotential filenames "
+                        "(qe:pseudopotentials), unconsumed namelist entries, and "
+                        "unrecognized cards carried verbatim (never dropped, P1); each "
+                        "carried item emits the QEIN_UNMAPPED_ENTRY_CARRIED warning."
                     ),
                 ),
             },

@@ -12,11 +12,13 @@ from __future__ import annotations
 import io
 import math
 
+import numpy as np
 import pytest
 
 from xtalate.capabilities import Registry
 from xtalate.parsers import builtin_parsers
 from xtalate.parsers.qe_pw_in import make_qe_pw_in_parser
+from xtalate.schema import AtomsBlock, CanonicalObject, Cell, Frame, Provenance
 from xtalate.sdk import ParseError, ParseResult
 
 PARSER = make_qe_pw_in_parser()
@@ -412,18 +414,31 @@ def test_unknown_position_label_refuses() -> None:
     assert "Ni" in exc.value.issues[0].message
 
 
-def test_decorated_label_refuses_naming_s3() -> None:
+def test_decorated_labels_resolve_and_are_recorded() -> None:
+    src = (
+        "&SYSTEM\n   ibrav = 0, nat = 2, ntyp = 2,\n/\n"
+        "ATOMIC_SPECIES\n   Fe1 55.845 fe.pbe.UPF\n   O_vac 15.999 o.pbe.UPF\n"
+        "ATOMIC_POSITIONS {angstrom}\n   Fe1 1.0 2.0 3.0\n   O_vac 3.0 2.0 1.0\n" + _cell_block()
+    )
+    obj = _parse(src).canonical
+    assert obj.frames[0].atoms.symbols == ["Fe", "O"]
+    notes = obj.provenance.parse_notes
+    assert any("Fe1" in note and "Fe" in note for note in notes)
+    assert any("O_vac" in note and "O" in note for note in notes)
+
+
+def test_unresolvable_label_refuses_with_the_missing_species_hint() -> None:
     src = (
         "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n/\n"
-        "ATOMIC_SPECIES\n   Fe1 55.845 fe.pbe.UPF\n"
-        "ATOMIC_POSITIONS {angstrom}\n   Fe1 1.0 2.0 3.0\n" + _cell_block()
+        "ATOMIC_SPECIES\n   Zz 15.999 zz.pbe.UPF\n"
+        "ATOMIC_POSITIONS {angstrom}\n   Zz 1.0 2.0 3.0\n" + _cell_block()
     )
     with pytest.raises(ParseError) as exc:
         _parse(src)
     issue = exc.value.issues[0]
-    assert issue.code == "QEIN_MALFORMED_CARD"
-    assert "Fe1" in issue.message
-    assert "M50-S3" in issue.message
+    assert issue.code == "QEIN_UNRESOLVED_SPECIES_LABEL"
+    assert issue.recovery_hint == "supply_species"
+    assert "Zz" in issue.message
 
 
 def test_empty_file_refuses() -> None:
@@ -469,17 +484,20 @@ def test_encoding_error_names_the_byte_offset() -> None:
 # --- verbatim carries (nothing dropped, P1) ------------------------------------------
 
 
-def test_atomic_species_table_carried_verbatim() -> None:
+def test_atomic_species_table_and_pseudopotentials_carried_verbatim() -> None:
     obj = _parse(
         "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n/\n"
         "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n" + _positions("angstrom") + _cell_block()
     ).canonical
     carried = obj.user_metadata.custom_global["qe_pw_in:atomic_species"]
     assert carried == {"Fe": [55.845, "fe.pbe.UPF"]}
-    assert obj.frames[0].atoms.masses is None  # S1 carries; S3 promotes
+    assert obj.user_metadata.custom_global["qe:pseudopotentials"] == {"Fe": "fe.pbe.UPF"}
+    # M50-S3 promotes the declared mass to atoms.masses (present-with-value, P3).
+    assert obj.frames[0].atoms.masses is not None
+    assert obj.frames[0].atoms.masses.tolist() == [55.845]
 
 
-def test_k_points_card_carried_verbatim() -> None:
+def test_k_points_card_carried_verbatim_with_a_warning() -> None:
     src = (
         _NAKED_CELL
         + _positions("angstrom")
@@ -487,7 +505,14 @@ def test_k_points_card_carried_verbatim() -> None:
         + "K_POINTS {automatic}\n   4 4 4 0 0 0\n"
     )
     result = _parse(src)
-    assert result.issues == []
+    # Kept + reported, never refused (P1): the warning names the card, and the note
+    # states the schema has no canonical k-point model rather than inventing one.
+    codes = [issue.code for issue in result.issues]
+    assert codes == ["QEIN_UNMAPPED_ENTRY_CARRIED"]
+    assert all(issue.severity == "warning" for issue in result.issues)
+    assert any(
+        "no canonical k-point model" in note for note in result.canonical.provenance.parse_notes
+    )
     carried = result.canonical.user_metadata.custom_global["qe_pw_in:unmapped_cards"]
     assert carried == [{"card": "K_POINTS", "unit": "automatic", "lines": ["4 4 4 0 0 0"]}]
 
@@ -498,14 +523,30 @@ def test_occupations_card_carried_verbatim() -> None:
     assert carried == [{"card": "OCCUPATIONS", "unit": None, "lines": ["1.0 1.0"]}]
 
 
-def test_unconsumed_namelist_entries_carried_verbatim() -> None:
+def test_recognized_simulation_context_routes_to_simulation_extra() -> None:
     src = (
-        "&CONTROL\n   calculation = 'scf',\n/\n"
-        "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n   ecutwfc = 30.0,\n/\n"
+        "&CONTROL\n   calculation = 'scf', ecutwfc = 30.0,\n/\n"
+        "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n\n/\n"
         "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n" + _positions("angstrom") + _cell_block()
     )
-    carried = _parse(src).canonical.user_metadata.custom_global["qe_pw_in:namelists"]
-    assert carried == {"control": {"calculation": "scf"}, "system": {"ecutwfc": 30.0}}
+    obj = _parse(src).canonical
+    assert obj.simulation is not None
+    assert obj.simulation.extra == {"calculation": "scf", "ecutwfc": "30.0"}
+    # Promoted here means consumed — no double-report in the namelist carry.
+    assert "qe_pw_in:namelists" not in obj.user_metadata.custom_global
+    assert any("simulation.extra" in note for note in obj.provenance.parse_notes)
+
+
+def test_unrecognized_namelist_entries_carried_verbatim_with_a_warning() -> None:
+    src = (
+        "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n   nspin = 2,\n/\n"
+        "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n" + _positions("angstrom") + _cell_block()
+    )
+    result = _parse(src)
+    assert [i.code for i in result.issues] == ["QEIN_UNMAPPED_ENTRY_CARRIED"]
+    carried = result.canonical.user_metadata.custom_global["qe_pw_in:namelists"]
+    assert carried == {"system": {"nspin": 2}}
+    assert any("nspin" in i.message for i in result.issues)
 
 
 # --- provenance / capabilities / registration ----------------------------------------
@@ -526,7 +567,8 @@ def test_capabilities_declare_read_side_only() -> None:
     assert caps.max_frames == 1
     assert caps.fields["atoms.positions"].level.value == "full"
     assert caps.fields["cell.lattice_vectors"].level.value == "full"
-    assert caps.fields["atoms.symbols"].level.value == "partial"
+    assert caps.fields["atoms.symbols"].level.value == "full"
+    assert caps.fields["atoms.masses"].level.value == "full"
 
 
 def test_registered_parser_only_as_a_staging_state() -> None:
@@ -541,3 +583,193 @@ def test_registered_parser_only_as_a_staging_state() -> None:
     assert matrix.get("qe_pw_in", "read").format_id == "qe_pw_in"
     with pytest.raises(KeyError):
         matrix.get("qe_pw_in", "write")
+
+
+# --- M50-S3: species resolution / masses / carries / recovery -----------------------
+
+
+def _two_species_src(*, labels: tuple[str, str], masses: tuple[str, str]) -> str:
+    return (
+        "&SYSTEM\n   ibrav = 0, nat = 2, ntyp = 2,\n/\n"
+        "ATOMIC_SPECIES\n"
+        f"   {labels[0]} {masses[0]} a.upf\n"
+        f"   {labels[1]} {masses[1]} b.upf\n"
+        "ATOMIC_POSITIONS {angstrom}\n"
+        f"   {labels[0]} 1.0 2.0 3.0\n"
+        f"   {labels[1]} 3.0 2.0 1.0\n" + _cell_block()
+    )
+
+
+def test_masses_promote_present_with_value_never_defaulted() -> None:
+    obj = _parse(_two_species_src(labels=("Fe1", "O_vac"), masses=("55.845", "15.999"))).canonical
+    assert obj.frames[0].atoms.masses is not None
+    assert obj.frames[0].atoms.masses.tolist() == [55.845, 15.999]
+    # The declared pseudopotential filenames ride label → filename, never dropped.
+    assert obj.user_metadata.custom_global["qe:pseudopotentials"] == {
+        "Fe1": "a.upf",
+        "O_vac": "b.upf",
+    }
+
+
+def test_same_label_mass_repeats_per_atom() -> None:
+    src = (
+        "&SYSTEM\n   ibrav = 0, nat = 2, ntyp = 1,\n/\n"
+        "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n"
+        "ATOMIC_POSITIONS {angstrom}\n   Fe 1.0 2.0 3.0\n   Fe 3.0 2.0 1.0\n" + _cell_block()
+    )
+    masses = _parse(src).canonical.frames[0].atoms.masses
+    assert masses is not None
+    assert masses.tolist() == [55.845, 55.845]
+
+
+def test_convergence_and_cutoff_context_routes_to_simulation_extra() -> None:
+    src = (
+        "&CONTROL\n   calculation = 'relax', ecutwfc = 40.0, ecutrho = 320.0,\n/\n"
+        "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n   degauss = 0.01, smearing = 'gaussian',"
+        " occupations = 'smearing',\n/\n"
+        "&ELECTRONS\n   conv_thr = 1.0d-8,\n/\n"
+        "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n" + _positions("angstrom") + _cell_block()
+    )
+    obj = _parse(src).canonical
+    assert obj.simulation is not None
+    assert obj.simulation.extra == {
+        "calculation": "relax",
+        "ecutwfc": "40.0",
+        "ecutrho": "320.0",
+        "degauss": "0.01",
+        "smearing": "gaussian",
+        "occupations": "smearing",
+        "conv_thr": "1e-08",
+    }
+
+
+def test_empty_namelists_produce_no_simulation_metadata() -> None:
+    obj = _parse(_NAKED_CELL + _positions("angstrom") + _cell_block()).canonical
+    assert obj.simulation is None
+
+
+def test_unknown_marker_label_resolves_to_the_shared_marker() -> None:
+    # The shared element table's reserved pseudo-element "X" (unknown-species marker) is a
+    # symbol in that table, so a label whose leading character is X resolves to the marker,
+    # recorded — never silently a real element (D191).
+    obj = _parse(_two_species_src(labels=("Fe", "Xx"), masses=("55.845", "1.008"))).canonical
+    assert obj.frames[0].atoms.symbols == ["Fe", "X"]
+    assert any("Xx" in note and "marker" not in note for note in obj.provenance.parse_notes)
+
+
+def test_recovery_species_map_completes_the_read_and_is_recorded() -> None:
+    src = _two_species_src(labels=("Fe1", "Zz"), masses=("55.845", "15.999"))
+    with pytest.raises(ParseError) as exc:
+        _parse(src)
+    assert exc.value.issues[0].code == "QEIN_UNRESOLVED_SPECIES_LABEL"
+    result = PARSER.parse_recover(
+        io.BytesIO(src.encode()),
+        filename="pw.in",
+        hint="supply_species",
+        choice="species_map",
+        parameters={"species": {"Fe1": "Fe", "Zz": "O"}},
+    )
+    assert result.canonical.frames[0].atoms.symbols == ["Fe", "O"]
+    masses = result.canonical.frames[0].atoms.masses
+    assert masses is not None
+    assert masses.tolist() == [55.845, 15.999]
+    assert any(
+        issue.code == "QEIN_SPECIES_SUPPLIED" and issue.severity == "warning"
+        for issue in result.issues
+    )
+
+
+def test_recovery_species_map_cli_string_form() -> None:
+    src = _two_species_src(labels=("Fe1", "Zz"), masses=("55.845", "15.999"))
+    result = PARSER.parse_recover(
+        io.BytesIO(src.encode()),
+        filename="pw.in",
+        hint="supply_species",
+        choice="species_map",
+        parameters={"species": "Fe1:Fe Zz:O"},
+    )
+    assert result.canonical.frames[0].atoms.symbols == ["Fe", "O"]
+
+
+def test_recovery_map_value_that_is_not_an_element_refuses() -> None:
+    src = _two_species_src(labels=("Fe1", "Zz"), masses=("55.845", "15.999"))
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse_recover(
+            io.BytesIO(src.encode()),
+            filename="pw.in",
+            hint="supply_species",
+            choice="species_map",
+            parameters={"species": {"Fe1": "Fe", "Zz": "NotAnElement"}},
+        )
+    assert exc.value.issues[0].code == "QEIN_UNRESOLVED_SPECIES_LABEL"
+
+
+def _reference_object(symbols: list[str]) -> CanonicalObject:
+    return CanonicalObject(
+        frames=[
+            Frame(
+                index=0,
+                atoms=AtomsBlock(
+                    symbols=symbols, positions=np.asarray([[0.0, 0.0, 0.0] for _ in symbols])
+                ),
+                cell=Cell(
+                    lattice_vectors=np.asarray([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+                    pbc=(True, True, True),
+                ),
+            )
+        ],
+        provenance=Provenance(
+            source_filename=None,
+            source_format="qe_pw_in",
+            original_coordinate_system="cartesian",
+        ),
+    )
+
+
+def test_recovery_upload_reference_applies_per_atom_symbols() -> None:
+    src = _two_species_src(labels=("Fe1", "Zz"), masses=("55.845", "15.999"))
+    reference = _reference_object(["Fe", "O"])
+    result = PARSER.parse_recover(
+        io.BytesIO(src.encode()),
+        filename="pw.in",
+        hint="supply_species",
+        choice="upload_reference",
+        parameters={"reference": reference},
+    )
+    assert result.canonical.frames[0].atoms.symbols == ["Fe", "O"]
+
+
+def test_recovery_upload_reference_count_mismatch_refuses() -> None:
+    src = _two_species_src(labels=("Fe1", "Zz"), masses=("55.845", "15.999"))
+    reference = _reference_object(["Fe"])
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse_recover(
+            io.BytesIO(src.encode()),
+            filename="pw.in",
+            hint="supply_species",
+            choice="upload_reference",
+            parameters={"reference": reference},
+        )
+    assert exc.value.issues[0].code == "QEIN_UNRESOLVED_SPECIES_LABEL"
+
+
+def test_recovery_unknown_hint_or_choice_refuses() -> None:
+    src = _two_species_src(labels=("Fe1", "Zz"), masses=("55.845", "15.999"))
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse_recover(
+            io.BytesIO(src.encode()),
+            filename="pw.in",
+            hint="ambiguous_units",
+            choice="metal",
+            parameters={},
+        )
+    assert exc.value.issues[0].code == "QEIN_UNRESOLVED_SPECIES_LABEL"
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse_recover(
+            io.BytesIO(src.encode()),
+            filename="pw.in",
+            hint="supply_species",
+            choice="not_a_choice",
+            parameters={},
+        )
+    assert "no choice" in exc.value.issues[0].message

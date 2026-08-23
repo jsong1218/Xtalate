@@ -18,7 +18,9 @@
             0.0
           ]
         ],
-        "masses": null,
+        "masses": [
+          55.845
+        ],
         "occupancies": null
       },
       "cell": {
@@ -72,14 +74,15 @@
     "original_coordinate_system": "cartesian",
     "parse_notes": [
       "alat resolved from &system A (angstrom).",
-      "lattice vectors derived from ibrav=1 (cubic P (sc)) per QE's documented conventions (INPUT_PW v7.5 / Modules/latgen.f90): v1=a(1,0,0), v2=a(0,1,0), v3=a(0,0,1); parameter spelling: A,B,C (A = 4.0 Å), alat = 4.0 Å; the derivation is recorded — the explicit vectors are re-expressed, never guessed (P1/D190).",
-      "ATOMIC_POSITIONS {angstrom}: Cartesian positions read as-is (Å).",
+      "lattice vectors derived from ibrav=1 (cubic P (sc)) per QE's documented conventions (INPUT_PW v7.5 / Modules/latgen.f90): v1=a(1,0,0), v2=a(0,1,0), v3=a(0,0,1); parameter spelling: A,B,C (A = 4.0 \u00c5), alat = 4.0 \u00c5; the derivation is recorded \u2014 the explicit vectors are re-expressed, never guessed (P1/D190).",
+      "ATOMIC_POSITIONS {angstrom}: Cartesian positions read as-is (\u00c5).",
       "pbc set to (true,true,true): a pw.x input carries no PBC declaration and QE is always fully periodic (format-defined, not assumed).",
-      "ATOMIC_SPECIES labels resolve to element symbols; the mass and pseudopotential columns are carried verbatim in user_metadata.custom_global['qe_pw_in:atomic_species'] (masses promote to atoms.masses in M50-S3)."
+      "ATOMIC_SPECIES label 'Fe' resolves to element Fe (QE's documented label rule); its declared mass 55.845 u and pseudopotential 'fe.pbe.UPF' are carried verbatim.",
+      "Declared ATOMIC_SPECIES masses promote to atoms.masses (present-with-value, P3); pseudopotential filenames ride user_metadata.custom_global['qe:pseudopotentials'] (label \u2192 filename)."
     ],
     "history": [
       {
-        "timestamp": "2026-08-23T00:01:37Z",
+        "timestamp": "2026-08-23T00:22:04Z",
         "operation": "parse",
         "source_format": "qe_pw_in",
         "target_format": null,
@@ -98,6 +101,9 @@
           55.845,
           "fe.pbe.UPF"
         ]
+      },
+      "qe:pseudopotentials": {
+        "Fe": "fe.pbe.UPF"
       }
     },
     "custom_per_atom": {},
