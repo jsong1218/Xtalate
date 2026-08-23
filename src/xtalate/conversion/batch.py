@@ -27,6 +27,7 @@ merely omitted).
 from __future__ import annotations
 
 import glob as _glob
+import io
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -254,6 +255,11 @@ _LABEL_PATHS: dict[str, str] = {
 #: split-output naming, mirrored here so a batch and a lone convert name files alike).
 _NO_SUFFIX_TARGETS = frozenset({"poscar", "contcar"})
 
+#: The append-capable targets for ``assemble`` in this milestone: a target whose frames are
+#: independent, concatenatable blocks. ASE `.db` (M55) and DeePMD grouping (M56) add theirs;
+#: the gate consults the declared capability first (``max_frames``), then this declared set.
+_ASSEMBLE_TARGETS = frozenset({"extxyz"})
+
 
 def run_batch(
     manifest: BatchManifest,
@@ -292,11 +298,9 @@ def run_batch(
         raise BatchManifestError("manifest sources resolved to no files")
 
     if manifest.output_mode == "assemble":
-        # M54-S2 wires the second output mode (append N sources → one artifact); S1 accepts
-        # only per-file, and a manifest asking for assemble is a clear refusal, never a silent
-        # fallback to per-file.
-        raise BatchManifestError(
-            "assemble output mode is not yet available (M54-S2); use output_mode: per-file"
+        _assert_assemble_capable(registry, target)
+        return _run_assemble(
+            manifest, resolved, shared_choices, registry, output=output, fail_fast=fail_fast
         )
     return _run_per_file(
         manifest, resolved, shared_choices, registry, output=output, fail_fast=fail_fast
@@ -320,6 +324,26 @@ def _resolve_sources(manifest: BatchManifest) -> list[SourceEntry]:
                 raise BatchManifestError(f"source {entry.path!r} does not exist")
             resolved.append(entry)
     return resolved
+
+
+def _assert_assemble_capable(registry: Registry, target: str) -> None:
+    """The ``assemble`` gate: the target must be able to hold N frames (a declared capability)
+    **and** be a member of the append-capable set (concatenation of independent frame blocks).
+    Declared facts first — ``max_frames`` — then the milestone's declared set; never a silent
+    fallback to per-file."""
+    caps = registry.capability_matrix().get(target, "write")
+    if caps.max_frames is not None:
+        raise BatchManifestError(
+            f"assemble is not available for target {target!r}: it declares max_frames="
+            f"{caps.max_frames}, so N sources cannot be appended into one artifact "
+            "(use output_mode: per-file)"
+        )
+    if target not in _ASSEMBLE_TARGETS:
+        raise BatchManifestError(
+            f"assemble is not available for target {target!r} in this milestone: only "
+            f"{', '.join(sorted(_ASSEMBLE_TARGETS))} is append-capable "
+            "(ASE .db and DeePMD grouping land in later milestones; use output_mode: per-file)"
+        )
 
 
 def _run_per_file(
@@ -351,14 +375,54 @@ def _run_per_file(
     return _assemble_report(manifest, resolved, entries, note=None)
 
 
-# The reported per-file entry plus the raw outputs the orchestrator needs while the run is in
-# flight — deliberately **not** a report model: the raw bytes must never leak into the
+# The reported per-file entry plus the raw outputs/atom count the orchestrator needs while the
+# run is in flight — deliberately **not** a report model: the raw bytes must never leak into the
 # serialized ``BatchReport`` (the report embeds the existing report models verbatim and nothing
 # else), so ``_assemble_report`` drops this holder and keeps only its ``entry``.
 @dataclass
 class _Outcome:
     entry: BatchEntry
     output_bytes: list[bytes] = field(default_factory=list)
+    canonical_atom_count: int | None = None
+
+
+def _run_assemble(
+    manifest: BatchManifest,
+    resolved: list[SourceEntry],
+    shared_choices: dict[str, dict[str, Any]],
+    registry: Registry,
+    *,
+    output: str | Path | None,
+    fail_fast: bool,
+) -> BatchReport:
+    """The ``assemble`` output mode: N sources → **one** multi-frame artifact (extXYZ, the one
+    append-capable target this milestone lands). Assembling is **concatenation of already-valid
+    per-source outputs** — each file converts through the ordinary path, its output bytes become
+    its segment of the assembled file in manifest order; no new exporter, no silent transform.
+
+    **Per-contribution validation** stays per source: each entry's ``ValidationReport`` is the
+    re-parse-and-diff of *that source's own segment* (its output bytes) against its own Canonical
+    Object — exactly what the per-file conversion validated, so the report keeps its meaning for
+    every file. The assembled *whole* is never the validation unit: a mixed-composition artifact
+    is a valid MLIP training file but **not** one Canonical Object (Part 2 §3.2), which the
+    dataset-level note states rather than hiding."""
+    engine = ConversionEngine(registry)
+    entries: list[_Outcome] = []
+    segments: list[bytes] = []
+    atom_counts: dict[str, int] = {}
+    for entry in resolved:
+        outcome = _convert_one(engine, registry, entry, manifest, shared_choices)
+        entries.append(outcome)
+        if outcome.entry.status == "converted":
+            segments.extend(outcome.output_bytes)
+            if outcome.canonical_atom_count is not None:
+                atom_counts[entry.path] = outcome.canonical_atom_count
+        if fail_fast and outcome.entry.status != "converted":
+            break
+    note = _assembled_note(registry, manifest.target, segments, atom_counts)
+    if output is not None and segments:
+        Path(output).write_bytes(b"".join(segments))
+    return _assemble_report(manifest, resolved, entries, note=note)
 
 
 def _convert_one(
@@ -446,6 +510,11 @@ def _convert_one(
             validation=result.validation,
         ),
         output_bytes=bytes_out,
+        canonical_atom_count=(
+            len(result.canonical_out.frames[0].atoms.symbols)
+            if result.canonical_out is not None
+            else None
+        ),
     )
 
 
@@ -481,6 +550,39 @@ def _write_per_file_outputs(
     for i, chunk in enumerate(outcome.output_bytes):
         (split_dir / f"frame_{i:04d}{suffix}").write_bytes(chunk)
     return True
+
+
+def _assembled_note(
+    registry: Registry, target: str, segments: list[bytes], atom_counts: dict[str, int]
+) -> str | None:
+    """The dataset-level variable-N statement. When the assembled sources differ in atom count,
+    the one artifact has variable N across frames and its single-object re-parse refuses via the
+    **existing** ``EXTXYZ_VARIABLE_ATOM_COUNT`` — the note is a property of the assembled file,
+    never a per-file loss, and the case joins the v2.0 variable-N evidence stream (counted, not
+    anecdotal: the committed evidence fixture in ``tests/conversion/batch/evidence/`` pins the
+    refusal)."""
+    if not segments:
+        return None
+    distinct = sorted({n for n in atom_counts.values() if n is not None})
+    if len(distinct) <= 1:
+        return None
+    parser = registry.get_parser(target)
+    try:
+        parser.parse(io.BytesIO(b"".join(segments)), filename="assembled.extxyz")
+        return None  # surprisingly one object: no variable-N statement to make
+    except ParseError as exc:
+        code = exc.issues[0].code if exc.issues else ""
+        if code == "EXTXYZ_VARIABLE_ATOM_COUNT":
+            counts = ", ".join(f"{p}: {n}" for p, n in atom_counts.items())
+            return (
+                f"assembled {target} has variable atom counts across frames ({counts}); the "
+                f"single-object re-parse of the whole file refuses EXTXYZ_VARIABLE_ATOM_COUNT "
+                f"(Part 2 §3.2) — the file is a valid MLIP training set, not one Canonical "
+                f"Object. Per-contribution validations stay green; the case is recorded into "
+                f"the v2.0 variable-N evidence stream "
+                f"(tests/conversion/batch/evidence/v2-variable-n-assemble)."
+            )
+    return None  # a non-variable-N re-parse failure would be an assembly bug; the suite pins it
 
 
 def _assemble_report(

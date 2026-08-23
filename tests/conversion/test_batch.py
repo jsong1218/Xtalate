@@ -11,6 +11,7 @@ model's ``extra="forbid"`` (the scope refusal, enforced not merely omitted).
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from typing import Any
@@ -366,12 +367,105 @@ def test_malformed_yaml_is_a_manifest_error(tmp_path: Path) -> None:
         load_manifest(manifest)
 
 
-# --- S1 delivers per-file mode only (assemble is M54-S2) ---------------------------------------
+# --- assemble mode (M54-S2): N sources → one artifact + per-contribution validation -----------
 
 
-def test_assemble_mode_is_not_yet_available_in_s1() -> None:
-    with pytest.raises(BatchManifestError):
+def _other_triatomic(tmp_path: Path) -> Path:
+    other = tmp_path / "other.xyz"
+    other.write_text("3\nother\nH 0 0 0\nH 0 0 1\nO 0 1 0\n")
+    return other
+
+
+def _frames_of(reg: Registry, path: Path) -> list[tuple[list[str], list[list[float]]]]:
+    """(species, positions) per frame, for frame-order assertions against the assembled file."""
+    from xtalate.sdk.plugins import ParserPlugin  # noqa: F401  (typing only)
+
+    parser = reg.get_parser("extxyz")
+    canonical = parser.parse(io.BytesIO(path.read_bytes()), filename=path.name).canonical
+    return [(list(f.atoms.symbols), [list(p) for p in f.atoms.positions]) for f in canonical.frames]
+
+
+def test_assemble_same_composition_produces_one_validated_artifact(tmp_path: Path) -> None:
+    # N sources of one composition → one extXYZ whose per-contribution validations are all green
+    # and which *does* re-parse as one object, in manifest order.
+    other = _other_triatomic(tmp_path)
+    reg = _registry()
+    artifact = tmp_path / "train.extxyz"
+    report = run_batch(
+        BatchManifest(sources=[str(WATER), str(other)], target="extxyz", output_mode="assemble"),
+        reg,
+        output=artifact,
+    )
+    assert report.tallies.converted == 2
+    assert [e.status for e in report.entries] == ["converted", "converted"]
+    assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
+    assert report.note is None  # constant-N across sources: no variable-N statement
+    assert artifact.is_file()
+
+    # The one artifact re-parses as one object with frames in manifest order: water's two frames
+    # (3 atoms each) then the other source's one frame (3 atoms) — constant-N throughout.
+    assembled = _frames_of(reg, artifact)
+    assert len(assembled) == 3
+    assert assembled == _frames_of(reg, WATER) + _frames_of(reg, other)
+
+
+def test_assemble_mixed_composition_records_dataset_level_variable_n_note(tmp_path: Path) -> None:
+    # water (3 atoms) + co-in-cell (2 atoms): the assembled file has variable N across frames.
+    # Per-contribution validations stay green; the single-object re-parse refuses the *existing*
+    # EXTXYZ_VARIABLE_ATOM_COUNT, stated as a dataset-level note — never a per-file loss.
+    reg = _registry()
+    artifact = tmp_path / "mixed.extxyz"
+    report = run_batch(
+        BatchManifest(
+            sources=[str(WATER), str(CO_IN_CELL)],
+            target="extxyz",
+            output_mode="assemble",
+        ),
+        reg,
+        output=artifact,
+    )
+    assert [e.status for e in report.entries] == ["converted", "converted"]
+    assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
+    assert report.note is not None
+    assert "EXTXYZ_VARIABLE_ATOM_COUNT" in report.note
+    assert f"{WATER}: 3" in report.note and f"{CO_IN_CELL}: 2" in report.note
+
+    # The whole-file re-parse refuses exactly as the note says (the existing parser behaviour).
+    parser = reg.get_parser("extxyz")
+    from xtalate.sdk import ParseError
+
+    with pytest.raises(ParseError) as excinfo:
+        parser.parse(io.BytesIO(artifact.read_bytes()), filename="mixed.extxyz")
+    assert excinfo.value.issues[0].code == "EXTXYZ_VARIABLE_ATOM_COUNT"
+
+
+def test_assemble_non_append_capable_target_refuses_clearly() -> None:
+    # A single-structure target (declared max_frames=1) and a multi-frame target outside the
+    # append-capable set both refuse — never a silent fallback to per-file.
+    with pytest.raises(BatchManifestError, match="max_frames=1"):
         run_batch(
-            BatchManifest(sources=[str(WATER)], target="extxyz", output_mode="assemble"),
+            BatchManifest(sources=[str(WATER)], target="poscar", output_mode="assemble"),
             _registry(),
         )
+    with pytest.raises(BatchManifestError, match="append-capable"):
+        run_batch(
+            BatchManifest(sources=[str(WATER)], target="xdatcar", output_mode="assemble"),
+            _registry(),
+        )
+
+
+def test_assemble_keeps_refused_and_failed_segments_out(tmp_path: Path) -> None:
+    # A refusal (stress carry without a preset) never enters the assembled artifact; its entry is
+    # still recorded, and the artifact holds only the converted sources' frames.
+    reg = _registry()
+    artifact = tmp_path / "partial.extxyz"
+    report = run_batch(
+        BatchManifest(sources=[str(WATER), str(MLIP)], target="extxyz", output_mode="assemble"),
+        reg,
+        output=artifact,
+    )
+    assert [e.status for e in report.entries] == ["converted", "refused"]
+    assert report.tallies.refused == 1
+    # Only water's 2 frames are in the artifact; constant-N, so no variable-N note.
+    assert len(_frames_of(reg, artifact)) == 2
+    assert report.note is None
