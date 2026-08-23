@@ -250,6 +250,47 @@ def test_multi_frame_routes_through_frame_selection() -> None:
     assert "nat = 3" in result.output.decode("utf-8")
 
 
+# --- value-level refusals (unrepresentable, D179) ---------------------------------------------
+
+
+def test_one_element_with_two_masses_is_unrepresentable() -> None:
+    """A pw.x ``ATOMIC_SPECIES`` table is one row per species label with a single mass, so one
+    element carrying two masses (an isotope distinction) cannot be written without silently
+    flattening it — the value-level gate refuses rather than collapses (P1)."""
+    obj = _load("carry-kpoints")  # two atoms: Fe, O
+    frame = obj.frames[0]
+    # Make both atoms Fe with different masses — a clash the per-label table cannot express.
+    atoms = frame.atoms.model_copy(update={"symbols": ["Fe", "Fe"], "masses": [55.845, 57.0]})
+    clashed = obj.model_copy(update={"frames": [frame.model_copy(update={"atoms": atoms})]})
+    reason = make_qe_pw_in_exporter().unrepresentable(clashed)
+    assert reason is not None
+    assert "more than one mass" in reason
+    assert "'Fe'" in reason
+
+
+def test_two_labels_resolving_to_one_element_is_unrepresentable() -> None:
+    """The parser resolves every ``ATOMIC_SPECIES`` label to an element for ``atoms.symbols``, so
+    two labels that resolve to one element (``Fe`` and ``Fe1``) cannot be told apart on the way
+    back out — refused rather than silently merged (P1)."""
+    obj = _load("carry-kpoints")
+    existing = obj.user_metadata.custom_global[_ATOMIC_SPECIES_KEY]
+    assert isinstance(existing, dict)
+    # Add a second Fe label (e.g. an antiferromagnetic starting-magnetization split) the parser
+    # collapses into the single symbol "Fe".
+    table: dict[str, Any] = {**existing, "Fe1": [55.845, "fe.pbe.UPF"]}
+    cg: dict[str, Any] = {**obj.user_metadata.custom_global, _ATOMIC_SPECIES_KEY: table}
+    um = obj.user_metadata.model_copy(update={"custom_global": cg})
+    reason = make_qe_pw_in_exporter().unrepresentable(obj.model_copy(update={"user_metadata": um}))
+    assert reason is not None
+    assert "resolve to element 'Fe'" in reason
+
+
+def test_representable_qe_object_returns_none() -> None:
+    """The clean golden — one label per element, one mass per element — is representable: the
+    value-level gate passes it through so a normal conversion is never spuriously refused."""
+    assert make_qe_pw_in_exporter().unrepresentable(_load("carry-kpoints")) is None
+
+
 # --- capabilities ------------------------------------------------------------------------------
 
 
