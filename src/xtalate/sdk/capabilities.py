@@ -114,6 +114,17 @@ class FormatCapabilities(BaseModel):
     stress_output_convention: Literal["tension_positive", "ase_sign_convention"] = (
         "tension_positive"
     )
+    # Whether this exporter can combine **N Canonical Objects into one native container** — the
+    # batch ``assemble`` output mode (write side; v1.5 M55-S4, DECISIONS.md D208). An
+    # assemble-capable exporter overrides ``ExporterPlugin.assemble`` and declares it here; the
+    # batch layer reads this flag (not a hardcoded target list) to admit or refuse ``output_mode:
+    # assemble`` for a target, so a new dataset container — ``ase_db`` here, DeePMD grouping at
+    # M56 — rides the same seam without a batch-layer edit (P6). Orthogonal to ``max_frames``:
+    # extXYZ assembles by concatenating multi-frame blocks (``max_frames=None``), ``ase_db`` by
+    # appending one row per contribution (``max_frames=1``) — both hold N structures in one file.
+    # False (the default) = the format's outputs cannot be combined into one dataset container, so
+    # ``assemble`` is refused with the caller directed to ``output_mode: per-file``.
+    assemble_capable: bool = False
     native_coordinate_system: Literal["cartesian", "fractional", "both"]
     lossy_notes: list[str] = Field(default_factory=list)  # Format-level caveats -> Warnings.
     # Declared decimal precision per canonical field path (write side) — the machine-readable

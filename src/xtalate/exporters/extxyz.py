@@ -30,6 +30,7 @@ from ase.stress import voigt_6_to_full_3x3_stress
 
 from xtalate.schema import CanonicalObject, Frame
 from xtalate.sdk import (
+    AssembleContribution,
     CapabilityLevel,
     ExporterPlugin,
     ExporterWarning,
@@ -96,6 +97,19 @@ class ExtxyzExporter(ExporterPlugin):
             buf = io.StringIO()
             ase_write(buf, atoms, format="extxyz")
             stream.write(buf.getvalue().encode("utf-8"))
+
+    def assemble(self, contributions: list[AssembleContribution], stream: BinaryIO) -> None:
+        """Combine N per-source extXYZ conversions into one multi-frame training file (M55-S4).
+
+        extXYZ has no global header or footer — ASE serialises every frame as an independent block
+        (count line, comment, atom rows) — so assembling is **concatenation of the per-source
+        output bytes verbatim**, in manifest/fan-out order. This is byte-for-byte the
+        ``b\"\".join`` of the per-source outputs the batch produced (M54 parity), so the extXYZ
+        assemble artifact is unchanged from before the seam was generalised; it reuses the exact
+        bytes each source's ordinary conversion already wrote rather than re-exporting."""
+        for contribution in contributions:
+            for chunk in contribution.output:
+                stream.write(chunk)
 
     def _atoms_from(
         self,
@@ -223,6 +237,9 @@ class ExtxyzExporter(ExporterPlugin):
                 "user_metadata.custom_per_atom": _WRITABLE_PER_ATOM_PATTERN
             },
             max_frames=None,
+            # N per-source conversions combine into one multi-frame training file by concatenating
+            # the independent per-frame blocks (M55-S4 batch assemble seam; DECISIONS.md D208).
+            assemble_capable=True,
             required_fields=["atoms.symbols", "atoms.positions"],
             allows_open_boundaries=True,  # extXYZ writes pbc=; an open cell is expressible.
             native_coordinate_system="cartesian",

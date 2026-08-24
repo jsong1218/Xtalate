@@ -272,7 +272,7 @@ def test_batch_and_file_are_mutually_exclusive(tmp_path: Path) -> None:
 
 
 def test_batch_manifest_errors_exit_usage(tmp_path: Path) -> None:
-    # An unknown target and a non-append-capable assemble are manifest errors: exit 1, clean.
+    # An unknown target and a non-assemble-capable assemble are manifest errors: exit 1, clean.
     bad_target = _manifest(
         tmp_path,
         body=f"sources:\n  - {WATER}\ntarget: not-a-format\n",

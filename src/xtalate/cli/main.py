@@ -231,7 +231,7 @@ def _cmd_convert_batch(args: argparse.Namespace, registry: Registry) -> int:
     :func:`run_batch`, then emit — the ``BatchReport`` verbatim under ``--json``, a human view
     otherwise. The batch exit code is the **worst per-file outcome** under the existing 0–5
     vocabulary (reusing :func:`_convert_exit_code` per entry); a malformed manifest, a
-    manifest-level refusal (unknown target, empty sources, a non-append-capable assemble), or a
+    manifest-level refusal (unknown target, empty sources, a non-assemble-capable assemble), or a
     conflicting per-file flag is a usage error (exit 1).
 
     The CLI adds **no batch logic**: every manifest decision, failure-isolation rule, and

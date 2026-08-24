@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, BinaryIO
 
 from xtalate.schema import CanonicalObject
 from xtalate.sdk.capabilities import FormatCapabilities
-from xtalate.sdk.results import ExporterWarning, ParseResult
+from xtalate.sdk.results import AssembleContribution, ExporterWarning, ParseResult
 
 if TYPE_CHECKING:
     from xtalate.sdk.streaming import FrameStream, StreamFrame, StreamHeader
@@ -188,6 +188,29 @@ class ExporterPlugin(ABC):
         (like ``atom_permutation``); existing/third-party exporters keep the self-describing
         default."""
         return None
+
+    def assemble(self, contributions: list[AssembleContribution], stream: BinaryIO) -> None:
+        """Combine N already-converted sources into **one** native container — the batch
+        ``assemble`` output mode (v1.5 M55-S4, DECISIONS.md D208). Optional and additive to the
+        frozen ``export`` contract (like ``export_stream`` and ``atom_permutation``); an exporter
+        overrides it *and* declares ``FormatCapabilities.assemble_capable = True`` together, so the
+        batch layer can admit ``output_mode: assemble`` for this target from the **declared** flag
+        rather than a hardcoded target list (P6 — a new dataset container rides this seam without a
+        batch-layer edit).
+
+        Each :class:`AssembleContribution` carries both the write-plan-filtered ``canonical`` object
+        the engine exported for that source and the exact per-source ``output`` bytes it produced,
+        in manifest/fan-out order; the exporter combines by whichever its format uses — extXYZ
+        concatenates the ``output`` bytes (byte-identical to ``b\"\".join`` of the per-source
+        outputs), ``ase_db`` rebuilds one row per ``canonical`` object into one database. It writes
+        exactly what it is handed and fabricates nothing (Part 4 §1 rule 2), identically to
+        ``export``; **per-contribution validation stays per source** (each source's own output was
+        already validated on the ordinary path), so the assembled whole is never the validation
+        unit. The default refuses; ``assemble_capable`` gates whether it is ever called."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement assemble; it is not an assemble-capable "
+            "target (declare assemble_capable and override assemble to combine N objects)"
+        )
 
     def supports_streaming(self) -> bool:
         """Whether this exporter implements ``export_stream`` (M12). Default ``False`` marks a

@@ -48,6 +48,7 @@ from ase.stress import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
 
 from xtalate.schema import CanonicalObject, Frame
 from xtalate.sdk import (
+    AssembleContribution,
     CapabilityLevel,
     ExporterPlugin,
     ExporterWarning,
@@ -80,6 +81,42 @@ class AseDbExporter(ExporterPlugin):
     version = "0.1.0"
 
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
+        atoms, key_value_pairs, data = self._row_from(canonical)
+        # ase.db opens a database only by real path, so write to a temp .db and copy its bytes into
+        # the caller's stream (the parser spools the same way for the same reason).
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out.db"
+            db = connect(path, use_lock_file=False)
+            db.write(atoms, key_value_pairs=key_value_pairs, data=data or None)
+            stream.write(path.read_bytes())
+
+    def assemble(self, contributions: list[AssembleContribution], stream: BinaryIO) -> None:
+        """Combine N per-source conversions into **one** multi-row ASE ``.db`` dataset (M55-S4).
+
+        A ``.db`` is a SQLite database of independent rows, so — unlike extXYZ — its per-source
+        outputs cannot be byte-concatenated; the assemble rebuilds each row from the contribution's
+        own write-plan-filtered Canonical Object (the object the engine exported and already
+        validated on the ordinary path), appending them into one database in manifest/fan-out
+        order. Each contribution is a single-structure object (a per-source or fanned per-row
+        conversion — a ``.db`` exporter refuses a multi-frame object, so every contribution is one
+        row), written exactly as ``export`` writes the single-file row, so a row in the assembled
+        dataset is content-identical to the same source converted alone (SQLite rows are
+        independent; per-contribution validation keeps its meaning). ``ase.db`` opens a database
+        only by real path, so the N rows go to one temp ``.db`` whose bytes are copied out."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out.db"
+            db = connect(path, use_lock_file=False)
+            for contribution in contributions:
+                atoms, key_value_pairs, data = self._row_from(contribution.canonical)
+                db.write(atoms, key_value_pairs=key_value_pairs, data=data or None)
+            stream.write(path.read_bytes())
+
+    def _row_from(self, canonical: CanonicalObject) -> tuple[Atoms, dict[str, Any], dict[str, Any]]:
+        """Build one ``.db`` row — the ASE ``Atoms`` plus its ``key_value_pairs`` and ``data`` blob
+        — from a single-structure Canonical Object. Shared by the single-file ``export`` and the
+        batch ``assemble`` (one row per contribution) so the two paths write a row identically. A
+        multi-frame object is refused: a ``.db`` written on either path holds one structure per row
+        (a dataset is aggregation, never a trajectory; Part 2 §3.2)."""
         if len(canonical.frames) != 1:
             raise ValueError(
                 "an ASE database written on the single-file path holds one structure; reduce the "
@@ -97,14 +134,7 @@ class AseDbExporter(ExporterPlugin):
         }
         atoms = self._atoms_from(frame, per_frame_custom)
         key_value_pairs, data = self._row_metadata(canonical)
-
-        # ase.db opens a database only by real path, so write to a temp .db and copy its bytes into
-        # the caller's stream (the parser spools the same way for the same reason).
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "out.db"
-            db = connect(path, use_lock_file=False)
-            db.write(atoms, key_value_pairs=key_value_pairs, data=data or None)
-            stream.write(path.read_bytes())
+        return atoms, key_value_pairs, data
 
     def _atoms_from(self, frame: Frame, per_frame_custom: dict[str, Any]) -> Atoms:
         """Rebuild one ASE ``Atoms`` from a canonical frame plus this frame's per-frame carry — the
@@ -268,6 +298,10 @@ class AseDbExporter(ExporterPlugin):
             # states the honest set; every other per-frame key is `removed`.
             writable_custom_keys={"user_metadata.custom_per_frame": [_STRESS_KEY]},
             max_frames=1,  # one row → one structure (a trajectory needs frame_selection first)
+            # N single-structure sources combine into one multi-row dataset by appending one row
+            # per contribution (M55-S4 batch assemble seam; DECISIONS.md D208). Orthogonal to
+            # max_frames=1: each row is one structure, the container holds N of them.
+            assemble_capable=True,
             required_fields=["atoms.symbols", "atoms.positions"],
             allows_open_boundaries=True,  # ASE writes pbc; an open cell is expressible.
             representable_constraint_kinds=["fixed_atoms"],

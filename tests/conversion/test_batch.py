@@ -441,19 +441,17 @@ def test_assemble_mixed_composition_records_dataset_level_variable_n_note(tmp_pa
     assert excinfo.value.issues[0].code == "EXTXYZ_VARIABLE_ATOM_COUNT"
 
 
-def test_assemble_non_append_capable_target_refuses_clearly() -> None:
-    # A single-structure target (declared max_frames=1) and a multi-frame target outside the
-    # append-capable set both refuse — never a silent fallback to per-file.
-    with pytest.raises(BatchManifestError, match="max_frames=1"):
-        run_batch(
-            BatchManifest(sources=[str(WATER)], target="poscar", output_mode="assemble"),
-            _registry(),
-        )
-    with pytest.raises(BatchManifestError, match="append-capable"):
-        run_batch(
-            BatchManifest(sources=[str(WATER)], target="xdatcar", output_mode="assemble"),
-            _registry(),
-        )
+def test_assemble_non_assemble_capable_target_refuses_clearly() -> None:
+    # The gate is a *declared* capability (M55-S4/D208), not a hardcoded set: a single-structure
+    # target (poscar) and a multi-frame trajectory that never declared assemble (xdatcar) both
+    # refuse — assemble is admitted only for a target whose exporter declares it can combine N
+    # objects into one container. Never a silent fallback to per-file.
+    for target in ("poscar", "xdatcar"):
+        with pytest.raises(BatchManifestError, match="not an assemble-capable target"):
+            run_batch(
+                BatchManifest(sources=[str(WATER)], target=target, output_mode="assemble"),
+                _registry(),
+            )
 
 
 def test_assemble_keeps_refused_and_failed_segments_out(tmp_path: Path) -> None:
@@ -634,3 +632,150 @@ def test_fail_fast_stops_mid_container(tmp_path: Path) -> None:
     )
     assert [e.source for e in report.entries] == [f"{db}::row=0"]
     assert report.entries[0].status == "refused"
+
+
+# --- batch output assemble seam: the declared exporter capability (M55-S4, D208) --------------
+#
+# `assemble` combines N converted sources into one dataset container via the target's *declared*
+# assemble capability (FormatCapabilities.assemble_capable + ExporterPlugin.assemble), never a
+# hardcoded target list: extXYZ concatenates the per-source bytes (byte-identical to M54), ASE
+# `.db` appends one row per object — so `extxyz <-> ase_db` dataset translation is symmetric.
+
+
+def _plain_xyz(tmp_path: Path, name: str, body: str) -> Path:
+    path = tmp_path / name
+    path.write_text(body)
+    return path
+
+
+def _db_rows(path: Path) -> list[Atoms]:
+    """The structures in an assembled `.db`, in row order — read straight through ASE, so the
+    assertion is about the real database file the assemble wrote, not a canonical re-read."""
+    db = connect(str(path), use_lock_file=False)
+    return [row.toatoms() for row in db.select()]
+
+
+def test_extxyz_assemble_is_byte_identical_to_joined_per_source_outputs(tmp_path: Path) -> None:
+    # The retrofit pins M54 parity: generalising the assemble to an exporter method must not move a
+    # byte. The extXYZ assemble artifact is byte-for-byte the b"".join of each source's ordinary
+    # single-file output — the exact concatenation M54 wrote.
+    reg = _registry()
+    other = _other_triatomic(tmp_path)
+    sources = [WATER, other, CO_IN_CELL]
+
+    def _standalone_output(path: Path) -> bytes:
+        data = path.read_bytes()
+        parsed = parse_with_recovery(reg, data, filename=path.name)
+        result = ConversionEngine(reg).convert(
+            parsed.canonical,
+            source_format_id=parsed.format_id,
+            target_format_id="extxyz",
+            source_filename=path.name,
+            target_filename=f"{path.stem}.extxyz",
+            parse_recovery=parsed,
+        )
+        assert result.output is not None
+        return result.output
+
+    expected = b"".join(_standalone_output(p) for p in sources)
+    artifact = tmp_path / "train.extxyz"
+    run_batch(
+        BatchManifest(sources=[str(p) for p in sources], target="extxyz", output_mode="assemble"),
+        reg,
+        output=artifact,
+    )
+    assert artifact.read_bytes() == expected
+
+
+def test_assemble_to_ase_db_appends_one_row_per_source(tmp_path: Path) -> None:
+    # `.db` is the second assemble-capable target: N single-structure sources → one N-row .db. A
+    # database of independent rows cannot be byte-concatenated, so the exporter rebuilds each row
+    # from the retained Canonical Object. Per-contribution validations stay green (each row was
+    # validated on the ordinary path); the assembled .db is a real N-row database in source order.
+    reg = _registry()
+    a = _plain_xyz(tmp_path, "a.xyz", "2\na\nC 0 0 0\nO 1.13 0 0\n")
+    b = _plain_xyz(tmp_path, "b.xyz", "3\nb\nH 0 0 0\nH 0.96 0 0\nO 0 0.96 0\n")
+    artifact = tmp_path / "dataset.db"
+    report = run_batch(
+        BatchManifest(sources=[str(a), str(b)], target="ase_db", output_mode="assemble"),
+        reg,
+        output=artifact,
+    )
+    assert [e.status for e in report.entries] == ["converted", "converted"]
+    assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
+    rows = _db_rows(artifact)
+    assert len(rows) == 2
+    assert list(rows[0].get_chemical_symbols()) == ["C", "O"]
+    assert list(rows[1].get_chemical_symbols()) == ["H", "H", "O"]
+    # The assembled multi-row .db is itself a dataset: fed back as a single-file source it refuses
+    # ASEDB_MULTIPLE_ROWS naming its two rows (the S1 refusal), never one silently-flattened object.
+    from xtalate.sdk import ParseError
+
+    with pytest.raises(ParseError) as excinfo:
+        parse_with_recovery(reg, artifact.read_bytes(), filename=artifact.name)
+    issue = next(i for i in excinfo.value.issues if i.code == "ASEDB_MULTIPLE_ROWS")
+    assert issue.location == "rows 2"
+
+
+def test_assemble_multi_row_db_source_into_one_ase_db_dataset(tmp_path: Path) -> None:
+    # A multi-row .db source fans out (S3) and re-assembles into one .db (S4): dataset → dataset,
+    # the rows preserved in order with their scientific content intact and every validation green.
+    reg = _registry()
+    source_db = _multi_row_db(tmp_path, _co(), _water(), _co())
+    artifact = tmp_path / "regrouped.db"
+    report = run_batch(
+        BatchManifest(sources=[str(source_db)], target="ase_db", output_mode="assemble"),
+        reg,
+        output=artifact,
+    )
+    assert [e.source for e in report.entries] == [
+        f"{source_db}::row=0",
+        f"{source_db}::row=1",
+        f"{source_db}::row=2",
+    ]
+    assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
+    rows = _db_rows(artifact)
+    assert [list(r.get_chemical_symbols()) for r in rows] == [
+        ["C", "O"],
+        ["H", "H", "O"],
+        ["C", "O"],
+    ]
+    # A multi-row .db has variable-N rows natively — its re-parse is the ordinary
+    # ASEDB_MULTIPLE_ROWS dataset refusal, not the extXYZ single-object variable-N condition — so
+    # only the fan-out statement is noted, never a spurious variable-N claim.
+    assert report.note is not None
+    assert "per-row conversions" in report.note
+    assert "variable atom counts" not in report.note
+
+
+def test_extxyz_and_ase_db_assemble_are_symmetric(tmp_path: Path) -> None:
+    # `extxyz <-> ase_db` dataset translation is symmetric: two structures assemble into a 2-row
+    # .db, and that .db fed back through --batch assemble to extXYZ fans its rows out into a 2-frame
+    # training file — the same two structures, round-tripped through both dataset containers.
+    reg = _registry()
+    a = _plain_xyz(tmp_path, "a.xyz", "2\na\nC 0 0 0\nO 1.13 0 0\n")
+    b = _plain_xyz(tmp_path, "b.xyz", "3\nb\nH 0 0 0\nH 0.96 0 0\nO 0 0.96 0\n")
+    db_artifact = tmp_path / "dataset.db"
+    run_batch(
+        BatchManifest(sources=[str(a), str(b)], target="ase_db", output_mode="assemble"),
+        reg,
+        output=db_artifact,
+    )
+    xyz_artifact = tmp_path / "back.extxyz"
+    report = run_batch(
+        BatchManifest(sources=[str(db_artifact)], target="extxyz", output_mode="assemble"),
+        reg,
+        output=xyz_artifact,
+    )
+    assert [e.source for e in report.entries] == [
+        f"{db_artifact}::row=0",
+        f"{db_artifact}::row=1",
+    ]
+    assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
+    # The assembled training file is a legitimate mixed-composition dataset (the M54 note case), so
+    # read its frames straight through ASE — the single-file parse path fixes N across frames and
+    # would refuse the variable-N whole (EXTXYZ_VARIABLE_ATOM_COUNT), which is exactly the note.
+    from ase.io import read as ase_read
+
+    images = ase_read(str(xyz_artifact), format="extxyz", index=":")
+    assert [list(a.get_chemical_symbols()) for a in images] == [["C", "O"], ["H", "H", "O"]]

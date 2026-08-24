@@ -9,6 +9,7 @@ middle state — a half-parsed structure presented as data is silent loss (P1).
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,6 +53,38 @@ class ExporterWarning:
     def __init__(self, code: str, message: str) -> None:
         self.code = code
         self.message = message
+
+
+@dataclass(frozen=True)
+class AssembleContribution:
+    """One source's contribution to a batch **assemble** artifact (v1.5 M55-S4).
+
+    The batch ``assemble`` output mode combines N already-converted sources into one native
+    container (a multi-frame extXYZ training file, a multi-row ASE ``.db`` dataset). The combine is
+    **exporter-mediated** — an assemble-capable :class:`ExporterPlugin` overrides ``assemble`` and
+    is handed one of these per contributed source, in manifest/fan-out order — so the batch layer
+    holds no per-format knowledge of how a container is built (P2). Each contribution carries both
+    shapes a target might need, and the exporter uses whichever its format combines by:
+
+    * ``canonical`` — the write-plan-filtered object the engine actually exported for this source
+      (a single-structure object for a ``.db`` row; possibly a multi-frame trajectory for extXYZ).
+      An exporter whose container is a database of independent rows (``ase_db``) rebuilds each row
+      from this object.
+    * ``output`` — the exact per-source output bytes the ordinary single-file conversion already
+      produced (a list because ``frame_selection=split_all`` yields one segment per frame). An
+      exporter whose frames are independent concatenatable text blocks (``extxyz``) combines by
+      writing these verbatim, so the assembled file is byte-identical to ``b\"\".join`` of the
+      per-source outputs (M54 parity).
+
+    A plain dataclass, not a pydantic model: like :class:`ExporterWarning` it is consumed only by
+    the engine/batch layer and never serialized into a report (the raw bytes and the in-flight
+    object must never leak into the ``BatchReport``, which embeds the existing report models
+    verbatim and nothing else)."""
+
+    __slots__ = ("canonical", "output")
+
+    canonical: CanonicalObject
+    output: list[bytes]
 
 
 class ParseError(Exception):

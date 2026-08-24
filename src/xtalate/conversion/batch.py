@@ -33,7 +33,7 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -42,8 +42,11 @@ from xtalate.capabilities import Registry
 from xtalate.conversion.engine import ConversionEngine
 from xtalate.conversion.parse_recovery import parse_with_recovery
 from xtalate.conversion.report import ConversionReport
-from xtalate.sdk import ParseError
+from xtalate.sdk import AssembleContribution, ParseError
 from xtalate.validation.report import ValidationReport
+
+if TYPE_CHECKING:
+    from xtalate.schema import CanonicalObject
 
 __all__ = [
     "BatchEntry",
@@ -257,11 +260,6 @@ _LABEL_PATHS: dict[str, str] = {
 #: split-output naming, mirrored here so a batch and a lone convert name files alike).
 _NO_SUFFIX_TARGETS = frozenset({"poscar", "contcar"})
 
-#: The append-capable targets for ``assemble`` in this milestone: a target whose frames are
-#: independent, concatenatable blocks. ASE `.db` (M55) and DeePMD grouping (M56) add theirs;
-#: the gate consults the declared capability first (``max_frames``), then this declared set.
-_ASSEMBLE_TARGETS = frozenset({"extxyz"})
-
 #: The row-qualified source label a fanned-out multi-structure container row carries in its
 #: ``BatchEntry.source`` (and its output stem): ``<container path>::row=<i>``. The separator is a
 #: batch-module contract — ``cli/main.py``'s exit-code fold strips it to recover the container's
@@ -297,7 +295,7 @@ def run_batch(
     path of the one multi-frame artifact. ``None`` runs the conversions and produces the report
     without writing artifacts. A caller mistake (unknown target, malformed preset, empty source
     list, a glob matching nothing, a missing literal path, a per-file output-name collision, or
-    ``assemble`` to a non-append-capable target) raises :class:`BatchManifestError` before any
+    ``assemble`` to a non-assemble-capable target) raises :class:`BatchManifestError` before any
     file is converted. A genuinely broken conversion (an engine invariant failure) propagates —
     never swallowed into a batch that looks green.
     """
@@ -341,22 +339,18 @@ def _resolve_sources(manifest: BatchManifest) -> list[SourceEntry]:
 
 
 def _assert_assemble_capable(registry: Registry, target: str) -> None:
-    """The ``assemble`` gate: the target must be able to hold N frames (a declared capability)
-    **and** be a member of the append-capable set (concatenation of independent frame blocks).
-    Declared facts first — ``max_frames`` — then the milestone's declared set; never a silent
-    fallback to per-file."""
+    """The ``assemble`` gate: the target must **declare** that it can combine N Canonical Objects
+    into one dataset container (``FormatCapabilities.assemble_capable``, M55-S4/D208) — the exporter
+    overrides :meth:`ExporterPlugin.assemble`. A **declared** capability, not a hardcoded target
+    list: extXYZ (concatenated multi-frame blocks) and ASE ``.db`` (appended rows) both declare it,
+    and a new dataset container rides the same seam (P6). A target that does not declare it is
+    refused here — before any file is converted — never silently downgraded to per-file."""
     caps = registry.capability_matrix().get(target, "write")
-    if caps.max_frames is not None:
+    if not caps.assemble_capable:
         raise BatchManifestError(
-            f"assemble is not available for target {target!r}: it declares max_frames="
-            f"{caps.max_frames}, so N sources cannot be appended into one artifact "
+            f"assemble is not available for target {target!r}: it is not an assemble-capable "
+            "target — its outputs cannot be combined into one dataset container "
             "(use output_mode: per-file)"
-        )
-    if target not in _ASSEMBLE_TARGETS:
-        raise BatchManifestError(
-            f"assemble is not available for target {target!r} in this milestone: only "
-            f"{', '.join(sorted(_ASSEMBLE_TARGETS))} is append-capable "
-            "(ASE .db and DeePMD grouping land in later milestones; use output_mode: per-file)"
         )
 
 
@@ -408,6 +402,11 @@ class _Outcome:
     # row-qualified ``<stem>.row<NNNN>`` for a fanned-out container row (M55-S3), so N rows of one
     # `.db` write N distinct files rather than overwriting one.
     output_stem: str = ""
+    # The write-plan-filtered object the engine exported for this source (``canonical_out``),
+    # retained so the ``assemble`` combine can rebuild a container (a ``.db`` row) that cannot be
+    # produced by byte-concatenation (M55-S4). Never serialized — same discipline as
+    # ``output_bytes``: ``_assemble_report`` drops this holder and keeps only ``entry``.
+    canonical: CanonicalObject | None = None
 
 
 def _convert_source(
@@ -481,30 +480,36 @@ def _run_assemble(
     output: str | Path | None,
     fail_fast: bool,
 ) -> BatchReport:
-    """The ``assemble`` output mode: N sources → **one** multi-frame artifact (extXYZ, the one
-    append-capable target this milestone lands). Assembling is **concatenation of already-valid
-    per-source outputs** — each file converts through the ordinary path, its output bytes become
-    its segment of the assembled file in manifest order; no new exporter, no silent transform.
+    """The ``assemble`` output mode: N sources → **one** dataset container via the target's
+    **declared assemble capability** (M55-S4/D208). Each file converts through the ordinary path;
+    its write-plan-filtered object and output bytes become one contribution, and the target's
+    :meth:`ExporterPlugin.assemble` combines them — extXYZ concatenates the per-source bytes
+    (byte-identical to M54), ASE ``.db`` appends one row per object. The batch layer holds no
+    per-format combine logic (P2): it collects contributions and hands them to the exporter.
 
     **Per-contribution validation** stays per source: each entry's ``ValidationReport`` is the
-    re-parse-and-diff of *that source's own segment* (its output bytes) against its own Canonical
-    Object — exactly what the per-file conversion validated, so the report keeps its meaning for
-    every file. The assembled *whole* is never the validation unit: a mixed-composition artifact
-    is a valid MLIP training file but **not** one Canonical Object (Part 2 §3.2), which the
-    dataset-level note states rather than hiding."""
+    re-parse-and-diff of *that source's own output* against its own Canonical Object — exactly what
+    the per-file conversion validated, so the report keeps its meaning for every file. The
+    assembled *whole* is never the validation unit: a mixed-composition extXYZ artifact is a valid
+    MLIP training file but **not** one Canonical Object (Part 2 §3.2), which the dataset-level note
+    states rather than hiding."""
     engine = ConversionEngine(registry)
     entries: list[_Outcome] = []
-    segments: list[bytes] = []
+    contributions: list[AssembleContribution] = []
     atom_counts: dict[str, int] = {}
     stopped = False
     for entry in resolved:
-        # Fan a multi-structure container out to its rows (M55-S3); each row's extXYZ segment joins
-        # the assembled file in row order, keyed by its ``<path>::row=<i>`` label so a fanned
-        # container of mixed composition surfaces variable-N like any other source mix.
+        # Fan a multi-structure container out to its rows (M55-S3); each row joins the assembled
+        # container in row order, keyed by its ``<path>::row=<i>`` label so a fanned container of
+        # mixed composition surfaces variable-N like any other source mix.
         for outcome in _convert_source(engine, registry, entry, manifest, shared_choices):
             entries.append(outcome)
-            if outcome.entry.status == "converted":
-                segments.extend(outcome.output_bytes)
+            if outcome.entry.status == "converted" and outcome.canonical is not None:
+                contributions.append(
+                    AssembleContribution(
+                        canonical=outcome.canonical, output=list(outcome.output_bytes)
+                    )
+                )
                 if outcome.canonical_atom_count is not None:
                     atom_counts[outcome.entry.source] = outcome.canonical_atom_count
             if fail_fast and outcome.entry.status != "converted":
@@ -512,9 +517,14 @@ def _run_assemble(
                 break
         if stopped:
             break
-    note = _assembled_note(registry, manifest.target, segments, atom_counts)
-    if output is not None and segments:
-        Path(output).write_bytes(b"".join(segments))
+    assembled = b""
+    if contributions:
+        buf = io.BytesIO()
+        registry.get_exporter(manifest.target).assemble(contributions, buf)
+        assembled = buf.getvalue()
+    note = _assembled_note(registry, manifest.target, assembled, atom_counts)
+    if output is not None and assembled:
+        Path(output).write_bytes(assembled)
     return _assemble_report(manifest, resolved, entries, note=note)
 
 
@@ -624,6 +634,7 @@ def _convert_one(
             else None
         ),
         output_stem=stem,
+        canonical=result.canonical_out,
     )
 
 
@@ -676,22 +687,24 @@ def _write_per_file_outputs(out_dir: Path | None, outcome: _Outcome, target: str
 
 
 def _assembled_note(
-    registry: Registry, target: str, segments: list[bytes], atom_counts: dict[str, int]
+    registry: Registry, target: str, assembled: bytes, atom_counts: dict[str, int]
 ) -> str | None:
-    """The dataset-level variable-N statement. When the assembled sources differ in atom count,
-    the one artifact has variable N across frames and its single-object re-parse refuses via the
-    **existing** ``EXTXYZ_VARIABLE_ATOM_COUNT`` — the note is a property of the assembled file,
-    never a per-file loss, and the case joins the v2.0 variable-N evidence stream (counted, not
-    anecdotal: the committed evidence fixture in ``tests/conversion/batch/evidence/`` pins the
-    refusal)."""
-    if not segments:
+    """The dataset-level variable-N statement for an assembled artifact. When the assembled sources
+    differ in atom count, a **single-object** target — extXYZ — cannot re-parse the whole file as
+    one Canonical Object: its single-object re-parse refuses via the **existing**
+    ``EXTXYZ_VARIABLE_ATOM_COUNT``, and the note names that property of the assembled file (never a
+    per-file loss; the case joins the v2.0 variable-N evidence stream, counted not anecdotal:
+    ``tests/conversion/batch/evidence/`` pins the refusal). A **multi-structure container** target
+    — ASE ``.db`` — holds variable-N rows natively (its re-parse refuses ``ASEDB_MULTIPLE_ROWS``,
+    the ordinary dataset shape, not this variable-N condition), so it warrants no such note."""
+    if not assembled:
         return None
     distinct = sorted({n for n in atom_counts.values() if n is not None})
     if len(distinct) <= 1:
         return None
     parser = registry.get_parser(target)
     try:
-        parser.parse(io.BytesIO(b"".join(segments)), filename="assembled.extxyz")
+        parser.parse(io.BytesIO(assembled), filename=f"assembled.{target}")
         return None  # surprisingly one object: no variable-N statement to make
     except ParseError as exc:
         code = exc.issues[0].code if exc.issues else ""
@@ -705,7 +718,10 @@ def _assembled_note(
                 f"the v2.0 variable-N evidence stream "
                 f"(tests/conversion/batch/evidence/v2-variable-n-assemble)."
             )
-    return None  # a non-variable-N re-parse failure would be an assembly bug; the suite pins it
+    # A multi-structure container (a multi-row `.db`) re-parses to a container refusal, not
+    # EXTXYZ_VARIABLE_ATOM_COUNT — the healthy dataset shape, no note. Any other single-object
+    # re-parse failure would be an assembly bug; the suite pins it.
+    return None
 
 
 def _fanout_note(entries: list[BatchEntry]) -> str | None:
