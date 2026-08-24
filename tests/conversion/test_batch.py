@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from ase import Atoms
+from ase.db import connect
 
 from xtalate.capabilities import Registry
 from xtalate.conversion import (
@@ -469,3 +471,166 @@ def test_assemble_keeps_refused_and_failed_segments_out(tmp_path: Path) -> None:
     # Only water's 2 frames are in the artifact; constant-N, so no variable-N note.
     assert len(_frames_of(reg, artifact)) == 2
     assert report.note is None
+
+
+# --- multi-structure container fan-out (M55-S3, D207) -----------------------------------------
+#
+# A `.db` with more than one row is a *dataset*, not a trajectory: on the single-file path it
+# refuses ASEDB_MULTIPLE_ROWS (rows are independent structures, never one Canonical Object), and
+# the batch surface is exactly where its rows convert. Under `--batch` such a container **fans
+# out** to N ordinary per-row conversions in one BatchReport — each row an explicit
+# `asedb_row_selection=index` choice (P4), each its own verbatim-embedded report.
+
+
+def _multi_row_db(tmp_path: Path, *structures: Atoms, name: str = "dataset.db") -> Path:
+    """Write a real multi-row ASE `.db` file (one row per structure, in order) to ``tmp_path`` and
+    return its path — the batch reads sources by path, so this is a file, not just bytes."""
+    path = tmp_path / name
+    db = connect(str(path), use_lock_file=False)
+    for atoms in structures:
+        db.write(atoms)
+    return path
+
+
+def _co() -> Atoms:
+    return Atoms("CO", positions=[[0.0, 0.0, 0.0], [1.13, 0.0, 0.0]])
+
+
+def _water() -> Atoms:
+    return Atoms("H2O", positions=[[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [0.0, 0.96, 0.0]])
+
+
+def test_multi_row_db_fans_out_to_ordered_per_row_entries(tmp_path: Path) -> None:
+    # A 3-row .db becomes 3 ordinary per-row conversions in one report — never one object. The
+    # per-row source labels are deterministic and in row order, and the aggregate note names the
+    # expansion as a property of the input (aggregation), never a per-file loss.
+    db = _multi_row_db(tmp_path, _co(), _water(), _co())
+    report = run_batch(BatchManifest(sources=[str(db)], target="extxyz"), _registry())
+    assert report.tallies.model_dump()["total"] == 3
+    assert report.tallies.converted == 3
+    assert [e.source for e in report.entries] == [
+        f"{db}::row=0",
+        f"{db}::row=1",
+        f"{db}::row=2",
+    ]
+    assert [e.status for e in report.entries] == ["converted", "converted", "converted"]
+    assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
+    assert report.note is not None
+    assert f"{db} → 3 per-row conversions" in report.note
+    assert "aggregation, never one Canonical Object" in report.note
+
+
+def test_fanned_row_report_is_byte_identical_to_the_standalone_row_conversion(
+    tmp_path: Path,
+) -> None:
+    # Done-means: a fanned row's embedded ConversionReport/ValidationReport is byte-identical to
+    # converting that row alone via asedb_row_selection=index — the fan-out changes the *addressing*
+    # of a row, never its conversion (P1 at dataset scale, the M54 embedding invariant per row).
+    reg = _registry()
+    db = _multi_row_db(tmp_path, _co(), _water())
+    report = run_batch(BatchManifest(sources=[str(db)], target="extxyz"), reg)
+    row1 = report.entries[1]
+    assert row1.status == "converted"
+
+    # The standalone reference: the ordinary single-file path pinned to row 1, with the same target
+    # filename the fan-out writer uses (<stem>.row0001) so nothing but run-varying ids can differ.
+    choices: dict[str, dict[str, Any]] = {
+        "asedb_row_selection": {"choice": "index", "parameters": {"row": 1}}
+    }
+    parsed = parse_with_recovery(reg, db.read_bytes(), filename=db.name, recovery_choices=choices)
+    standalone = ConversionEngine(reg).convert(
+        parsed.canonical,
+        source_format_id=parsed.format_id,
+        target_format_id="extxyz",
+        source_filename=db.name,
+        target_filename="dataset.row0001.extxyz",
+        recovery_choices=choices,
+        parse_recovery=parsed,
+    )
+    assert row1.conversion is not None
+    assert _norm(row1.conversion.model_dump(mode="json")) == _norm(
+        standalone.report.model_dump(mode="json")
+    )
+    assert row1.validation is not None and standalone.validation is not None
+    assert _norm(row1.validation.model_dump(mode="json")) == _norm(
+        standalone.validation.model_dump(mode="json")
+    )
+
+
+def test_single_row_db_stays_one_ordinary_entry_no_spurious_fanout(tmp_path: Path) -> None:
+    # A single-row .db is an ordinary single-structure source: one entry, the plain path label (no
+    # ::row= qualifier), and no fan-out note. Fan-out is triggered only by the multi-row refusal.
+    db = _multi_row_db(tmp_path, _co(), name="one.db")
+    report = run_batch(BatchManifest(sources=[str(db)], target="extxyz"), _registry())
+    assert [e.source for e in report.entries] == [str(db)]
+    assert report.entries[0].status == "converted"
+    assert "::row=" not in report.entries[0].source
+    assert report.note is None
+
+
+def test_fanned_per_file_outputs_are_row_qualified(tmp_path: Path) -> None:
+    # In per-file mode each fanned row writes its own artifact, named <stem>.row<NNNN>, so N rows of
+    # one .db land as N distinct files rather than overwriting one.
+    db = _multi_row_db(tmp_path, _co(), _water())
+    out = tmp_path / "out"
+    run_batch(BatchManifest(sources=[str(db)], target="extxyz"), _registry(), output=out)
+    assert (out / "dataset.row0000.extxyz").is_file()
+    assert (out / "dataset.row0001.extxyz").is_file()
+
+
+def test_assemble_fans_multi_row_db_into_one_training_set(tmp_path: Path) -> None:
+    # The milestone's done-means: a multi-row .db becomes a training set through --batch. Two
+    # same-composition rows assemble into one 2-frame extXYZ; per-contribution validations are
+    # green and the whole re-parses as one object in row order (constant-N, so no variable-N note —
+    # only the fan-out statement).
+    reg = _registry()
+    db = _multi_row_db(tmp_path, _co(), _co())
+    artifact = tmp_path / "train.extxyz"
+    report = run_batch(
+        BatchManifest(sources=[str(db)], target="extxyz", output_mode="assemble"),
+        reg,
+        output=artifact,
+    )
+    assert [e.source for e in report.entries] == [f"{db}::row=0", f"{db}::row=1"]
+    assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
+    assert report.note is not None
+    assert "per-row conversions" in report.note
+    assert "variable atom counts" not in report.note
+    assembled = _frames_of(reg, artifact)
+    assert len(assembled) == 2
+    assert [syms for syms, _ in assembled] == [["C", "O"], ["C", "O"]]
+
+
+def test_assemble_mixed_composition_fanout_records_variable_n(tmp_path: Path) -> None:
+    # A fanned container of mixed composition (CO: 2 atoms, H2O: 3 atoms) assembles into a file with
+    # variable N across frames — the note carries *both* the fan-out statement and the existing
+    # dataset-level EXTXYZ_VARIABLE_ATOM_COUNT statement (keyed by the row labels), never a per-file
+    # loss; per-contribution validations stay green.
+    reg = _registry()
+    db = _multi_row_db(tmp_path, _co(), _water())
+    artifact = tmp_path / "mixed.extxyz"
+    report = run_batch(
+        BatchManifest(sources=[str(db)], target="extxyz", output_mode="assemble"),
+        reg,
+        output=artifact,
+    )
+    assert [e.status for e in report.entries] == ["converted", "converted"]
+    assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
+    assert report.note is not None
+    assert "per-row conversions" in report.note  # the fan-out statement
+    assert "EXTXYZ_VARIABLE_ATOM_COUNT" in report.note  # the dataset-level variable-N statement
+    assert f"{db}::row=0: 2" in report.note and f"{db}::row=1: 3" in report.note
+
+
+def test_fail_fast_stops_mid_container(tmp_path: Path) -> None:
+    # fail_fast stops at the first non-converted row *inside* a container, never converting the
+    # rest: a multi-row .db → poscar (each row lacks a lattice, so each refuses without a recovery
+    # preset) yields exactly the first row's refused entry, proving the fan-out is lazy.
+    db = _multi_row_db(tmp_path, _co(), _water(), _co())
+    report = run_batch(
+        BatchManifest(sources=[str(db)], target="poscar"),
+        _registry(),
+        fail_fast=True,
+    )
+    assert [e.source for e in report.entries] == [f"{db}::row=0"]
+    assert report.entries[0].status == "refused"

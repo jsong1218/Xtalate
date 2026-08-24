@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import glob as _glob
 import io
+import re
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -260,6 +262,18 @@ _NO_SUFFIX_TARGETS = frozenset({"poscar", "contcar"})
 #: the gate consults the declared capability first (``max_frames``), then this declared set.
 _ASSEMBLE_TARGETS = frozenset({"extxyz"})
 
+#: The row-qualified source label a fanned-out multi-structure container row carries in its
+#: ``BatchEntry.source`` (and its output stem): ``<container path>::row=<i>``. The separator is a
+#: batch-module contract — ``cli/main.py``'s exit-code fold strips it to recover the container's
+#: per-source override (M55-S3). Kept off the ``__all__`` surface; a helper reads it.
+_ROW_LABEL_SEP = "::row="
+
+#: The row-count grammar the ``ase_db`` parser stamps on its ``ASEDB_MULTIPLE_ROWS`` refusal
+#: (``location="rows N"``, mirrored from ``parsers.ase_db._ROW_COUNT_LOCATION``). The fan-out
+#: reads N from it rather than parsing the refusal's prose, so a multi-row container expands to
+#: exactly its row count (M55-S3).
+_ROW_COUNT_LOCATION = re.compile(r"^rows (\d+)$")
+
 
 def run_batch(
     manifest: BatchManifest,
@@ -366,11 +380,17 @@ def _run_per_file(
         out_dir.mkdir(parents=True, exist_ok=True)
     engine = ConversionEngine(registry)
     entries: list[_Outcome] = []
+    stopped = False
     for entry in resolved:
-        outcome = _convert_one(engine, registry, entry, manifest, shared_choices)
-        entries.append(outcome)
-        _write_per_file_outputs(out_dir, entry, outcome, manifest.target)
-        if fail_fast and outcome.entry.status != "converted":
+        # One source yields one outcome — or, for a multi-structure container (a multi-row `.db`),
+        # N per-row outcomes fanned out lazily so ``fail_fast`` can stop mid-container (M55-S3).
+        for outcome in _convert_source(engine, registry, entry, manifest, shared_choices):
+            entries.append(outcome)
+            _write_per_file_outputs(out_dir, outcome, manifest.target)
+            if fail_fast and outcome.entry.status != "converted":
+                stopped = True
+                break
+        if stopped:
             break
     return _assemble_report(manifest, resolved, entries, note=None)
 
@@ -384,6 +404,72 @@ class _Outcome:
     entry: BatchEntry
     output_bytes: list[bytes] = field(default_factory=list)
     canonical_atom_count: int | None = None
+    # The stem the per-file writer names this outcome's output after: the source stem, or a
+    # row-qualified ``<stem>.row<NNNN>`` for a fanned-out container row (M55-S3), so N rows of one
+    # `.db` write N distinct files rather than overwriting one.
+    output_stem: str = ""
+
+
+def _convert_source(
+    engine: ConversionEngine,
+    registry: Registry,
+    entry: SourceEntry,
+    manifest: BatchManifest,
+    shared_choices: dict[str, dict[str, Any]],
+) -> Iterator[_Outcome]:
+    """Yield the outcome(s) for one resolved source, lazily (M55-S3, D207).
+
+    An ordinary source (or a single-row `.db`, or a `.db` for which the caller already pinned one
+    row via ``asedb_row_selection=index``) is one outcome. A **multi-structure container** — a
+    `.db` with more than one row — refuses ``ASEDB_MULTIPLE_ROWS`` on the single-file path, and the
+    batch surface is exactly where its rows convert: it **fans out** to N ordinary per-row
+    conversions, each an explicit ``asedb_row_selection=index,row=i`` choice (P4), each its own
+    ``BatchEntry`` with a ``<path>::row=<i>`` label. A **dataset is aggregation, not a new model**
+    (Part 2 §3.2): the rows never become one Canonical Object. Lazy so ``fail_fast`` stops
+    mid-container — the consumer breaks and the remaining rows are never converted."""
+    outcome = _convert_one(engine, registry, entry, manifest, shared_choices)
+    if not _is_multi_row_refusal(outcome):
+        yield outcome
+        return
+    count = _fanout_row_count(registry, entry)
+    if count is None:
+        # Defensive: the refusal named a count we could not read — surface it as the ordinary
+        # per-file failure rather than silently dropping the source (never a phantom green batch).
+        yield outcome
+        return
+    for row in range(count):
+        yield _convert_one(engine, registry, entry, manifest, shared_choices, row=row)
+
+
+def _is_multi_row_refusal(outcome: _Outcome) -> bool:
+    """True iff this source failed the single-file path *only* because it is a multi-structure
+    container (a multi-row ASE `.db`) — the one failure the batch resolves by fan-out rather than
+    reporting. Any other parse failure stays that source's ``failed`` outcome."""
+    return (
+        outcome.entry.status == "failed"
+        and outcome.entry.error is not None
+        and outcome.entry.error.code == "ASEDB_MULTIPLE_ROWS"
+    )
+
+
+def _fanout_row_count(registry: Registry, entry: SourceEntry) -> int | None:
+    """The authoritative row count for a multi-structure container, read from the
+    ``ASEDB_MULTIPLE_ROWS`` refusal's ``location="rows N"`` by parsing with **no** row-selection
+    preset (which surfaces the refusal verbatim). ``None`` when the source does not refuse that way
+    — it is then not a container to fan out."""
+    try:
+        data = Path(entry.path).read_bytes()
+    except OSError:
+        return None
+    try:
+        parse_with_recovery(registry, data, filename=Path(entry.path).name, recovery_choices={})
+    except ParseError as exc:
+        for issue in exc.issues:
+            if issue.code == "ASEDB_MULTIPLE_ROWS" and issue.location:
+                match = _ROW_COUNT_LOCATION.match(issue.location)
+                if match:
+                    return int(match.group(1))
+    return None
 
 
 def _run_assemble(
@@ -410,14 +496,21 @@ def _run_assemble(
     entries: list[_Outcome] = []
     segments: list[bytes] = []
     atom_counts: dict[str, int] = {}
+    stopped = False
     for entry in resolved:
-        outcome = _convert_one(engine, registry, entry, manifest, shared_choices)
-        entries.append(outcome)
-        if outcome.entry.status == "converted":
-            segments.extend(outcome.output_bytes)
-            if outcome.canonical_atom_count is not None:
-                atom_counts[entry.path] = outcome.canonical_atom_count
-        if fail_fast and outcome.entry.status != "converted":
+        # Fan a multi-structure container out to its rows (M55-S3); each row's extXYZ segment joins
+        # the assembled file in row order, keyed by its ``<path>::row=<i>`` label so a fanned
+        # container of mixed composition surfaces variable-N like any other source mix.
+        for outcome in _convert_source(engine, registry, entry, manifest, shared_choices):
+            entries.append(outcome)
+            if outcome.entry.status == "converted":
+                segments.extend(outcome.output_bytes)
+                if outcome.canonical_atom_count is not None:
+                    atom_counts[outcome.entry.source] = outcome.canonical_atom_count
+            if fail_fast and outcome.entry.status != "converted":
+                stopped = True
+                break
+        if stopped:
             break
     note = _assembled_note(registry, manifest.target, segments, atom_counts)
     if output is not None and segments:
@@ -431,12 +524,20 @@ def _convert_one(
     entry: SourceEntry,
     manifest: BatchManifest,
     shared_choices: dict[str, dict[str, Any]],
+    *,
+    row: int | None = None,
 ) -> _Outcome:
     """Convert one resolved source through the ordinary single-file path; **never** let its
     failure abort the batch. A ``ParseError`` is that file's ``failed`` outcome; a ``refused``
     conversion is a completed outcome (its report embedded verbatim); a caller mistake in the
     presets raises (it would fail every file — a manifest error, not a data failure); an engine
-    invariant failure propagates."""
+    invariant failure propagates.
+
+    ``row`` (M55-S3) pins one row of a multi-structure container: the ordinary path runs with an
+    added ``asedb_row_selection=index,row=<row>`` choice, and the outcome carries a
+    ``<path>::row=<row>`` source label + a ``<stem>.row<NNNN>`` output stem so N rows of one `.db`
+    are N independent, individually-reported conversions. ``None`` is the ordinary single-source
+    path (its stem is the source stem, its label the source path)."""
     override = entry.override
     mode = override.mode if override and override.mode else manifest.mode
     tolerance = (
@@ -459,11 +560,20 @@ def _convert_one(
         if override and override.recovery_choices is not None
         else shared_choices
     )
-    target_filename = _output_name(entry.path, manifest.target)
+    label = _source_label(entry.path, row)
+    stem = _row_stem(entry.path, row)
+    if row is not None:
+        # Fan-out pins exactly this row: the ``asedb_row_selection=index`` choice overrides any
+        # row selection the manifest carried, so a container's rows convert one apiece (M55-S3).
+        choices = {
+            **choices,
+            "asedb_row_selection": {"choice": "index", "parameters": {"row": row}},
+        }
+    target_filename = _output_name_for(stem, manifest.target)
     try:
         data = Path(entry.path).read_bytes()
     except OSError as exc:
-        return _failed(entry, "SOURCE_UNREADABLE", f"cannot read {entry.path}: {exc}")
+        return _failed(label, "SOURCE_UNREADABLE", f"cannot read {entry.path}: {exc}")
     try:
         parsed = parse_with_recovery(
             registry,
@@ -487,14 +597,12 @@ def _convert_one(
     except ParseError as exc:
         issue = exc.issues[0] if exc.issues else None
         return _failed(
-            entry,
+            label,
             issue.code if issue else "PARSE_ERROR",
             issue.message if issue else str(exc),
         )
     if result.report.status == "refused":
-        return _Outcome(
-            entry=BatchEntry(source=entry.path, status="refused", conversion=result.report)
-        )
+        return _Outcome(entry=BatchEntry(source=label, status="refused", conversion=result.report))
     # `result.outputs` is set iff frame_selection=split_all resolved (one file per frame);
     # `result.output` carries the ordinary single-file bytes. Both are per-source outputs.
     bytes_out = (
@@ -504,7 +612,7 @@ def _convert_one(
     )
     return _Outcome(
         entry=BatchEntry(
-            source=entry.path,
+            source=label,
             status="converted",
             conversion=result.report,
             validation=result.validation,
@@ -515,13 +623,14 @@ def _convert_one(
             if result.canonical_out is not None
             else None
         ),
+        output_stem=stem,
     )
 
 
-def _failed(entry: SourceEntry, code: str, message: str) -> _Outcome:
+def _failed(source: str, code: str, message: str) -> _Outcome:
     return _Outcome(
         entry=BatchEntry(
-            source=entry.path,
+            source=source,
             status="failed",
             conversion=None,
             validation=None,
@@ -530,21 +639,35 @@ def _failed(entry: SourceEntry, code: str, message: str) -> _Outcome:
     )
 
 
-def _write_per_file_outputs(
-    out_dir: Path | None, entry: SourceEntry, outcome: _Outcome, target: str
-) -> bool:
-    """Write one converted source's outputs into ``out_dir`` (per-file mode). A ``split_all``
-    result (multiple frames) lands in a ``<stem>.split/`` subdirectory, mirroring the single-file
-    CLI's split-output convention; nothing is written for refused/failed entries. Returns whether
-    anything was written."""
+def _source_label(path: str, row: int | None) -> str:
+    """The reported ``BatchEntry.source`` for a source: its path, or the row-qualified
+    ``<path>::row=<i>`` for a fanned-out container row (M55-S3)."""
+    return path if row is None else f"{path}{_ROW_LABEL_SEP}{row}"
+
+
+def _row_stem(path: str, row: int | None) -> str:
+    """The output stem for a source: its file stem, or ``<stem>.row<NNNN>`` for a fanned-out
+    container row, so N rows of one `.db` write N distinct per-file outputs (M55-S3)."""
+    stem = Path(path).stem
+    return stem if row is None else f"{stem}.row{row:04d}"
+
+
+def _write_per_file_outputs(out_dir: Path | None, outcome: _Outcome, target: str) -> bool:
+    """Write one converted outcome's outputs into ``out_dir`` (per-file mode), named after the
+    outcome's ``output_stem`` (a fanned container row carries its row-qualified stem, M55-S3). A
+    ``split_all`` result (multiple frames) lands in a ``<stem>.split/`` subdirectory, mirroring the
+    single-file CLI's split-output convention; nothing is written for refused/failed entries.
+    Returns whether anything was written."""
     if out_dir is None or outcome.entry.status != "converted" or not outcome.output_bytes:
         return False
     if len(outcome.output_bytes) == 1:
-        (out_dir / _output_name(entry.path, target)).write_bytes(outcome.output_bytes[0])
+        (out_dir / _output_name_for(outcome.output_stem, target)).write_bytes(
+            outcome.output_bytes[0]
+        )
         return True
     # frame_selection=split_all: one file per frame, in a <stem>.split/ subdirectory — the
     # single-file CLI's split-output convention, mirrored so a batch names frames alike.
-    split_dir = out_dir / f"{Path(entry.path).stem}.split"
+    split_dir = out_dir / f"{outcome.output_stem}.split"
     split_dir.mkdir(parents=True, exist_ok=True)
     suffix = "" if target in _NO_SUFFIX_TARGETS else f".{target}"
     for i, chunk in enumerate(outcome.output_bytes):
@@ -585,6 +708,35 @@ def _assembled_note(
     return None  # a non-variable-N re-parse failure would be an assembly bug; the suite pins it
 
 
+def _fanout_note(entries: list[BatchEntry]) -> str | None:
+    """The dataset-level fan-out statement (M55-S3). When any resolved source was a
+    multi-structure container (a multi-row ASE `.db`) expanded to per-row conversions, this names
+    the expansion — a property of the **input** (aggregation, never a per-file loss): each row is
+    an independent structure converted through the ordinary per-row path
+    (``asedb_row_selection=index``), never a rows-as-frames Canonical Object (Part 2 §3.2)."""
+    containers: dict[str, int] = {}
+    for entry in entries:
+        if _ROW_LABEL_SEP in entry.source:
+            container = entry.source.split(_ROW_LABEL_SEP, 1)[0]
+            containers[container] = containers.get(container, 0) + 1
+    if not containers:
+        return None
+    parts = "; ".join(f"{path} → {count} per-row conversions" for path, count in containers.items())
+    return (
+        f"multi-structure container fan-out ({parts}): each row is an independent structure "
+        "converted through the ordinary per-row path (asedb_row_selection=index) — a multi-row "
+        "ASE .db is aggregation, never one Canonical Object (Part 2 §3.2)."
+    )
+
+
+def _combine_notes(*notes: str | None) -> str | None:
+    """Join the dataset-level notes (fan-out first, then the assembled variable-N statement) into
+    the single ``BatchReport.note``, dropping the absent ones. Both are properties of the dataset,
+    never restatements of a per-file loss (the second-report-schema failure mode)."""
+    present = [note for note in notes if note]
+    return " ".join(present) if present else None
+
+
 def _assemble_report(
     manifest: BatchManifest,
     resolved: list[SourceEntry],
@@ -620,13 +772,19 @@ def _assemble_report(
             failed=len(failed),
             label_presence=presence,
         ),
-        note=note,
+        note=_combine_notes(_fanout_note(reported), note),
     )
 
 
 def _output_name(source_path: str, target: str) -> str:
     """The per-file output filename for one source: its stem plus the target's conventional
     extension (POSCAR/CONTCAR take none, mirroring the single-file CLI)."""
-    stem = Path(source_path).stem
+    return _output_name_for(Path(source_path).stem, target)
+
+
+def _output_name_for(stem: str, target: str) -> str:
+    """The per-file output filename for a given output stem plus the target's conventional
+    extension (POSCAR/CONTCAR take none). Shared by the collision pre-check (source stems) and the
+    writer (which may hold a fanned container row's ``<stem>.row<NNNN>``, M55-S3)."""
     suffix = "" if target in _NO_SUFFIX_TARGETS else f".{target}"
     return f"{stem}{suffix}"

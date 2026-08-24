@@ -14,6 +14,8 @@ import json
 from pathlib import Path
 
 import pytest
+from ase import Atoms
+from ase.db import connect
 
 from xtalate.cli.main import (
     EXIT_OK,
@@ -161,6 +163,42 @@ def test_batch_assemble_writes_one_artifact(
     assert artifact.is_file() and artifact.read_bytes()
     # The mixed-composition dataset-level note is part of the human view (never a per-file loss).
     assert "EXTXYZ_VARIABLE_ATOM_COUNT" in human
+
+
+# --- multi-structure container fan-out through the CLI (M55-S3) --------------------------------
+
+
+def _multi_row_db(tmp_path: Path, *structures: Atoms, name: str = "dataset.db") -> Path:
+    path = tmp_path / name
+    db = connect(str(path), use_lock_file=False)
+    for atoms in structures:
+        db.write(atoms)
+    return path
+
+
+def test_batch_multi_row_db_fans_out_and_assembles_a_training_set(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The milestone's user-facing journey: `xtalate convert --batch <manifest with a multi-row .db>
+    # --to extxyz` assembles the rows into one training set. --json shows the per-row entries
+    # (row-qualified sources, verbatim reports); the exit code is the worst per-file outcome (0).
+    db = _multi_row_db(
+        tmp_path,
+        Atoms("CO", positions=[[0.0, 0.0, 0.0], [1.13, 0.0, 0.0]]),
+        Atoms("CO", positions=[[0.0, 0.0, 0.0], [1.15, 0.0, 0.0]]),
+    )
+    manifest = _manifest(
+        tmp_path,
+        body=f"sources:\n  - {db}\ntarget: extxyz\noutput_mode: assemble\n",
+    )
+    artifact = tmp_path / "train.extxyz"
+    assert main(["convert", "--batch", str(manifest), "-o", str(artifact), "--json"]) == EXIT_OK
+    payload = json.loads(capsys.readouterr().out)
+    report = BatchReport.model_validate(payload)
+    assert [e.source for e in report.entries] == [f"{db}::row=0", f"{db}::row=1"]
+    assert all(e.status == "converted" for e in report.entries)
+    assert report.note is not None and "per-row conversions" in report.note
+    assert artifact.is_file() and artifact.read_bytes()
 
 
 # --- caller mistakes are usage errors (exit 1) -------------------------------------------------
