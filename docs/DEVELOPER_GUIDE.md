@@ -497,7 +497,63 @@ maintainer files the tracking issue for real batch files; this documented call i
 standing invitation — batch 1 is authored-realistic, and real contributions are what make the
 hybrid corpus honest.
 
-## 6. Coding conventions (the non-negotiables)
+## 6. The batch surface
+
+M54 gives the library and CLI a **batch** form: one manifest, many files, one aggregate record.
+
+**The manifest** (`convert --batch manifest.yaml`) is a YAML mapping:
+
+```yaml
+sources:               # ordered: processing order AND report order; literal paths or globs
+  - run1/vasprun.xml
+  - run2/*.out
+  - path: run3/POSCAR  # optional per-file override of the shared settings
+    override:
+      acknowledge_loss: true
+target: extxyz
+output_mode: per-file  # per-file | assemble (append N sources -> one artifact)
+mode: permissive       # permissive | strict
+recovery_choices:      # the same --recover preset grammar, one string per preset
+  - frame_selection=last
+  - missing_lattice=bounding_box,padding_ang=5.0
+tolerance_profile: default
+acknowledge_loss: false
+acknowledge_parse_warnings: false
+```
+
+Globs resolve deterministically (sorted) and the concrete file list is recorded in the report —
+manifest order is processing order and report order. The shared conversion settings live in the
+manifest; in batch mode the CLI refuses `--mode`/`--recover`/`--tolerance-profile`/the
+acknowledge flags rather than silently ignoring them (the manifest wins by design).
+
+**The two output modes.** `per-file` writes one file per source into the `-o` directory
+(`<stem>.<target>`; POSCAR/CONTCAR take no extension). `assemble` concatenates the converted
+frames of all sources into **one** artifact (`-o out.extxyz`) — the one append-capable target
+this milestone ships, extXYZ. A non-append-capable target under `assemble` refuses with a clear
+message; there is never a silent fallback to per-file.
+
+**Per-file honesty (the aggregate embeds, never summarizes).** The `BatchReport` carries
+dataset-level **tallies** (converted / refused / failed, plus label-presence counts) and embeds
+each file's `ConversionReport`/`ValidationReport` **verbatim** — the same file converted alone
+and inside a batch serializes byte-identically, so the aggregate cannot elide a per-file loss.
+One file's parse failure or refusal is that file's outcome and the batch always completes;
+`--fail-fast` stops at the first non-converted file for the caller who wants that. A refusal is
+a completed conversion, exactly as on the single-file path.
+
+**Aggregation, not curation (roadmap §11, quoted).** The manifest has **no** fields for frame
+selection by criteria, train/test splitting, or deduplication — a manifest carrying such a key
+is rejected, and there are no `--select`/`--split`/`--dedup` flags. Roadmap §11's second
+corollary is the boundary's statement: *"Not a dataset curator. Splitting, deduplicating-by-
+similarity, rebalancing, and outlier filtering are scientific judgments about data, not
+translations of it. Batch operations (v1.5) convert what they are given, completely and
+reported."* Xtalate converts what you point it at and reports exactly what each file contributed
+and lost — the curation is yours, and the record is complete enough to audit it.
+
+**The batch exit code** is the worst per-file outcome under the existing 0–5 vocabulary: a batch
+with one refusal exits 2, one with a parse error exits 4, an all-clean batch exits 0; a
+malformed manifest (or a manifest carrying a scope-refused key) is a usage error, exit 1.
+
+## 7. Coding conventions (the non-negotiables)
 
 These invariants are what make Xtalate trustworthy. A change that breaks one will not merge, however
 convenient:
@@ -528,7 +584,7 @@ convenient:
   local `.env` and referenced by name. (The current library + CLI has no network calls or
   credentials; this discipline is established ahead of the future Service layer.)
 
-## 7. Where to go next
+## 8. Where to go next
 
 - [Architecture Overview](ARCHITECTURE.md) — the design and the principles.
 - [API Reference](API.md) — the library and CLI surface.

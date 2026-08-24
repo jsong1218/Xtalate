@@ -8,6 +8,7 @@ the output legible in any terminal/pipe (✓/✗ are the one concession, matchin
 
 from __future__ import annotations
 
+from xtalate.conversion.batch import BatchReport
 from xtalate.conversion.report import ConversionReport
 from xtalate.discovery.report import DiscoveryReport
 from xtalate.sdk import CapabilityLevel, FormatCapabilities
@@ -97,6 +98,40 @@ def render_validation(report: ValidationReport) -> str:
     if report.reparse_issues:
         lines.append("  re-parse issues:")
         lines.extend(f"    ! [{i.severity}] {i.code}: {i.message}" for i in report.reparse_issues)
+    return "\n".join(lines)
+
+
+def render_batch(report: BatchReport) -> str:
+    """The batch report's human rendering — a **view** of the model, never a second schema.
+
+    One summary line per file (path → outcome, linking by path to the embedded per-file
+    ConversionReport/ValidationReport sections), then the tallies. It computes **nothing the
+    model does not already hold**: a rendering that digested per-file content (top losses,
+    merged assumptions) would be the second-report-schema defect the roadmap names (§6)."""
+    lines = [
+        f"Batch Report  [{report.tallies.converted} converted · "
+        f"{report.tallies.refused} refused · {report.tallies.failed} failed]",
+        f"  target: {report.manifest.target}  ({report.manifest.output_mode})",
+    ]
+    for entry in report.entries:
+        if entry.status == "converted":
+            status = entry.validation.status if entry.validation is not None else "converted"
+            lines.append(f"  ✓ {entry.source}  converted [{status}]")
+        elif entry.status == "refused":
+            code = ""
+            if entry.conversion is not None and entry.conversion.refusal is not None:
+                code = entry.conversion.refusal.get("code", "")
+            lines.append(f"  ✗ {entry.source}  refused [{code}]")
+        else:
+            code = entry.error.code if entry.error is not None else ""
+            message = entry.error.message if entry.error is not None else ""
+            lines.append(f"  ✗ {entry.source}  failed [{code}]: {message}")
+    labels = report.tallies.label_presence
+    lines.append(
+        f"  labels: {labels.energy} energy · {labels.forces} forces · {labels.stress} stress"
+    )
+    if report.note:
+        lines.append(f"  note: {report.note}")
     return "\n".join(lines)
 
 
