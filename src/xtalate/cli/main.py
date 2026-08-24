@@ -29,11 +29,17 @@ from xtalate.capabilities import Registry
 from xtalate.capabilities.registry import InvalidCapabilityDeclaration
 from xtalate.cli import render
 from xtalate.conversion import (
+    BatchManifestError,
     ConversionEngine,
     ConversionReport,
+    SourceEntry,
     build_expected_object,
+    load_manifest,
+    parse_recovery_presets,
     parse_with_recovery,
+    run_batch,
 )
+from xtalate.conversion.batch import RecoveryPresetError
 from xtalate.discovery import DiscoveryEngine
 from xtalate.recovery import RecoveryError
 from xtalate.registry import PluginLoadError, default_registry
@@ -110,6 +116,15 @@ def main(argv: list[str] | None = None) -> int:
         # a refusal: surface it as a clean usage message, never a traceback (per the engine docs).
         print(f"error: invalid --recover preset: {exc}", file=sys.stderr)
         return EXIT_USAGE
+    except RecoveryPresetError as exc:
+        # A malformed preset string (from the CLI or a batch manifest) is the same caller mistake.
+        print(f"error: invalid recovery preset: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    except BatchManifestError as exc:
+        # A malformed or self-inconsistent batch manifest is a caller mistake, like a bad
+        # --recover preset: clean usage error (exit 1), never a traceback.
+        print(f"error: invalid batch manifest: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     except _UsageError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_USAGE
@@ -137,6 +152,14 @@ def _cmd_inspect(args: argparse.Namespace, registry: Registry) -> int:
 
 
 def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
+    if args.batch:
+        if args.file is not None:
+            raise _UsageError("convert takes FILE *or* --batch MANIFEST, not both")
+        return _cmd_convert_batch(args, registry)
+    if args.file is None:
+        raise _UsageError("convert needs FILE (or --batch MANIFEST)")
+    if args.to is None:
+        raise _UsageError("convert needs --to FORMAT_ID (in batch mode the manifest carries it)")
     result = _convert_streamed(args, registry)
     streamed = result is not None
     if result is None:
@@ -201,6 +224,102 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
 
     _ring_completion_bell(args)
     return _convert_exit_code(report, result.validation, args.mode)
+
+
+def _cmd_convert_batch(args: argparse.Namespace, registry: Registry) -> int:
+    """The thin ``convert --batch`` presenter (M54-S3): read the manifest, run the proven
+    :func:`run_batch`, then emit — the ``BatchReport`` verbatim under ``--json``, a human view
+    otherwise. The batch exit code is the **worst per-file outcome** under the existing 0–5
+    vocabulary (reusing :func:`_convert_exit_code` per entry); a malformed manifest, a
+    manifest-level refusal (unknown target, empty sources, a non-append-capable assemble), or a
+    conflicting per-file flag is a usage error (exit 1).
+
+    The CLI adds **no batch logic**: every manifest decision, failure-isolation rule, and
+    output-mode behaviour lives in the library, exactly the ``run_batch`` a pipeline or M58's
+    API job would call. In batch mode the shared conversion settings (``--mode``/``--recover``/
+    ``--tolerance-profile``/the acknowledge flags) come from the manifest, so passing them on
+    the command line is refused rather than silently ignored."""
+    for flag in _BATCH_CONFLICTS(args):
+        raise _UsageError(
+            f"{flag} cannot be used with --batch: the manifest carries the shared conversion "
+            "settings; set them there (the manifest wins by design)"
+        )
+    if args.output is None:
+        raise _UsageError(
+            "batch conversion needs -o: a directory (per-file mode) or a file path (assemble mode)"
+        )
+    manifest = load_manifest(args.batch)
+    report = run_batch(
+        manifest,
+        registry,
+        output=args.output,
+        fail_fast=args.fail_fast,
+    )
+    if args.json:
+        print(_json(report.model_dump(mode="json")))
+    else:
+        print(render.render_batch(report))
+    # Status line to stderr so a --json run keeps stdout as clean JSON (the single-file
+    # convention): the artifacts were written by run_batch; the CLI only reports where.
+    if manifest.output_mode == "assemble":
+        print(
+            f"Wrote assembled {manifest.target} output to {args.output}",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"Wrote {report.tallies.converted} {manifest.target} file(s) to {args.output}/",
+            file=sys.stderr,
+        )
+    _ring_completion_bell(args)
+    return _batch_exit_code(report)
+
+
+def _BATCH_CONFLICTS(args: argparse.Namespace) -> list[str]:
+    """The per-file flags that are meaningless (and would be silently ignored) in batch mode,
+    where the manifest carries the shared settings. Each is a real value the user set — a
+    no-op default (``--mode permissive``) is not a conflict."""
+    conflicts = []
+    if args.mode == "strict":
+        conflicts.append("--mode")
+    if args.recover:
+        conflicts.append("--recover")
+    if args.tolerance_profile is not None:
+        conflicts.append("--tolerance-profile")
+    if args.acknowledge_loss:
+        conflicts.append("--acknowledge-loss")
+    if args.acknowledge_parse_warnings:
+        conflicts.append("--acknowledge-parse-warnings")
+    if args.format is not None:
+        conflicts.append("--format")
+    if args.report is not None:
+        conflicts.append("--report")
+    if args.validation_report is not None:
+        conflicts.append("--validation-report")
+    return conflicts
+
+
+def _batch_exit_code(report: Any) -> int:
+    """The batch exit code = the **worst per-file outcome** under the existing 0–5 vocabulary:
+    each entry folds through the same single-file logic (:func:`_convert_exit_code`) with its
+    *effective* mode (a per-file override may be stricter than the manifest), and the maximum
+    wins. ``EXIT_USAGE`` (1) is never produced here — a manifest-level caller mistake exits
+    before any conversion runs."""
+    worst = EXIT_OK
+    for entry, source in zip(report.entries, report.manifest.sources, strict=True):
+        if entry.status == "failed":
+            code = EXIT_PARSE_ERROR
+        elif entry.status == "refused":
+            code = EXIT_REFUSED
+        elif entry.conversion is not None:
+            mode = report.manifest.mode
+            if isinstance(source, SourceEntry) and source.override is not None:
+                mode = source.override.mode or mode
+            code = _convert_exit_code(entry.conversion, entry.validation, mode)
+        else:
+            code = EXIT_OK
+        worst = max(worst, code)
+    return worst
 
 
 def _convert_streamed(args: argparse.Namespace, registry: Registry) -> Any | None:
@@ -446,22 +565,15 @@ def _unknown_format_issue(message: str) -> Any:
 
 
 def _parse_recover(specs: list[str] | None) -> dict[str, dict[str, Any]]:
-    """Parse repeated ``--recover SCENARIO=CHOICE[,param=value…]`` into ``recovery_choices``."""
-    choices: dict[str, dict[str, Any]] = {}
-    for spec in specs or []:
-        if "=" not in spec:
-            raise _UsageError(f"--recover {spec!r} must be SCENARIO=CHOICE[,param=value…]")
-        scenario, rest = spec.split("=", 1)
-        parts = rest.split(",")
-        choice = parts[0]
-        params: dict[str, Any] = {}
-        for param in parts[1:]:
-            if "=" not in param:
-                raise _UsageError(f"--recover parameter {param!r} must be name=value")
-            name, value = param.split("=", 1)
-            params[name] = _coerce(value)
-        choices[scenario] = {"choice": choice, "parameters": params}
-    return choices
+    """Parse repeated ``--recover SCENARIO=CHOICE[,param=value…]`` into ``recovery_choices``.
+
+    The one preset grammar lives in the batch module (``conversion.batch.parse_recovery_presets``
+    — shared with the batch manifest, so the CLI and the batch can never drift); the CLI only
+    maps its error onto the usage-error surface."""
+    try:
+        return parse_recovery_presets(specs)
+    except RecoveryPresetError as exc:
+        raise _UsageError(f"--recover {exc}") from exc
 
 
 def _inject_references(registry: Registry, recovery_choices: dict[str, dict[str, Any]]) -> None:
@@ -478,16 +590,6 @@ def _inject_references(registry: Registry, recovery_choices: dict[str, dict[str,
         params["reference"] = parse_with_recovery(
             registry, ref_bytes, filename=Path(str(ref_path)).name
         ).canonical
-
-
-def _coerce(value: str) -> Any:
-    """Coerce a CLI parameter string to int, then float, else leave it a string."""
-    for cast in (int, float):
-        try:
-            return cast(value)
-        except ValueError:
-            continue
-    return value
 
 
 _NAMED_PROFILES = ("default", "strict", "loose")
@@ -633,9 +735,33 @@ def _build_parser() -> argparse.ArgumentParser:
     p_convert = sub.add_parser(
         "convert", help="Full pipeline: parse → pre-flight → recovery → export → validate."
     )
-    p_convert.add_argument("file")
-    p_convert.add_argument("--to", required=True, metavar="FORMAT_ID", help="Target format.")
-    p_convert.add_argument("-o", "--output", metavar="PATH", help="Write the converted file here.")
+    p_convert.add_argument(
+        "file", nargs="?", help="Source file (omit when --batch MANIFEST is given)."
+    )
+    p_convert.add_argument(
+        "--batch",
+        metavar="MANIFEST",
+        help="Convert every source in a YAML batch manifest (per-file or assemble mode); "
+        "the manifest carries the target and the shared settings.",
+    )
+    p_convert.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Batch mode: stop at the first file that is not converted (default: partial "
+        "completion with per-file honesty).",
+    )
+    p_convert.add_argument(
+        "--to",
+        metavar="FORMAT_ID",
+        help="Target format (in batch mode the manifest carries it).",
+    )
+    p_convert.add_argument(
+        "-o",
+        "--output",
+        metavar="PATH",
+        help="Write the converted file here (batch: a directory for per-file mode, a file "
+        "for assemble mode).",
+    )
     p_convert.add_argument("--format", metavar="FORMAT_ID", help="Override source format sniffing.")
     p_convert.add_argument("--mode", choices=("permissive", "strict"), default="permissive")
     p_convert.add_argument(

@@ -17,6 +17,26 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+### Added — the batch surface (v1.5 M54; D201–D204)
+
+A batch form for the library and CLI: `xtalate convert --batch manifest.yaml` resolves an
+ordered YAML manifest (literal paths and/or deterministic globs, one target, shared settings +
+optional per-file overrides, the `--recover` preset grammar), fans each file out to the ordinary
+single-file conversion path, and returns a `BatchReport` that embeds every per-file
+`ConversionReport`/`ValidationReport` **verbatim** (the same file converted alone and inside a
+batch serializes byte-identically) with dataset-level tallies that are counts, never
+restatements. Failure isolation is structural: a per-file parse failure or refusal is that
+file's outcome and the batch always completes (`--fail-fast` stops at the first non-converted
+file). Two output modes: `per-file` (one file per source into a directory) and `assemble` (N
+sources → one multi-frame extXYZ, per-contribution validation, and the honest dataset-level
+variable-N note reusing the existing `EXTXYZ_VARIABLE_ATOM_COUNT` refusal, recorded into the
+v2.0 variable-N evidence stream). The batch exit code is the worst per-file outcome under the
+0–5 ladder; a malformed manifest — or one carrying a selection/split/dedup key, which the batch
+surface deliberately does not implement (aggregation, not curation, roadmap §11) — is a usage
+error (exit 1). The manifest carries the shared conversion settings in batch mode; the
+conflicting CLI flags are refused rather than silently ignored. Schema stays **1.0.0**; the
+package stays 1.4.0 (the 1.5.0 bump is M58's).
+
 ## [1.4.0] — 2026-08-23
 
 Schema version: 1.0.0

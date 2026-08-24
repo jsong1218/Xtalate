@@ -9,6 +9,20 @@ validation land in M5; M4 is the happy path plus structured refusal.
 
 from __future__ import annotations
 
+from xtalate.conversion.batch import (
+    BatchEntry,
+    BatchError,
+    BatchManifest,
+    BatchManifestError,
+    BatchReport,
+    BatchTallies,
+    LabelPresence,
+    SourceEntry,
+    SourceOverride,
+    load_manifest,
+    parse_recovery_presets,
+    run_batch,
+)
 from xtalate.conversion.engine import (
     CompletenessInvariantError,
     ConversionEngine,
@@ -37,21 +51,33 @@ from xtalate.sdk import FrameLimitExceeded
 
 __all__ = [
     "Assumption",
+    "BatchEntry",
+    "BatchError",
+    "BatchManifest",
+    "BatchManifestError",
+    "BatchReport",
+    "BatchTallies",
     "CompletenessInvariantError",
     "ConversionEngine",
     "ConversionReport",
     "ConversionResult",
     "FrameLimitExceeded",
+    "LabelPresence",
     "ParseRecovery",
     "PreflightDiff",
     "PreservedEntry",
     "RecoveryPreview",
     "RemovedEntry",
     "ReportWarning",
+    "SourceEntry",
+    "SourceOverride",
     "SuppliedEntry",
     "UnresolvedScenario",
     "build_expected_object",
     "build_preflight",
     "capability_path",
+    "load_manifest",
+    "parse_recovery_presets",
     "parse_with_recovery",
+    "run_batch",
 ]

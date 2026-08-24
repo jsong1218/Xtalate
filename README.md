@@ -149,7 +149,27 @@ Validation Report  [passed]  (tolerance profile: default)
   ✓ absence_conformance · ✓ report_consistency
 ```
 
-Without the `--recover` flags the same command **refuses** (exit code 2) and prints exactly which decisions are needed — a refusal is a first-class, reported outcome, never a silent default. Exit codes make the CLI CI-native: `0` ok · `2` refused · `3` validation failed · `4` parse error · `5` warnings under `--mode strict` · `1` usage error. Any command accepts `--json` to emit the report schema verbatim. See the [CLI reference](docs/cli.md).
+Without the `--recover` flags the same command **refuses** (exit code 2) and prints exactly which decisions are needed — a refusal is a first-class, reported outcome, never a silent default. Exit codes make the CLI CI-native: `0` ok · `2` refused · `3` validation failed · `4` parse error · `5` warnings under `--mode strict` · `1` usage error. Any command accepts `--json` to emit the report schema verbatim. **Convert a directory at once** with a batch manifest — one record for the whole dataset,
+per-file honesty preserved (each file's reports embedded verbatim, tallies on top; one file's
+failure never aborts the batch):
+
+```console
+$ cat manifest.yaml
+sources: [run1/vasprun.xml, run2/*.out]
+target: extxyz
+$ xtalate convert --batch manifest.yaml -o train/
+Batch Report  [2 converted · 0 refused · 0 failed]
+  ✓ run1/vasprun.xml  converted [passed]
+  ✓ run2/relax.out    converted [passed]
+  labels: 2 energy · 2 forces · 0 stress
+```
+
+`output_mode: assemble` appends every source's frames into one artifact (`-o train.extxyz`);
+selection, splitting, and deduplication are deliberately **not** batch features — curation is a
+scientific judgment, conversion is a translation (roadmap §11). The batch exit code is the worst
+per-file outcome under the same 0–5 ladder.
+
+See the [CLI reference](docs/cli.md).
 
 ## Quickstart (library)
 
