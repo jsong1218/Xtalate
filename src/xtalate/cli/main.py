@@ -306,7 +306,10 @@ def _batch_exit_code(report: Any) -> int:
     wins. ``EXIT_USAGE`` (1) is never produced here — a manifest-level caller mistake exits
     before any conversion runs."""
     worst = EXIT_OK
-    for entry, source in zip(report.entries, report.manifest.sources, strict=True):
+    # `entries` is a positional prefix of the resolved `manifest.sources` — equal length for a
+    # full run, truncated when `fail_fast` stopped early — so pair by position and stop at the
+    # shorter (`entries`); a strict zip would raise on the fail-fast short read.
+    for entry, source in zip(report.entries, report.manifest.sources, strict=False):
         if entry.status == "failed":
             code = EXIT_PARSE_ERROR
         elif entry.status == "refused":

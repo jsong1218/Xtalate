@@ -87,6 +87,24 @@ def test_batch_fail_fast_stops_and_exits_on_first_non_success(tmp_path: Path) ->
     assert (out / "water_traj.extxyz").is_file()
 
 
+def test_batch_fail_fast_on_a_non_final_source_still_exits_cleanly(tmp_path: Path) -> None:
+    # The non-success is the *first* source, so resolved sources remain unprocessed after the
+    # fail-fast break: entries is a short prefix of manifest.sources. The worst-per-file fold
+    # must pair by position and exit cleanly, never raise on the short read (regression: a strict
+    # zip in _batch_exit_code crashed this path with a traceback).
+    junk = tmp_path / "junk.bin"
+    junk.write_text("this is not a chemistry file at all\n")
+    manifest = _manifest(
+        tmp_path,
+        body=f"sources:\n  - {junk}\n  - {WATER}\ntarget: extxyz\n",
+    )
+    out = tmp_path / "out"
+    code = main(["convert", "--batch", str(manifest), "-o", str(out), "--fail-fast"])
+    assert code == EXIT_PARSE_ERROR
+    # The batch stopped at the first source; water was never processed.
+    assert not (out / "water_traj.extxyz").exists()
+
+
 # --- --json prints the BatchReport verbatim ---------------------------------------------------
 
 
