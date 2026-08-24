@@ -1,0 +1,14 @@
+case: rich-key-value
+format_id: ase_db
+source_file: sample.db
+expected_canonical: expected.canonical.json
+canonical_schema_version: "1.0.0"
+sha256: "140ab5a030bd94a6bf3a2e4b760a9d3a6da153e646ff950fd69a337aed985abf"
+expected_sha256: "a3962423fde7fff68dbb01298b0d7037cc06ef2c0cf0a824b5332a7e7fcd532d"
+origin:
+  kind: synthetic
+  source: >-
+    Hand-authored for M55-S1 via tests/golden/ase_db/_generate.py (ASE .db SQLite container).
+  license: "Apache-2.0"
+notes: >-
+  The minimal-molecule + laundering anchor: one bare water row with only symbols and positions. ASE always hands back a fully-populated Atoms, so this fixture proves the parser launders every manufactured default back to absence (P3) on a *real committed* file — the all-zero 3x3 cell -> None, Z-derivable masses -> None, zeroed momenta -> dynamics.velocities None, the empty constraints list -> None, and ASE's generated id/ctime/mtime/user + empty kv dict -> absent. The rich key-value set and data blob still carry into user_metadata.custom_global (carry, never interpret).

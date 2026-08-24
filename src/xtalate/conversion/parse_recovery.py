@@ -58,6 +58,12 @@ _HINT_TO_SCENARIO = {
     # also declares neither units nor element symbols, so this hint typically resolves *alongside*
     # `ambiguous_units` + `missing_species` in the compound recovery loop below.
     "ambiguous_atom_style": "ambiguous_atom_style",
+    # M55: a multi-row ASE `.db` refuses on the single-file path (ASEDB_MULTIPLE_ROWS) and
+    # resolves per row via the `asedb_row_selection` scenario — `index,row=<i>` re-parses that
+    # one row through the parser's parse_recover hook, exactly like the other parse-time
+    # scenarios; the batch fan-out (M55-S3) intercepts the refusal *before* resolution and
+    # expands the source into N per-row conversions.
+    "asedb_multiple_rows": "asedb_row_selection",
 }
 
 #: The parse-time recovery scenarios, in resolution-stage order (Part 4 §3.3). These resolve *ahead*
@@ -322,6 +328,36 @@ def _build_assumption(
                 "`# <style>` comment naming the layout. The columns are genuine source data — only "
                 "their meaning was resolved by this recorded choice, never guessed."
             ),
+        )
+    if scenario == "asedb_row_selection":
+        # Selective reductive (D206), the frame_selection no-default logic applied to rows:
+        # genuine rows kept, the rest not converted on this path. No `supplied` entry — the
+        # retained row is genuine source data, only the selection is recorded.
+        row = parameters.get("row")
+        return AppliedAssumption(
+            id="A1",
+            scenario=scenario,
+            choice=code,
+            parameters={"row": row},
+            origin="preset",
+            description=(
+                f"Row {row} of the multi-row ASE database selected per "
+                "asedb_row_selection=index; the other rows are not part of this conversion. "
+                "Which row survives changes the scientific meaning of the output, so it is a "
+                "recorded selective reduction, never a silent default (the same no-default "
+                "logic as frame_selection, P4). Use --batch to convert every row to its own "
+                "per-row conversion."
+            ),
+            removed=[
+                FrameDrop(
+                    path="atoms.positions",
+                    reason="Multi-row ASE database; the single-file path accepts one structure.",
+                    detail=(
+                        f"Row {row} retained; the other rows of the database were not "
+                        "converted on this path (use --batch for every row)."
+                    ),
+                )
+            ],
         )
     # truncate_corrupt_tail — selective reductive: genuine frames kept, corrupt tail dropped.
     kept = canonical.frame_count

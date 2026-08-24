@@ -112,6 +112,13 @@ export const WHY_THIS_MATTERS: Record<string, WhyThisMatters> = {
       "This is not a value Xtalate invents — the columns are your file's own. What you are choosing is how to read them: 'atomic' (id type x y z), 'charge' (id type q x y z), or 'full' (id molecule-id type q x y z). Pick the wrong style and the positions and any per-atom charge are misread, so the choice is recorded as an explicit assumption on the conversion rather than guessed.",
     ],
   },
+  asedb_row_selection: {
+    question: QUESTION,
+    stakes: [
+      "An ASE database holds many independent structures, one per row — not the frames of a single trajectory. A single conversion produces one output, so it reads exactly one row; Xtalate will not silently pick one for you, nor fold the rows together into a structure that never existed in the file.",
+      "This changes which structure you convert, nothing about the structure itself. Pick a row by its position to convert that one, or choose to convert every row — which runs the file through batch mode, one output per row. The row you selected is recorded on the conversion so the output is unambiguously traceable to its source row.",
+    ],
+  },
 };
 
 /** Disclosure copy for a scenario code, or `null` when there is none (a plugin scenario). */

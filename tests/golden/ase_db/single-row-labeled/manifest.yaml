@@ -1,0 +1,14 @@
+case: single-row-labeled
+format_id: ase_db
+source_file: sample.db
+expected_canonical: expected.canonical.json
+canonical_schema_version: "1.0.0"
+sha256: "a1bd42390e14fe4cb3757d0e42cc98183665d398e96e404e21c075eb1949d60d"
+expected_sha256: "269d81cf8a991e23eebdd375db3af196c6cb29f4f1164a0fbee9fb09603b8aad"
+origin:
+  kind: synthetic
+  source: >-
+    Hand-authored for M55-S1 via tests/golden/ase_db/_generate.py (ASE .db SQLite container).
+  license: "Apache-2.0"
+notes: >-
+  The all-fields anchor: a single labeled CO row carrying a present cell + pbc, source-written isotope masses, velocities, initial charges/magmoms, a FixAtoms constraint, and a SinglePointCalculator energy + forces. Proves that nothing the source *did* state is laundered away, and that a per-row key-value pair + data blob carry verbatim into user_metadata.custom_global under the ase_db: namespace (carry-never-interpret, Part 2 §6.1) with ASEDB_KV_CARRIED warnings. A single row is one Canonical Object, never a trajectory (a dataset is aggregation, not a new model): trajectory launders to None.

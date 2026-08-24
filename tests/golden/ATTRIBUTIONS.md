@@ -16,6 +16,20 @@ the top-level `NOTICE` file.
 Each entry is labelled with the corpus it belongs to, since the two carry different
 *expectations* (a canonical JSON versus a declared issue set) but the same obligations.
 
+## `ase_db` / `rich-key-value` (golden)
+
+- **Source file:** `sample.db`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M55-S1 via tests/golden/ase_db/_generate.py (ASE .db SQLite container).
+
+## `ase_db` / `single-row-labeled` (golden)
+
+- **Source file:** `sample.db`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M55-S1 via tests/golden/ase_db/_generate.py (ASE .db SQLite container).
+
 ## `ase_traj` / `co-relax-3frame` (golden)
 
 - **Source file:** `relax.traj`

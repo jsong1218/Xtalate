@@ -37,12 +37,24 @@ _EXPECTED_CLASSES = {
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
+    # M55: SELECTIVE_REDUCTIVE — a multi-row ASE `.db` refuses on the single-file path
+    # (ASEDB_MULTIPLE_ROWS, recovery_hint="asedb_multiple_rows", parse-time like
+    # missing_species); which row survives changes the scientific meaning, so an explicit
+    # `index,row=<i>` choice is required; `all` is the batch fan-out (M55-S3), never a
+    # single-file resolution into one object.
+    "asedb_row_selection": HazardClass.SELECTIVE_REDUCTIVE,
 }
 
 
 def test_catalog_is_complete_and_classified() -> None:
     # Every §3.3 scenario is registered with exactly its §3.1 class — no more, no fewer.
     assert SCENARIO_HAZARD == _EXPECTED_CLASSES
+
+
+def test_asedb_row_selection_offers_index_and_all() -> None:
+    # M55: `index` re-parses one row on the single-file path; `all` is the batch fan-out —
+    # offered so the refusal report can name it, never a single-file resolution into one object.
+    assert available_options("asedb_row_selection") == ["index", "all"]
 
 
 @pytest.mark.parametrize(("scenario", "hazard"), list(_EXPECTED_CLASSES.items()))

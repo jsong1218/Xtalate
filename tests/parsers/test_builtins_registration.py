@@ -66,6 +66,8 @@ def test_builtins_register_without_error() -> None:
         # M52-S1: qe_pw_out joins as the fourth **parser-only** format (D159/D195) — an
         # output is never a conversion target.
         "qe_pw_out",
+        # M55-S1: ase_db joins as a parser (read); M55-S2 adds the exporter (staging state, D205).
+        "ase_db",
     }
     # Asymmetric since M42 slice 2: vasprun is the first parser-only format (D159) — Xtalate
     # reads it but does not write it; OUTCAR (M43) is the second — the permanent source-never-

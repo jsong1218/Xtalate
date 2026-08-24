@@ -130,6 +130,14 @@ SCENARIO_HAZARD: dict[str, HazardClass] = {
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
+    # M55: a multi-row ASE `.db` refuses on the single-file path (ASEDB_MULTIPLE_ROWS) and
+    # resolves per row; SELECTIVE_REDUCTIVE — which row survives changes the scientific meaning,
+    # so an explicit choice is required (the frame_selection no-default logic, P4, applied to
+    # rows as independent structures, D206). Parse-time-blocking: the refusal fires from the
+    # parser (recovery_hint="asedb_multiple_rows"), exactly like missing_species /
+    # ambiguous_units. `index` re-parses one row; `all` is the batch fan-out (M55-S3) — never a
+    # single-file resolution into one object (rows-as-frames breaks constant-N, Part 2 §3.2).
+    "asedb_row_selection": HazardClass.SELECTIVE_REDUCTIVE,
 }
 
 #: Scenarios that *interpret* genuine source data rather than fabricating a value the source
@@ -240,6 +248,14 @@ def available_options(
         # documented atom-style list. A style beyond these three is not an ambiguity to resolve —
         # the parser refuses it as unsupported rather than offering it here.
         return ["atomic", "charge", "full"]
+    if scenario == "asedb_row_selection":
+        # M55: `index` re-parses exactly one row (parameter `row`, a 0-based ordinal in the
+        # database's insertion order — the ids the refusal message lists are informational for
+        # the human resolver). `all` is the batch fan-out (--batch converts every row to its own
+        # per-row conversion); on the single-file path an `all` choice refuses, because N rows
+        # can never become one Canonical Object (constant-N, Part 2 §3.2) — offering it here is
+        # the honest option-list for the refusal report (Part 4 §3.3).
+        return ["index", "all"]
     if scenario == "missing_species":
         # Parse-time scenario, resolved in Slice 2: an ordered symbol / type→element map, or the
         # symbols read from a matching reference structure (Part 4 §3.3).
