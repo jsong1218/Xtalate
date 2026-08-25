@@ -69,6 +69,8 @@ def test_builtins_register_without_error() -> None:
         # M55-S1: ase_db joins as a parser (read); M55-S2 adds the exporter, closing the staging
         # state (D205) — a full read+write format on the batch surface.
         "ase_db",
+        # M56-S1: DeePMD-kit NumPy system directory parser.
+        "deepmd_npy",
     }
     # Asymmetric since M42 slice 2: vasprun is the first parser-only format (D159) — Xtalate
     # reads it but does not write it; OUTCAR (M43) is the second — the permanent source-never-
