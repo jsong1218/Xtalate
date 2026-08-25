@@ -18,4 +18,8 @@ renders as "Interpreted <name> stress as …" (RF-9).
 STRESS_CARRY_KEYS: dict[str, str] = {
     "extxyz:stress": "extXYZ",
     "ase_traj:stress": "ASE `.traj`",
+    # M55: ase_db is the third ASE-backed carry (D18 applied to `.db` rows — the sign
+    # convention is unreconcilable without a source-declared choice, so stress rides in
+    # custom_per_frame['ase_db:stress'] until the ambiguous_stress_convention recovery fires).
+    "ase_db:stress": "ASE `.db`",
 }

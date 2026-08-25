@@ -37,6 +37,28 @@ error (exit 1). The manifest carries the shared conversion settings in batch mod
 conflicting CLI flags are refused rather than silently ignored. Schema stays **1.0.0**; the
 package stays 1.4.0 (the 1.5.0 bump is M58's).
 
+### Added — the ASE `.db` format, read and write (v1.5 M55; D205–D208)
+
+`ase_db` joins the format set as a full read **and** write format — the third ASE-backed one (after
+extended XYZ and the ASE `.traj`). On read, the parser launders every default ASE manufactures for a database row back
+to absence (an all-zero cell, Z-derived masses, zeroed momenta, empty constraints, and ASE's
+generated `unique_id`/timestamps/`user` all become `None`/dropped, never invented data), and carries
+each row's key-value pairs and `data` blob verbatim into `user_metadata.custom_global` under an
+`ase_db:<key>` namespace. On write, one Canonical Object becomes one `.db` row — charges/moments,
+energy/forces on a calculator, dual-source stress written Voigt-6 under a declared sign convention,
+and the key-value/`data` carry restored. A **dataset is aggregation, not a new model**: a single-row
+`.db` is one structure, and a **multi-row** `.db` is not folded into a trajectory — on the single-file
+path it refuses with the recoverable `ASEDB_MULTIPLE_ROWS` (resolved only by the new
+`asedb_row_selection` scenario — a `frame_selection` sibling: `index` re-parses one chosen row, `all`
+is the batch fan-out), and under `xtalate convert --batch` it **fans out** into N ordinary per-row
+conversions in one `BatchReport` (each an explicit, recorded `asedb_row_selection=index` choice keyed
+`<path>::row=<i>`, each embedded report byte-identical to converting that row alone). The batch
+`assemble` output mode generalized from M54's extXYZ-only byte-concatenation to an **exporter-mediated
+combine** behind a declared `FormatCapabilities.assemble_capable` capability: `.db` is the second
+assemble-capable target (N single-structure sources → one N-row `.db` dataset), and `extxyz ↔ ase_db`
+dataset translation is symmetric (assemble to `.db`, fan out from `.db`). extXYZ assemble stays
+byte-identical to M54. Schema stays **1.0.0**; the package stays 1.4.0 (the 1.5.0 bump is M58's).
+
 ## [1.4.0] — 2026-08-23
 
 Schema version: 1.0.0

@@ -272,6 +272,39 @@ real-world contribution call (§5.7) — a real input/output pair is exactly how
 axis gains evidence — and the CP2K handoff pointer (README), the first plugin expected to follow
 this exact pairing pattern.
 
+### 5.1.4 The multi-structure dataset-container variant (many independent structures in one file)
+
+Some formats are **datasets**: one file holds many independent structures, possibly of different
+composition (an ASE `.db` with many rows; DeePMD's grouped `.npy` next). The load-bearing rule is
+that **a dataset is aggregation, not a new model** — the rows are *not* a trajectory, and folding them
+into one Canonical Object's frames would break constant-N (Part 2 §3.2) and mislabel a dataset as one
+structure. So a dataset format:
+
+- **Parses one structure as one Canonical Object**, and **refuses** a multi-structure file on the
+  single-file path with a *recoverable* issue that names the count (`ase_db` raises
+  `ASEDB_MULTIPLE_ROWS` with `location="rows N"`). The refusal is resolved by a `frame_selection`-style
+  scenario (`asedb_row_selection`: `index` picks one row, `all` is the batch fan-out) — which row you
+  keep changes the science, so it is an explicit recorded choice, never guessed (P4). The batch layer
+  detects exactly that refusal code and **fans the file out** into N per-row conversions; you write no
+  batch code — implementing the refusal-with-count is the whole contract.
+- **To be an `assemble` target** (combine N sources into one dataset file), declare
+  `FormatCapabilities.assemble_capable=True` **and** override `ExporterPlugin.assemble(contributions,
+  stream)`, together — the flag without the method (or vice versa) is a mistake. `assemble` is handed
+  one `AssembleContribution` per source, in order, each carrying both the write-plan-filtered
+  `canonical` object and the exact per-source `output` bytes; combine by whichever your container uses
+  (extXYZ writes the `output` bytes verbatim for byte-identical concatenation; `ase_db` rebuilds one
+  row per `canonical` and appends). The capability is **orthogonal to `max_frames`** — a
+  single-structure target (`max_frames=1`, like `ase_db`) is still assemble-capable, and a
+  trajectory target (`max_frames=None`, like XDATCAR) is *not* assemble-capable unless it opts in.
+  Validation stays per contribution; the batch never validates the assembled whole.
+
+**Aggregation, not curation (the boundary, restated for dataset formats).** A dataset format converts
+and reports every structure it is given, completely — it does **not** select, split, dedup, or filter
+rows by any criterion (roadmap §11; the manifest has no such field and rejects one). Which rows to
+keep is the user's scientific judgment; Xtalate's job is to translate them all and report exactly what
+each one kept and lost. See §6 for the batch surface these two seams (refuse-and-fan-out on input,
+`assemble` on output) plug into.
+
 ### 5.2 Ship it as an installable plugin (no fork)
 
 A third-party distribution advertises its parser/exporter under Xtalate's entry-point groups;
@@ -511,7 +544,7 @@ sources:               # ordered: processing order AND report order; literal pat
     override:
       acknowledge_loss: true
 target: extxyz
-output_mode: per-file  # per-file | assemble (append N sources -> one artifact)
+output_mode: per-file  # per-file | assemble (combine N sources -> one dataset container)
 mode: permissive       # permissive | strict
 recovery_choices:      # the same --recover preset grammar, one string per preset
   - frame_selection=last
@@ -527,10 +560,28 @@ manifest; in batch mode the CLI refuses `--mode`/`--recover`/`--tolerance-profil
 acknowledge flags rather than silently ignoring them (the manifest wins by design).
 
 **The two output modes.** `per-file` writes one file per source into the `-o` directory
-(`<stem>.<target>`; POSCAR/CONTCAR take no extension). `assemble` concatenates the converted
-frames of all sources into **one** artifact (`-o out.extxyz`) — the one append-capable target
-this milestone ships, extXYZ. A non-append-capable target under `assemble` refuses with a clear
-message; there is never a silent fallback to per-file.
+(`<stem>.<target>`; POSCAR/CONTCAR take no extension). `assemble` combines all sources into
+**one** dataset container (`-o out.extxyz`, `-o out.db`). The combine is **exporter-mediated** and
+gated on a **declared** capability, not a hardcoded target list (M55-S4, D208): a format opts in by
+setting `FormatCapabilities.assemble_capable=True` and overriding `ExporterPlugin.assemble(...)` — the
+batch layer holds no per-format knowledge of how a container is built (P2). extXYZ (assemble-capable)
+concatenates the per-source output bytes verbatim, so the assembled file is byte-identical to joining
+the individual conversions; ASE `.db` (assemble-capable) appends one row per source into one database.
+A target that does not declare the capability (POSCAR, XDATCAR, …) refuses `assemble` with a clear
+message; there is never a silent fallback to per-file. Validation stays **per contribution** (each
+source converts and validates on its ordinary path — the assembled whole is never the validation
+unit), and a mixed-composition assemble surfaces an honest dataset-level note (extXYZ's
+`EXTXYZ_VARIABLE_ATOM_COUNT`), never a per-file loss.
+
+**Multi-structure container inputs fan out.** A source that holds many independent structures — a
+multi-row ASE `.db`, which refuses `ASEDB_MULTIPLE_ROWS` on the single-file path because a dataset is
+aggregation, not one Canonical Object — **fans out** under `--batch` into N ordinary per-row
+conversions in the one `BatchReport` (each an explicit, recorded `asedb_row_selection=index` choice
+keyed `<path>::row=<i>`, each embedded report byte-identical to converting that row alone). So the two
+dataset containers are symmetric: assemble N sources **into** a `.db`, and fan a multi-row `.db` back
+**out** — `extxyz ↔ ase_db` translation runs both directions. This is the seam every future
+multi-structure format (DeePMD next) rides; declaring `assemble_capable` is all a new dataset target
+needs to join it.
 
 **Per-file honesty (the aggregate embeds, never summarizes).** The `BatchReport` carries
 dataset-level **tallies** (converted / refused / failed, plus label-presence counts) and embeds

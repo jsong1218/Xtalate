@@ -27,6 +27,7 @@ export const RECOVERY_RESOLUTION_ORDER: readonly string[] = [
   "truncate_corrupt_tail",
   "ambiguous_units",
   "ambiguous_atom_style",
+  "asedb_row_selection",
   "frame_selection",
   "constraint_representation",
   "missing_lattice",

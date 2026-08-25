@@ -11,6 +11,7 @@ assembly imports *downward* only and the P2 import contract holds.
 
 from __future__ import annotations
 
+from xtalate.parsers.ase_db import AseDbParser, make_ase_db_parser
 from xtalate.parsers.ase_traj import AseTrajParser, make_ase_traj_parser
 from xtalate.parsers.cif import CifParser, make_cif_parser
 from xtalate.parsers.extxyz import ExtxyzParser
@@ -26,8 +27,10 @@ from xtalate.parsers.xyz import XyzParser
 from xtalate.sdk import ParserPlugin
 
 __all__ = [
+    "AseDbParser",
     "AseTrajParser",
     "CifParser",
+    "make_ase_db_parser",
     "ExtxyzParser",
     "LammpsDataParser",
     "LammpsDumpParser",
@@ -39,6 +42,7 @@ __all__ = [
     "XdatcarParser",
     "XyzParser",
     "builtin_parsers",
+    "make_ase_db_parser",
     "make_ase_traj_parser",
     "make_cif_parser",
     "make_contcar_parser",
@@ -69,7 +73,9 @@ def builtin_parsers() -> list[ParserPlugin]:
     so `qe_pw_in` is a full read+write format and the Capability Matrix shows both directions.
     v1.4 M52-S1: qe_pw_out, the Quantum ESPRESSO pw.x **output** reader, the fourth
     **parser-only** format (the permanent source-never-target seam, D159/D195) — an output is
-    never a conversion target (D195)."""
+    never a conversion target (D195). v1.5 M55-S1: ase_db, the ASE SQLite database — a
+    **read+write** format whose single-file path reads one row and whose multi-row databases
+    refuse on the single-file path (ASEDB_MULTIPLE_ROWS) and fan out under --batch (S3)."""
     return [
         XyzParser(),
         ExtxyzParser(),
@@ -77,6 +83,7 @@ def builtin_parsers() -> list[ParserPlugin]:
         make_contcar_parser(),
         make_xdatcar_parser(),
         make_ase_traj_parser(),
+        make_ase_db_parser(),
         make_cif_parser(),
         make_vasprun_parser(),
         make_outcar_parser(),

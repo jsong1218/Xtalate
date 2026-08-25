@@ -1,0 +1,148 @@
+{
+  "schema_version": "1.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "C",
+          "O"
+        ],
+        "atomic_numbers": [
+          6,
+          8
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.1
+          ]
+        ],
+        "masses": [
+          12.011,
+          15.999
+        ],
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            6.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            6.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            6.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.0009822694788464063,
+            0.0009822694788464063,
+            0.0009822694788464063
+          ],
+          [
+            0.0009822694788464063,
+            0.0009822694788464063,
+            0.0009822694788464063
+          ]
+        ],
+        "forces": [
+          [
+            0.01,
+            0.01,
+            0.01
+          ],
+          [
+            0.01,
+            0.01,
+            0.01
+          ]
+        ],
+        "constraints": [
+          {
+            "kind": "fixed_atoms",
+            "atom_indices": [
+              0
+            ],
+            "parameters": {}
+          }
+        ]
+      },
+      "electronic": {
+        "total_energy": -5.0,
+        "stress": null,
+        "charges": [
+          0.3,
+          -0.3
+        ],
+        "magnetic_moments": [
+          0.0,
+          1.0
+        ],
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": null,
+  "simulation": null,
+  "provenance": {
+    "source_filename": "sample.db",
+    "source_format": "ase_db",
+    "source_units": {
+      "positions": "angstrom"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "read via ASE 3.29.0 ase.db; ASE-manufactured defaults (zero cell, derived masses, zeroed momenta, generated id/ctime/mtime/user) laundered to absence (P3)."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-08-24T04:37:22Z",
+        "operation": "parse",
+        "source_format": "ase_db",
+        "target_format": null,
+        "tool_version": "1.4.0",
+        "parser_version": "ase_db-parser 1.4.0 (ase 3.29.0)",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {
+      "ase_db:label": "co-relaxed",
+      "ase_db:data": {
+        "note": [
+          1,
+          2
+        ]
+      }
+    },
+    "custom_per_atom": {},
+    "custom_per_frame": {}
+  }
+}

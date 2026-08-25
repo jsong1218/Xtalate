@@ -15,6 +15,7 @@ from xtalate.sdk.capabilities import (
 from xtalate.sdk.image_flags import IMAGE_FLAGS_CARRY_KEY
 from xtalate.sdk.plugins import ExporterPlugin, ParserPlugin
 from xtalate.sdk.results import (
+    AssembleContribution,
     ExporterWarning,
     FrameLimitExceeded,
     ParseError,
@@ -35,6 +36,7 @@ from xtalate.sdk.streaming import (
 from xtalate.sdk.stress_carries import STRESS_CARRY_KEYS
 
 __all__ = [
+    "AssembleContribution",
     "CapabilityLevel",
     "ExporterPlugin",
     "FieldCapability",

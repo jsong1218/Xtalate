@@ -44,6 +44,10 @@
       "real",
       "si"
     ],
+    "asedb_row_selection": [
+      "all",
+      "index"
+    ],
     "constraint_representation": [
       "drop_all",
       "project"
@@ -89,6 +93,7 @@
     "ambiguous_atom_style",
     "ambiguous_stress_convention",
     "ambiguous_units",
+    "asedb_row_selection",
     "constraint_representation",
     "frame_selection",
     "missing_energy",
@@ -104,6 +109,7 @@
     "truncate_corrupt_tail",
     "ambiguous_units",
     "ambiguous_atom_style",
+    "asedb_row_selection",
     "frame_selection",
     "constraint_representation",
     "missing_lattice",

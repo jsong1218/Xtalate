@@ -98,6 +98,15 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     # (a byte-exact mirror of the plugin's golden) sits under tests/golden/ because the plugin's own
     # fixtures are not shipped in its wheel and the matrix runs from the checkout, not the install.
     "exfmt": ("exfmt/water-monomer", "water_monomer.exfmt"),
+    # M55: the ASE database exporter closes M55-S1's parser-only state, so ase_db enrols as a full
+    # source *and* target. The single-row-labeled anchor is the matrix source: one structure that
+    # bare-parses without recovery (the matrix reads sources with a bare `parse`, and a single-row
+    # .db needs none — a multi-row .db would refuse via ASEDB_MULTIPLE_ROWS, D206), carrying the
+    # full label triple sans stress (energy + forces) plus velocities, a fixed_atoms constraint,
+    # charges/magmoms, and a carried key-value label + data blob — so every hop out of it exercises
+    # the ASE-wrap laundering and the kv/data carry across the matrix. As a target its max_frames=1
+    # means a multi-frame source reaches frame_selection (FIXED_PRESETS below), the POSCAR/CIF path.
+    "ase_db": ("ase_db/single-row-labeled", "sample.db"),
 }
 
 # Capability paths that are never round-trip content: provenance records *how* a file was read

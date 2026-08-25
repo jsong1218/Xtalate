@@ -72,6 +72,11 @@ export const SCENARIO_LABELS: Record<string, Labeled> = {
     description:
       "The data file's Atoms section names no atom style, so its columns cannot be read without one.",
   },
+  asedb_row_selection: {
+    label: "Pick which row to convert",
+    description:
+      "The database holds more than one structure; a single conversion reads exactly one row.",
+  },
 };
 
 /**
@@ -132,6 +137,10 @@ export const CHOICE_LABELS: Record<string, Record<string, Labeled>> = {
     atomic: { label: "atomic style (id type x y z)" },
     charge: { label: "charge style (id type q x y z)" },
     full: { label: "full style (id molecule-id type q x y z)" },
+  },
+  asedb_row_selection: {
+    index: { label: "Convert one row by its position" },
+    all: { label: "Convert every row (use batch mode)" },
   },
 };
 

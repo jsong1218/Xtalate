@@ -257,6 +257,16 @@ _TAILORED: dict[str, list[tuple[str, bytes]]] = {
             + b"ATOMIC_POSITIONS (angstrom)\nSi 0.0 0.0 0.0\n",
         ),
     ],
+    # M55-S1: the ASE .db parser — the SQLite magic clears the sniff hint, so these reach the
+    # ase.db open/read path where every ASE exception type is normalised to ASEDB_MALFORMED.
+    "ase_db": [
+        # the 16-byte SQLite magic and nothing else — a header with no page data behind it.
+        ("magic_only", b"SQLite format 3\x00"),
+        # the magic followed by garbage where the first page should be — a corrupt database.
+        ("truncated_after_magic", b"SQLite format 3\x00" + b"\xff" * 64),
+        # a SQLite file that is valid SQLite but not an ASE schema (no ase-db tables).
+        ("sqlite_wrong_schema", b"SQLite format 3\x00" + bytes(range(16, 100))),
+    ],
     "qe_pw_out": [
         # a real PWSCF banner but nothing recognizable after it — the record-level refuse.
         ("banner_only", b"Program PWSCF v.7.2 (enter)\nstarting calculation\n" + b"\x00" * 16),

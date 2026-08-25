@@ -66,6 +66,9 @@ def test_builtins_register_without_error() -> None:
         # M52-S1: qe_pw_out joins as the fourth **parser-only** format (D159/D195) — an
         # output is never a conversion target.
         "qe_pw_out",
+        # M55-S1: ase_db joins as a parser (read); M55-S2 adds the exporter, closing the staging
+        # state (D205) — a full read+write format on the batch surface.
+        "ase_db",
     }
     # Asymmetric since M42 slice 2: vasprun is the first parser-only format (D159) — Xtalate
     # reads it but does not write it; OUTCAR (M43) is the second — the permanent source-never-
@@ -87,6 +90,9 @@ def test_builtins_register_without_error() -> None:
         # M51-S1: the qe_pw_in exporter lands, closing the M50 parser-only staging state (D192)
         # — qe_pw_in is now a full read+write format.
         "qe_pw_in",
+        # M55-S2: the ase_db exporter lands, closing the M55-S1 parser-only staging state (D205)
+        # — the write half of the .db format on the batch surface.
+        "ase_db",
     }
 
 
@@ -115,12 +121,13 @@ def test_every_builtin_records_the_package_version_in_provenance(format_id: str)
     assert recorded.startswith(f"{format_id}-parser {xtalate_version}"), recorded
 
 
-#: ``ase_traj`` builds its ``parser_version`` as a module-level constant at import time, folding in
-#: ``ase.__version__`` (D59). That is correct — a real release bump re-imports the module and the
-#: constant is rebuilt — but it means the string cannot follow a *runtime* patch, so the simulated
-#: bump below would fail it for a reason that is not the defect. Its derivation from the package
-#: version is covered by ``test_every_builtin_records_the_package_version_in_provenance`` above.
-_LATE_BOUND_VERSION = sorted(set(_BUILTIN_GOLDEN_FORMATS) - {"ase_traj"})
+#: The ASE-wraps (``ase_traj``, ``ase_db``) build their ``parser_version`` as a module-level
+#: constant at import time, folding in ``ase.__version__`` (D59). That is correct — a real release
+#: bump re-imports the module and the constant is rebuilt — but it means the string cannot follow a
+#: *runtime* patch, so the simulated bump below would fail them for a reason that is not the defect.
+#: Their derivation from the package version is covered by
+#: ``test_every_builtin_records_the_package_version_in_provenance`` above.
+_LATE_BOUND_VERSION = sorted(set(_BUILTIN_GOLDEN_FORMATS) - {"ase_traj", "ase_db"})
 
 
 @pytest.mark.parametrize("format_id", _LATE_BOUND_VERSION)

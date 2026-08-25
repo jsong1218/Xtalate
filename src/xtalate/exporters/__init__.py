@@ -10,6 +10,7 @@ higher layer assembles into a Registry.
 
 from __future__ import annotations
 
+from xtalate.exporters.ase_db import AseDbExporter, make_ase_db_exporter
 from xtalate.exporters.ase_traj import AseTrajExporter, make_ase_traj_exporter
 from xtalate.exporters.cif import CifExporter, make_cif_exporter
 from xtalate.exporters.extxyz import ExtxyzExporter
@@ -26,6 +27,7 @@ from xtalate.exporters.xyz import XyzExporter
 from xtalate.sdk import ExporterPlugin
 
 __all__ = [
+    "AseDbExporter",
     "AseTrajExporter",
     "CifExporter",
     "ExtxyzExporter",
@@ -36,6 +38,7 @@ __all__ = [
     "XdatcarExporter",
     "XyzExporter",
     "builtin_exporters",
+    "make_ase_db_exporter",
     "make_ase_traj_exporter",
     "make_cif_exporter",
     "make_contcar_exporter",
@@ -50,7 +53,8 @@ __all__ = [
 def builtin_exporters() -> list[ExporterPlugin]:
     """The exporters shipped so far (v0.1: M3a XYZ, M3b POSCAR/CONTCAR, M3c extXYZ; v0.3: M13
     XDATCAR, M14 ASE trajectory; v0.4: M19 CIF; v1.4 M51: the QE pw.x input exporter, closing
-    M50's parser-only staging state into a full read+write format)."""
+    M50's parser-only staging state into a full read+write format; v1.5 M55: the ASE database
+    exporter, the write half of the .db format on the batch surface)."""
     return [
         XyzExporter(),
         ExtxyzExporter(),
@@ -62,4 +66,5 @@ def builtin_exporters() -> list[ExporterPlugin]:
         make_ase_traj_exporter(),
         make_cif_exporter(),
         make_qe_pw_in_exporter(),
+        make_ase_db_exporter(),
     ]

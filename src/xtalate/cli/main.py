@@ -231,7 +231,7 @@ def _cmd_convert_batch(args: argparse.Namespace, registry: Registry) -> int:
     :func:`run_batch`, then emit — the ``BatchReport`` verbatim under ``--json``, a human view
     otherwise. The batch exit code is the **worst per-file outcome** under the existing 0–5
     vocabulary (reusing :func:`_convert_exit_code` per entry); a malformed manifest, a
-    manifest-level refusal (unknown target, empty sources, a non-append-capable assemble), or a
+    manifest-level refusal (unknown target, empty sources, a non-assemble-capable assemble), or a
     conflicting per-file flag is a usage error (exit 1).
 
     The CLI adds **no batch logic**: every manifest decision, failure-isolation rule, and
@@ -306,18 +306,27 @@ def _batch_exit_code(report: Any) -> int:
     wins. ``EXIT_USAGE`` (1) is never produced here — a manifest-level caller mistake exits
     before any conversion runs."""
     worst = EXIT_OK
-    # `entries` is a positional prefix of the resolved `manifest.sources` — equal length for a
-    # full run, truncated when `fail_fast` stopped early — so pair by position and stop at the
-    # shorter (`entries`); a strict zip would raise on the fail-fast short read.
-    for entry, source in zip(report.entries, report.manifest.sources, strict=False):
+    # Recover each entry's effective mode by *path*, not by position: a multi-structure container
+    # (a multi-row `.db`) fans out to N per-row entries (M55-S3), so `entries` is no longer a
+    # length-1:1 positional prefix of `manifest.sources`. Each fanned entry's `source` is
+    # `<container path>::row=<i>`, so strip the row suffix to find its container's override. A
+    # missing map entry falls back to the shared manifest mode (never a KeyError).
+    override_by_path = {
+        source.path: source.override
+        for source in report.manifest.sources
+        if isinstance(source, SourceEntry)
+    }
+    for entry in report.entries:
         if entry.status == "failed":
             code = EXIT_PARSE_ERROR
         elif entry.status == "refused":
             code = EXIT_REFUSED
         elif entry.conversion is not None:
             mode = report.manifest.mode
-            if isinstance(source, SourceEntry) and source.override is not None:
-                mode = source.override.mode or mode
+            container = entry.source.split("::row=", 1)[0]  # mirrors batch._ROW_LABEL_SEP
+            override = override_by_path.get(container)
+            if override is not None and override.mode:
+                mode = override.mode
             code = _convert_exit_code(entry.conversion, entry.validation, mode)
         else:
             code = EXIT_OK

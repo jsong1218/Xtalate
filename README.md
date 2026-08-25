@@ -87,6 +87,21 @@ output pairing** the QE pair demonstrates end to end. The maintainer reviews a w
 plugin contribution. CP2K in-tree, if it ever happens, is a new milestone — not a silent gap in
 this version.
 
+**Plus the ASE `.db` database — full read+write, and the first multi-structure dataset container.**
+`ase_db` reads and writes ASE's SQLite database, the third ASE-backed format (after extended XYZ and
+the ASE `.traj`); like every ASE-backed
+reader it launders the defaults ASE manufactures for a row (an all-zero cell, Z-derived masses,
+zeroed momenta) back to honest absence rather than reading them as data, and carries each row's
+key-value pairs and `data` blob verbatim. A **dataset is aggregation, not a new model**: a single-row
+`.db` is one structure, but a **multi-row** `.db` holds N independent structures — possibly of
+different composition — so it is never folded into one trajectory. On a single-file conversion a
+multi-row `.db` is **refused** (with the row count, recoverable by choosing one row); under
+`xtalate convert --batch` it **fans out** into N ordinary per-row conversions, each individually
+reported and validated. And `.db` is the second target the batch `assemble` mode can build (extXYZ
+was the first): N single-structure sources combine into one N-row `.db` dataset, so `extxyz ↔ ase_db`
+dataset translation is symmetric — build a training set into either container, fan it back out of
+either. This is the aggregation seam every future multi-structure format (DeePMD next) rides.
+
 **CIF is treated as real crystallography.** Cell parameters become lattice vectors, fractional coordinates become Cartesian at the parser boundary, and symmetry is expanded **from the operations the file declares** — parsed as exact affine maps over rationals, with sites on a symmetry element merged on a physical 0.05 Å threshold. A file that names a space group but declares *no* operations is **refused**, never read as a partial structure. Site occupancy is a first-class canonical field (`atoms.occupancies`); a target that cannot represent a partial occupancy says so in the report rather than dropping it silently. The exporter writes every atom explicitly under an identity symmetry loop with no space-group symbol — the coordinates it emits are the already-expanded cell, and any symbol above them would assert a setting they no longer encode.
 
 ## What every conversion gives you
