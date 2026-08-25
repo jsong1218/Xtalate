@@ -10,6 +10,7 @@ import numpy as np
 
 from xtalate.schema import CanonicalObject
 from xtalate.sdk import (
+    AssembleContribution,
     CapabilityLevel,
     ExporterPlugin,
     FieldCapability,
@@ -50,10 +51,9 @@ class DeepmdNpyExporter(ExporterPlugin):
             if frame.cell is not None:
                 boxes[index] = np.asarray(frame.cell.lattice_vectors, dtype=np.float64).reshape(9)
         output: OrderedDict[str, bytes] = OrderedDict()
-        output[TYPE_FILE] = (
-            " ".join(str(symbols.index(symbol)) for symbol in symbols) + "\n"
-        ).encode()
-        output[TYPE_MAP_FILE] = (" ".join(dict.fromkeys(symbols)) + "\n").encode()
+        type_raw, type_map_raw = _type_files(canonical)
+        output[TYPE_FILE] = type_raw
+        output[TYPE_MAP_FILE] = type_map_raw
         output["set.000/" + COORD_FILE] = _npy(coords.reshape((n_frames, -1)))
         output["set.000/" + BOX_FILE] = _npy(boxes)
         energies = [frame.electronic.total_energy for frame in canonical.frames]
@@ -75,6 +75,33 @@ class DeepmdNpyExporter(ExporterPlugin):
             )
         return dict(output)
 
+    def assemble_dir(self, contributions: list[AssembleContribution]) -> dict[str, bytes]:
+        """Group contributions by composition into one system directory per group.
+
+        The group key is the exact per-atom symbol sequence of a contribution's frames (a DeePMD
+        system is fixed-composition **and** fixed-order — ``type.raw`` is a per-atom array), so
+        contributions whose atoms are ordered differently are separate systems rather than a
+        silent reorder (identity ``atom_permutation``; Xtalate never reorders). Deterministic by
+        first appearance; the grouping is named in the batch aggregate note (D214).
+        """
+        groups: OrderedDict[tuple[str, ...], list[AssembleContribution]] = OrderedDict()
+        for contribution in contributions:
+            symbols = tuple(contribution.canonical.frames[0].atoms.symbols)
+            groups.setdefault(symbols, []).append(contribution)
+        output: dict[str, bytes] = {}
+        for index, group in enumerate(groups.values()):
+            prefix = f"system_{index:03d}/"
+            for path, content in self._merge_group(group).items():
+                output[prefix + path] = content
+        return output
+
+    def _merge_group(self, contributions: list[AssembleContribution]) -> dict[str, bytes]:
+        frames = []
+        for contribution in contributions:
+            frames.extend(contribution.canonical.frames)
+        merged = contributions[0].canonical.model_copy(update={"frames": frames})
+        return self.export_dir(merged)
+
     def capabilities(self) -> FormatCapabilities:
         partial = FieldCapability(level=CapabilityLevel.PARTIAL)
         return FormatCapabilities(
@@ -89,11 +116,57 @@ class DeepmdNpyExporter(ExporterPlugin):
                 "dynamics.forces": partial,
                 "electronic.total_energy": partial,
                 "electronic.stress": partial,
+                "user_metadata.custom_global": FieldCapability(
+                    level=CapabilityLevel.PARTIAL,
+                    notes=(
+                        "deepmd_npy:type_map / deepmd_npy:type_indices restore through "
+                        "type_map.raw / type.raw (the carried numbering); a foreign-namespace "
+                        "key cannot be spelled in the fixed layout and is reported removed."
+                    ),
+                ),
             },
             required_fields=["atoms.symbols", "atoms.positions"],
             directory_format=True,
+            assemble_capable=True,
+            # A parsed DeePMD system carries its source numbering under ``deepmd_npy:*`` and the
+            # exporter restores it through ``type.raw``/``type_map.raw`` (D209's carry, written
+            # back); the pattern declares that restore so pre-flight keeps the keys rather than
+            # promising-and-dropping them (D69, the ase_db precedent).
+            writable_custom_key_pattern={"user_metadata.custom_global": "deepmd_npy:[^:]*"},
             native_coordinate_system="cartesian",
         )
+
+
+def _type_files(canonical: CanonicalObject) -> tuple[bytes, bytes]:
+    """The ``type.raw`` / ``type_map.raw`` bytes for a system.
+
+    A system parsed from a DeePMD directory carries its source numbering verbatim under
+    ``deepmd_npy:type_map`` + ``deepmd_npy:type_indices`` (D209); restoring both writes that
+    numbering back byte-faithfully — the only faithful inverse of the parser's carry (P1). A
+    foreign object (e.g. extXYZ → deepmd_npy) has no carry, so the numbering is derived from the
+    species list in first-appearance order — the ordinary ``type_map.raw`` → symbols →
+    ``type.raw`` derivation.
+    """
+    global_custom = canonical.user_metadata.custom_global
+    carried_map = global_custom.get("deepmd_npy:type_map")
+    carried_indices = global_custom.get("deepmd_npy:type_indices")
+    if (
+        isinstance(carried_map, list)
+        and carried_map
+        and isinstance(carried_indices, list)
+        and all(isinstance(index, int) for index in carried_indices)
+    ):
+        return (
+            (" ".join(str(index) for index in carried_indices) + "\n").encode("utf-8"),
+            (" ".join(str(token) for token in carried_map) + "\n").encode("utf-8"),
+        )
+    symbols = list(canonical.frames[0].atoms.symbols)
+    unique = list(dict.fromkeys(symbols))
+    index_of = {symbol: index for index, symbol in enumerate(unique)}
+    return (
+        (" ".join(str(index_of[symbol]) for symbol in symbols) + "\n").encode(),
+        (" ".join(unique) + "\n").encode(),
+    )
 
 
 def _npy(value: np.ndarray) -> bytes:

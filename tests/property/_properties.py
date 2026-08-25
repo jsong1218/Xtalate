@@ -94,10 +94,18 @@ def completeness_violations(
 
 
 def reparse_output(
-    registry: Registry, target: str, output: bytes, written: CanonicalObject
+    registry: Registry,
+    target: str,
+    output: bytes,
+    written: CanonicalObject,
+    *,
+    output_dir: dict[str, bytes] | None = None,
 ) -> CanonicalObject:
-    """Re-parse a target's ``output`` bytes the way the Validation Engine does (validation.engine
-    §1), so Property 2 can diff a *real* re-read of what was written.
+    """Re-parse a target's output the way the Validation Engine does (validation.engine §1), so
+    Property 2 can diff a *real* re-read of what was written. A directory-format target (M56:
+    ``deepmd_npy``) carries its output as an ordered relative-path → bytes map rather than one
+    stream, so its re-parse goes through ``parse_dir`` — the same seam the engine's
+    ``validate_dir`` uses.
 
     Almost every target is self-describing and re-reads through a bare ``parse``. A LAMMPS *data*
     file is the exception (M48-S2, D182): it declares neither a unit system nor element symbols, so
@@ -109,6 +117,8 @@ def reparse_output(
     stays independently re-derived in :func:`absence_violations` (D50)."""
     exporter = registry.get_exporter(target)
     parser = registry.get_parser(target)
+    if output_dir is not None:
+        return parser.parse_dir(output_dir, dirname=None).canonical
     recovery = exporter.reparse_recovery(written)
     if recovery is not None:
         return parser.parse_recover(

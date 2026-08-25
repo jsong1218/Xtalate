@@ -17,8 +17,6 @@ just the engine.
 
 from __future__ import annotations
 
-import io
-
 import pytest
 
 from tests.roundtrip import _matrix
@@ -44,7 +42,7 @@ _PARAMS = [
 @pytest.mark.parametrize(("source_fmt", "target_fmt"), _PARAMS)
 def test_two_hop_roundtrip(source_fmt: str, target_fmt: str) -> None:
     golden = _matrix.golden_source(source_fmt)
-    parsed = _REGISTRY.get_parser(source_fmt).parse(io.BytesIO(golden.source), filename=None)
+    parsed = _matrix.parse_golden_source(_REGISTRY, golden)
     source = parsed.canonical
 
     result = ConversionEngine(_REGISTRY).convert(

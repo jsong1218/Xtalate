@@ -30,6 +30,7 @@ cover — is knowingly accepted for v0.2; widening the golden-anchored pair set 
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -37,7 +38,7 @@ from typing import Any
 from xtalate.capabilities import CapabilityMatrix, Registry
 from xtalate.registry import default_registry
 from xtalate.schema.paths import CANONICAL_FIELD_PATHS, DERIVED_PATHS
-from xtalate.sdk import CapabilityLevel
+from xtalate.sdk import CapabilityLevel, ParseResult
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 
@@ -107,6 +108,14 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     # the ASE-wrap laundering and the kv/data carry across the matrix. As a target its max_frames=1
     # means a multi-frame source reaches frame_selection (FIXED_PRESETS below), the POSCAR/CIF path.
     "ase_db": ("ase_db/single-row-labeled", "sample.db"),
+    # M56: the DeePMD-kit NumPy system — the first **directory** format — enrols as a full source
+    # *and* target. The labeled-single-set anchor is the matrix source: a one-frame labeled H₂O
+    # system (energy + forces, no virial) that bare-parses through the directory seam (`parse_dir`
+    # over the golden's `system/` tree — the matrix's first directory source), carrying the source
+    # numbering under the deepmd_npy:* namespace. Every hop out of it exercises the directory read
+    # seam + the carried numbering; every hop into it exercises `export_dir` (one set.000, no
+    # split) + the virial inverse. As a target its `max_frames=None` needs no frame_selection.
+    "deepmd_npy": ("deepmd_npy/labeled-single-set", "system"),
 }
 
 # Capability paths that are never round-trip content: provenance records *how* a file was read
@@ -160,23 +169,54 @@ FIXED_PRESETS: dict[str, dict[str, Any]] = {
 @dataclass(frozen=True)
 class GoldenSource:
     """A golden source fixture: the raw bytes, the on-disk filename (needed so a re-parse reproduces
-    the golden's provenance for the anchor check), and its expected-Canonical anchor text."""
+    the golden's provenance for the anchor check), and its expected-Canonical anchor text.
+
+    ``directory_files`` is ``None`` for a single-file source and the ordered relative-path → bytes
+    tree for a **directory** source (M56: the first directory format, ``deepmd_npy``, whose golden
+    ``source`` is a ``system/`` directory rather than one file). The suites route through
+    :func:`parse_golden_source` so a directory source reaches the parser's ``parse_dir`` hook
+    exactly as the CLI directory input does."""
 
     format_id: str
     filename: str
     source: bytes
     expected_json: str
+    directory_files: dict[str, bytes] | None = None
 
 
 def golden_source(format_id: str) -> GoldenSource:
     rel, filename = _GOLDEN_DIRS[format_id]
     directory = GOLDEN / rel
+    source_path = directory / filename
+    if source_path.is_dir():
+        files = {
+            path.relative_to(source_path).as_posix(): path.read_bytes()
+            for path in sorted(source_path.rglob("*"))
+            if path.is_file()
+        }
+        return GoldenSource(
+            format_id=format_id,
+            filename=filename,
+            source=b"",
+            expected_json=(directory / "expected.canonical.json").read_text(),
+            directory_files=files,
+        )
     return GoldenSource(
         format_id=format_id,
         filename=filename,
         source=(directory / filename).read_bytes(),
         expected_json=(directory / "expected.canonical.json").read_text(),
     )
+
+
+def parse_golden_source(registry: Registry, golden: GoldenSource) -> ParseResult:
+    """Parse a golden source through the registry's parser — ``parse_dir`` for a directory
+    source (M56), ``parse(stream)`` for a single-file source — so the matrix suites read
+    directory formats exactly as the CLI does."""
+    parser = registry.get_parser(golden.format_id)
+    if golden.directory_files is not None:
+        return parser.parse_dir(golden.directory_files, dirname=golden.filename)
+    return parser.parse(io.BytesIO(golden.source), filename=golden.filename)
 
 
 def source_formats_with_golden() -> list[str]:
