@@ -47,7 +47,11 @@ def volume_from_box(box: np.ndarray) -> np.ndarray:
     """Return absolute cell volumes for flattened or 3x3 row-vector boxes."""
     values = np.asarray(box, dtype=np.float64)
     matrices = values.reshape((-1, 3, 3))
-    return np.abs(np.linalg.det(matrices))
+    # np.asarray laundering keeps the return concretely typed: under the numpy 2.4 stubs the
+    # 3.11 CI leg installs, np.abs(np.linalg.det(...)) is typed Any, which strict mypy's
+    # warn_return_any rejects (DECISIONS.md D2 — the 3.11 leg is the stricter guard). The 2.5
+    # stubs type it as an ndarray, so this is invisible on 3.13. Matches the module's other returns.
+    return np.asarray(np.abs(np.linalg.det(matrices)), dtype=np.float64)
 
 
 def stress_from_virial(virial: np.ndarray, box: np.ndarray) -> np.ndarray:
