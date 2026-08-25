@@ -104,7 +104,16 @@ def _validate_array(name: str, value: np.ndarray, frames: int, shape_tail: tuple
         )
 
 
-def _types(files: Mapping[str, bytes], n_atoms: int) -> tuple[list[str] | None, np.ndarray]:
+def _types(
+    files: Mapping[str, bytes], n_atoms: int
+) -> tuple[list[str] | None, np.ndarray, list[str]]:
+    """Return (per-atom symbols, raw type indices, the original type_map.raw tokens).
+
+    The original ``type_map.raw`` token order is returned too so the canonical object can carry
+    the source's *numbering* (``type_map`` tokens + ``type.raw`` indices) verbatim — the only way
+    the exporter (S2) can write a source-parsed system's numbering back byte-faithfully instead
+    of re-deriving a first-appearance map (P1: the numbering the source chose is information).
+    """
     try:
         raw = np.asarray([int(token) for token in _text(files, TYPE_FILE)], dtype=np.int64)
     except ValueError as exc:
@@ -117,12 +126,12 @@ def _types(files: Mapping[str, bytes], n_atoms: int) -> tuple[list[str] | None, 
             "DeePMD type_map.raw is missing; numeric atom types need element symbols",
             hint=_SPECIES_HINT,
         )
-    symbols = _text(files, TYPE_MAP_FILE)
-    if not symbols or any(not is_valid_symbol(symbol) for symbol in symbols):
+    type_map = _text(files, TYPE_MAP_FILE)
+    if not type_map or any(not is_valid_symbol(symbol) for symbol in type_map):
         raise _error(_MALFORMED, "DeePMD type_map.raw contains an invalid or empty element symbol")
-    if int(raw.max(initial=0)) >= len(symbols):
+    if int(raw.max(initial=0)) >= len(type_map):
         raise _error(_SHAPES, "DeePMD type.raw refers to a type absent from type_map.raw")
-    return [symbols[int(index)] for index in raw], raw
+    return [type_map[int(index)] for index in raw], raw, type_map
 
 
 class DeepmdNpyParser(ParserPlugin):
@@ -174,7 +183,7 @@ class DeepmdNpyParser(ParserPlugin):
         frames, flat_atoms = coords.shape
         n_atoms = flat_atoms // 3
         _validate_array("box.npy", boxes, frames, (9,))
-        symbols, type_indices = _types(files, n_atoms)
+        symbols, type_indices, type_map_tokens = _types(files, n_atoms)
         assert symbols is not None
 
         force = None
@@ -235,7 +244,10 @@ class DeepmdNpyParser(ParserPlugin):
                     ),
                 )
             )
-        custom_global = {"deepmd_npy:type_indices": type_indices.tolist()}
+        custom_global = {
+            "deepmd_npy:type_map": type_map_tokens,
+            "deepmd_npy:type_indices": type_indices.tolist(),
+        }
         provenance = build_provenance(
             format_id=FORMAT_ID,
             filename=dirname,

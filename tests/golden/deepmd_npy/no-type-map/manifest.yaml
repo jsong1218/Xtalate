@@ -1,0 +1,16 @@
+case: no-type-map
+format_id: deepmd_npy
+source_file: system
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: d62af53814503e6fe938d7eef0d07b987257178977f26b57628e80a5716a8297
+expected_sha256: 4ecb1971188dc266053fe9b2cec77c1127acd01754de5fadae1af630cf357e9f
+origin:
+  kind: synthetic
+  source: Hand-authored for M56-S1 via tests/golden/deepmd_npy/_generate.py (NumPy system-directory
+    layout, written with numpy.save).
+  license: Apache-2.0
+notes: "The missing-type_map case: type.raw '0 1 1' with no type_map.raw \u2192 the recoverable\
+  \ DEEPMD_MISSING_TYPE_MAP, resolved by the existing missing_species scenario (species_map,\
+  \ 'O H'). The expectation is the recovered parse \u2014 the same object a '--recover missing_species=species_map,species=O\
+  \ H' conversion produces."

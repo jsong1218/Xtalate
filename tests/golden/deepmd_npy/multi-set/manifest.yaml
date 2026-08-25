@@ -1,0 +1,17 @@
+case: multi-set
+format_id: deepmd_npy
+source_file: system
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 6a023c320e7a65c6a0091d6a8fdd73b2a73333eeb599cfa3327f7ad93a6a8165
+expected_sha256: 3e4d074e9aee3221c7bb5b32e2d0528c69be4e0705d2ae49307ff8f878fbce0f
+origin:
+  kind: synthetic
+  source: Hand-authored for M56-S1 via tests/golden/deepmd_npy/_generate.py (NumPy system-directory
+    layout, written with numpy.save).
+  license: Apache-2.0
+notes: "The multi-set case: the same H\u2082O trajectory sharded across set.000 (2 frames)\
+  \ and set.001 (1 frame) the way DeePMD splits train/test partitions. The parser concatenates\
+  \ set.* in sorted order into one 3-frame trajectory and reports DEEPMD_SET_PARTITION_DROPPED\
+  \ \u2014 the source's partition is information, its loss is announced (aggregation, never\
+  \ curation)."

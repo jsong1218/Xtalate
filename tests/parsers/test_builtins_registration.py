@@ -7,7 +7,6 @@ right format for each fixture from the real ``sniff()`` scores alone (Part 3 §6
 
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
 import pytest
@@ -95,6 +94,9 @@ def test_builtins_register_without_error() -> None:
         # M55-S2: the ase_db exporter lands, closing the M55-S1 parser-only staging state (D205)
         # — the write half of the .db format on the batch surface.
         "ase_db",
+        # M56-S2: the deepmd_npy exporter lands with the directory write seam (export_dir + the
+        # directory-output result surface) — a full read+write directory format.
+        "deepmd_npy",
     }
 
 
@@ -116,8 +118,7 @@ def test_every_builtin_records_the_package_version_in_provenance(format_id: str)
     A wrapped-library suffix is allowed, so this checks the prefix; a wrong package version is not.
     """
     golden = _matrix.golden_source(format_id)
-    parser = next(p for p in builtin_parsers() if p.format_id == format_id)
-    canonical = parser.parse(io.BytesIO(golden.source), filename=golden.filename).canonical
+    canonical = _matrix.parse_golden_source(_registry(), golden).canonical
     recorded = canonical.provenance.history[0].parser_version
     assert recorded is not None
     assert recorded.startswith(f"{format_id}-parser {xtalate_version}"), recorded
@@ -128,8 +129,10 @@ def test_every_builtin_records_the_package_version_in_provenance(format_id: str)
 #: bump re-imports the module and the constant is rebuilt — but it means the string cannot follow a
 #: *runtime* patch, so the simulated bump below would fail them for a reason that is not the defect.
 #: Their derivation from the package version is covered by
-#: ``test_every_builtin_records_the_package_version_in_provenance`` above.
-_LATE_BOUND_VERSION = sorted(set(_BUILTIN_GOLDEN_FORMATS) - {"ase_traj", "ase_db"})
+#: ``test_every_builtin_records_the_package_version_in_provenance`` above. ``deepmd_npy`` joins
+#: them for the same reason (M56-S1): its ``_PARSER_VERSION`` is a module-level constant built
+#: from ``xtalate.__version__`` at import time — verified, not assumed, before adding it here.
+_LATE_BOUND_VERSION = sorted(set(_BUILTIN_GOLDEN_FORMATS) - {"ase_traj", "ase_db", "deepmd_npy"})
 
 
 @pytest.mark.parametrize("format_id", _LATE_BOUND_VERSION)
@@ -146,8 +149,7 @@ def test_the_recorded_version_follows_a_release_bump(
     """
     monkeypatch.setattr("xtalate.parsers._common.__version__", "9.9.9")
     golden = _matrix.golden_source(format_id)
-    parser = next(p for p in builtin_parsers() if p.format_id == format_id)
-    canonical = parser.parse(io.BytesIO(golden.source), filename=golden.filename).canonical
+    canonical = _matrix.parse_golden_source(_registry(), golden).canonical
     recorded = canonical.provenance.history[0].parser_version
     assert recorded is not None
     assert recorded.startswith(f"{format_id}-parser 9.9.9"), recorded

@@ -113,6 +113,19 @@ class GoldenCase:
         except ValueError:
             return self.manifest_path.as_posix()
 
+    @property
+    def is_directory_source(self) -> bool:
+        """Whether this case's ``source_file`` is a directory (a directory-native format's golden
+        source — the first is DeePMD, v1.5 M56) rather than a single file."""
+        return self.source_path.is_dir()
+
+    def source_files(self) -> list[Path]:
+        """The concrete data file(s) the source claims: the single file, or every file under a
+        directory source, sorted by relative path."""
+        if not self.is_directory_source:
+            return [self.source_path]
+        return sorted(p for p in self.source_path.rglob("*") if p.is_file())
+
 
 def discover_cases(root: Path = GOLDEN_ROOT) -> list[GoldenCase]:
     """Every case under ``root``, one per ``manifest.yaml``, sorted by path."""
@@ -182,7 +195,8 @@ def find_unclaimed_files(root: Path = GOLDEN_ROOT) -> list[str]:
     hard failure that names it. Returns manifest-root-relative paths, sorted."""
     claimed: set[Path] = set()
     for case in discover_cases(root):
-        claimed.add(case.source_path.resolve())
+        for source_file in case.source_files():
+            claimed.add(source_file.resolve())
         if not case.is_wild:
             claimed.add(case.expected_path.resolve())
     return sorted(
@@ -265,19 +279,32 @@ def validate_manifest_schema(case: GoldenCase) -> None:
             "third-party file must be traceable to the record it was taken from"
         )
 
-    # The source and expectation files the manifest names must actually exist.
-    if not case.source_path.is_file():
+    # The source (a file **or** a directory — the first directory-native format is DeePMD, v1.5
+    # M56) and the expectation file the manifest names must actually exist.
+    if not (case.source_path.is_file() or case.source_path.is_dir()):
         raise ManifestError(f"{where}: source_file '{data['source_file']}' not found")
     if not case.is_wild and not case.expected_path.is_file():
         raise ManifestError(f"{where}: expected_canonical '{data['expected_canonical']}' not found")
 
 
 def sha256_of(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """The integrity digest of one corpus source: a plain file's SHA-256, or a **deterministic
+    tree digest** for a directory source (the first directory-native format is DeePMD, v1.5 M56).
+    The tree digest folds each relative POSIX path and its content digest in sorted order, so it
+    is stable across OSes and unaffected by directory mtimes — the same silent-edit tripwire as
+    the single-file case, over the whole source tree."""
+    if path.is_file():
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    for relative in sorted(p.relative_to(path).as_posix() for p in path.rglob("*") if p.is_file()):
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256((path / relative).read_bytes()).digest())
+    return digest.hexdigest()
 
 
 def verify_source_hash(case: GoldenCase) -> None:
-    """Fail if the source file's digest disagrees with the manifest (silent-edit tripwire)."""
+    """Fail if the source's digest disagrees with the manifest (silent-edit tripwire)."""
 
     recorded = str(case.data["sha256"])
     actual = sha256_of(case.source_path)
