@@ -233,6 +233,18 @@ class ExporterPlugin(ABC):
             "target (declare assemble_capable and override assemble to combine N objects)"
         )
 
+    def export_dir(self, canonical: CanonicalObject) -> Mapping[str, bytes]:
+        """Write one directory-native output as an ordered relative-path → bytes mapping.
+
+        Optional and additive to the frozen single-file ``export`` contract. A directory exporter
+        overrides this hook and declares ``FormatCapabilities.directory_format = True``; the
+        default refuses so directory output cannot be mistaken for a single stream.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement directory export; adapt the directory "
+            "format to export_dir() or use a single-file target"
+        )
+
     def supports_streaming(self) -> bool:
         """Whether this exporter implements ``export_stream`` (M12). Default ``False`` marks a
         whole-file exporter the engine adapts by materializing before ``export``."""

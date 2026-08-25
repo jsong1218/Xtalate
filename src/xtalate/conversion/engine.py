@@ -137,6 +137,7 @@ class ConversionResult:
     # single-structure target receives one file per source frame. None for an ordinary single-file
     # conversion (where `output` carries the bytes). The CLI writes these into a directory.
     outputs: list[bytes] | None = None
+    output_dir: dict[str, bytes] | None = None
 
 
 class ConversionEngine:
@@ -494,6 +495,23 @@ class ConversionEngine:
                 canonical_out=canonical_out,
                 validation=_merge_split_validations(validations),
                 outputs=outputs,
+            )
+
+        if matrix.get(target_format_id, "write").directory_format:
+            output_dir = dict(exporter.export_dir(canonical_out))
+            validation = self._validation.validate_dir(
+                expected=canonical_out,
+                output=output_dir,
+                target_format_id=target_format_id,
+                conversion_report=report,
+                tolerance=tolerance,
+            )
+            return ConversionResult(
+                report=report,
+                output=None,
+                canonical_out=canonical_out,
+                validation=validation,
+                output_dir=output_dir,
             )
 
         buffer = BytesIO()

@@ -696,6 +696,17 @@ def _emit_output(args: argparse.Namespace, result: Any, *, human: bool) -> None:
     if result.outputs is not None:
         _emit_split_outputs(args, result.outputs, human=human)
         return
+    if result.output_dir is not None:
+        if not args.output:
+            raise _UsageError(f"{args.to} writes a directory; pass -o DIR")
+        directory = Path(args.output)
+        directory.mkdir(parents=True, exist_ok=True)
+        for relative, content in result.output_dir.items():
+            target = directory / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+        print(f"Wrote {args.to} output to {directory}/", file=sys.stderr)
+        return
     output = result.output
     if output is None:
         return

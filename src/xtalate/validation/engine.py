@@ -90,6 +90,27 @@ class ValidationEngine:
     def __init__(self, registry: Registry) -> None:
         self._registry = registry
 
+    def validate_dir(
+        self,
+        *,
+        expected: CanonicalObject,
+        output: dict[str, bytes],
+        target_format_id: str,
+        conversion_report: ConversionReportView,
+        tolerance: ToleranceProfile,
+    ) -> ValidationReport:
+        """Re-parse a directory output in memory and validate it against ``expected``."""
+        parser = self._registry.get_parser(target_format_id)
+        result = parser.parse_dir(output, dirname=None)
+        return self._validate_canonical(
+            expected=expected,
+            actual=result.canonical,
+            target_format_id=target_format_id,
+            conversion_report=conversion_report,
+            tolerance=tolerance,
+            issues=result.issues,
+        )
+
     def validate(
         self,
         *,
@@ -190,6 +211,55 @@ class ValidationEngine:
             reparse_issues,
             checks,
             reparse_assisted=reparse_assisted,
+        )
+
+    def _validate_canonical(
+        self,
+        *,
+        expected: CanonicalObject,
+        actual: CanonicalObject,
+        target_format_id: str,
+        conversion_report: ConversionReportView,
+        tolerance: ToleranceProfile,
+        issues: list[ParseIssue],
+    ) -> ValidationReport:
+        parser = self._registry.get_parser(target_format_id)
+        exporter = self._registry.get_exporter(target_format_id)
+        read_caps = parser.capabilities()
+        write_caps = exporter.capabilities()
+        checks = [
+            _check_atom_count(expected, actual),
+            _check_species(expected, actual, exporter.atom_permutation(expected)),
+            _check_positions_rmsd(
+                expected,
+                actual,
+                exporter.atom_permutation(expected),
+                tolerance,
+                write_caps.numeric_precision,
+            ),
+            _check_lattice(expected, actual, tolerance, write_caps.numeric_precision),
+            _check_frame_count(expected, actual),
+            _check_numeric_fields(
+                expected,
+                actual,
+                exporter.atom_permutation(expected),
+                tolerance,
+                write_caps.numeric_precision,
+                carried_field_keys=read_caps.carried_field_keys,
+                stress_output_convention=write_caps.stress_output_convention,
+            ),
+            _check_metadata(expected, actual),
+            _check_absence(
+                actual, conversion_report, carried_field_keys=read_caps.carried_field_keys
+            ),
+            _check_report_consistency(conversion_report),
+        ]
+        return self._finalize(
+            conversion_report,
+            expected.schema_version,
+            tolerance,
+            issues,
+            checks,
         )
 
     def _finalize(
