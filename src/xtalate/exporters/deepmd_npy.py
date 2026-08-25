@@ -37,6 +37,29 @@ class DeepmdNpyExporter(ExporterPlugin):
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
         raise NotImplementedError("deepmd_npy is a directory format; use export_dir()")
 
+    def unrepresentable(self, canonical: CanonicalObject) -> str | None:
+        """Why this object cannot be written as one DeePMD system, or ``None`` (D179).
+
+        A DeePMD system is fixed-composition **and** fixed-order — ``type.raw`` is a single
+        per-atom type array shared by every frame (Part 2 §3.2). A trajectory whose per-atom
+        symbol sequence changes across frames (a substitution/alchemical run — schema-legal at a
+        constant atom *count*) has no such array, so it is refused **cleanly**
+        (``UNREPRESENTABLE_VALUE``, a completed refused report) rather than crashing mid-write in
+        ``export_dir``. Reordering or splitting atoms to force a fit would silently permute the
+        structure, which Xtalate never does (identity ``atom_permutation``, D43). The engine calls
+        this once on the write-plan-filtered object, ahead of ``export_dir``.
+        """
+        if not canonical.frames:
+            return "DeePMD requires at least one frame; the write plan left an empty system."
+        symbols = list(canonical.frames[0].atoms.symbols)
+        if any(list(frame.atoms.symbols) != symbols for frame in canonical.frames):
+            return (
+                "DeePMD stores one fixed per-atom type array (type.raw) for the whole system, but "
+                "this trajectory's atom composition or order changes across frames. Xtalate will "
+                "not silently reorder or split atoms to force a fit."
+            )
+        return None
+
     def export_dir(self, canonical: CanonicalObject) -> dict[str, bytes]:
         if not canonical.frames:
             raise ValueError("cannot export an empty DeePMD system")

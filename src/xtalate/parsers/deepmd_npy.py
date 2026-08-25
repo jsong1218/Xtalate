@@ -171,8 +171,6 @@ class DeepmdNpyParser(ParserPlugin):
                 _MALFORMED,
                 "DeePMD system requires type.raw and at least one set.* directory",
             )
-        if len(names) == 0:
-            raise _error(_EMPTY, "DeePMD system contains no set frames")
 
         coords = _join_sets(files, names, COORD_FILE).astype(np.float64, copy=False)
         boxes = _join_sets(files, names, BOX_FILE).astype(np.float64, copy=False)

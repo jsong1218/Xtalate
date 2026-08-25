@@ -164,6 +164,39 @@ def test_empty_object_refuses() -> None:
         EXPORTER.export_dir(obj.model_copy(update={"frames": []}))
 
 
+def test_unrepresentable_reports_varying_composition_and_empty() -> None:
+    # `unrepresentable` is the clean-refusal gate (D179): the engine consults it *before*
+    # `export_dir`, so a value-level constraint becomes a refused report, never a mid-write crash.
+    good = _object(write_system(coords=[H2O_COORDS], boxes=[BOX_FLAT]))
+    assert EXPORTER.unrepresentable(good) is None
+    files_b = write_system(
+        coords=[H2O_COORDS], boxes=[BOX_FLAT], type_map=("H", "O"), type_indices=(0, 1, 0)
+    )
+    varying = good.model_copy(update={"frames": [good.frames[0], _object(files_b).frames[0]]})
+    assert "composition or order" in (EXPORTER.unrepresentable(varying) or "")
+    assert "empty" in (EXPORTER.unrepresentable(good.model_copy(update={"frames": []})) or "")
+
+
+def test_varying_composition_refuses_cleanly_through_engine() -> None:
+    # A schema-legal trajectory (constant atom *count*, differing per-atom symbols) converted to
+    # deepmd_npy must be a completed *refused* report, not a raw ValueError escaping the engine.
+    from xtalate.conversion import ConversionEngine
+    from xtalate.registry import default_registry
+
+    good = _object(write_system(coords=[H2O_COORDS], boxes=[BOX_FLAT]))
+    files_b = write_system(
+        coords=[H2O_COORDS], boxes=[BOX_FLAT], type_map=("H", "O"), type_indices=(0, 1, 0)
+    )
+    second = _object(files_b).frames[0].model_copy(update={"index": 1})
+    varying = good.model_copy(update={"frames": [good.frames[0], second]})
+    result = ConversionEngine(default_registry()).convert(
+        varying, source_format_id="extxyz", target_format_id="deepmd_npy"
+    )
+    assert result.report.status == "refused"
+    assert result.report.refusal is not None
+    assert result.report.refusal["code"] == "UNREPRESENTABLE_VALUE"
+
+
 def test_stream_export_refuses_a_directory_is_not_a_stream() -> None:
     obj = _object(write_system(coords=[H2O_COORDS], boxes=[BOX_FLAT]))
     with pytest.raises(NotImplementedError, match="directory format"):
