@@ -59,6 +59,59 @@ class DiscoveryEngine:
         self._registry = registry
         self._sniffer = Sniffer(registry)
 
+    def discover_dir(
+        self,
+        files: dict[str, bytes],
+        *,
+        dirname: str | None = None,
+        format_override: str | None = None,
+    ) -> DiscoveryReport:
+        """Inspect a directory-native source through the generic directory sniffer and parser."""
+        sniff = self._sniffer.sniff_dir(list(files), dirname)
+        format_id = format_override or sniff.format_id
+        if format_id is None:
+            raise ParseError(
+                [
+                    ParseIssue(
+                        severity="error",
+                        code="UNKNOWN_FORMAT",
+                        message=(
+                            "no registered directory format matched with sufficient confidence "
+                            f"(top score {sniff.confidence:.2f})"
+                        ),
+                    )
+                ]
+            )
+        parser = self._registry.get_parser(format_id)
+        if not self._registry.capability_matrix().get(format_id, "read").directory_format:
+            raise ParseError(
+                [
+                    ParseIssue(
+                        severity="error",
+                        code="UNKNOWN_FORMAT",
+                        message=(
+                            f"format {format_id!r} is a single-file format, not a directory format"
+                        ),
+                    )
+                ]
+            )
+        result = parser.parse_dir(files, dirname=dirname)
+        canonical = result.canonical
+        size = sum(len(value) for value in files.values())
+        return DiscoveryReport(
+            file={
+                "filename": dirname,
+                "size_bytes": size,
+                "sha256": hashlib.sha256(b"".join(files.values())).hexdigest(),
+            },
+            format=self._format_block(format_id, sniff, format_override),
+            structure=_structure(canonical),
+            fields=self._fields(canonical, format_id),
+            extras=_extras(canonical),
+            issues=collapse_frame_issues(list(result.issues)),
+            schema_version=canonical.schema_version,
+        )
+
     def discover(
         self,
         data: bytes,

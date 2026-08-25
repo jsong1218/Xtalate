@@ -125,6 +125,9 @@ class FormatCapabilities(BaseModel):
     # False (the default) = the format's outputs cannot be combined into one dataset container, so
     # ``assemble`` is refused with the caller directed to ``output_mode: per-file``.
     assemble_capable: bool = False
+    # Whether this declaration belongs to a directory-native format. Directory plugins use the
+    # additive parse_dir/export_dir hooks rather than the single-file stream contracts.
+    directory_format: bool = False
     native_coordinate_system: Literal["cartesian", "fractional", "both"]
     lossy_notes: list[str] = Field(default_factory=list)  # Format-level caveats -> Warnings.
     # Declared decimal precision per canonical field path (write side) — the machine-readable

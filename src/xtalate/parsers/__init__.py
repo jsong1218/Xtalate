@@ -14,6 +14,7 @@ from __future__ import annotations
 from xtalate.parsers.ase_db import AseDbParser, make_ase_db_parser
 from xtalate.parsers.ase_traj import AseTrajParser, make_ase_traj_parser
 from xtalate.parsers.cif import CifParser, make_cif_parser
+from xtalate.parsers.deepmd_npy import DeepmdNpyParser, make_deepmd_npy_parser
 from xtalate.parsers.extxyz import ExtxyzParser
 from xtalate.parsers.lammps_data import LammpsDataParser, make_lammps_data_parser
 from xtalate.parsers.lammps_dump import LammpsDumpParser, make_lammps_dump_parser
@@ -30,6 +31,7 @@ __all__ = [
     "AseDbParser",
     "AseTrajParser",
     "CifParser",
+    "DeepmdNpyParser",
     "make_ase_db_parser",
     "ExtxyzParser",
     "LammpsDataParser",
@@ -45,6 +47,7 @@ __all__ = [
     "make_ase_db_parser",
     "make_ase_traj_parser",
     "make_cif_parser",
+    "make_deepmd_npy_parser",
     "make_contcar_parser",
     "make_lammps_data_parser",
     "make_lammps_dump_parser",
@@ -85,6 +88,7 @@ def builtin_parsers() -> list[ParserPlugin]:
         make_ase_traj_parser(),
         make_ase_db_parser(),
         make_cif_parser(),
+        make_deepmd_npy_parser(),
         make_vasprun_parser(),
         make_outcar_parser(),
         make_lammps_dump_parser(),

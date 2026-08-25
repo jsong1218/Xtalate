@@ -79,6 +79,27 @@ class ParserPlugin(ABC):
             "implements no parse_recover hook"
         )
 
+    def parse_dir(self, files: Mapping[str, bytes], *, dirname: str | None) -> ParseResult:
+        """Read one directory-native format from an ordered relative-path → bytes mapping.
+
+        Optional and additive to the frozen single-file ``parse`` contract. A directory-format
+        parser overrides this hook and declares ``FormatCapabilities.directory_format = True``;
+        the default refuses so a directory can never be accidentally adapted as one file.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement directory parse; adapt the directory "
+            "format to parse_dir() or use a single-file input"
+        )
+
+    def sniff_dir(self, entries: list[str], dirname: str | None) -> float:
+        """Confidence that a directory listing belongs to this parser.
+
+        Optional and additive to ``sniff``. The default returns zero; directory formats override
+        it and declare ``directory_format``. The sniffer supplies only relative POSIX paths, so
+        format knowledge remains inside the parser rather than leaking into discovery.
+        """
+        return 0.0
+
     def supports_streaming(self) -> bool:
         """Whether this parser implements ``parse_stream`` (M12). The default ``False`` marks a
         whole-file parser the registry adapts by materializing (``sdk.streaming.stream_of``); a
