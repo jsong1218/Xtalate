@@ -30,7 +30,7 @@ import glob as _glob
 import io
 import re
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -518,13 +518,28 @@ def _run_assemble(
         if stopped:
             break
     assembled = b""
+    output_dir: dict[str, bytes] | None = None
+    exporter = registry.get_exporter(manifest.target)
+    target_caps = exporter.capabilities()
+    note: str | None = None
     if contributions:
-        buf = io.BytesIO()
-        registry.get_exporter(manifest.target).assemble(contributions, buf)
-        assembled = buf.getvalue()
-    note = _assembled_note(registry, manifest.target, assembled, atom_counts)
+        if target_caps.directory_format:
+            output_dir = dict(exporter.assemble_dir(contributions))
+            note = _assemble_dir_note(manifest.target, len(contributions), output_dir)
+        else:
+            buf = io.BytesIO()
+            exporter.assemble(contributions, buf)
+            assembled = buf.getvalue()
+            note = _assembled_note(registry, manifest.target, assembled, atom_counts)
     if output is not None and assembled:
         Path(output).write_bytes(assembled)
+    if output is not None and output_dir:
+        root = Path(output)
+        root.mkdir(parents=True, exist_ok=True)
+        for relative, content in output_dir.items():
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
     return _assemble_report(manifest, resolved, entries, note=note)
 
 
@@ -722,6 +737,27 @@ def _assembled_note(
     # EXTXYZ_VARIABLE_ATOM_COUNT — the healthy dataset shape, no note. Any other single-object
     # re-parse failure would be an assembly bug; the suite pins it.
     return None
+
+
+def _assemble_dir_note(target: str, n_sources: int, output_dir: Mapping[str, bytes]) -> str | None:
+    """The dataset-level grouping statement for a directory-assembled target (M56-S3, D214).
+
+    A directory-format target assembles N converted sources into K dataset systems; the grouping
+    itself — for ``deepmd_npy``, by composition, because a DeePMD system is fixed-composition — is
+    a **declared property of the target layout** (the batch layer holds no per-format knowledge,
+    P2), so this note records only the count + the system names the target's ``assemble_dir``
+    produced, never a per-file loss (the wrapper gate: a count and a mapping, never a digest).
+    """
+    if not output_dir:
+        return None
+    systems = sorted({path.split("/", 1)[0] for path in output_dir})
+    noun = "system" if len(systems) == 1 else "systems"
+    return (
+        f"assembled {n_sources} sources into {len(systems)} {target} {noun} "
+        f"({', '.join(systems)}) — a directory-format target is fixed-composition, so sources "
+        "group by composition into one system per group, a declared property of the target "
+        "layout, never a per-file loss."
+    )
 
 
 def _fanout_note(entries: list[BatchEntry]) -> str | None:

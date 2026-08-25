@@ -245,6 +245,17 @@ class ExporterPlugin(ABC):
             "format to export_dir() or use a single-file target"
         )
 
+    def assemble_dir(self, contributions: list[AssembleContribution]) -> Mapping[str, bytes]:
+        """Combine contributions into one directory-native dataset mapping.
+
+        Optional and additive to ``assemble``. Directory exporters override this hook and declare
+        both ``directory_format`` and ``assemble_capable``; the default refuses.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement directory assemble; declare the "
+            "directory assemble capability and override assemble_dir()"
+        )
+
     def supports_streaming(self) -> bool:
         """Whether this exporter implements ``export_stream`` (M12). Default ``False`` marks a
         whole-file exporter the engine adapts by materializing before ``export``."""
