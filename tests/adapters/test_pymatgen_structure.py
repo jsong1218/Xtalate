@@ -81,6 +81,23 @@ def test_roundtrip_preserves_declared_site_properties() -> None:
         )
 
 
+def test_partial_pbc_survives_and_is_not_promoted_to_fully_periodic() -> None:
+    # A 2D/slab Structure: periodicity in a and b, none in c. Overwriting it to fully
+    # periodic would silently alter scientific information (P1/P3), so it must survive both
+    # into the Canonical Object and back out.
+    slab = Structure(
+        Lattice([[3.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 15.0]], pbc=(True, True, False)),
+        ["Si"],
+        [[0.0, 0.0, 0.0]],
+    )
+    canonical = from_pymatgen(slab)
+    assert canonical.frames[0].cell is not None
+    assert canonical.frames[0].cell.pbc == (True, True, False)
+
+    back = to_pymatgen(canonical)
+    assert tuple(back.lattice.pbc) == (True, True, False)
+
+
 def test_unmapped_site_property_carries_verbatim_under_namespace() -> None:
     # selective_dynamics is deliberately carried, never modelled: its per-axis booleans
     # would be silently flattened into whole-atom fixed_atoms constraints (P1).
@@ -111,6 +128,10 @@ def test_declared_oxidation_states_strip_from_symbols_and_carry_per_site() -> No
     back = to_pymatgen(canonical)
     assert [site.specie.symbol for site in back] == ["Fe", "O"]
     assert [site.specie.oxi_state for site in back] == pytest.approx([2.0, -2.0])
+    # The state restores onto the species ONLY — never also as a spurious site property the
+    # source never had (a round-trip infidelity).
+    assert "oxidation_state" not in back.site_properties
+    assert back.site_properties == structure.site_properties
 
 
 def test_explicit_total_charge_carries_and_restores() -> None:

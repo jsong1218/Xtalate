@@ -15,11 +15,13 @@ manufactured construction-time defaults back into absence** (P3; the ASE ``.traj
 ``.db`` discipline applied to a third wrapped library):
 
 * **Periodicity.** The presence of a ``cell`` **is** the discriminator (D216): a periodic
-  ``Structure`` maps its lattice to ``cell``; a lattice-less ``Molecule`` gets
-  ``cell = None`` — never a fabricated identity lattice. ``to_pymatgen`` dispatches on
-  the same fact: a celled Canonical Object becomes a ``Structure``, a cell-less one a
-  ``Molecule``. A multi-frame trajectory refuses (a pymatgen object is a single
-  structure; reduce with ``frame_selection`` first).
+  ``Structure`` maps its lattice to ``cell`` (with ``Lattice.pbc`` read faithfully, so a
+  2D/slab's partial periodicity survives rather than being silently promoted to fully
+  periodic); a lattice-less ``Molecule`` gets ``cell = None`` — never a fabricated identity
+  lattice. ``to_pymatgen`` dispatches on the same fact: a celled Canonical Object becomes a
+  ``Structure`` (restoring ``pbc``), a cell-less one a ``Molecule``. A multi-frame
+  trajectory refuses (a pymatgen object is a single structure; reduce with
+  ``frame_selection`` first).
 * **Total charge / spin.** A ``Structure``'s public ``charge`` fabricates 0 or the
   oxidation-state sum whenever the caller never set one (its ``_charge`` sentinel stays
   ``None``); a ``Molecule``'s ``_charge`` is *always* populated (0 when defaulted), and
@@ -172,12 +174,16 @@ def _from_structure(structure: Any) -> CanonicalObject:
     if explicit_charge is not None:
         custom_global[_CHARGE_KEY] = float(explicit_charge)
 
+    # Periodicity is read from the lattice, never assumed full: a 2D/slab Structure carries
+    # e.g. (True, True, False), and overwriting it to fully periodic would be a silent
+    # alteration of scientific information (P1/P3).
+    pbc = structure.lattice.pbc
     return _assemble(
         symbols=symbols,
         positions=positions,
         cell=Cell(
             lattice_vectors=np.asarray(structure.lattice.matrix, dtype=np.float64),
-            pbc=(True, True, True),
+            pbc=(bool(pbc[0]), bool(pbc[1]), bool(pbc[2])),
         ),
         original_coordinate_system="fractional",
         charges=charges,
@@ -271,7 +277,7 @@ def to_pymatgen(canonical: CanonicalObject) -> Structure | Molecule:
 
     if frame.cell is not None:
         structure = Structure(
-            lattice=Lattice(frame.cell.lattice_vectors.tolist()),
+            lattice=Lattice(frame.cell.lattice_vectors.tolist(), pbc=frame.cell.pbc),
             species=sites,
             coords=frame.atoms.positions.tolist(),
             coords_are_cartesian=True,
@@ -329,7 +335,9 @@ def _restore_site_properties(frame: Frame, um: UserMetadata) -> dict[str, Any]:
     if frame.dynamics.velocities is not None:
         properties["velocities"] = frame.dynamics.velocities.tolist()
     for key, value in um.custom_per_atom.items():
-        if key.startswith(_KEY_PREFIX):
+        # The oxidation-state carry is restored onto the species by _restore_species; it must
+        # NOT also reappear as a site property the source never had (a round-trip infidelity).
+        if key.startswith(_KEY_PREFIX) and key != _OXI_STATE_KEY:
             properties[key[len(_KEY_PREFIX) :]] = (
                 value.tolist() if isinstance(value, np.ndarray) else value
             )
