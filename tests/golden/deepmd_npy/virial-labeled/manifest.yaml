@@ -1,0 +1,17 @@
+case: virial-labeled
+format_id: deepmd_npy
+source_file: system
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: c9665bc0288b7276a316cf2ad1ca5b13b62698b5a679a1029a1b23e96e2a7871
+expected_sha256: 2e8ca94a75dff9fc14115f4251621a182263f1756b18468f1eff287121b4f0e5
+origin:
+  kind: synthetic
+  source: Hand-authored for M56-S1 via tests/golden/deepmd_npy/_generate.py (NumPy system-directory
+    layout, written with numpy.save).
+  license: Apache-2.0
+notes: "The virial oracle: stress = diag(0.01, 0.02, 0.03) eV/\xC5\xB3 against a 10\xD710\xD7\
+  10 \xC5 box (volume 1000 \xC5\xB3) gives virial = -stress\xB7volume = [-10, 0, 0, 0, -20,\
+  \ 0, 0, 0, -30] eV, flattened row-major \u2014 hand-computed, so the deterministic virial\u2194\
+  stress mapping (D211) is pinned in both directions: the parser reads virial \u2192 stress\
+  \ 0.01/0.02/0.03 and the exporter writes stress \u2192 the same virial.npy bytes."

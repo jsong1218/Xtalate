@@ -25,6 +25,7 @@ parse error, not a completed-but-refused conversion.
 from __future__ import annotations
 
 import inspect
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from io import BytesIO
 from typing import cast
@@ -58,6 +59,9 @@ _HINT_TO_SCENARIO = {
     # also declares neither units nor element symbols, so this hint typically resolves *alongside*
     # `ambiguous_units` + `missing_species` in the compound recovery loop below.
     "ambiguous_atom_style": "ambiguous_atom_style",
+    # M56: a DeePMD directory carries numeric type indices when type_map.raw is absent; the
+    # existing missing_species scenario supplies the ordered element symbols.
+    "deepmd_missing_type_map": "missing_species",
     # M55: a multi-row ASE `.db` refuses on the single-file path (ASEDB_MULTIPLE_ROWS) and
     # resolves per row via the `asedb_row_selection` scenario — `index,row=<i>` re-parses that
     # one row through the parser's parse_recover hook, exactly like the other parse-time
@@ -92,12 +96,14 @@ class ParseRecovery:
 
 def parse_with_recovery(
     registry: Registry,
-    data: bytes,
+    data: bytes | None = None,
     *,
     filename: str | None,
     format_override: str | None = None,
     recovery_choices: dict[str, dict[str, object]] | None = None,
     max_frames: int | None = None,
+    directory_files: Mapping[str, bytes] | None = None,
+    dirname: str | None = None,
 ) -> ParseRecovery:
     """Sniff + parse ``data``; if the parse raises a recoverable ``ParseError`` the caller supplied
     a preset for, re-parse through the parser's ``parse_recover`` hook and record the Assumption.
@@ -107,7 +113,13 @@ def parse_with_recovery(
     materialized parse, and an over-cap file is refused with ``FrameLimitExceeded`` without ever
     building the whole object — the cap bounds worker memory, which is its entire point."""
     recovery_choices = recovery_choices or {}
-    fmt = format_override or Sniffer(registry).sniff(data, filename).format_id
+    if directory_files is not None:
+        sniff = Sniffer(registry).sniff_dir(list(directory_files), dirname)
+        fmt = format_override or sniff.format_id
+    else:
+        if data is None:
+            raise ValueError("parse_with_recovery needs data or directory_files")
+        fmt = format_override or Sniffer(registry).sniff(data, filename).format_id
     if fmt is None:
         raise ParseError(
             [
@@ -129,6 +141,26 @@ def parse_with_recovery(
             ]
         )
     parser = registry.get_parser(fmt)
+    if directory_files is not None:
+        parse_dir = parser.parse_dir
+        try:
+            result = parse_dir(directory_files, dirname=dirname)
+        except ParseError as exc:
+            recovered = _try_recover(
+                parser,
+                b"",
+                filename,
+                fmt,
+                exc,
+                recovery_choices,
+                directory_files=directory_files,
+                dirname=dirname,
+            )
+            if recovered is None:
+                raise
+            return recovered
+        return ParseRecovery(canonical=result.canonical, format_id=fmt, issues=list(result.issues))
+    assert data is not None
     if max_frames is not None:
         enforce_max_frames(parser, data, filename=filename, max_frames=max_frames)
     try:
@@ -148,6 +180,9 @@ def _try_recover(
     fmt: str,
     error: ParseError,
     recovery_choices: dict[str, dict[str, object]],
+    *,
+    directory_files: Mapping[str, bytes] | None = None,
+    dirname: str | None = None,
 ) -> ParseRecovery | None:
     """Apply parse-time presets in an accumulating loop (M48); return ``None`` to refuse.
 
@@ -197,8 +232,10 @@ def _try_recover(
             return None  # abort is an explicit give-up: the recoverable parse error stands.
 
         raw_params = choice_spec.get("parameters")
-        parameters: dict[str, object] = raw_params if isinstance(raw_params, dict) else {}
-        context[scenario] = {"choice": code, "parameters": parameters}
+        parameters: dict[str, object] = dict(raw_params) if isinstance(raw_params, dict) else {}
+        if directory_files is not None:
+            parameters["__xtalate_directory_files"] = directory_files
+        context[scenario] = {"choice": code, "parameters": dict(parameters)}
         resolved.append((scenario, code, parameters, issue))
         try:
             result = _invoke_parse_recover(
@@ -209,6 +246,8 @@ def _try_recover(
                 choice=code,
                 parameters=parameters,
                 recovery_context=dict(context),
+                directory_files=directory_files,
+                dirname=dirname,
             )
         except ParseError as exc:
             current = exc  # a further parse-time need surfaced under the applied choice(s); loop.
@@ -231,6 +270,8 @@ def _invoke_parse_recover(
     choice: str,
     parameters: dict[str, object],
     recovery_context: dict[str, dict[str, object]],
+    directory_files: Mapping[str, bytes] | None = None,
+    dirname: str | None = None,
 ) -> ParseResult:
     """Call ``parser.parse_recover``, threading ``recovery_context`` only when the override accepts
     it. The M48 seam is additive with a default on the ABC, so first-party parsers (and any plugin
@@ -238,6 +279,10 @@ def _invoke_parse_recover(
     signature — one that never needed compound recovery — is called without it and keeps working
     (P6, no plugin break)."""
     recover = parser.parse_recover  # type: ignore[attr-defined]
+    if directory_files is not None:
+        parameters = dict(parameters)
+        parameters["directory_files"] = directory_files
+        parameters.pop("__xtalate_directory_files", None)
     if "recovery_context" in inspect.signature(recover).parameters:
         return cast(
             ParseResult,

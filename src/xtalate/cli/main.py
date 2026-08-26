@@ -138,6 +138,18 @@ class _UsageError(Exception):
 
 
 def _cmd_inspect(args: argparse.Namespace, registry: Registry) -> int:
+    if Path(args.file).is_dir():
+        files = _read_directory(args.file)
+        report = DiscoveryEngine(registry).discover_dir(
+            files, dirname=Path(args.file).name, format_override=args.format
+        )
+        if args.report:
+            _write_json(args.report, report.model_dump(mode="json"))
+        if args.json:
+            print(_json(report.model_dump(mode="json")))
+        else:
+            print(render.render_discovery(report))
+        return EXIT_OK
     data = _read_bytes(args.file)
     report = DiscoveryEngine(registry).discover(
         data, filename=Path(args.file).name, format_override=args.format
@@ -160,10 +172,12 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
         raise _UsageError("convert needs FILE (or --batch MANIFEST)")
     if args.to is None:
         raise _UsageError("convert needs --to FORMAT_ID (in batch mode the manifest carries it)")
-    result = _convert_streamed(args, registry)
+    is_directory = Path(args.file).is_dir()
+    result = None if is_directory else _convert_streamed(args, registry)
     streamed = result is not None
     if result is None:
-        data = _read_bytes(args.file)
+        directory_files = _read_directory(args.file) if is_directory else None
+        data = None if is_directory else _read_bytes(args.file)
         tolerance = _resolve_tolerance(args.tolerance_profile)
         recovery_choices = _parse_recover(args.recover)
         _inject_references(registry, recovery_choices)
@@ -175,6 +189,8 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
             filename=Path(args.file).name,
             format_override=args.format,
             recovery_choices=recovery_choices,
+            directory_files=directory_files,
+            dirname=Path(args.file).name if is_directory else None,
         )
         result = ConversionEngine(registry).convert(
             parsed.canonical,
@@ -680,6 +696,17 @@ def _emit_output(args: argparse.Namespace, result: Any, *, human: bool) -> None:
     if result.outputs is not None:
         _emit_split_outputs(args, result.outputs, human=human)
         return
+    if result.output_dir is not None:
+        if not args.output:
+            raise _UsageError(f"{args.to} writes a directory; pass -o DIR")
+        directory = Path(args.output)
+        directory.mkdir(parents=True, exist_ok=True)
+        for relative, content in result.output_dir.items():
+            target = directory / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+        print(f"Wrote {args.to} output to {directory}/", file=sys.stderr)
+        return
     output = result.output
     if output is None:
         return
@@ -709,6 +736,21 @@ def _emit_split_outputs(args: argparse.Namespace, outputs: list[bytes], *, human
         (directory / f"{stem}_{i:04d}{suffix}").write_bytes(chunk)
     # Status line to stderr so a --json run keeps stdout clean.
     print(f"Wrote {len(outputs)} {args.to} file(s) to {directory}/", file=sys.stderr)
+
+
+def _read_directory(path: str) -> dict[str, bytes]:
+    root = Path(path)
+    if not root.is_dir():
+        raise _UsageError(f"{path} is not a directory")
+    known = {"type.raw", "type_map.raw"}
+    files: dict[str, bytes] = {}
+    for child in sorted(root.rglob("*")):
+        if not child.is_file():
+            continue
+        relative = child.relative_to(root).as_posix()
+        if relative in known or (relative.startswith("set.") and relative.count("/") == 1):
+            files[relative] = _read_bytes(str(child))
+    return files
 
 
 def _read_bytes(path: str) -> bytes:

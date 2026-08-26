@@ -59,6 +59,29 @@ assemble-capable target (N single-structure sources → one N-row `.db` dataset)
 dataset translation is symmetric (assemble to `.db`, fan out from `.db`). extXYZ assemble stays
 byte-identical to M54. Schema stays **1.0.0**; the package stays 1.4.0 (the 1.5.0 bump is M58's).
 
+### Added — the DeePMD-kit NumPy system format, read and write, and the first directory I/O seam (v1.5 M56; D209–D214)
+
+`deepmd_npy` joins the format set as a full read **and** write format — DeePMD-kit's MLIP training
+layout, and the first format whose native form is a **directory** rather than a file. M56 lands the
+directory I/O seam it rides: a new `FormatCapabilities.directory_format` flag, additive
+`parse_dir` / `sniff_dir` / `export_dir` / `assemble_dir` hooks carrying an ordered relative-path →
+bytes mapping, a generic directory-listing entry in the sniffer (no per-format logic in discovery),
+and a directory-output result surface on the engine/CLI (`convert … --to deepmd_npy -o DIR`). On
+read, one DeePMD system becomes one Canonical Object: `type_map.raw` → species (a missing map is the
+recoverable `DEEPMD_MISSING_TYPE_MAP`, resolved by the existing `missing_species` scenario), absent
+labels stay `None` (never zero-filled), shape mismatches refuse `DEEPMD_INCONSISTENT_SHAPES`, a
+pickled/object `.npy` refuses `DEEPMD_MALFORMED_LAYOUT` under `allow_pickle=False` (never
+unpickled), and DeePMD's `set.000`/`set.001`/… train/test sharding is **concatenated in sorted order
+with the dropped partition reported** (`DEEPMD_SET_PARTITION_DROPPED`) — aggregation, never curation
+(the write side emits one `set.000`, never a split). The virial is a **recorded deterministic
+mapping** (`virial ↔ stress` via stress·volume under DeePMD's documented sign convention, D211),
+pinned by a hand-computed golden fixture; a source system's type numbering carries verbatim under a
+`deepmd_npy:*` namespace and is restored byte-faithfully on write. Under `--batch`, `assemble` to
+`deepmd_npy` groups contributions **by composition** into N systems (`system_000/`, `system_001/`, …)
+— a DeePMD system is fixed-composition — with the grouping declared in the aggregate note (D214);
+`deepmd_npy` enrols in the nightly round-trip matrix as source and target. Schema stays **1.0.0**;
+the package stays 1.4.0 (the 1.5.0 bump is M58's).
+
 ## [1.4.0] — 2026-08-23
 
 Schema version: 1.0.0

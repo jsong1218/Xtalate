@@ -1,0 +1,315 @@
+{
+  "schema_version": "1.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "O",
+          "H",
+          "H"
+        ],
+        "atomic_numbers": [
+          8,
+          1,
+          1
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.96,
+            0.0,
+            0.0
+          ],
+          [
+            -0.24,
+            0.93,
+            0.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            10.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.05,
+            0.02,
+            0.0
+          ],
+          [
+            -0.03,
+            0.01,
+            0.0
+          ],
+          [
+            -0.02,
+            -0.03,
+            0.0
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -14.0,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 1,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "O",
+          "H",
+          "H"
+        ],
+        "atomic_numbers": [
+          8,
+          1,
+          1
+        ],
+        "positions": [
+          [
+            0.05,
+            0.0,
+            0.0
+          ],
+          [
+            1.01,
+            0.0,
+            0.0
+          ],
+          [
+            -0.19,
+            0.93,
+            0.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            10.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.060000000000000005,
+            0.03,
+            0.01
+          ],
+          [
+            -0.019999999999999997,
+            0.02,
+            0.01
+          ],
+          [
+            -0.01,
+            -0.019999999999999997,
+            0.01
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -14.05,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    },
+    {
+      "index": 2,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "O",
+          "H",
+          "H"
+        ],
+        "atomic_numbers": [
+          8,
+          1,
+          1
+        ],
+        "positions": [
+          [
+            0.0,
+            0.05,
+            0.0
+          ],
+          [
+            0.96,
+            0.05,
+            0.0
+          ],
+          [
+            -0.24,
+            0.9800000000000001,
+            0.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            10.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": null,
+        "forces": [
+          [
+            0.04,
+            0.01,
+            -0.01
+          ],
+          [
+            -0.04,
+            0.0,
+            -0.01
+          ],
+          [
+            -0.03,
+            -0.04,
+            -0.01
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -14.1,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      }
+    }
+  ],
+  "trajectory": {
+    "timestep": null
+  },
+  "simulation": null,
+  "provenance": {
+    "source_filename": "system",
+    "source_format": "deepmd_npy",
+    "source_units": {
+      "positions": "angstrom",
+      "energy": "eV",
+      "force": "eV/angstrom"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "DeePMD fixed-composition system read from a materialized NumPy directory layout.",
+      "virial.npy mapped deterministically to canonical tension-positive stress via stress × volume."
+    ],
+    "history": [
+      {
+        "timestamp": "2026-08-25T17:38:07Z",
+        "operation": "parse",
+        "source_format": "deepmd_npy",
+        "target_format": null,
+        "tool_version": "1.4.0",
+        "parser_version": "deepmd_npy-parser 1.4.0",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {
+      "deepmd_npy:type_map": [
+        "O",
+        "H"
+      ],
+      "deepmd_npy:type_indices": [
+        0,
+        1,
+        1
+      ]
+    },
+    "custom_per_atom": {},
+    "custom_per_frame": {}
+  }
+}

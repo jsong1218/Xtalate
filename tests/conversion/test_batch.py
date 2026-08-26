@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 from ase import Atoms
 from ase.db import connect
@@ -779,3 +780,136 @@ def test_extxyz_and_ase_db_assemble_are_symmetric(tmp_path: Path) -> None:
 
     images = ase_read(str(xyz_artifact), format="extxyz", index=":")
     assert [list(a.get_chemical_symbols()) for a in images] == [["C", "O"], ["H", "H", "O"]]
+
+
+# --- directory assemble to DeePMD (M56-S3, D214): composition grouping → N systems --------------
+# A DeePMD *system* is fixed-composition (one Canonical Object ↔ one system, Part 2 §3.2), so the
+# batch `assemble` mode to a directory target generalises the D208 seam: the exporter's
+# `assemble_dir` groups contributions by composition into one `system_NNN/` per group, and the
+# aggregate note declares the grouping (a count + the system names — the wrapper gate: a count and
+# a mapping, never a digest). The batch layer holds no per-format knowledge (P2): the declared
+# `directory_format` + `assemble_capable` flags route it.
+
+
+def _system_files(root: Path) -> dict[str, bytes]:
+    """The written DeePMD system tree under ``root`` as relative-path → bytes, for re-parsing."""
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_assemble_to_deepmd_npy_groups_mixed_composition_into_k_systems(tmp_path: Path) -> None:
+    # water (H2O, 3 atoms) + co-in-cell (CO, 2 atoms): a DeePMD system is fixed-composition, so
+    # the batch assembles two sources → two systems, grouped by composition and named in the note.
+    reg = _registry()
+    out = tmp_path / "train"
+    report = run_batch(
+        BatchManifest(
+            sources=[str(WATER), str(CO_IN_CELL)],
+            target="deepmd_npy",
+            output_mode="assemble",
+        ),
+        reg,
+        output=out,
+    )
+    assert [e.status for e in report.entries] == ["converted", "converted"]
+    assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
+    # The declared grouping is a dataset-level note: count + system names, never a digest.
+    assert report.note is not None
+    assert "2 sources into 2 deepmd_npy systems" in report.note
+    assert "system_000, system_001" in report.note
+    assert "by composition" in report.note
+
+    # The output is a directory of two full systems, each re-reading as one DeePMD system.
+    systems = sorted(p.name for p in out.iterdir() if p.is_dir())
+    assert systems == ["system_000", "system_001"]
+    parser = reg.get_parser("deepmd_npy")
+    symbols = []
+    for name in systems:
+        files = _system_files(out / name)
+        symbols.append(parser.parse_dir(files, dirname=name).canonical.frames[0].atoms.symbols)
+    assert symbols == [["O", "H", "H"], ["C", "O"]]  # WATER is [O, H, H]
+
+
+def test_assemble_to_deepmd_npy_same_composition_merges_into_one_system(tmp_path: Path) -> None:
+    # Two H2O sources of the same composition *and atom order*: their frames join ONE system's
+    # set.000 (constant-N preserved), never two systems — and never one mixed object (Part 2
+    # §3.2). The second source is written in WATER's own [O, H, H] order — a same-composition
+    # source ordered differently is a separate system (tested in the exporter suite), never a
+    # silent reorder.
+    reg = _registry()
+    other = _plain_xyz(tmp_path, "other.xyz", "3\nother\nO 0 0 0\nH 0 0 1\nH 0 1 0\n")
+    out = tmp_path / "train"
+    report = run_batch(
+        BatchManifest(
+            sources=[str(WATER), str(other)], target="deepmd_npy", output_mode="assemble"
+        ),
+        reg,
+        output=out,
+    )
+    assert [e.status for e in report.entries] == ["converted", "converted"]
+    assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
+    assert report.note is not None
+    assert "2 sources into 1 deepmd_npy system" in report.note
+    assert [p.name for p in out.iterdir() if p.is_dir()] == ["system_000"]
+    # system_000's set.000 holds all three frames (water's two + the other source's one).
+    files = _system_files(out / "system_000")
+    coords = np.load(io.BytesIO(files["set.000/coord.npy"]), allow_pickle=False)
+    assert coords.shape == (3, 9)
+    assert files["type.raw"] == b"0 1 1\n"
+    assert files["type_map.raw"] == b"O H\n"
+
+
+def test_assemble_to_deepmd_npy_grouping_is_deterministic_by_first_appearance(
+    tmp_path: Path,
+) -> None:
+    # The system numbering follows first appearance: swapping the source order swaps the system
+    # names, but the composition → system assignment stays deterministic (the same sources in the
+    # same order produce the same bytes).
+    reg = _registry()
+    out_a = tmp_path / "a"
+    out_b = tmp_path / "b"
+    run_batch(
+        BatchManifest(
+            sources=[str(WATER), str(CO_IN_CELL)],
+            target="deepmd_npy",
+            output_mode="assemble",
+        ),
+        reg,
+        output=out_a,
+    )
+    run_batch(
+        BatchManifest(
+            sources=[str(CO_IN_CELL), str(WATER)],
+            target="deepmd_npy",
+            output_mode="assemble",
+        ),
+        reg,
+        output=out_b,
+    )
+    a_systems = sorted(p.name for p in out_a.iterdir() if p.is_dir())
+    b_systems = sorted(p.name for p in out_b.iterdir() if p.is_dir())
+    assert a_systems == b_systems == ["system_000", "system_001"]
+    # system_000 is the first-appearing composition in each run: water in run A, CO in run B.
+    parser = reg.get_parser("deepmd_npy")
+    first_a = parser.parse_dir(_system_files(out_a / "system_000"), dirname="system_000")
+    first_b = parser.parse_dir(_system_files(out_b / "system_000"), dirname="system_000")
+    assert first_a.canonical.frames[0].atoms.symbols == ["O", "H", "H"]
+    assert first_b.canonical.frames[0].atoms.symbols == ["C", "O"]
+
+
+def test_assemble_to_deepmd_npy_writes_nothing_without_dash_o(tmp_path: Path) -> None:
+    # `output=None` still assembles the report (the grouping note included) but writes no systems.
+    reg = _registry()
+    report = run_batch(
+        BatchManifest(
+            sources=[str(WATER), str(CO_IN_CELL)],
+            target="deepmd_npy",
+            output_mode="assemble",
+        ),
+        reg,
+    )
+    assert [e.status for e in report.entries] == ["converted", "converted"]
+    assert report.note is not None and "system_000" in report.note

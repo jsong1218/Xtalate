@@ -58,6 +58,35 @@ class Sniffer:
         self.accept_threshold = accept_threshold
         self.ambiguity_margin = ambiguity_margin
 
+    def sniff_dir(self, entries: list[str], dirname: str | None = None) -> SniffResult:
+        """Sniff a directory listing by delegating to each parser's optional ``sniff_dir`` hook.
+
+        The sniffer remains generic: it never knows a format's marker files or layout.
+        """
+        candidates: list[SniffCandidate] = []
+        for parser in self._registry.parsers():
+            try:
+                score = float(parser.sniff_dir(entries, dirname))
+            except Exception:
+                score = 0.0
+            score = max(0.0, min(1.0, score))
+            candidates.append(SniffCandidate(format_id=parser.format_id, confidence=score))
+        candidates.sort(key=lambda c: (-c.confidence, c.format_id))
+        if not candidates:
+            return SniffResult(format_id=None, confidence=0.0, ambiguous=False, candidates=[])
+        best = candidates[0]
+        if best.confidence < self.accept_threshold:
+            return SniffResult(
+                format_id=None, confidence=best.confidence, ambiguous=False, candidates=candidates
+            )
+        runner_up = candidates[1].confidence if len(candidates) > 1 else 0.0
+        return SniffResult(
+            format_id=best.format_id,
+            confidence=best.confidence,
+            ambiguous=(best.confidence - runner_up) < self.ambiguity_margin,
+            candidates=candidates,
+        )
+
     def sniff(self, data: bytes, filename: str | None = None) -> SniffResult:
         head = data[:HEAD_SIZE]
         candidates: list[SniffCandidate] = []

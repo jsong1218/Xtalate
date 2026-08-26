@@ -1,0 +1,16 @@
+case: labeled-single-set
+format_id: deepmd_npy
+source_file: system
+expected_canonical: expected.canonical.json
+canonical_schema_version: 1.0.0
+sha256: 046c2eff857dc6befc0c9cec6ee3706e522db49c4061a27a2a60e8f58d160cd7
+expected_sha256: 4ecb1971188dc266053fe9b2cec77c1127acd01754de5fadae1af630cf357e9f
+origin:
+  kind: synthetic
+  source: Hand-authored for M56-S1 via tests/golden/deepmd_npy/_generate.py (NumPy system-directory
+    layout, written with numpy.save).
+  license: Apache-2.0
+notes: "The round-trip matrix anchor (M56-S2): a labeled single-set H\u2082O system \u2014\
+  \ one frame, energy + forces, no virial. Proves the directory read seam, the type_map\u2192\
+  species mapping, the carried type numbering (type_map 'O H' / type.raw '0 1 1' \u2014 NOT\
+  \ first-appearance-collapsed), and that absent labels are None, never zero-filled (P3)."

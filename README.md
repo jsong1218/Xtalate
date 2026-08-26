@@ -100,7 +100,24 @@ multi-row `.db` is **refused** (with the row count, recoverable by choosing one 
 reported and validated. And `.db` is the second target the batch `assemble` mode can build (extXYZ
 was the first): N single-structure sources combine into one N-row `.db` dataset, so `extxyz ↔ ase_db`
 dataset translation is symmetric — build a training set into either container, fan it back out of
-either. This is the aggregation seam every future multi-structure format (DeePMD next) rides.
+either. This is the aggregation seam the DeePMD dataset format rides too.
+
+**Plus DeePMD-kit NumPy systems — full read+write, and the first *directory* format.**
+`deepmd_npy` reads and writes a DeePMD *system*: a **directory** of NumPy arrays
+(`type.raw`, `type_map.raw`, `set.000/coord.npy`, `set.000/box.npy`, and the label arrays
+`energy`/`force`/`virial` when present) — the MLIP training layout DeePMD-kit consumes directly.
+It is the first format whose native form is a directory rather than a file, so it rides a new
+directory I/O seam: a directory goes in through a generic directory sniffer + `parse_dir`, and a
+conversion writes a system directory under `-o DIR` (`xtalate convert train.xyz --to deepmd_npy
+-o my_system/`). One DeePMD system is one Canonical Object (fixed-composition, the constant-N
+invariant's natural ally); a multi-frame trajectory is one system's `set.000`, and DeePMD's
+`set.000`/`set.001`/… train/test sharding — a scientific judgment, not a translation — is
+concatenated on read with the dropped partition **reported**, never silently discarded, and never
+emitted on write (one `set.000`). The virial is a recorded deterministic mapping
+(`virial ↔ stress` via stress·volume), and a missing `type_map.raw` resolves through the existing
+`missing_species` recovery. Under `--batch`, `assemble` to `deepmd_npy` groups a mixed-composition
+training set **by composition** into N systems (`system_000/`, `system_001/`, …) — never into one
+object.
 
 **CIF is treated as real crystallography.** Cell parameters become lattice vectors, fractional coordinates become Cartesian at the parser boundary, and symmetry is expanded **from the operations the file declares** — parsed as exact affine maps over rationals, with sites on a symmetry element merged on a physical 0.05 Å threshold. A file that names a space group but declares *no* operations is **refused**, never read as a partial structure. Site occupancy is a first-class canonical field (`atoms.occupancies`); a target that cannot represent a partial occupancy says so in the report rather than dropping it silently. The exporter writes every atom explicitly under an identity symmetry loop with no space-group symbol — the coordinates it emits are the already-expanded cell, and any symbol above them would assert a setting they no longer encode.
 

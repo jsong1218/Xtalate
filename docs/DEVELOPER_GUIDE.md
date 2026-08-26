@@ -305,6 +305,52 @@ keep is the user's scientific judgment; Xtalate's job is to translate them all a
 each one kept and lost. See §6 for the batch surface these two seams (refuse-and-fan-out on input,
 `assemble` on output) plug into.
 
+### 5.1.5 The directory-format variant (a directory in, a directory out)
+
+`deepmd_npy` (M56) is the first format whose native form is a **directory**, not a file: a DeePMD
+system is a directory of NumPy arrays (`type.raw`, `type_map.raw`, `set.000/coord.npy`,
+`set.000/box.npy`, plus the label arrays when present). Every seam the SDK had was single-file
+shaped, so the directory case is its own additive variant, gated by a declared flag exactly like
+`assemble` (D208) and streaming (D56):
+
+- **Declare `FormatCapabilities.directory_format = True`** on both the read and write sides.
+- **Read:** implement `ParserPlugin.parse_dir(files, *, dirname)` (an ordered relative-POSIX-path →
+  bytes mapping) and `ParserPlugin.sniff_dir(entries, dirname) -> float`; `sniff` (the byte-head
+  hook) stays `0.0` — a directory has no head, hints come from the listing. The generic sniffer
+  scores a directory by delegating to each parser's `sniff_dir` with **no per-format logic** in
+  discovery (Part 3 §6.1) — the same accept-threshold / ambiguity rules as byte-head sniffing.
+  A parser's `parse_recover` receives its source as `parameters["directory_files"]` (never
+  `stream`) — the recovery orchestrator's `_species_params` whitelist keeps the payload out of the
+  recorded Assumption (pinned by test).
+- **Write:** implement `ExporterPlugin.export_dir(canonical) -> Mapping[str, bytes]`; the engine
+  carries the result on `ConversionResult.output_dir` (a *result* surface, never a Canonical
+  Object field — schema stays untouched), and the CLI writes it under `-o DIR`. Validation
+  re-parses the map **in memory** via `parse_dir` (no temp dir). A directory target is excluded
+  from the streaming path.
+- **Batch assemble:** declare `assemble_capable=True` **and** override
+  `ExporterPlugin.assemble_dir(contributions) -> Mapping[str, bytes]` — the directory analogue of
+  D208's `assemble`. The batch layer routes by the declared flags (no per-format knowledge, P2)
+  and records the grouping as a dataset-level note: a count + the system names, never a digest
+  (the wrapper gate).
+
+The engine makes bytes and the CLI does the disk I/O — the same `split_all` separation, keyed by
+path instead of index — so a directory input is just another source and a directory output is just
+another target.
+
+**The DeePMD dataset story, and the aggregation boundary restated with `set.*` sharding as the
+worked example.** A DeePMD *system* is fixed-composition and fixed-order: one system ↔ one Canonical
+Object (constant-N's natural ally, Part 2 §3.2), and a **trajectory** of frames is one system's
+`set.000` (`max_frames=None`; Xtalate never splits frames across sets). DeePMD's `set.000`/`set.001`/
+… sharding is a **train/test partition** — a scientific judgment, not a translation — so Xtalate
+**writes one `set.000`** (never a split) and on read **concatenates every `set.*` in sorted order**
+into one trajectory, reporting `DEEPMD_SET_PARTITION_DROPPED` (P1: the partition is information, so
+its loss is announced, never silent). Many independent structures group **under `--batch`** by
+composition into N systems (one `system_NNN/` per group) — never into one object. The virial is a
+recorded deterministic mapping (`virial ↔ stress` via stress·volume, D211): read maps
+`virial.npy → electronic.stress` directly, write maps `stress → virial.npy` **only when both stress
+and a cell are present** (never fabricated, P3); no stress-carry scenario is involved because
+DeePMD's convention is documented, not ambiguous.
+
 ### 5.2 Ship it as an installable plugin (no fork)
 
 A third-party distribution advertises its parser/exporter under Xtalate's entry-point groups;
@@ -572,6 +618,19 @@ message; there is never a silent fallback to per-file. Validation stays **per co
 source converts and validates on its ordinary path — the assembled whole is never the validation
 unit), and a mixed-composition assemble surfaces an honest dataset-level note (extXYZ's
 `EXTXYZ_VARIABLE_ATOM_COUNT`), never a per-file loss.
+
+**Directory assemble (M56-S3, D214).** A directory-format target (``deepmd_npy``) assembles through
+the directory analogue of the same seam: it declares ``assemble_capable`` **and** overrides
+``ExporterPlugin.assemble_dir(contributions)``, and the batch layer routes by the declared
+``directory_format`` + ``assemble_capable`` flags — still no per-format knowledge in the batch (P2).
+The output is a **directory of systems** under ``-o DIR`` (``system_000/``, ``system_001/``, …): a
+DeePMD system is fixed-composition, so contributions group **by composition** into one system per
+group (deterministic, by first appearance; frames of one composition join that system's ``set.000``).
+The grouping is a **declared property of the target layout**, recorded in the aggregate note as a
+count + the system names (the wrapper gate — never a digest of per-file content), and a
+single-composition batch produces exactly one system. Sources whose atoms are ordered differently are
+separate systems — Xtalate never silently reorders atoms to force a merge (identity
+``atom_permutation``).
 
 **Multi-structure container inputs fan out.** A source that holds many independent structures — a
 multi-row ASE `.db`, which refuses `ASEDB_MULTIPLE_ROWS` on the single-file path because a dataset is

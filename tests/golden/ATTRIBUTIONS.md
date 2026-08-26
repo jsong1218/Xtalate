@@ -79,6 +79,34 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-authored CONTCAR (VASP-5 shape, Direct coords, CO diatomic) with a Cartesian velocity block
 
+## `deepmd_npy` / `labeled-single-set` (golden)
+
+- **Source file:** `system`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M56-S1 via tests/golden/deepmd_npy/_generate.py (NumPy system-directory layout, written with numpy.save).
+
+## `deepmd_npy` / `multi-set` (golden)
+
+- **Source file:** `system`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M56-S1 via tests/golden/deepmd_npy/_generate.py (NumPy system-directory layout, written with numpy.save).
+
+## `deepmd_npy` / `no-type-map` (golden)
+
+- **Source file:** `system`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M56-S1 via tests/golden/deepmd_npy/_generate.py (NumPy system-directory layout, written with numpy.save).
+
+## `deepmd_npy` / `virial-labeled` (golden)
+
+- **Source file:** `system`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M56-S1 via tests/golden/deepmd_npy/_generate.py (NumPy system-directory layout, written with numpy.save).
+
 ## `exfmt` / `water-monomer` (golden)
 
 - **Source file:** `water_monomer.exfmt`

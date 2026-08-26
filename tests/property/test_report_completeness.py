@@ -71,9 +71,15 @@ def test_report_is_complete(
     if report.status == "refused":
         assert report.refusal is not None
         return
-    assert result.output is not None, f"{case_id}->{target}: completed report but no output bytes"
+    # A directory-format target (M56: ``deepmd_npy``) carries its output as an ordered map
+    # (``output_dir``) rather than one stream; a completed conversion must have one or the other.
+    assert result.output is not None or result.output_dir is not None, (
+        f"{case_id}->{target}: completed report but no output bytes or directory map"
+    )
     assert result.canonical_out is not None
-    reparsed = _properties.reparse_output(_REGISTRY, target, result.output, result.canonical_out)
+    reparsed = _properties.reparse_output(
+        _REGISTRY, target, result.output or b"", result.canonical_out, output_dir=result.output_dir
+    )
     p2 = _properties.absence_violations(report, reparsed)
     assert not p2, f"{case_id}->{target}: absence conformance violated: {p2}"
 

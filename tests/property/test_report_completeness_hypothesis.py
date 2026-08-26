@@ -66,10 +66,16 @@ def test_report_is_complete_over_random_objects(source: CanonicalObject) -> None
         if report.status == "refused":
             assert report.refusal is not None
             continue
-        assert result.output is not None, f"->{target}: completed report but no output bytes"
+        assert result.output is not None or result.output_dir is not None, (
+            f"->{target}: completed report but no output bytes or directory map"
+        )
         assert result.canonical_out is not None
         reparsed = _properties.reparse_output(
-            _REGISTRY, target, result.output, result.canonical_out
+            _REGISTRY,
+            target,
+            result.output or b"",
+            result.canonical_out,
+            output_dir=result.output_dir,
         )
         p2 = _properties.absence_violations(report, reparsed)
         assert not p2, f"->{target}: absence conformance violated: {p2}"

@@ -91,6 +91,7 @@ _OUTCAR_HEAD = (
 )
 
 _TAILORED: dict[str, list[tuple[str, bytes]]] = {
+    "deepmd_npy": [("directory_marker", b"type.raw\n0\nset.000/coord.npy")],
     "xyz": [
         ("count_gt_atoms", b"5\ncomment\nH 0 0 0\nH 1 1 1\n"),
         ("nonnumeric_coord", b"1\nc\nH x y z\n"),
