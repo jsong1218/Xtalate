@@ -68,6 +68,11 @@ service = [
     # python-multipart backs FastAPI's multipart/form-data parsing (the file upload, Part 6 §2).
     "python-multipart>=0.0.9",
 ]
+# The pymatgen in-memory adapters (v1.5 M57, DECISIONS.md D215): pymatgen is CONSUMED at
+# the xtalate.adapters seam, never depended on (D4) — imported lazily inside the adapter
+# bodies so `import xtalate` stays pymatgen-free. A deployment composing Xtalate with
+# pymatgen in one process installs `xtalate[pymatgen]`.
+pymatgen = ["pymatgen>=2024.1"]
 # hypothesis is a *test-only* dependency (M10 stage 2, DECISIONS.md D50): property-based
 # generation of randomized Canonical Objects with shrinking. It ships no runtime code — the
 # minimal-dependency posture (D4/D7) applies to `[project].dependencies`, not the dev extras.
@@ -110,6 +115,10 @@ dev = [
     # and non-blocking — a new advisory against a pinned dep surfaces in the scheduled run, it
     # never gates a PR. Dev-extra, so it ships no runtime code (the D4/D7 posture is unchanged).
     "pip-audit>=2.7",
+    # pymatgen backs the in-memory adapters (v1.5 M57, D215). Pulled into `dev` — not a
+    # runtime dependency (D4) — so the one CI gate (`pip install -e ".[dev]"`) actually
+    # runs (never skips) the adapter test suite, like the ASE pin before it.
+    "pymatgen>=2024.1",
 ]
 
 [project.scripts]
@@ -191,6 +200,15 @@ module = ["boto3.*", "botocore.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
+# pymatgen ships no usable type information (like ASE and boto3/botocore, D7). The in-memory
+# adapters confine it to src/xtalate/adapters/pymatgen.py and convert its values to concrete
+# types at the adapter boundary, so `Any` never escapes that module; here we simply let the
+# untyped import resolve under --strict.
+[[tool.mypy.overrides]]
+module = ["pymatgen.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Coverage as a promoted PR gate (v0.2 M11; MASTER_SPEC Part 8 §5 / Part 10 §1 deferral
@@ -248,7 +266,7 @@ layers = [
     "xtalate.conversion",
     "xtalate.recovery | xtalate.validation",
     "xtalate.discovery",
-    "xtalate.capabilities | xtalate.parsers | xtalate.exporters",
+    "xtalate.capabilities | xtalate.parsers | xtalate.exporters | xtalate.adapters",
     "xtalate.sdk",
     "xtalate.schema",
     "xtalate._time",
