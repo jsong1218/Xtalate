@@ -1,23 +1,35 @@
-"""pymatgen in-memory adapters (v1.5 M57; DECISIONS.md D215).
+"""pymatgen in-memory adapters (v1.5 M57; DECISIONS.md D215/D216).
 
 Two library functions between an in-memory pymatgen object and the Canonical Object:
-``from_pymatgen(obj) -> CanonicalObject`` and ``to_pymatgen(canonical) -> Structure``.
-These are **not** a registered format — there is no file, so there is no sniff, no
-capability row, and no ``ConversionReport``. P1 (nothing silently dropped) is honored
-without a report surface by carrying every unmapped pymatgen payload **verbatim** into
-``user_metadata.custom_per_atom`` / ``custom_global`` under the ``pymatgen:<key>``
-namespace (the extXYZ unmapped-column precedent), so ``to_pymatgen`` can restore it.
-Every value takes exactly one of three paths — mapped, laundered to absence, or carried
-verbatim; there is no fourth path.
+``from_pymatgen(obj) -> CanonicalObject`` and ``to_pymatgen(canonical) ->
+Structure | Molecule``. These are **not** a registered format — there is no file, so
+there is no sniff, no capability row, and no ``ConversionReport``. P1 (nothing silently
+dropped) is honored without a report surface by carrying every unmapped pymatgen payload
+**verbatim** into ``user_metadata.custom_per_atom`` / ``custom_global`` under the
+``pymatgen:<key>`` namespace (the extXYZ unmapped-column precedent), so ``to_pymatgen``
+can restore it. Every value takes exactly one of three paths — mapped, laundered to
+absence, or carried verbatim; there is no fourth path.
 
 Like every wrapped library, the load-bearing work is **laundering pymatgen's
-manufactured construction-time defaults back into absence** (P3; the ASE ``.traj``/``
-.db`` discipline applied to a third wrapped library):
+manufactured construction-time defaults back into absence** (P3; the ASE ``.traj``/
+``.db`` discipline applied to a third wrapped library):
 
-* **Total charge.** A ``Structure``'s public ``charge`` is fabricated whenever it was not
-  explicitly set — pymatgen reports either ``0`` or the oxidation-state sum. Only a
-  charge the caller *set* (``set_charge``) is data: it carries to
-  ``custom_global['pymatgen:charge']``; the fabricated default never enters the object.
+* **Periodicity.** The presence of a ``cell`` **is** the discriminator (D216): a periodic
+  ``Structure`` maps its lattice to ``cell``; a lattice-less ``Molecule`` gets
+  ``cell = None`` — never a fabricated identity lattice. ``to_pymatgen`` dispatches on
+  the same fact: a celled Canonical Object becomes a ``Structure``, a cell-less one a
+  ``Molecule``. A multi-frame trajectory refuses (a pymatgen object is a single
+  structure; reduce with ``frame_selection`` first).
+* **Total charge / spin.** A ``Structure``'s public ``charge`` fabricates 0 or the
+  oxidation-state sum whenever the caller never set one (its ``_charge`` sentinel stays
+  ``None``); a ``Molecule``'s ``_charge`` is *always* populated (0 when defaulted), and
+  its default ``spin_multiplicity`` is ``nelectrons % 2 + 1``. So: only a genuinely-set
+  ``Structure`` charge is data; a ``Molecule`` charge is carried iff non-zero (an
+  explicitly-passed 0 is indistinguishable from pymatgen's own manufactured 0 — the
+  library cannot represent the distinction); a ``Molecule`` spin is carried iff it
+  differs from the manufactured default. Neither has a canonical field (net charge and
+  2S+1 multiplicity are not canonical quantities — ``electronic.total_spin`` holds S,
+  not 2S+1), so both carry verbatim rather than being converted.
 * **Oxidation states.** A species decorated with an oxidation state at construction is
   declared in-memory data: the state is stripped from the symbol (``Fe2+`` → ``Fe``)
   and carried per-site under ``custom_per_atom['pymatgen:oxidation_state']``.
@@ -27,20 +39,17 @@ manufactured construction-time defaults back into absence** (P3; the ASE ``.traj
   convention pymatgen's VASP tooling uses), everything else carried verbatim.
   ``selective_dynamics`` is carried rather than modelled as a ``fixed_atoms``
   constraint: its per-axis booleans would be silently flattened to whole-atom fixes.
-* **Lattice.** A periodic ``Structure`` has a lattice — mapped to ``cell`` with pymatgen's
-  ``(True, True, True)`` pbc. A lattice-less object is not a ``Structure``; S2 adds the
-  ``Molecule`` case where ``cell = None`` (never a fabricated identity lattice).
 
 Provenance records the wrapped library's version (D58/D59 precedent): the adapter stamps
 ``source_format = "pymatgen"`` (an in-memory source label, not a registered format id),
-``original_coordinate_system = "fractional"`` (pymatgen is fractional-native, the CIF
-precedent), and one ``operation = "parse"`` history entry whose ``parser_version`` folds
-in the pymatgen version.
+``original_coordinate_system = "fractional"`` for a ``Structure`` (pymatgen is
+fractional-native, the CIF precedent) / ``"cartesian"`` for a ``Molecule``, and one
+``operation = "parse"`` history entry whose ``parser_version`` folds in the pymatgen
+version.
 
 pymatgen ships no usable type information (like ASE/boto3, D7) — the mypy override skips
 its imports, and every value read off a pymatgen object is converted to a concrete type
-here so ``Any`` never escapes this module. S1 handles the periodic ``Structure``;
-``Molecule`` support and the ``to_pymatgen`` dispatch land in S2.
+here so ``Any`` never escapes this module.
 """
 
 from __future__ import annotations
@@ -76,6 +85,7 @@ _SOURCE_FORMAT = "pymatgen"
 _MAPPED_SITE_PROPERTIES = frozenset({"magmom", "charge", "velocities"})
 _OXI_STATE_KEY = f"{_KEY_PREFIX}oxidation_state"
 _CHARGE_KEY = f"{_KEY_PREFIX}charge"
+_SPIN_KEY = f"{_KEY_PREFIX}spin_multiplicity"
 
 
 def _require_pymatgen() -> None:
@@ -95,42 +105,43 @@ def _pymatgen_version() -> str:
     return _dist_version("pymatgen")
 
 
-def from_pymatgen(obj: Structure | Molecule) -> CanonicalObject:
-    """Build a Canonical Object from an in-memory pymatgen ``Structure`` (periodic).
+# --- from_pymatgen ---------------------------------------------------------------------
 
-    S1 handles the periodic case only; a lattice-less ``Molecule`` raises until S2 lands
-    the ``cell = None`` mapping. There is no report surface: anything without a canonical
-    home carries verbatim under ``pymatgen:<key>`` instead of being dropped (P1).
-    """
+
+def from_pymatgen(obj: Any) -> CanonicalObject:
+    """Build a Canonical Object from an in-memory pymatgen ``Structure`` (periodic) or
+    ``Molecule`` (non-periodic). There is no report surface: anything without a canonical
+    home carries verbatim under ``pymatgen:<key>`` instead of being dropped (P1)."""
     _require_pymatgen()
-    lattice = getattr(obj, "lattice", None)
-    if lattice is None:
-        raise NotImplementedError(
-            "from_pymatgen: non-periodic pymatgen objects (Molecule) are not supported yet; "
-            "Molecule support lands in S2"
-        )
-    structure = obj
+    if getattr(obj, "lattice", None) is not None:
+        return _from_structure(obj)
+    return _from_molecule(obj)
 
+
+def _read_sites(source: Any) -> tuple[list[str], list[float | None], bool]:
+    """Symbols (oxidation decorations stripped) and the declared per-site states."""
     symbols: list[str] = []
     oxi_states: list[float | None] = []
     has_oxi_state = False
-    for site in structure.sites:
+    for site in source.sites:
         specie = site.specie
         symbols.append(str(specie.symbol))
         state: float | None = getattr(specie, "oxi_state", None)
         if state is not None:
             has_oxi_state = True
         oxi_states.append(state)
+    return symbols, oxi_states, has_oxi_state
 
-    positions = np.asarray(structure.cart_coords, dtype=np.float64)
 
-    custom_per_atom: dict[str, Any] = {}
-    if has_oxi_state:
-        custom_per_atom[_OXI_STATE_KEY] = oxi_states
+def _read_site_properties(
+    source: Any, custom_per_atom: dict[str, Any]
+) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None]:
+    """Split ``site_properties`` into the three mapped arrays (charges, magmoms,
+    velocities) plus verbatim carries into ``custom_per_atom``."""
     charges: np.ndarray | None = None
     magmoms: np.ndarray | None = None
     velocities: np.ndarray | None = None
-    for key, value in dict(structure.site_properties).items():
+    for key, value in dict(source.site_properties).items():
         if key == "magmom":
             magmoms = np.asarray(value, dtype=np.float64)
         elif key == "charge":
@@ -142,20 +153,86 @@ def from_pymatgen(obj: Structure | Molecule) -> CanonicalObject:
             # canonical home (fixed_atoms would flatten whole-atom fixes), so every
             # unmapped property carries verbatim rather than being modelled or dropped.
             custom_per_atom[f"{_KEY_PREFIX}{key}"] = _as_json(value)
+    return charges, magmoms, velocities
 
-    # Laundering: pymatgen's public `.charge` fabricates 0 / the oxidation-state sum when
-    # the caller never set one (`_charge is None`). Only a genuinely-set total charge is
-    # data; there is no canonical net-charge field, so it carries verbatim (P1).
+
+def _from_structure(structure: Any) -> CanonicalObject:
+    """The periodic case: lattice mapped to ``cell`` (never absent, never fabricated);
+    only a caller-set total charge is data (pymatgen fabricates 0/the oxi-state sum)."""
+    symbols, oxi_states, has_oxi_state = _read_sites(structure)
+    positions = np.asarray(structure.cart_coords, dtype=np.float64)
+
+    custom_per_atom: dict[str, Any] = {}
+    if has_oxi_state:
+        custom_per_atom[_OXI_STATE_KEY] = oxi_states
+    charges, magmoms, velocities = _read_site_properties(structure, custom_per_atom)
+
     custom_global: dict[str, JsonValue] = {}
     explicit_charge = getattr(structure, "_charge", None)
     if explicit_charge is not None:
         custom_global[_CHARGE_KEY] = float(explicit_charge)
 
-    cell = Cell(
-        lattice_vectors=np.asarray(lattice.matrix, dtype=np.float64),
-        pbc=(True, True, True),
+    return _assemble(
+        symbols=symbols,
+        positions=positions,
+        cell=Cell(
+            lattice_vectors=np.asarray(structure.lattice.matrix, dtype=np.float64),
+            pbc=(True, True, True),
+        ),
+        original_coordinate_system="fractional",
+        charges=charges,
+        magmoms=magmoms,
+        velocities=velocities,
+        custom_global=custom_global,
+        custom_per_atom=custom_per_atom,
     )
 
+
+def _from_molecule(molecule: Any) -> CanonicalObject:
+    """The non-periodic case (D216): ``cell = None`` — never an identity lattice — with
+    the ``Molecule``-specific charge/spin manufactures laundered (see module docstring)."""
+    symbols, oxi_states, has_oxi_state = _read_sites(molecule)
+    positions = np.asarray(molecule.cart_coords, dtype=np.float64)
+
+    custom_per_atom: dict[str, Any] = {}
+    if has_oxi_state:
+        custom_per_atom[_OXI_STATE_KEY] = oxi_states
+    charges, magmoms, velocities = _read_site_properties(molecule, custom_per_atom)
+
+    custom_global: dict[str, JsonValue] = {}
+    if float(molecule._charge) != 0.0:  # noqa: SLF001 — the sentinel IS the audit
+        custom_global[_CHARGE_KEY] = float(molecule._charge)
+    default_spin = int(molecule.nelectrons) % 2 + 1
+    if int(molecule._spin_multiplicity) != default_spin:  # noqa: SLF001
+        custom_global[_SPIN_KEY] = int(molecule._spin_multiplicity)
+
+    return _assemble(
+        symbols=symbols,
+        positions=positions,
+        cell=None,
+        original_coordinate_system="cartesian",
+        charges=charges,
+        magmoms=magmoms,
+        velocities=velocities,
+        custom_global=custom_global,
+        custom_per_atom=custom_per_atom,
+    )
+
+
+def _assemble(
+    *,
+    symbols: list[str],
+    positions: np.ndarray,
+    cell: Cell | None,
+    original_coordinate_system: str,
+    charges: np.ndarray | None,
+    magmoms: np.ndarray | None,
+    velocities: np.ndarray | None,
+    custom_global: dict[str, JsonValue],
+    custom_per_atom: dict[str, Any],
+) -> CanonicalObject:
+    """One single-frame Canonical Object from one pymatgen object — the shared tail of
+    both mappings, so the two paths cannot diverge in framing or stamping."""
     return CanonicalObject(
         frames=[
             Frame(
@@ -166,22 +243,22 @@ def from_pymatgen(obj: Structure | Molecule) -> CanonicalObject:
                 electronic=Electronic(charges=charges, magnetic_moments=magmoms),
             )
         ],
-        provenance=_build_provenance(original_coordinate_system="fractional"),
+        provenance=_build_provenance(original_coordinate_system=original_coordinate_system),
         user_metadata=UserMetadata(custom_global=custom_global, custom_per_atom=custom_per_atom),
     )
 
 
-def to_pymatgen(canonical: CanonicalObject) -> Structure:
-    """Build a pymatgen ``Structure`` from a single-frame, periodic Canonical Object.
+# --- to_pymatgen -------------------------------------------------------------------------
 
-    The inverse of :func:`from_pymatgen` for the periodic case: carried ``pymatgen:<key>``
-    payloads restore (oxidation states back onto the species, other namespaced keys back
-    onto ``site_properties``, a carried total charge back via ``set_charge``). A
-    trajectory refuses honestly — pymatgen holds a single structure, never a silent
-    frame-0 slice; reduce with ``frame_selection`` first.
-    """
+
+def to_pymatgen(canonical: CanonicalObject) -> Structure | Molecule:
+    """Build a pymatgen ``Structure`` or ``Molecule`` from a single-frame Canonical
+    Object — dispatched on ``cell`` presence (D216): celled → ``Structure``, cell-less →
+    ``Molecule`` (never a fabricated identity lattice for a molecule). Carried
+    ``pymatgen:<key>`` payloads restore; a trajectory refuses honestly — pymatgen holds a
+    single structure, never a silent frame-0 slice."""
     _require_pymatgen()
-    from pymatgen.core import Lattice, Species, Structure
+    from pymatgen.core import Lattice, Molecule, Structure
 
     if len(canonical.frames) != 1:
         raise ValueError(
@@ -189,37 +266,58 @@ def to_pymatgen(canonical: CanonicalObject) -> Structure:
             f"{len(canonical.frames)} frames — select one first (frame_selection)"
         )
     frame = canonical.frames[0]
-    if frame.cell is None:
-        raise NotImplementedError(
-            "to_pymatgen: a lattice-less object becomes a pymatgen Molecule; "
-            "Molecule support lands in S2"
-        )
     um = canonical.user_metadata
+    sites = _restore_species(frame, um)
+
+    if frame.cell is not None:
+        structure = Structure(
+            lattice=Lattice(frame.cell.lattice_vectors.tolist()),
+            species=sites,
+            coords=frame.atoms.positions.tolist(),
+            coords_are_cartesian=True,
+            site_properties=_restore_site_properties(frame, um),
+        )
+        carried_charge = um.custom_global.get(_CHARGE_KEY)
+        if carried_charge is not None:
+            structure.set_charge(_numeric_carry(carried_charge, _CHARGE_KEY))
+        return structure
+
+    kwargs: dict[str, Any] = {
+        "species": sites,
+        "coords": frame.atoms.positions.tolist(),
+        "site_properties": _restore_site_properties(frame, um),
+    }
+    carried_charge = um.custom_global.get(_CHARGE_KEY)
+    if carried_charge is not None:
+        kwargs["charge"] = _numeric_carry(carried_charge, _CHARGE_KEY)
+    carried_spin = um.custom_global.get(_SPIN_KEY)
+    if carried_spin is not None:
+        kwargs["spin_multiplicity"] = _numeric_carry(carried_spin, _SPIN_KEY)
+    return Molecule(**kwargs)
+
+
+def _numeric_carry(value: JsonValue, key: str) -> float:
+    """A numeric carry must actually be a number — refuse loudly rather than coerce."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{key} carry must be a number; got {type(value).__name__}")
+    return float(value)
+
+
+def _restore_species(frame: Frame, um: UserMetadata) -> list[Any]:
+    """Re-decorate species with carried oxidation states (bare element symbols where none
+    was declared)."""
+    from pymatgen.core import Species
+
     oxi_states = um.custom_per_atom.get(_OXI_STATE_KEY)
-    sites: list[Species | str] = []
+    sites: list[Any] = []
     for i, symbol in enumerate(frame.atoms.symbols):
         state = oxi_states[i] if oxi_states is not None else None
         sites.append(Species(symbol, state) if state is not None else symbol)
-
-    structure = Structure(
-        lattice=Lattice(frame.cell.lattice_vectors.tolist()),
-        species=sites,
-        coords=frame.atoms.positions.tolist(),
-        coords_are_cartesian=True,
-        site_properties=_restore_site_properties(frame, um),
-    )
-    carried_charge = um.custom_global.get(_CHARGE_KEY)
-    if carried_charge is not None:
-        if isinstance(carried_charge, bool) or not isinstance(carried_charge, (int, float)):
-            raise ValueError(
-                f"{_CHARGE_KEY} carry must be a number; got {type(carried_charge).__name__}"
-            )
-        structure.set_charge(float(carried_charge))
-    return structure
+    return sites
 
 
 def _restore_site_properties(frame: Frame, um: UserMetadata) -> dict[str, Any]:
-    """Invert the S1 site-property/carry mapping: the three mapped arrays go back to their
+    """Invert the site-property/carry mapping: the three mapped arrays go back to their
     pymatgen site-property names, and every ``pymatgen:``-namespaced carry restores under
     its bare key. Foreign-namespace carries (other formats') stay out — they belong to
     those formats' own seams."""
