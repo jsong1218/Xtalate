@@ -576,6 +576,44 @@ maintainer files the tracking issue for real batch files; this documented call i
 standing invitation — batch 1 is authored-realistic, and real contributions are what make the
 hybrid corpus honest.
 
+### 5.8 The in-memory adapter seam (v1.5) — a library seam, deliberately *not* a format
+
+Everything above §5.7 is the add-a-format path: registration, sniffing, capability rows,
+round-trip enrolment, golden cases. The **in-memory adapters are none of that** — this subsection
+sits beside the format path only so nobody goes hunting for it there.
+
+`src/xtalate/adapters/` holds plain library functions between in-memory scientific-Python objects
+and the Canonical Object — today, `from_pymatgen`/`to_pymatgen` for pymatgen's `Structure` and
+`Molecule`. The boundary, stated plainly: **these serve library users composing Xtalate with
+pymatgen in one process; they are not a registered format and never appear in the capability
+matrix, the sniffer, or the CLI** — no `format_id`, no `builtin_parsers`/`builtin_exporters`
+entry, no `docs/vocabulary.json` change, no round-trip-matrix row. pymatgen is an *optional*
+extra (`xtalate[pymatgen]`) imported lazily inside the function bodies — `import xtalate` stays
+pymatgen-free — and the subpackage sits in its own import-linter layer beside
+`parsers`/`exporters` (it may import `sdk` + `schema`, nothing above).
+
+The obligations they carry are the parsers', even without a report surface:
+
+- **P3 laundering without a file.** pymatgen manufactures values on construction; audit each
+  default and launder it to absence exactly as the ASE wraps do — a `Structure`'s fabricated
+  total charge (0 / the oxidation-state sum when never set), a `Molecule`'s always-populated
+  `_charge` (carry iff non-zero) and its manufactured `spin_multiplicity = nelectrons % 2 + 1`
+  (carry iff it differs). Each audited distinction is pinned as a test in
+  `tests/adapters/test_pymatgen_laundering.py` / `test_pymatgen_molecule.py`.
+- **P1 by verbatim carry.** There is no ConversionReport to state a loss into, so anything with
+  no canonical home carries verbatim under `user_metadata.custom_*['pymatgen:<key>']` (the
+  extXYZ unmapped-column precedent) and restores on write. A value is mapped, laundered to
+  absence, or carried — there is no fourth path. Notably `selective_dynamics` carries rather
+  than becoming `fixed_atoms`: its per-axis booleans would silently flatten.
+- **Periodicity is `cell` presence.** A `Structure` maps its lattice to `cell`; a `Molecule` is
+  the `cell = None` case — never a fabricated identity lattice. `to_pymatgen` dispatches on the
+  same fact, and a multi-frame trajectory refuses (`frame_selection` first) rather than silently
+  exporting frame 0.
+- **Provenance still stamps.** `source_filename = None` (constructed programmatically),
+  `source_format = "pymatgen"` (an in-memory label — not a registered format id),
+  `original_coordinate_system` from what the object natively holds, and a `parse` history entry
+  folding the wrapped pymatgen version into `parser_version` (the D58/D59 discipline).
+
 ## 6. The batch surface
 
 M54 gives the library and CLI a **batch** form: one manifest, many files, one aggregate record.

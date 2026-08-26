@@ -121,6 +121,13 @@ object.
 
 **CIF is treated as real crystallography.** Cell parameters become lattice vectors, fractional coordinates become Cartesian at the parser boundary, and symmetry is expanded **from the operations the file declares** — parsed as exact affine maps over rationals, with sites on a symmetry element merged on a physical 0.05 Å threshold. A file that names a space group but declares *no* operations is **refused**, never read as a partial structure. Site occupancy is a first-class canonical field (`atoms.occupancies`); a target that cannot represent a partial occupancy says so in the report rather than dropping it silently. The exporter writes every atom explicitly under an identity symmetry loop with no space-group symbol — the coordinates it emits are the already-expanded cell, and any symbol above them would assert a setting they no longer encode.
 
+**Not formats: the in-memory adapters.** `xtalate.adapters.from_pymatgen`/`to_pymatgen`
+translate between in-memory pymatgen objects (`Structure`/`Molecule`) and Xtalate's Canonical
+Object inside one process — behind the optional `xtalate[pymatgen]` extra, consumed lazily at
+the seam (Xtalate does not become a pymatgen-style toolkit; it adapts at a seam). They are not a
+registered format: nothing appears in the capability matrix, the sniffer, or the CLI, and there is
+no file to sniff or report to render.
+
 ## What every conversion gives you
 
 - **Inspect first.** The Information Discovery Engine reports a ✓/✗ inventory of which canonical fields a file actually contains, each annotated with the format's capability — no conversion required.

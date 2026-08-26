@@ -86,6 +86,25 @@ the package stays 1.4.0 (the 1.5.0 bump is M58's).
 
 Schema version: 1.0.0
 
+### Added — the pymatgen in-memory adapters (v1.5 M57; D215–D216)
+
+Two library functions, `xtalate.adapters.from_pymatgen(canonical)` and
+`xtalate.adapters.to_pymatgen(canonical)`, for composing Xtalate with pymatgen **in one
+process** — a library seam, **not** a registered format: there is no file, so no sniffer
+entry, no capability-matrix row, no CLI subcommand, and nothing in the round-trip matrix.
+pymatgen is consumed lazily at that seam behind a new optional extra (`pip install
+xtalate[pymatgen]`) and is never a dependency — `import xtalate` stays pymatgen-free.
+`from_pymatgen` reads a periodic `Structure` (fractional-native, lattice → `cell`) or a
+non-periodic `Molecule` (`cell = None`, never a fabricated identity lattice);
+`to_pymatgen` dispatches on `cell` presence back to the matching type, refuses a
+multi-frame trajectory honestly, and restores carried values (oxidation states,
+site properties, a genuinely-set total charge or non-default spin multiplicity).
+Exactly as with the ASE wraps, pymatgen's manufactured construction defaults are
+laundered to absence (the fabricated total charge of an unconfigured `Structure`, a
+default spin multiplicity), and — since there is no ConversionReport to state losses
+into — every unmapped payload carries verbatim under `pymatgen:<key>` instead of being
+dropped.
+
 ### Added — QE real-world hardening as a hybrid corpus (v1.4 M53-S1; D198)
 
 The real-world test corpus (`tests/wild/`) admits the QE pw.x pair under the corpus-governance
