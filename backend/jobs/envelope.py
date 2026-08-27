@@ -23,6 +23,21 @@ if TYPE_CHECKING:
     from backend.db.models import Job
 
 
+class JobChildRef(BaseModel):
+    """One batch child's projection inside its parent's envelope (Part 6 §3, v1.5 M58).
+
+    A transport-only summary — the ``job_id`` to navigate to the **ordinary** child record, the
+    ``file_id`` it converts, and its current ``state`` — so a client can see at a glance which
+    children are done and which (e.g. a paused ``awaiting_recovery`` child) still need attention.
+    The child's own envelope/record is the full record; this is a link, never a copy of its
+    report (the aggregate embeds reports verbatim only in the completed ``result``).
+    """
+
+    job_id: str
+    file_id: str | None = None
+    state: str
+
+
 class JobProgress(BaseModel):
     """Coarse progress for a running job (Part 6 §3.2).
 
@@ -69,15 +84,27 @@ class JobEnvelope(BaseModel):
     awaiting_recovery: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
+    #: A ``batch_convert`` parent's fanned-out children (``job_id`` + ``file_id`` + ``state``), so
+    #: the batch record is navigable in every state — including which child is paused. Empty for
+    #: every other job kind (v1.5 M58).
+    children: list[JobChildRef] = Field(default_factory=list)
 
     @classmethod
-    def from_row(cls, job: Job, *, result: dict[str, Any] | None = None) -> JobEnvelope:
+    def from_row(
+        cls,
+        job: Job,
+        *,
+        result: dict[str, Any] | None = None,
+        children: list[JobChildRef] | None = None,
+    ) -> JobEnvelope:
         """Project a persisted :class:`~backend.db.models.Job` (+ its ``result``) onto the envelope.
 
         ``result`` is assembled by the caller (runner/router) from the job's stored reports, because
         it is kind-specific and embeds verbatim report bodies the envelope model does not model.
         The ``awaiting_recovery`` block is the persisted ``job.recovery`` column, served back
         verbatim while paused (it is set only on that edge and cleared when the job leaves it).
+        ``children`` is the batch parent's child projection, assembled by the same caller from the
+        persisted child rows (empty for non-batch jobs).
         """
         progress = JobProgress.model_validate(job.progress) if job.progress else JobProgress()
         return cls(
@@ -93,4 +120,5 @@ class JobEnvelope(BaseModel):
             awaiting_recovery=job.recovery,
             result=result,
             error=job.error,
+            children=list(children or []),
         )

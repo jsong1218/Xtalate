@@ -41,6 +41,11 @@ without scraping the message.
 service issued. Cursors are opaque; start from the first page and follow only the `next_cursor`
 values the service returns.
 
+### EMPTY_BATCH
+
+**HTTP 422.** A `batch_convert` submission named no files. A batch must list at least one
+`file_id` to fan out to; an empty manifest would be a job that can never complete.
+
 ### NOT_FOUND
 
 **HTTP 404.** No route matches the requested path and method. Check the path against the
@@ -161,6 +166,12 @@ itself may still have completed; only the post-conversion validation step is mis
 
 **HTTP 409.** A recovery resolution was posted to a job that is not paused at `awaiting_recovery`.
 Only a job actually waiting for a recovery decision can accept one.
+
+### JOB_CANCELLED
+
+**Recorded on a job body.** A batch child job was cancelled before it produced a conversion. The
+aggregate entry carries it as a `failed` outcome whose error names `JOB_CANCELLED`: a cancellation
+is an abandonment, not a refusal, so the child contributes no report and no output.
 
 ### CONVERSION_NOT_FOUND
 

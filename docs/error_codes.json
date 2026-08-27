@@ -6,6 +6,11 @@
       "summary": "No conversion record has this `conversion_id` on this instance (it never existed, or it passed report retention)."
     },
     {
+      "code": "EMPTY_BATCH",
+      "http_status": 422,
+      "summary": "A batch_convert submission named no files. A batch must list at least one `file_id` to fan out to."
+    },
+    {
       "code": "FILE_EXPIRED",
       "http_status": 410,
       "summary": "The uploaded file existed but its retention window has passed and its bytes were deleted. Re-upload to convert again; any conversion report it produced remains readable."
@@ -54,6 +59,11 @@
       "code": "JOB_ALREADY_TERMINAL",
       "http_status": 409,
       "summary": "The job is already `completed`, `failed`, `cancelled`, or `expired`, so the requested transition (e.g. cancel) no longer applies."
+    },
+    {
+      "code": "JOB_CANCELLED",
+      "http_status": null,
+      "summary": "A batch child job was cancelled before it produced a conversion. Recorded on the aggregate entry (status `failed`): the child is an abandonment, not a refusal, so it contributes no report and no output."
     },
     {
       "code": "JOB_NOT_AWAITING_RECOVERY",

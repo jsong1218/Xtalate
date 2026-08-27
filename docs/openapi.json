@@ -30,6 +30,119 @@
         "title": "AssumptionPreview",
         "type": "object"
       },
+      "BatchConvertRequest": {
+        "description": "``POST /v1/batch/convert`` body (Part 6 \u00a72, v1.5 M58) \u2014 N uploaded ``file_id``s, one\ntarget, shared options, and optional per-file overrides.\n\nThe wire manifest is deliberately just this: **ordered** ``file_ids`` (processing and report\norder), one target, the shared :class:`ConvertOptions`, and per-file overrides. It has **no\nfields** for selection, splitting, deduplication, or rebalancing \u2014 aggregation, never curation\n(roadmap \u00a711; the library manifest's scope refusal, carried to the wire). The API fans out at\nthe job layer: the parent creates one ordinary ``convert`` job per ``file_id`` and aggregates\ntheir persisted reports verbatim; it never re-implements the batch semantics (Part 6 preamble).",
+        "properties": {
+          "file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "File Ids",
+            "type": "array"
+          },
+          "options": {
+            "$ref": "#/components/schemas/ConvertOptions"
+          },
+          "overrides": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BatchFileOverride"
+            },
+            "title": "Overrides",
+            "type": "object"
+          },
+          "target_format_id": {
+            "title": "Target Format Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_ids",
+          "target_format_id"
+        ],
+        "title": "BatchConvertRequest",
+        "type": "object"
+      },
+      "BatchFileOverride": {
+        "description": "Per-file override of the shared batch options (``POST /v1/batch/convert``, v1.5 M58).\n\nMirrors the library's per-source override (``xtalate.conversion.batch.SourceOverride``) field\nfor field, with the wire's own recovery-choice shape (the ``{scenario: {choice, parameters}}\"\ndict of :class:`ConvertOptions`, not the CLI's preset strings). Each field *replaces* the\nshared value for that one file; a field left ``None`` inherits the shared option. In\nparticular ``recovery_choices`` replaces \u2014 never merges \u2014 the shared preset list, so one file\ncan preset a different decision than the rest of the batch (per-file consent stays per-file).\n``allow_recovery`` is the wire-only opt-in (the CLI refuses; the API pauses, Part 6 \u00a73.2), so\nit can be flipped off for a single file of an otherwise-interactive batch.",
+        "properties": {
+          "acknowledge_loss": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledge Loss"
+          },
+          "acknowledge_parse_warnings": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledge Parse Warnings"
+          },
+          "allow_recovery": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Recovery"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "recovery_choices": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Choices"
+          },
+          "tolerance_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tolerance Profile"
+          }
+        },
+        "title": "BatchFileOverride",
+        "type": "object"
+      },
       "Body_upload_v1_upload_post": {
         "properties": {
           "file": {
@@ -394,6 +507,36 @@
         "title": "InspectRequest",
         "type": "object"
       },
+      "JobChildRef": {
+        "description": "One batch child's projection inside its parent's envelope (Part 6 \u00a73, v1.5 M58).\n\nA transport-only summary \u2014 the ``job_id`` to navigate to the **ordinary** child record, the\n``file_id`` it converts, and its current ``state`` \u2014 so a client can see at a glance which\nchildren are done and which (e.g. a paused ``awaiting_recovery`` child) still need attention.\nThe child's own envelope/record is the full record; this is a link, never a copy of its\nreport (the aggregate embeds reports verbatim only in the completed ``result``).",
+        "properties": {
+          "file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Id"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "state"
+        ],
+        "title": "JobChildRef",
+        "type": "object"
+      },
       "JobEnvelope": {
         "description": "The full job envelope returned on submit and on every poll (Part 6 \u00a73.2).\n\n``result`` is the kind-specific completion payload (``None`` until the job completes):\n``{discovery_report}`` for inspect, ``{conversion_id, conversion_report, validation_report,\ndownload}`` for convert, ``{validation_report}`` for validate \u2014 each embedding the library's\nreport models verbatim. ``error`` is the error envelope's inner body (the same shape a non-2xx\nresponse carries) for a ``failed`` job, ``None`` otherwise. ``awaiting_recovery`` detail is an\nM23 addition to this same model \u2014 absent here, never a reshaping of what M22 established.",
         "properties": {
@@ -408,6 +551,13 @@
               }
             ],
             "title": "Awaiting Recovery"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/JobChildRef"
+            },
+            "title": "Children",
+            "type": "array"
           },
           "created_at": {
             "title": "Created At",
@@ -780,6 +930,45 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/batch/convert": {
+      "post": {
+        "description": "Submit a batch conversion (Part 6 \u00a72, v1.5 M58): N uploaded files, one aggregate job.\n\nA **transport** over proven semantics: the endpoint validates the manifest up front and\ncreates **only the parent** job \u2014 the worker fans out to N ordinary ``convert`` child jobs, so\na rejected submit leaves no orphans. Submit-time checks mirror the single-file convert: every\n``file_id`` must be a live upload (``404 FILE_NOT_FOUND`` / ``410 FILE_EXPIRED``), the target\nmust be writable (``422 UNKNOWN_FORMAT``), the manifest must name at least one file\n(``422 EMPTY_BATCH``), and a per-file override naming a file outside the manifest is a\nmalformed request (``400 MALFORMED_REQUEST``). Aggregation, never curation: the request has\nno fields for selection, splitting, or deduplication (roadmap \u00a711).",
+        "operationId": "batch_convert_v1_batch_convert_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchConvertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch Convert"
+      }
+    },
     "/v1/capabilities": {
       "get": {
         "description": "Every format's read/write capability declaration (equals ``xtalate capabilities --json``).",
@@ -1175,7 +1364,7 @@
     },
     "/v1/jobs/{job_id}": {
       "get": {
-        "description": "Poll a job's envelope. With ``?wait=<s>`` (capped 30), hold until the job is terminal.\n\nA poll of a paused job past its TTL expires it (``awaiting_recovery \u2192 expired``, resolving to a\nrefused conversion) before projecting \u2014 the lazy sweep Tier 0 relies on, so the no-services tier\nneeds no background sweeper for the expiry-to-refusal rule to hold (Part 6 \u00a73.2).",
+        "description": "Poll a job's envelope. With ``?wait=<s>`` (capped 30), hold until the job is terminal.\n\nA poll of a paused job past its TTL expires it (``awaiting_recovery \u2192 expired``, resolving to a\nrefused conversion) before projecting \u2014 the lazy sweep Tier 0 relies on, so the no-services tier\nneeds no background sweeper for the expiry-to-refusal rule to hold (Part 6 \u00a73.2). A poll of a\npaused ``batch_convert`` parent re-drives it once its children are all terminal (v1.5 M58) \u2014\nthe parent completes lazily on its own poll, so a batch whose last child just resumed or\nexpired needs no separate poke.",
         "operationId": "get_job_v1_jobs__job_id__get",
         "parameters": [
           {

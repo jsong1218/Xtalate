@@ -28,8 +28,10 @@ from backend.db.base import Base, JSONType, utcnow
 
 # --- controlled vocabularies (kept as strings, not DB enums, for SQLite/PostgreSQL parity) --------
 
-#: Job kinds — the three long-running operations (Part 6 §3).
-JOB_KINDS = ("inspect", "convert", "validate")
+#: Job kinds — the long-running operations (Part 6 §3). ``batch_convert`` (v1.5 M58) is the
+#: additive aggregate kind: a transport job whose worker fans out to ordinary ``convert`` children
+#: and whose result is the aggregate of their persisted reports (Part 6 §3, §7).
+JOB_KINDS = ("inspect", "convert", "validate", "batch_convert")
 
 #: Job states (Part 6 §3.2). The transitions between them are M22's tested state machine; here they
 #: are just the allowed column values.
@@ -102,6 +104,14 @@ class Job(Base):
     #: and the resume endpoint validates a client's choices against exactly the offered options. Set
     #: only while ``state == "awaiting_recovery"``; ``None`` otherwise.
     recovery: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    #: The ``batch_convert`` parent that fanned this job out (v1.5 M58): a nullable self-FK naming
+    #: the parent job row, ``None`` for every ordinary job. Children are **ordinary jobs by
+    #: inspection** — the only thing that makes them children is this link. ``ON DELETE SET NULL``
+    #: so an account sweep that deletes the parent leaves the children's records intact (they are
+    #: complete, independently-navigable jobs).
+    parent_job_id: Mapped[str | None] = mapped_column(
+        sa.ForeignKey("jobs.job_id", ondelete="SET NULL"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, default=utcnow
     )

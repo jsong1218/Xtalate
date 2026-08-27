@@ -9,11 +9,12 @@ precisely because they are API concerns, not canonical-model concerns.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from backend.tolerance import validate_tolerance_profile
+from xtalate.conversion.batch import BatchError, BatchTallies
 
 
 class ErrorBody(BaseModel):
@@ -100,6 +101,87 @@ class ConvertRequest(BaseModel):
     file_id: str
     target_format_id: str
     options: ConvertOptions = Field(default_factory=ConvertOptions)
+
+
+class BatchFileOverride(BaseModel):
+    """Per-file override of the shared batch options (``POST /v1/batch/convert``, v1.5 M58).
+
+    Mirrors the library's per-source override (``xtalate.conversion.batch.SourceOverride``) field
+    for field, with the wire's own recovery-choice shape (the ``{scenario: {choice, parameters}}"
+    dict of :class:`ConvertOptions`, not the CLI's preset strings). Each field *replaces* the
+    shared value for that one file; a field left ``None`` inherits the shared option. In
+    particular ``recovery_choices`` replaces — never merges — the shared preset list, so one file
+    can preset a different decision than the rest of the batch (per-file consent stays per-file).
+    ``allow_recovery`` is the wire-only opt-in (the CLI refuses; the API pauses, Part 6 §3.2), so
+    it can be flipped off for a single file of an otherwise-interactive batch.
+    """
+
+    mode: str | None = None
+    recovery_choices: dict[str, dict[str, Any]] | None = None
+    tolerance_profile: str | dict[str, Any] | None = None
+    acknowledge_loss: bool | None = None
+    acknowledge_parse_warnings: bool | None = None
+    allow_recovery: bool | None = None
+
+    #: Same request-time check as :class:`ConvertOptions` — an unusable per-file profile is a
+    #: submit error, never a job the caller must poll to discover was doomed.
+    _check_tolerance = field_validator("tolerance_profile")(validate_tolerance_profile)
+
+
+class BatchConvertRequest(BaseModel):
+    """``POST /v1/batch/convert`` body (Part 6 §2, v1.5 M58) — N uploaded ``file_id``s, one
+    target, shared options, and optional per-file overrides.
+
+    The wire manifest is deliberately just this: **ordered** ``file_ids`` (processing and report
+    order), one target, the shared :class:`ConvertOptions`, and per-file overrides. It has **no
+    fields** for selection, splitting, deduplication, or rebalancing — aggregation, never curation
+    (roadmap §11; the library manifest's scope refusal, carried to the wire). The API fans out at
+    the job layer: the parent creates one ordinary ``convert`` job per ``file_id`` and aggregates
+    their persisted reports verbatim; it never re-implements the batch semantics (Part 6 preamble).
+    """
+
+    file_ids: list[str]
+    target_format_id: str
+    options: ConvertOptions = Field(default_factory=ConvertOptions)
+    #: Per-file overrides keyed by ``file_id``; a key naming a file outside ``file_ids`` is a
+    #: malformed request (``400 MALFORMED_REQUEST``), never silently ignored.
+    overrides: dict[str, BatchFileOverride] = Field(default_factory=dict)
+
+
+class BatchConvertEntry(BaseModel):
+    """One child's terminal outcome inside the aggregate (Part 6 §3, v1.5 M58).
+
+    A thin transport record — ``child_job_id`` + the per-file outcome — that **embeds the child's
+    ``ConversionReport``/``ValidationReport`` verbatim** (the persisted bodies, unreshaped) so the
+    same file converted alone and inside a batch serializes byte-identically. ``error`` mirrors the
+    library's per-file failure record (``BatchError``: ``{code, message}``), present only for a
+    ``failed`` child (a parse error, an expired input); a refusal is *not* an error — it is a
+    completed conversion whose embedded report says so, exactly as on the single-file path.
+    """
+
+    file_id: str
+    child_job_id: str
+    status: Literal["converted", "refused", "failed"]
+    conversion_report: dict[str, Any] | None = None
+    validation_report: dict[str, Any] | None = None
+    error: BatchError | None = None
+
+
+class BatchConvertResult(BaseModel):
+    """The aggregate result of a completed ``batch_convert`` job (Part 6 §3, v1.5 M58).
+
+    **Counts, never restatements**: the reused library ``BatchTallies``/``LabelPresence`` (so the
+    wire tallies are byte-identical to the CLI's ``run_batch`` on the same inputs) plus the
+    per-child entries embedding the existing reports verbatim. ``note`` is the dataset-level
+    statement slot, mirroring ``BatchReport.note``; the HTTP surface has no assemble/fan-out
+    notes to make, so it stays ``None`` unless a future additive mode earns one. A ``BatchReport``
+    embeds a path-based manifest, which is wrong for the wire — this thin model is the transport's
+    own (D217); it adds **zero** schema fields and **no** second report schema.
+    """
+
+    tallies: BatchTallies
+    entries: list[BatchConvertEntry] = Field(default_factory=list)
+    note: str | None = None
 
 
 class RecoveryResumeRequest(BaseModel):

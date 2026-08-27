@@ -63,6 +63,12 @@ ERROR_CODES: tuple[ErrorCodeSpec, ...] = (
         "first page and follow `next_cursor` values only.",
     ),
     ErrorCodeSpec(
+        "EMPTY_BATCH",
+        422,
+        "A batch_convert submission named no files. A batch must list at least one `file_id` to "
+        "fan out to.",
+    ),
+    ErrorCodeSpec(
         "NOT_FOUND",
         404,
         "No route matches the requested path and method. Check the URL against the API reference.",
@@ -178,6 +184,13 @@ ERROR_CODES: tuple[ErrorCodeSpec, ...] = (
         "JOB_NOT_AWAITING_RECOVERY",
         409,
         "A recovery resolution was posted to a job that is not paused at `awaiting_recovery`.",
+    ),
+    ErrorCodeSpec(
+        "JOB_CANCELLED",
+        None,
+        "A batch child job was cancelled before it produced a conversion. Recorded on the "
+        "aggregate entry (status `failed`): the child is an abandonment, not a refusal, so it "
+        "contributes no report and no output.",
     ),
     ErrorCodeSpec(
         "CONVERSION_NOT_FOUND",
