@@ -8,6 +8,8 @@ import cancelledJob from "@/components/__fixtures__/job.cancelled.json";
 import completedJob from "@/components/__fixtures__/job.completed.json";
 import expiredJob from "@/components/__fixtures__/job.expired.json";
 import failedJob from "@/components/__fixtures__/job.failed.json";
+import batchAwaitingJob from "@/components/__fixtures__/job.batch_awaiting_recovery.json";
+import batchCompletedJob from "@/components/__fixtures__/job.batch_completed.json";
 
 /**
  * The job page's terminal states (MASTER_SPEC Part 7 §2.4; slice M29-S1).
@@ -90,6 +92,15 @@ describe("ConversionJobPage terminal states", () => {
     expect(screen.queryByTestId("awaiting-recovery")).not.toBeInTheDocument();
   });
 
+  it("does not apply the single-file cards to a batch parent", async () => {
+    renderWithEnvelope(batchCompletedJob);
+    await screen.findByRole("heading", { name: "Batch conversion" });
+    // No conversion report panel, no "completed but carried no conversion report" fallback, no
+    // single-file cancel wording — the batch branch owns this record.
+    expect(screen.queryByRole("region", { name: /conversion report/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Completed" })).not.toBeInTheDocument();
+  });
+
   it("offers a first-class decline within the step, not only the page footer", async () => {
     renderWithEnvelope(awaitingJob);
     const decline = await screen.findByRole("button", { name: /cancel conversion/i });
@@ -112,5 +123,45 @@ describe("ConversionJobPage terminal states", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: /cancel this conversion/i })).toBeNull(),
     );
+  });
+});
+
+describe("ConversionJobPage batch record (v1.5 M58-S2)", () => {
+  it("renders a completed batch as parent tallies above per-file links, never an invented report", async () => {
+    renderWithEnvelope(batchCompletedJob);
+    // The page names the batch honestly — a batch record, not a single conversion.
+    expect(await screen.findByRole("heading", { name: "Batch conversion" })).toBeInTheDocument();
+
+    // The tallies are the service's own counts, rendered as-is: 2 files, 1 converted, 1 refused.
+    const tallies = screen.getByRole("region", { name: "Batch result" });
+    expect(tallies).toHaveTextContent("Total");
+    expect(tallies).toHaveTextContent("2");
+    expect(tallies).toHaveTextContent("Converted");
+    expect(tallies).toHaveTextContent("Refused");
+    expect(tallies).toHaveTextContent("Failed");
+    expect(tallies).toHaveTextContent("energy ×0");
+
+    // Per-file links resolve to the ordinary child records (converted + refused in order).
+    const [converted, refused] = batchCompletedJob.result.entries;
+    const links = screen.getAllByRole("link", { name: /view this file\u2019s conversion record/i });
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute("href", `/convert/${converted.child_job_id}`);
+    expect(links[1]).toHaveAttribute("href", `/convert/${refused.child_job_id}`);
+    // The batch itself offers no download — each file's download lives on its own record.
+    expect(screen.queryByRole("button", { name: /download/i })).not.toBeInTheDocument();
+  });
+
+  it("renders a paused batch as waiting on the child records, with no recovery block of its own", async () => {
+    renderWithEnvelope(batchAwaitingJob);
+    const card = await screen.findByRole("region", { name: "Waiting on a decision" });
+    // The batch made no choice; the decision belongs to the paused child's own record.
+    expect(card).toHaveTextContent(/made no choice for any file/i);
+
+    const child = batchAwaitingJob.children[0];
+    expect(child.state).toBe("awaiting_recovery");
+    const answer = screen.getByRole("link", { name: /answer on this conversion's record/i });
+    expect(answer).toHaveAttribute("href", `/convert/${child.job_id}`);
+    // The batch parent carries no recovery step of its own — nothing to decide here.
+    expect(screen.queryByTestId("recovery-step")).not.toBeInTheDocument();
   });
 });

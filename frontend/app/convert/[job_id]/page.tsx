@@ -16,8 +16,10 @@ import { useCompletionSignal } from "@/lib/notify/useCompletionSignal";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AwaitingRecoveryBlock,
+  BatchConvertResult,
   ConversionReport,
   ErrorEnvelope as ErrorEnvelopeModel,
+  JobChildRef,
 } from "@/lib/report/types";
 
 /**
@@ -145,6 +147,12 @@ export default function ConversionJobPage() {
 
   const state = envelope.state;
   const terminal = isTerminalJobState(state);
+  // A `batch_convert` parent is an ordinary job whose `result` is the aggregate (Part 6 §3, v1.5
+  // M58) and whose `children` projection names each fanned-out child job — both rendered below in
+  // the batch branch. Everything else on this page is the single-file contract unchanged.
+  const batch = envelope.kind === "batch_convert";
+  const children = (envelope.children ?? []) as JobChildRef[];
+  const batchResult = (envelope.result ?? null) as BatchConvertResult | null;
   const result = (envelope.result ?? null) as {
     conversion_id?: string;
     conversion_report?: ConversionReport;
@@ -155,7 +163,9 @@ export default function ConversionJobPage() {
     <main className="space-y-6">
       <BackLink href={back.href} label={back.label} />
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Conversion</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {batch ? "Batch conversion" : "Conversion"}
+        </h1>
         <p className="font-mono text-xs text-faint">job {envelope.job_id}</p>
       </header>
 
@@ -171,6 +181,109 @@ export default function ConversionJobPage() {
           declining={cancelling}
           declineError={cancelError}
         />
+      ) : null}
+
+      {/*
+        The batch parent's pause (v1.5 M58-S2): a `batch_convert` parent carries **no recovery
+        block of its own** — per-file consent stays per-file, so the batch waits on the children
+        that still need a decision, each answered on the child's own ordinary record. The
+        `children` projection (present in every state) is rendered as-is: every child's honest
+        state, with a link to its record.
+      */}
+      {batch && state === "awaiting_recovery" ? (
+        <Card title="Waiting on a decision">
+          <p className="text-sm text-body">
+            This batch made no choice for any file — each decision belongs to the conversion it
+            concerns. The batch waits on the conversions below that still need a decision, and
+            completes once every one of them is settled.
+          </p>
+          <ul className="space-y-2">
+            {children.map((child, i) => (
+              <li
+                key={child.job_id}
+                className="flex items-center justify-between gap-4 text-sm"
+              >
+                <span className="text-strong">
+                  File {i + 1} ·{" "}
+                  <code className="font-mono text-xs">{child.state}</code>
+                </span>
+                <Link
+                  href={`/convert/${child.job_id}`}
+                  className="text-sm text-accent underline"
+                >
+                  {child.state === "awaiting_recovery"
+                    ? "Answer on this conversion's record"
+                    : "View this conversion"}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      {/*
+        The completed batch record (v1.5 M58-S2): the parent tallies — the reused library
+        `BatchTallies`/`LabelPresence`, rendered as the counts they are — above the per-file
+        links, so the honest summary is structurally in view before any reader follows a child
+        to its record (the layout law: summary above download, and the downloads live only on the
+        children's own records). Each entry links to the **ordinary** child conversion record the
+        existing convert page already renders; nothing here re-computes a report or a tally.
+      */}
+      {batch && state === "completed" && batchResult ? (
+        <div className="space-y-4">
+          <Card title="Batch result">
+            <p className="text-sm text-body">
+              This batch converted {batchResult.tallies.converted} of{" "}
+              {batchResult.tallies.total} file{batchResult.tallies.total === 1 ? "" : "s"};
+              every file&rsquo;s own record keeps its full report, and each of the links below
+              resolves to it.
+            </p>
+            <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              <div>
+                <dt className="text-muted">Total</dt>
+                <dd className="font-semibold text-strong">{batchResult.tallies.total}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">Converted</dt>
+                <dd className="font-semibold text-strong">{batchResult.tallies.converted}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">Refused</dt>
+                <dd className="font-semibold text-strong">{batchResult.tallies.refused}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">Failed</dt>
+                <dd className="font-semibold text-strong">{batchResult.tallies.failed}</dd>
+              </div>
+            </dl>
+            <p className="text-sm text-muted">
+              Outputs carrying each label: energy ×{batchResult.tallies.label_presence.energy},{" "}
+              forces ×{batchResult.tallies.label_presence.forces}, stress ×
+              {batchResult.tallies.label_presence.stress}.
+            </p>
+          </Card>
+          <Card title="Per-file conversions">
+            <ul className="space-y-2">
+              {batchResult.entries.map((entry, i) => (
+                <li
+                  key={entry.child_job_id}
+                  className="flex items-center justify-between gap-4 text-sm"
+                >
+                  <span className="text-strong">
+                    File {i + 1} ·{" "}
+                    <code className="font-mono text-xs">{entry.status}</code>
+                  </span>
+                  <Link
+                    href={`/convert/${entry.child_job_id}`}
+                    className="text-sm text-accent underline"
+                  >
+                    View this file&rsquo;s conversion record
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
       ) : null}
 
       {state === "completed" && report ? (
@@ -210,7 +323,7 @@ export default function ConversionJobPage() {
         </div>
       ) : null}
 
-      {state === "expired" ? (
+      {!batch && state === "expired" ? (
         <div className="space-y-3">
           <Card title="Refused — no recovery choice was made" tone="fail">
             <p className="text-sm text-strong">
@@ -237,7 +350,20 @@ export default function ConversionJobPage() {
         </div>
       ) : null}
 
-      {state === "cancelled" ? (
+      {batch && state === "cancelled" ? (
+        <div className="space-y-3">
+          <Card title="Cancelled">
+            <p className="text-sm text-strong">
+              You cancelled this batch, so <strong>no aggregate result exists for it</strong> —
+              not an empty one, none at all. The individual conversions it had already launched
+              are ordinary jobs and keep their own records.
+            </p>
+          </Card>
+          <StartOver />
+        </div>
+      ) : null}
+
+      {!batch && state === "cancelled" ? (
         <div className="space-y-3">
           <Card title="Cancelled">
             <p className="text-sm text-strong">
@@ -258,7 +384,7 @@ export default function ConversionJobPage() {
         </Card>
       ) : null}
 
-      {state === "completed" && !report ? (
+      {!batch && state === "completed" && !report ? (
         <Card title="Completed">
           <p className="text-sm text-body">
             This job completed but carried no conversion report.
@@ -279,11 +405,16 @@ export default function ConversionJobPage() {
             disabled={cancelling}
             className="rounded-md border border-line px-3 py-1.5 text-sm text-body hover:bg-raised disabled:opacity-60"
           >
-            {cancelling ? "Cancelling…" : "Cancel this conversion"}
+            {cancelling
+              ? "Cancelling…"
+              : batch
+                ? "Cancel this batch"
+                : "Cancel this conversion"}
           </button>
           <p className="text-xs text-faint">
-            Cancelling is best-effort: work already underway may finish first, and a conversion that
-            has already produced its result keeps it.
+            {batch
+              ? "Cancelling abandons the batch's aggregate; the conversions it already launched keep their own records."
+              : "Cancelling is best-effort: work already underway may finish first, and a conversion that has already produced its result keeps it."}
           </p>
           {cancelError ? <ErrorEnvelope envelope={cancelError} /> : null}
         </div>
