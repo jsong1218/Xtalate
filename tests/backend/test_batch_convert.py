@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi.testclient import TestClient
 
+from backend.app import create_app
+
 if TYPE_CHECKING:
     from backend.config import Settings
     from backend.db import Repository
@@ -331,6 +333,32 @@ def test_expired_child_pause_resolves_to_a_refusal_and_the_parent_completes_on_p
     assert entry["conversion_report"]["status"] == "refused"
     assert entry["conversion_report"]["refusal"]["code"] == "RECOVERY_REQUIRED"
     assert _tally_tuple(completed["result"]["tallies"]) == (1, 0, 1, 0)
+
+
+def test_parent_poll_alone_expires_a_due_child_with_no_sweeper(settings: Settings) -> None:
+    # Finding-1 regression. A client watching the aggregate polls the **parent**, not each child.
+    # Tier 0 runs no background sweeper, so the parent's own poll must cascade the lazy expiry to a
+    # child whose TTL has lapsed — otherwise a batch with an unanswered child hangs at
+    # awaiting_recovery forever (the "no sweeper needed" guarantee broken for a batch). Here the
+    # child's recovery TTL is zero, so a single GET of the *parent* (never the child, never a
+    # manual sweep) resolves the child to a refusal and completes the parent.
+    from tests.backend.conftest import _migrate
+
+    fast = settings.model_copy(update={"awaiting_recovery_ttl_minutes": 0})
+    _migrate(fast.database_url)
+    with TestClient(create_app(fast), raise_server_exceptions=False) as client:
+        parent_id, child_id = _paused_batch(client)
+
+        completed = client.get(f"/v1/jobs/{parent_id}").json()
+
+        assert completed["state"] == "completed"
+        entry = completed["result"]["entries"][0]
+        assert entry["status"] == "refused"
+        assert entry["conversion_report"]["refusal"]["code"] == "RECOVERY_REQUIRED"
+        assert _tally_tuple(completed["result"]["tallies"]) == (1, 0, 1, 0)
+        # The child was resolved as a side effect of the parent poll: it now reads expired on its
+        # own record too, with no separate poke.
+        assert client.get(f"/v1/jobs/{child_id}").json()["state"] == "expired"
 
 
 # --- submit-time validation ----------------------------------------------------------------------

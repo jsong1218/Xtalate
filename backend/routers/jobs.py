@@ -654,7 +654,7 @@ async def get_job(
             message=f"No job {job_id!r}.",
         )
     job = expire_if_due(job, repository, settings)
-    job = _maybe_redrive_batch_parent(job, repository, job_queue)
+    job = _maybe_redrive_batch_parent(job, repository, settings, job_queue)
 
     if wait > 0 and not is_terminal(job.state):
         deadline = anyio.current_time() + min(wait, MAX_WAIT_SECONDS)
@@ -680,20 +680,27 @@ def _reload(repository: Repository, job_id: str) -> Job:
     return job
 
 
-def _maybe_redrive_batch_parent(job: Job, repository: Repository, job_queue: JobQueue) -> Job:
+def _maybe_redrive_batch_parent(
+    job: Job, repository: Repository, settings: Settings, job_queue: JobQueue
+) -> Job:
     """Re-drive a paused ``batch_convert`` parent whose children have all since gone terminal.
 
     The parent pauses (``awaiting_recovery``) while any child awaits a recovery decision and has
     no TTL of its own — it completes only when every child is terminal. Children become terminal
-    through paths this endpoint cannot see synchronously (the child's own resume, the expiry sweep
-    resolving the child's pause), so the parent re-drives **lazily on its own poll**: once every
-    child is terminal it is enqueued again (inline: it completes before this poll returns; RQ: the
-    worker finishes it and a later poll sees it). Guarded to the paused state so a concurrent
-    double-poll can never double-enqueue a parent that is already queued or running.
+    through paths this endpoint cannot see synchronously (the child's own resume) or lazily on the
+    parent's own poll: a child paused past its TTL is resolved to ``expired`` by the same lazy
+    ``expire_if_due`` a solo convert relies on. Tier 0 runs no background sweeper, and a client
+    watching the aggregate polls the *parent*, not each child — so this cascades the lazy expiry to
+    the children **here**, before the terminality check, keeping the parent poll self-sufficient.
+    Once every child is terminal the parent is enqueued again (inline: it completes before this
+    poll returns; RQ: the worker finishes it and a later poll sees it). Guarded to the paused state
+    so a concurrent double-poll can never double-enqueue a parent that is already queued or running.
     """
     if job.kind != "batch_convert" or job.state != "awaiting_recovery":
         return job
-    children = repository.get_child_jobs(job.job_id)
+    children = [
+        expire_if_due(c, repository, settings) for c in repository.get_child_jobs(job.job_id)
+    ]
     if children and all(is_terminal(c.state) for c in children):
         job_queue.enqueue(job.job_id)
         reloaded = repository.get_job(job.job_id)
