@@ -78,6 +78,7 @@ from tests.streaming._generators import (
 from benchmarks import tripwire
 from xtalate.cli.main import EXIT_OK
 from xtalate.cli.main import main as cli_main
+from xtalate.conversion.batch import BatchManifest, run_batch
 from xtalate.conversion.preflight import build_preflight
 from xtalate.registry import default_registry
 from xtalate.sdk.streaming import export_stream
@@ -345,6 +346,66 @@ def _bench_preflight_latency(workdir: Path, scale: str) -> dict[str, float]:
     return {"frames": float(obj.frame_count), "preflight_seconds": preflight_seconds}
 
 
+def _bench_batch_convert_100_files(workdir: Path, scale: str) -> dict[str, float]:
+    """The v1.5 batch fan-out (M54/M58) at the 100-file scale: N ordinary files → one aggregate.
+
+    Each source converts through the **ordinary single-file path** (parse → convert → validate)
+    and the aggregate embeds the per-file reports — the aggregate **holds reports, never
+    frames**, which is the memory-boundary this benchmark measures: ``aggregate_bytes`` is the
+    serialized ``BatchReport`` (report-scale: ~a few KB per file), and its budget would flag a
+    regression that ever held the converted frames (25,000 frames ≈ 10² MB) instead. The batch
+    re-implements none of the convert path; the streaming engines run per child exactly as a
+    lone ``xtalate convert`` does."""
+    sz = _sized(scale, full=Scale(100, 50), micro=Scale(4, 8))
+    n_files, n_atoms = sz.n_frames, sz.n_atoms  # n_frames doubles as the file count here
+    frames_per_file = 5
+    sources = [
+        write_lammps_dump_trajectory(
+            workdir / f"job_{i:03d}.dump", n_frames=frames_per_file, n_atoms=n_atoms
+        )
+        for i in range(n_files)
+    ]
+    manifest = BatchManifest(
+        sources=[str(src) for src in sources], target="extxyz", output_mode="per-file"
+    )
+    report = run_batch(manifest, default_registry())
+    aggregate_bytes = float(len(report.model_dump_json().encode("utf-8")))
+    return {
+        "files": float(n_files),
+        "frames_total": float(n_files * frames_per_file),
+        "aggregate_bytes": aggregate_bytes,
+    }
+
+
+def _bench_parse_asedb_1k_rows(workdir: Path, scale: str) -> dict[str, float]:
+    """Parse an ASE SQLite ``.db`` at 1,000-row scale (M55-S1): the whole-file read via
+    ``ase.db`` ``select()`` — a multi-row database's honest terminal outcome is the recoverable
+    ``ASEDB_MULTIPLE_ROWS`` refusal (a dataset is aggregation, never one Canonical Object), and
+    the read that reaches it is exactly what this measures. Generated, never committed: the
+    database is written here with ``ase.db`` itself, the same library the parser reads."""
+    sz = _sized(scale, full=Scale(1_000, 8), micro=Scale(20, 4))
+    n_rows, n_atoms = sz.n_frames, sz.n_atoms  # n_frames doubles as the row count here
+    from ase import Atoms
+    from ase.db import connect
+
+    db_path = workdir / "rows.db"
+    db = connect(str(db_path), use_lock_file=False)
+    for _ in range(n_rows):
+        db.write(Atoms("H" * n_atoms, positions=[[float(i), 0.0, 0.0] for i in range(n_atoms)]))
+    parser = default_registry().get_parser("ase_db")
+    from xtalate.sdk.results import ParseError
+
+    with db_path.open("rb") as fh:
+        try:
+            parser.parse(fh, filename=db_path.name)
+        except ParseError as exc:  # the multi-row terminal outcome, by design
+            if not any(issue.code == "ASEDB_MULTIPLE_ROWS" for issue in exc.issues):
+                raise
+        else:
+            raise AssertionError("a 1k-row .db parsed as a single object — the refusal is missing")
+    return {"rows": float(n_rows), "atoms": float(n_atoms)}
+
+
 BENCHMARKS: tuple[Benchmark, ...] = (
     Benchmark(
         "parse_xdatcar_10k",
@@ -403,6 +464,24 @@ BENCHMARKS: tuple[Benchmark, ...] = (
         "preflight_latency",
         _bench_preflight_latency,
         (Budget("preflight_seconds", 1.0, "s"),),
+    ),
+    # The v1.5 batch fan-out: 100 files through run_batch. aggregate_bytes is the reports-only
+    # footprint — the per-file memory boundary (a frame-holding aggregate would blow it by ~2
+    # orders of magnitude). Wall budget consistent with the convert_*_10k rows.
+    Benchmark(
+        "batch_convert_100_files",
+        _bench_batch_convert_100_files,
+        (
+            Budget("wall_seconds", 90.0, "s"),
+            Budget("peak_rss_bytes", 2 * _GiB, "bytes"),
+            Budget("aggregate_bytes", 64 * 1024 * 1024, "bytes"),
+        ),
+    ),
+    # The M55 ASE-db parser at 1,000-row scale — same budgets as the other parse_*_10k rows.
+    Benchmark(
+        "parse_asedb_1k_rows",
+        _bench_parse_asedb_1k_rows,
+        (Budget("wall_seconds", 30.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
     ),
 )
 
