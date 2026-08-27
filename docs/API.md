@@ -211,10 +211,14 @@ verbatim in its HTTP responses (no parallel DTOs).
 ## 4. Supported formats
 
 Read **and** write: `xyz`, `extxyz`, `poscar`, `contcar`, `xdatcar`, `ase_traj`, `cif`,
-`lammps_dump`, and `lammps_data`. The first seven are the Phase 1 formats, and the two LAMMPS
-formats cover read+write trajectories and restart/topology data. Read-only/parser-only sources:
-`vasprun` (VASP `vasprun.xml`) and `outcar` (VASP `OUTCAR`); they are valid conversion sources but
-never targets. Third-party formats registered via entry points (see the [Developer
+`lammps_dump`, `lammps_data`, `qe_pw_in`, `ase_db`, and `deepmd_npy` (a directory format —
+see the [Developer Guide](DEVELOPER_GUIDE.md) for its `-o DIR` write surface). Read-only /
+parser-only sources: `vasprun` (VASP `vasprun.xml`), `outcar` (VASP `OUTCAR`), and `qe_pw_out`
+(pw.x output); they are valid conversion sources but never targets. A **dataset is aggregation,
+not a new model**: a multi-row `ase_db` or a multi-frame directory fans out under
+`convert --batch`, and `assemble` builds one container (extXYZ, `.db`, DeePMD systems) from N
+sources — every per-file report is embedded verbatim and tallies are counts, never
+restatements. Third-party formats registered via entry points (see the [Developer
 Guide](DEVELOPER_GUIDE.md)) appear here on equal footing — `xtalate capabilities` always reflects
 the live set.
 
@@ -319,8 +323,9 @@ As of the v1.0 contract freeze, the `/v1` surface is **frozen for the 1.x series
 the contract, and they are the same three the service ships as machine-readable artifacts:
 
 - the **endpoint set** — the paths and methods enumerated above (`upload`, `inspect`, `convert`,
-  `validate`, `jobs/{id}` and its `recovery` / `recovery/preview` / `cancel` sub-resources,
-  `conversions/{id}`, `download/{id}`, `history`, `capabilities[/{format_id}]`, `limits`, `health`);
+  `validate`, `batch/convert` (v1.5), `jobs/{id}` and its `recovery` / `recovery/preview` /
+  `cancel` sub-resources, `conversions/{id}`, `download/{id}`, `history`,
+  `capabilities[/{format_id}]`, `limits`, `health`);
 - the **response envelopes** — the pydantic report models of §3, embedded verbatim, and the single
   error envelope `{ error: { code, message, details, request_id, documentation_url } }`; and
 - the **error-code set** — the stable machine strings each non-2xx response carries, cataloged in
@@ -345,3 +350,55 @@ keeps working across the series:
 - **Additive fields are non-breaking.** New optional request fields and new response fields may be
   added within 1.x; existing fields are not removed, renamed, or repurposed, and an existing error
   code is never given a new meaning (new codes may be *added* to the set).
+
+### 5.4 Batch conversion (`POST /v1/batch/convert`) — an additive job kind (v1.5 M58)
+
+The batch endpoint is the HTTP form of the library's `run_batch` contract — the API reproduces it,
+never re-implements it (the same `BatchTallies`/`LabelPresence` and verbatim-embedding rules). It is
+an **additive job kind**: the `/v1` endpoints, envelopes, and codes above are unchanged, and a
+client that never calls it keeps working.
+
+```bash
+# Upload the files first (each is an ordinary upload):
+F1=$(curl -s -F "file=@run1/vasprun.xml" "$BASE/upload" | jq -r .file_id)
+F2=$(curl -s -F "file=@run2/pw.out" "$BASE/upload" | jq -r .file_id)
+# Submit the batch: ordered file_ids + one target + shared options.
+JOB=$(curl -s "$BASE/batch/convert" -H 'content-type: application/json' -d "{
+  \"file_ids\": [\"$F1\", \"$F2\"],
+  \"target_format_id\": \"extxyz\"
+}" | jq -r .job_id)
+# Poll the parent; its result is the aggregate (tallies + per-file entries embedding each
+# child's reports verbatim) and its `children` projection names each child job:
+curl -s "$BASE/jobs/$JOB" | jq '.state, .result.tallies, .children'
+# Each child is an ordinary job — GET /v1/jobs/{child_id} is its own full record.
+```
+
+Semantics worth knowing before you call it:
+
+- **One target, shared options.** The request is `{ file_ids: [...], target_format_id, options }`
+  with an optional per-file `overrides` list whose fields **replace** the shared value (an unset
+  field inherits; `recovery_choices` replace, never merge — the library `SourceOverride`
+  semantics). At least one `file_id` is required (`422 EMPTY_BATCH`); an empty list is the only
+  batch-specific refusal.
+- **Fan-out to ordinary child jobs.** The parent creates N ordinary `kind="convert"` child jobs,
+  each a navigable record with its own pause, refusal, expiry, and cancellation — exactly as if
+  submitted alone. A rejected submit leaves no orphans: children are created by the parent's
+  dispatch, so a request that fails validation creates none.
+- **Per-file consent stays per-file.** A child that pauses at `awaiting_recovery` leaves the
+  parent **honestly non-terminal at the same state with no recovery block of its own** — the batch
+  never answers a recovery question wholesale, and resuming the parent with choices is
+  `422 INVALID_RECOVERY_CHOICE`. Answer the child on its own record; once every child is
+  terminal, the parent re-drives itself lazily on the next `GET /v1/jobs/{id}` poll and completes.
+- **The aggregate is a container, never a digest.** `result.entries[]` embeds each child's
+  `ConversionReport`/`ValidationReport` verbatim (byte-identical to the child's own record), and
+  `result.tallies` are counts (total/converted/refused/failed + `label_presence`) — no merged
+  assumptions, no "top losses" summary. A cancelled child reports `failed` with code
+  `JOB_CANCELLED`; a child whose pause expired resolves as a `RECOVERY_REQUIRED` refusal, never a
+  silent default.
+- **Navigable in every state.** The envelope carries an additive `children: [{ job_id, file_id,
+  state }…]` projection so a client (or the Web UI) can reach each child's record whether the
+  batch is running, paused, or complete.
+
+The committed [`openapi.json`](openapi.json) is regenerated (`python -m backend.openapi`) and
+contains the exact request/response schema; `EMPTY_BATCH` and `JOB_CANCELLED` are cataloged in
+[`error_codes.json`](error_codes.json).

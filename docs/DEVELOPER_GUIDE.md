@@ -701,6 +701,23 @@ and lost — the curation is yours, and the record is complete enough to audit i
 with one refusal exits 2, one with a parse error exits 4, an all-clean batch exits 0; a
 malformed manifest (or a manifest carrying a scope-refused key) is a usage error, exit 1.
 
+**The HTTP form is the same contract, an additive job kind (M58-S1, D217).** `POST
+/v1/batch/convert` reproduces `run_batch` on the wire — the API adds **no batch logic** beyond
+the transport. Where the CLI manifest names file paths, the request names uploaded `file_id`s;
+where `run_batch` converts in-process, the endpoint **fans out to ordinary child convert jobs**
+(a nullable self-FK `jobs.parent_job_id`, Alembic 0004), each a navigable record with its own
+pause, refusal, and expiry — the same `execute_job` machinery a lone `convert` job rides, never a
+second engine. The parent's `result` is the same aggregate shape (reused
+`BatchTallies`/`LabelPresence` + one verbatim-embedding entry per child), rebuilt from the
+persisted child rows on every poll, and the envelope carries an additive `children` projection
+so the record is navigable in every state. Per-file consent stays per-file: a paused child
+leaves the parent honestly non-terminal with **no** batch-level recovery block, and the parent
+re-drives itself lazily on poll once every child is terminal. The new error codes
+(`EMPTY_BATCH`, `JOB_CANCELLED`) go through the D104 registry; nothing in `schema/` moves
+(SCHEMA_VERSION stays `1.0.0`). Adding a job kind like this is the Part 6 §7 additive path: a
+new `JOB_KINDS` member, a router arm, and a runner branch — never a change to the frozen single-
+file contract.
+
 ## 7. Coding conventions (the non-negotiables)
 
 These invariants are what make Xtalate trustworthy. A change that breaks one will not merge, however

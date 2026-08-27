@@ -1,7 +1,7 @@
 # Xtalate
 
 [![CI](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml/badge.svg)](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](CHANGELOG.md)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 
@@ -260,6 +260,15 @@ curl -s "$BASE/download/$CID" -o POSCAR
 ```
 
 Reports **outlive the bytes** they describe: input and output expire on independent lifecycle windows while `GET /v1/conversions/{id}` still serves both reports. The full flow — including interactive recovery (`allow_recovery` → pause → resume) — is walked with `curl` in [`docs/API.md`](docs/API.md), and the machine-readable contract is the committed [`docs/openapi.json`](docs/openapi.json).
+
+**Convert a whole directory at once** over HTTP the same way `--batch` does on the CLI: `POST
+/v1/batch/convert` takes an ordered list of uploaded `file_id`s with one target and shared
+options, fans out to **ordinary child convert jobs** (each a navigable record with its own
+pause and report), and returns one aggregate — the reused library tallies plus each child's
+reports embedded **verbatim**; the parent completes only when every child is settled, and a
+child that needs a decision pauses on its own record rather than asking the batch. **Not a
+dataset curator**: selection, splitting, and deduplication are scientific judgments, not
+translations (roadmap §11) — the batch converts what it is given, completely and reported.
 
 ## Web UI
 
