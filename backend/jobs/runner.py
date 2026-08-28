@@ -159,6 +159,12 @@ def execute_job(
     # a submitted job is terminal before a client could cancel it.)
     current = repository.get_job(job_id)
     if current is not None and current.state != "running":
+        if current.state == "awaiting_recovery":
+            # A *deliberate* pause, not a cancel race (v1.5 M58): the batch parent paused itself
+            # because a child awaits a recovery decision. It persisted no products of its own to
+            # discard — each child holds its own record, and the pause is the honest state — so
+            # the run simply ends here; a poll re-drives the parent once the children are terminal.
+            return
         keys = repository.discard_job_products(job_id)
         for key in keys:
             object_store.delete(key)
@@ -272,6 +278,8 @@ def _dispatch(
         _run_convert(job, upload, repository, object_store, registry, settings)
     elif job.kind == "validate":
         _run_validate(job, repository, settings)
+    elif job.kind == "batch_convert":
+        _run_batch_convert(job, repository, object_store, registry, settings)
     else:
         raise ValueError(f"unknown job kind {job.kind!r}")  # a bug (kinds validated at submit).
 
@@ -494,6 +502,103 @@ def _run_validate(job: Job, repository: Repository, settings: Settings) -> None:
     from backend.jobs.revalidate import run_revalidate
 
     run_revalidate(job, repository, settings)
+
+
+def _merge_batch_options(shared: dict[str, Any], override: dict[str, Any] | None) -> dict[str, Any]:
+    """The effective options for one batch child: the shared options with each per-file override
+    field *replaced* (v1.5 M58). A ``None`` override field inherits the shared value — the per-
+    field merge of the library's ``SourceOverride``; ``recovery_choices`` replaces, never merges,
+    so one file can preset a different decision than the rest of the batch."""
+    if not override:
+        return shared
+    return {**shared, **{k: v for k, v in override.items() if v is not None}}
+
+
+def _run_batch_convert(
+    job: Job,
+    repository: Repository,
+    object_store: ObjectStore,
+    registry: Registry,
+    settings: Settings,
+) -> None:
+    """The aggregate job body (Part 6 §3, v1.5 M58): fan the manifest out to N **ordinary**
+    ``convert`` child jobs — each an unchanged :func:`_run_convert` over one ``file_id``, driven
+    through the full :func:`execute_job` lifecycle so a child pauses or fails exactly as a solo
+    convert would — then complete only when every child is terminal.
+
+    Children are created here, by the parent's dispatch, so a rejected submit leaves no orphans
+    (the submit endpoint validates every ``file_id`` up front). Failure isolation is structural: a
+    child's parse failure is that child's ``failed`` outcome, a refusal its completed refused
+    outcome, and the parent aggregates whatever the children persisted (the aggregate is rebuilt
+    from those rows on every poll by ``backend/jobs/result.py`` — one source of truth). A child
+    paused at ``awaiting_recovery`` leaves the parent **honestly non-terminal**: the batch is
+    incomplete until that child's own question is answered (per-file consent is per-file — a batch
+    never answers a recovery question wholesale). The parent pauses with **no block and no TTL** —
+    there is no batch-level question and the parent owns no input bytes — and a poll re-drives it
+    once every child is terminal (``backend/routers/jobs.py``).
+    """
+    from backend.db.models import Job
+    from backend.jobs.state_machine import is_terminal
+
+    request = job.request
+    file_ids = request.get("file_ids") or []
+    target_format_id = request["target_format_id"]
+    shared = request.get("options") or {}
+    overrides = request.get("overrides") or {}
+    request_id = request.get("request_id")
+    children = {
+        c.request.get("file_id"): c
+        for c in repository.get_child_jobs(job.job_id)
+        if isinstance(c.request, dict)
+    }
+    for file_id in file_ids:
+        existing = children.get(file_id)
+        if existing is not None:
+            # Fanned out on an earlier dispatch. A terminal child is done, and a child paused at
+            # ``awaiting_recovery`` is legitimately waiting for its own recovery answer — leave both
+            # untouched. But a child still ``queued`` is an **orphan**: under Tier 1 a crash between
+            # ``add_job`` and ``execute_job`` persists the row yet never runs it, and skipping it
+            # here would hang the parent on a child that can never terminate. Re-drive that child by
+            # its existing id (``execute_job`` no-ops anything already running or terminal, so this
+            # is safe on every state) rather than minting a second row for the same file_id.
+            if is_terminal(existing.state) or existing.state == "awaiting_recovery":
+                continue
+            child_id = existing.job_id
+        else:
+            child_id = uuid.uuid4().hex
+            repository.add_job(
+                Job(
+                    job_id=child_id,
+                    kind="convert",
+                    state="queued",
+                    parent_job_id=job.job_id,
+                    request={
+                        "file_id": file_id,
+                        "target_format_id": target_format_id,
+                        "options": _merge_batch_options(shared, overrides.get(file_id)),
+                        "request_id": request_id,
+                    },
+                )
+            )
+        # Drive the child through the ordinary lifecycle — preconditions, pause, failure, cancel
+        # race — exactly as if it had been submitted solo. Inline under Tier 0; under Tier 1 the
+        # parent's own worker runs each child inline too, because the parent must see every
+        # child's terminal-or-paused state before deciding its own.
+        execute_job(
+            child_id,
+            repository=repository,
+            object_store=object_store,
+            registry=registry,
+            settings=settings,
+        )
+    current = repository.get_child_jobs(job.job_id)
+    if all(is_terminal(c.state) for c in current):
+        return  # every child terminal → the runner's tail completes the parent
+    # A child is still paused: the batch is honestly incomplete. Pause the parent with no
+    # recovery block (the child's own block holds the question) and no TTL (the parent owns no
+    # input bytes to outlive; the child's pause TTL governs). A poll re-drives once terminal.
+    repository.transition_job(job.job_id, "awaiting_recovery", progress={"phase": "recovery"})
+    log_event("job.awaiting_recovery", job_id=job.job_id, kind=job.kind, request_id=request_id)
 
 
 def _awaiting_recovery_deadline(upload: Any, settings: Settings) -> datetime:

@@ -17,6 +17,12 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 1.0.0
 
+_The next release accrues here._
+
+## [1.5.0] — 2026-08-27
+
+Schema version: 1.0.0
+
 ### Added — the batch surface (v1.5 M54; D201–D204)
 
 A batch form for the library and CLI: `xtalate convert --batch manifest.yaml` resolves an
@@ -34,8 +40,7 @@ v2.0 variable-N evidence stream). The batch exit code is the worst per-file outc
 0–5 ladder; a malformed manifest — or one carrying a selection/split/dedup key, which the batch
 surface deliberately does not implement (aggregation, not curation, roadmap §11) — is a usage
 error (exit 1). The manifest carries the shared conversion settings in batch mode; the
-conflicting CLI flags are refused rather than silently ignored. Schema stays **1.0.0**; the
-package stays 1.4.0 (the 1.5.0 bump is M58's).
+conflicting CLI flags are refused rather than silently ignored. Schema stays **1.0.0**.
 
 ### Added — the ASE `.db` format, read and write (v1.5 M55; D205–D208)
 
@@ -57,7 +62,7 @@ conversions in one `BatchReport` (each an explicit, recorded `asedb_row_selectio
 combine** behind a declared `FormatCapabilities.assemble_capable` capability: `.db` is the second
 assemble-capable target (N single-structure sources → one N-row `.db` dataset), and `extxyz ↔ ase_db`
 dataset translation is symmetric (assemble to `.db`, fan out from `.db`). extXYZ assemble stays
-byte-identical to M54. Schema stays **1.0.0**; the package stays 1.4.0 (the 1.5.0 bump is M58's).
+byte-identical to M54. Schema stays **1.0.0**.
 
 ### Added — the DeePMD-kit NumPy system format, read and write, and the first directory I/O seam (v1.5 M56; D209–D214)
 
@@ -79,12 +84,7 @@ pinned by a hand-computed golden fixture; a source system's type numbering carri
 `deepmd_npy:*` namespace and is restored byte-faithfully on write. Under `--batch`, `assemble` to
 `deepmd_npy` groups contributions **by composition** into N systems (`system_000/`, `system_001/`, …)
 — a DeePMD system is fixed-composition — with the grouping declared in the aggregate note (D214);
-`deepmd_npy` enrols in the nightly round-trip matrix as source and target. Schema stays **1.0.0**;
-the package stays 1.4.0 (the 1.5.0 bump is M58's).
-
-## [1.4.0] — 2026-08-23
-
-Schema version: 1.0.0
+`deepmd_npy` enrols in the nightly round-trip matrix as source and target. Schema stays **1.0.0**.
 
 ### Added — the pymatgen in-memory adapters (v1.5 M57; D215–D216)
 
@@ -104,6 +104,34 @@ laundered to absence (the fabricated total charge of an unconfigured `Structure`
 default spin multiplicity), and — since there is no ConversionReport to state losses
 into — every unmapped payload carries verbatim under `pymatgen:<key>` instead of being
 dropped.
+
+### Added — the `batch_convert` API job kind, its Web UI record, and the flagship example (v1.5 M58; D217–D219)
+
+`POST /v1/batch/convert` submits an ordered list of `file_id`s with one target and shared
+options (per-file overrides replace the shared value; `recovery_choices` replace, never merge)
+and fans out to **ordinary child convert jobs** — each a navigable job record with its own
+pause, refusal, and expiry, exactly as if submitted alone. The parent completes only when every
+child is terminal; its result is the **aggregate** — the reused library
+`BatchTallies`/`LabelPresence` and one entry per child embedding that child's
+`ConversionReport`/`ValidationReport` **verbatim** (a dataset is a container of ordinary
+reports, never a new model — the Part 6 preamble; the API reproduces the library `run_batch`
+contract but does not run it). Per-file consent stays per-file: a child that pauses leaves the
+parent honestly non-terminal at `awaiting_recovery` with **no batch-level recovery prompt**, and
+the parent re-drives itself lazily on its own poll once every child is settled (covers
+resume-completed and expiry-resolved children with one mechanism). The job envelope gains an
+additive `children` projection, so the batch record is navigable in every state. The Web UI
+renders the parent on the existing job-record page — tallies plus links into each child's
+ordinary conversion record, honest non-terminal state included (**navigable, not novel**; a
+dedicated batch page stays cut to v1.5.1). The roadmap's stopping point ships as a runnable
+example — `examples/batch_assemble_training_set.py` — converting a mixed VASP/QE/LAMMPS
+manifest of committed real fixtures into one assembled extXYZ training set with the
+dataset-level variable-N note stated aloud, plus two measured benchmarks
+(`batch_convert_100_files`, `parse_asedb_1k_rows`). New error codes `EMPTY_BATCH` (422) and
+`JOB_CANCELLED` (job-body) join the D104 registry. Schema stays **1.0.0**.
+
+## [1.4.0] — 2026-08-23
+
+Schema version: 1.0.0
 
 ### Added — QE real-world hardening as a hybrid corpus (v1.4 M53-S1; D198)
 

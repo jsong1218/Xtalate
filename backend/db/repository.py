@@ -211,6 +211,19 @@ class Repository:
             job.updated_at = utcnow()
             return job
 
+    def get_child_jobs(self, parent_job_id: str) -> Sequence[Job]:
+        """The jobs a ``batch_convert`` parent fanned out to, in creation order (v1.5 M58).
+
+        Children are ordinary ``convert`` jobs distinguished only by their ``parent_job_id`` link
+        (Part 6 §3) — this query is the one place the fan-out is read back, so the aggregate
+        (``backend/jobs/result.py``) and the worker's terminality check both see the same set.
+        Creation order equals the manifest order the parent fanned out in, because the parent
+        creates one child per ``file_id`` in request order.
+        """
+        with self._session_factory() as session:
+            stmt = select(Job).where(Job.parent_job_id == parent_job_id).order_by(Job.created_at)
+            return list(session.scalars(stmt))
+
     def list_awaiting_recovery(self) -> Sequence[Job]:
         """Every job currently paused in ``awaiting_recovery`` — the expiry sweep's candidate set.
 

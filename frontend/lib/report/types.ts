@@ -313,6 +313,54 @@ export interface ConversionRecord {
   download: DownloadInfo;
 }
 
+// --- Batch aggregate (MASTER_SPEC Part 6 §3, v1.5 M58) -----------------------------------------
+//
+// The `batch_convert` job's completion payload — the reused library `BatchTallies`/`LabelPresence`
+// plus one thin entry per child embedding that child's existing reports verbatim
+// (`src/xtalate/conversion/batch.py` + `backend/models.py::BatchConvertResult`, mirrored verbatim).
+// The Web UI renders these counts and links — it never re-computes a tally (Part 7 §2: the faithful
+// presentation layer, and the second-report-schema failure mode is as forbidden here as in Python).
+
+/** How many converted files contributed each MLIP label — library `LabelPresence`, verbatim. */
+export interface BatchLabelPresence {
+  energy: number;
+  forces: number;
+  stress: number;
+}
+
+/** Dataset-level counts — library `BatchTallies`, verbatim. Counts, never restatements. */
+export interface BatchTallies {
+  total: number;
+  converted: number;
+  refused: number;
+  failed: number;
+  label_presence: BatchLabelPresence;
+}
+
+/** One child's terminal outcome — `backend/models.py::BatchConvertEntry`, verbatim. */
+export interface BatchChildEntry {
+  file_id: string;
+  child_job_id: string;
+  status: "converted" | "refused" | "failed";
+  conversion_report: unknown | null;
+  validation_report: unknown | null;
+  error: { code: string; message: string } | null;
+}
+
+/** The aggregate completion payload — `backend/models.py::BatchConvertResult`, verbatim. */
+export interface BatchConvertResult {
+  tallies: BatchTallies;
+  entries: BatchChildEntry[];
+  note: string | null;
+}
+
+/** One batch child's projection in the parent's envelope — `backend/models.py::JobChildRef`. */
+export interface JobChildRef {
+  job_id: string;
+  file_id: string | null;
+  state: string;
+}
+
 // --- Error envelope (MASTER_SPEC Part 6 §6) ----------------------------------------------------
 //
 // The single non-2xx body every `/v1` error path renders — a raised ApiError, a request-validation

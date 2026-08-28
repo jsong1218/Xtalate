@@ -1,0 +1,377 @@
+{
+  "job_id": "9c7109703b4840f0aa107522a928bc8d",
+  "kind": "batch_convert",
+  "state": "completed",
+  "created_at": "2026-08-27T22:04:57.674454+00:00",
+  "updated_at": "2026-08-27T22:04:58.241660+00:00",
+  "started_at": "2026-08-27T22:04:58.172635+00:00",
+  "finished_at": "2026-08-27T22:04:58.241297+00:00",
+  "expires_at": null,
+  "progress": {
+    "phase": "done",
+    "frames_processed": null,
+    "frames_total": null
+  },
+  "awaiting_recovery": null,
+  "result": {
+    "tallies": {
+      "total": 2,
+      "converted": 1,
+      "refused": 1,
+      "failed": 0,
+      "label_presence": {
+        "energy": 0,
+        "forces": 0,
+        "stress": 0
+      }
+    },
+    "entries": [
+      {
+        "file_id": "64c62ecf9bdd422cb50308a519da89a9",
+        "child_job_id": "bc17830dc3ba4edabf5682986121988b",
+        "status": "converted",
+        "conversion_report": {
+          "mode": "permissive",
+          "stage": "final",
+          "source": {
+            "sha256": "638bbb0deb73df0167a8317e2c183b2a12258215b4a69368860278f104a8b053",
+            "filename": "worked-example.extxyz",
+            "format_id": "extxyz",
+            "schema_version": "1.0.0"
+          },
+          "status": "completed",
+          "target": {
+            "filename": null,
+            "format_id": "poscar"
+          },
+          "refusal": null,
+          "removed": [
+            {
+              "path": "atoms.masses",
+              "detail": null,
+              "reason": "Target format 'poscar' cannot store atoms.masses."
+            },
+            {
+              "path": "dynamics.forces",
+              "detail": null,
+              "reason": "Target format 'poscar' cannot store dynamics.forces."
+            },
+            {
+              "path": "electronic.total_energy",
+              "detail": null,
+              "reason": "Target format 'poscar' cannot store electronic.total_energy."
+            },
+            {
+              "path": "electronic.charges",
+              "detail": null,
+              "reason": "Target format 'poscar' cannot store electronic.charges."
+            },
+            {
+              "path": "user_metadata.custom_per_frame['extxyz:config_type']",
+              "detail": null,
+              "reason": "Target format 'poscar' cannot store user_metadata.custom_per_frame."
+            }
+          ],
+          "supplied": [],
+          "warnings": [
+            {
+              "code": "PARTIAL_CAPABILITY",
+              "source": "capability",
+              "message": "Only fully periodic (T,T,T); other PBC combinations cannot be represented."
+            },
+            {
+              "code": "FORMAT_LOSSY_NOTE",
+              "source": "capability",
+              "message": "Positions written with full float64 precision; sub-ulp differences possible on round-trip through fixed-width VASP readers."
+            }
+          ],
+          "preserved": [
+            {
+              "path": "atoms.symbols",
+              "detail": null
+            },
+            {
+              "path": "atoms.positions",
+              "detail": null
+            },
+            {
+              "path": "cell.lattice_vectors",
+              "detail": null
+            },
+            {
+              "path": "cell.pbc",
+              "detail": "Only fully periodic (T,T,T); other PBC combinations cannot be represented."
+            }
+          ],
+          "report_id": "99fb84b0-5ef5-478b-8bbf-2534428cc3e8",
+          "created_at": "2026-08-27T22:04:58Z",
+          "assumptions": []
+        },
+        "validation_report": {
+          "checks": [
+            {
+              "paths": [
+                "atoms.symbols"
+              ],
+              "status": "pass",
+              "message": "2 atoms expected, 2 found (exact check).",
+              "check_id": "atom_count",
+              "measured": {
+                "found": 2,
+                "expected": 2,
+                "frames_compared": 1
+              },
+              "skip_reason": null,
+              "tolerance_applied": null
+            },
+            {
+              "paths": [
+                "atoms.symbols"
+              ],
+              "status": "pass",
+              "message": "Species preserved; source order retained (identity permutation).",
+              "check_id": "species_preservation",
+              "measured": {
+                "mismatches": 0,
+                "permutation_map": "identity"
+              },
+              "skip_reason": null,
+              "tolerance_applied": null
+            },
+            {
+              "paths": [
+                "atoms.positions"
+              ],
+              "status": "pass",
+              "message": "RMSD 0.000e+00 \u00c5 over 1 frame(s), within representational precision.",
+              "check_id": "positions_rmsd",
+              "measured": {
+                "rmsd_ang": 0.0,
+                "frames_compared": 1,
+                "max_displacement_ang": 0.0
+              },
+              "skip_reason": null,
+              "tolerance_applied": {
+                "fail_ang": 0.001,
+                "warn_ang": 1e-05,
+                "representational_bound_ang": 0.0
+              }
+            },
+            {
+              "paths": [
+                "cell.lattice_vectors",
+                "cell.pbc"
+              ],
+              "status": "pass",
+              "message": "Lattice matches within 0.000e+00 \u00c5; pbc [True, True, True] preserved exactly.",
+              "check_id": "lattice_consistency",
+              "measured": {
+                "pbc_found": [
+                  true,
+                  true,
+                  true
+                ],
+                "pbc_expected": [
+                  true,
+                  true,
+                  true
+                ],
+                "max_element_diff_ang": 0.0
+              },
+              "skip_reason": null,
+              "tolerance_applied": {
+                "fail_ang": 0.001,
+                "warn_ang": 1e-05
+              }
+            },
+            {
+              "paths": [
+                "frames"
+              ],
+              "status": "pass",
+              "message": "1 frame(s) planned, 1 found.",
+              "check_id": "frame_count",
+              "measured": {
+                "found": 1,
+                "expected": 1
+              },
+              "skip_reason": null,
+              "tolerance_applied": null
+            },
+            {
+              "paths": [],
+              "status": "skipped",
+              "message": "No numeric fields beyond positions and lattice in the write plan.",
+              "check_id": "numeric_field_fidelity",
+              "measured": {},
+              "skip_reason": "write_plan contains no velocities, forces, energies, stress, charges, magnetic moments, masses, or time.",
+              "tolerance_applied": null
+            },
+            {
+              "paths": [],
+              "status": "pass",
+              "message": "No metadata or custom-array paths in the write plan.",
+              "check_id": "metadata_preservation",
+              "measured": {
+                "present": 0,
+                "content_drift": 0,
+                "planned_paths": 0
+              },
+              "skip_reason": null,
+              "tolerance_applied": null
+            },
+            {
+              "paths": [
+                "atoms.masses",
+                "dynamics.forces",
+                "electronic.total_energy",
+                "electronic.charges",
+                "user_metadata.custom_per_frame['extxyz:config_type']"
+              ],
+              "status": "pass",
+              "message": "All 5 removed path(s) verified absent in the re-parse.",
+              "check_id": "absence_conformance",
+              "measured": {
+                "violations": 0,
+                "removed_paths_checked": 5
+              },
+              "skip_reason": null,
+              "tolerance_applied": null
+            },
+            {
+              "paths": [],
+              "status": "pass",
+              "message": "Completeness invariant satisfied; every supplied path traces to a recorded Assumption.",
+              "check_id": "report_consistency",
+              "measured": {
+                "supplied_traced": 0,
+                "untraceable_deltas": 0,
+                "completeness_invariant": "satisfied",
+                "preflight_final_deltas": 0
+              },
+              "skip_reason": null,
+              "tolerance_applied": null
+            }
+          ],
+          "status": "passed",
+          "report_id": "fb3838a4-2b7d-4566-b2bb-cca8121957e7",
+          "created_at": "2026-08-27T22:04:58Z",
+          "reparse_issues": [],
+          "schema_version": "1.0.0",
+          "tolerance_profile": {
+            "name": "default",
+            "k_fail": 10,
+            "k_warn": 2,
+            "time_fail": 0.001,
+            "time_warn": 1e-06,
+            "energy_fail": 0.0001,
+            "energy_warn": 1e-06,
+            "forces_fail": 0.0001,
+            "forces_warn": 1e-06,
+            "masses_fail": 0.0001,
+            "masses_warn": 1e-06,
+            "stress_fail": 1e-06,
+            "stress_warn": 1e-08,
+            "charges_fail": 0.01,
+            "charges_warn": 0.0001,
+            "velocities_fail": 0.0001,
+            "velocities_warn": 1e-06,
+            "lattice_fail_ang": 0.001,
+            "lattice_warn_ang": 1e-05,
+            "positions_fail_ang": 0.001,
+            "positions_warn_ang": 1e-05,
+            "magnetic_moments_fail": 0.01,
+            "magnetic_moments_warn": 0.0001,
+            "representational_bound_floor": "enabled"
+          },
+          "conversion_report_id": "99fb84b0-5ef5-478b-8bbf-2534428cc3e8"
+        },
+        "error": null
+      },
+      {
+        "file_id": "8b163fe5aa7344e8aa4f5e9cc37ed897",
+        "child_job_id": "7667fe672ac94c35b82656e43a08ba36",
+        "status": "refused",
+        "conversion_report": {
+          "mode": "permissive",
+          "stage": "final",
+          "source": {
+            "sha256": "dddf89352e0476fcc4c458760892f3ef1dd9dc8b5c9dbfc046e82a7c75c304de",
+            "filename": "relax.traj",
+            "format_id": "ase_traj",
+            "schema_version": "1.0.0"
+          },
+          "status": "refused",
+          "target": {
+            "filename": null,
+            "format_id": "poscar"
+          },
+          "refusal": {
+            "code": "RECOVERY_REQUIRED",
+            "message": "conversion needs recovery decisions that were not supplied; provide them as recovery_choices presets, or choose a target that does not require the missing fields",
+            "unresolved_scenarios": [
+              {
+                "path": null,
+                "detail": "3 frames \u2192 target holds at most 1",
+                "options": [
+                  "first",
+                  "last",
+                  "index"
+                ],
+                "scenario": "frame_selection"
+              },
+              {
+                "path": "cell.lattice_vectors",
+                "detail": "target requires cell.lattice_vectors, absent on source",
+                "options": [
+                  "manual_input",
+                  "upload_reference",
+                  "bounding_box"
+                ],
+                "scenario": "missing_lattice"
+              }
+            ]
+          },
+          "removed": [],
+          "supplied": [],
+          "warnings": [
+            {
+              "code": "FORMAT_LOSSY_NOTE",
+              "source": "capability",
+              "message": "Positions written with full float64 precision; sub-ulp differences possible on round-trip through fixed-width VASP readers."
+            }
+          ],
+          "preserved": [
+            {
+              "path": "atoms.symbols",
+              "detail": null
+            },
+            {
+              "path": "atoms.positions",
+              "detail": null
+            }
+          ],
+          "report_id": "ec9a3b74-79ec-4ed6-8078-0716a2c5611b",
+          "created_at": "2026-08-27T22:04:58Z",
+          "assumptions": []
+        },
+        "validation_report": null,
+        "error": null
+      }
+    ],
+    "note": null
+  },
+  "error": null,
+  "children": [
+    {
+      "job_id": "bc17830dc3ba4edabf5682986121988b",
+      "file_id": "64c62ecf9bdd422cb50308a519da89a9",
+      "state": "completed"
+    },
+    {
+      "job_id": "7667fe672ac94c35b82656e43a08ba36",
+      "file_id": "8b163fe5aa7344e8aa4f5e9cc37ed897",
+      "state": "completed"
+    }
+  ]
+}

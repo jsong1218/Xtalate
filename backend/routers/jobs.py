@@ -33,7 +33,7 @@ from backend.deps import (
     get_settings,
 )
 from backend.errors import ApiError
-from backend.jobs.envelope import JobEnvelope
+from backend.jobs.envelope import JobChildRef, JobEnvelope
 from backend.jobs.expiry import expire_if_due
 from backend.jobs.logging import log_event
 from backend.jobs.queue import JobQueue
@@ -41,6 +41,7 @@ from backend.jobs.result import build_job_result
 from backend.jobs.state_machine import is_terminal
 from backend.models import (
     AssumptionPreview,
+    BatchConvertRequest,
     ConvertRequest,
     InspectRequest,
     RecoveryPreviewResponse,
@@ -119,7 +120,19 @@ def _inspect_idempotency_key(body: InspectRequest, registry: Registry) -> str:
 def _job_envelope(job: Job, repository: Repository, object_store: ObjectStore) -> JobEnvelope:
     """Project a job onto the envelope, attaching its completion result (if any)."""
     result = build_job_result(job, repository, object_store)
-    return JobEnvelope.from_row(job, result=result)
+    children = None
+    if job.kind == "batch_convert":
+        # The batch record is navigable in every state: project the fanned-out children (a link,
+        # never a report copy) so a client can find the one child that is still paused.
+        children = [
+            JobChildRef(
+                job_id=child.job_id,
+                file_id=child.request.get("file_id") if isinstance(child.request, dict) else None,
+                state=child.state,
+            )
+            for child in repository.get_child_jobs(job.job_id)
+        ]
+    return JobEnvelope.from_row(job, result=result, children=children)
 
 
 @router.post(
@@ -199,6 +212,90 @@ def convert(
                 "file_id": body.file_id,
                 "target_format_id": body.target_format_id,
                 "options": body.options.model_dump(mode="json"),
+                "request_id": _request_id(request),
+            },
+        )
+    )
+    job_queue.enqueue(job_id)
+    return _job_envelope(_reload(repository, job_id), repository, object_store)
+
+
+@router.post(
+    "/batch/convert",
+    response_model=JobEnvelope,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=_SUBMIT_GUARD,
+)
+def batch_convert(
+    body: BatchConvertRequest,
+    request: Request,
+    repository: Repository = Depends(get_repository),
+    object_store: ObjectStore = Depends(get_object_store),
+    registry: Registry = Depends(get_registry),
+    job_queue: JobQueue = Depends(get_job_queue),
+) -> JobEnvelope:
+    """Submit a batch conversion (Part 6 §2, v1.5 M58): N uploaded files, one aggregate job.
+
+    A **transport** over proven semantics: the endpoint validates the manifest up front and
+    creates **only the parent** job — the worker fans out to N ordinary ``convert`` child jobs, so
+    a rejected submit leaves no orphans. Submit-time checks mirror the single-file convert: every
+    ``file_id`` must be a live upload (``404 FILE_NOT_FOUND`` / ``410 FILE_EXPIRED``), the target
+    must be writable (``422 UNKNOWN_FORMAT``), the manifest must name at least one file
+    (``422 EMPTY_BATCH``) and no file twice (``400 MALFORMED_REQUEST`` — a ``file_id`` is the
+    identity of one upload, and both the override map and the child fan-out key on it, so a repeat
+    is an ambiguous request, not a request to convert the file twice), and a per-file override
+    naming a file outside the manifest is a malformed request (``400 MALFORMED_REQUEST``).
+    Aggregation, never curation: the request has no fields for selection, splitting, or
+    deduplication (roadmap §11) — and rejecting a duplicate is not de-duplication, it is refusing
+    to guess which of two identical, indistinguishable slots the client meant.
+    """
+    if not body.file_ids:
+        raise ApiError(
+            status_code=422,
+            code="EMPTY_BATCH",
+            message="A batch must name at least one file_id to fan out to.",
+        )
+    duplicate_file_ids = sorted({f for f in body.file_ids if body.file_ids.count(f) > 1})
+    if duplicate_file_ids:
+        raise ApiError(
+            status_code=400,
+            code="MALFORMED_REQUEST",
+            message="A file_id appears more than once in the batch manifest.",
+            details={"duplicate_file_ids": duplicate_file_ids},
+        )
+    writable = {e.format_id for e in registry.exporters()}
+    if body.target_format_id not in writable:
+        raise ApiError(
+            status_code=422,  # literal, not status.HTTP_422_* (deprecated upstream; see errors.py)
+            code="UNKNOWN_FORMAT",
+            message=f"No writer for target format {body.target_format_id!r}.",
+            details={"writable_formats": sorted(writable)},
+        )
+    for file_id in body.file_ids:
+        _require_live_upload(repository, file_id)
+    unknown_overrides = sorted(set(body.overrides) - set(body.file_ids))
+    if unknown_overrides:
+        raise ApiError(
+            status_code=400,
+            code="MALFORMED_REQUEST",
+            message="A per-file override names a file not in this batch.",
+            details={"unknown_file_ids": unknown_overrides},
+        )
+
+    job_id = uuid.uuid4().hex
+    repository.add_job(
+        Job(
+            job_id=job_id,
+            kind="batch_convert",
+            state="queued",
+            request={
+                "file_ids": body.file_ids,
+                "target_format_id": body.target_format_id,
+                "options": body.options.model_dump(mode="json"),
+                "overrides": {
+                    key: value.model_dump(mode="json", exclude_none=True)
+                    for key, value in body.overrides.items()
+                },
                 "request_id": _request_id(request),
             },
         )
@@ -545,6 +642,7 @@ async def get_job(
     repository: Repository = Depends(get_repository),
     object_store: ObjectStore = Depends(get_object_store),
     settings: Settings = Depends(get_settings),
+    job_queue: JobQueue = Depends(get_job_queue),
     wait: float = Query(
         default=0.0,
         ge=0.0,
@@ -555,7 +653,10 @@ async def get_job(
 
     A poll of a paused job past its TTL expires it (``awaiting_recovery → expired``, resolving to a
     refused conversion) before projecting — the lazy sweep Tier 0 relies on, so the no-services tier
-    needs no background sweeper for the expiry-to-refusal rule to hold (Part 6 §3.2).
+    needs no background sweeper for the expiry-to-refusal rule to hold (Part 6 §3.2). A poll of a
+    paused ``batch_convert`` parent re-drives it once its children are all terminal (v1.5 M58) —
+    the parent completes lazily on its own poll, so a batch whose last child just resumed or
+    expired needs no separate poke.
     """
     job = repository.get_job(job_id)
     if job is None:
@@ -565,6 +666,7 @@ async def get_job(
             message=f"No job {job_id!r}.",
         )
     job = expire_if_due(job, repository, settings)
+    job = _maybe_redrive_batch_parent(job, repository, settings, job_queue)
 
     if wait > 0 and not is_terminal(job.state):
         deadline = anyio.current_time() + min(wait, MAX_WAIT_SECONDS)
@@ -587,4 +689,33 @@ def _reload(repository: Repository, job_id: str) -> Job:
             code="INTERNAL_ERROR",
             message="Job vanished immediately after creation.",
         )
+    return job
+
+
+def _maybe_redrive_batch_parent(
+    job: Job, repository: Repository, settings: Settings, job_queue: JobQueue
+) -> Job:
+    """Re-drive a paused ``batch_convert`` parent whose children have all since gone terminal.
+
+    The parent pauses (``awaiting_recovery``) while any child awaits a recovery decision and has
+    no TTL of its own — it completes only when every child is terminal. Children become terminal
+    through paths this endpoint cannot see synchronously (the child's own resume) or lazily on the
+    parent's own poll: a child paused past its TTL is resolved to ``expired`` by the same lazy
+    ``expire_if_due`` a solo convert relies on. Tier 0 runs no background sweeper, and a client
+    watching the aggregate polls the *parent*, not each child — so this cascades the lazy expiry to
+    the children **here**, before the terminality check, keeping the parent poll self-sufficient.
+    Once every child is terminal the parent is enqueued again (inline: it completes before this
+    poll returns; RQ: the worker finishes it and a later poll sees it). Guarded to the paused state
+    so a concurrent double-poll can never double-enqueue a parent that is already queued or running.
+    """
+    if job.kind != "batch_convert" or job.state != "awaiting_recovery":
+        return job
+    children = [
+        expire_if_due(c, repository, settings) for c in repository.get_child_jobs(job.job_id)
+    ]
+    if children and all(is_terminal(c.state) for c in children):
+        job_queue.enqueue(job.job_id)
+        reloaded = repository.get_job(job.job_id)
+        if reloaded is not None:
+            return reloaded
     return job
