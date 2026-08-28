@@ -361,6 +361,71 @@ def test_parent_poll_alone_expires_a_due_child_with_no_sweeper(settings: Setting
         assert client.get(f"/v1/jobs/{child_id}").json()["state"] == "expired"
 
 
+def test_a_queued_orphan_child_is_redriven_not_skipped(
+    client: TestClient, repository: Repository
+) -> None:
+    # Tier-1 crash simulation. A parent's first dispatch persists a child row (``add_job``) and
+    # then the worker dies before ``execute_job`` runs it, leaving the child ``queued``. A
+    # redelivery of the parent must DRIVE that orphan to terminal — the old idempotent skip
+    # ("already fanned out, continue") would hang the parent forever on a child that cannot run
+    # itself. Plant that exact half-dispatched state, redeliver the parent, and assert it heals.
+    import uuid
+
+    from backend.db.models import Job
+    from backend.jobs.runner import execute_job
+
+    file_id = _upload(client, POSCAR_SAMPLE, "POSCAR")
+    parent_id, child_id = uuid.uuid4().hex, uuid.uuid4().hex
+    repository.add_job(
+        Job(
+            job_id=parent_id,
+            kind="batch_convert",
+            state="queued",
+            request={
+                "file_ids": [file_id],
+                "target_format_id": "poscar",
+                "options": {},
+                "overrides": {},
+                "request_id": None,
+            },
+        )
+    )
+    repository.add_job(
+        Job(
+            job_id=child_id,
+            kind="convert",
+            state="queued",
+            parent_job_id=parent_id,
+            request={
+                "file_id": file_id,
+                "target_format_id": "poscar",
+                "options": {},
+                "request_id": None,
+            },
+        )
+    )
+    state = client.app.state  # type: ignore[attr-defined]
+    # Redeliver the crashed parent through the real runner (the RQ re-dispatch).
+    execute_job(
+        parent_id,
+        repository=repository,
+        object_store=state.object_store,
+        registry=state.registry,
+        settings=state.settings,
+    )
+
+    # The orphan was driven (not skipped) and the parent completed on the same dispatch — and no
+    # second child row was minted for the same file_id.
+    driven_child = repository.get_job(child_id)
+    parent = repository.get_job(parent_id)
+    assert driven_child is not None and driven_child.state == "completed"
+    assert parent is not None and parent.state == "completed"
+    assert [c.job_id for c in repository.get_child_jobs(parent_id)] == [child_id]
+    env = client.get(f"/v1/jobs/{parent_id}").json()
+    assert env["state"] == "completed"
+    assert _tally_tuple(env["result"]["tallies"]) == (1, 1, 0, 0)
+
+
 # --- submit-time validation ----------------------------------------------------------------------
 
 
@@ -385,6 +450,22 @@ def test_batch_unknown_target_is_422(client: TestClient) -> None:
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "UNKNOWN_FORMAT"
+
+
+def test_batch_duplicate_file_id_is_400(client: TestClient) -> None:
+    # A file_id is the identity of one upload, and both the override map and the child fan-out key
+    # on it — so the same file_id twice is an ambiguous request, not a request to convert the file
+    # twice. Refuse it honestly (naming the offenders) rather than silently collapsing two manifest
+    # slots to one child while reporting two identical entries.
+    file_id = _upload(client, POSCAR_SAMPLE, "POSCAR")
+    resp = client.post(
+        "/v1/batch/convert",
+        json={"file_ids": [file_id, file_id], "target_format_id": "poscar"},
+    )
+    assert resp.status_code == 400
+    body = resp.json()["error"]
+    assert body["code"] == "MALFORMED_REQUEST"
+    assert body["details"]["duplicate_file_ids"] == [file_id]
 
 
 def test_batch_override_for_an_unlisted_file_is_400(client: TestClient) -> None:

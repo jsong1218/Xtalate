@@ -241,15 +241,27 @@ def batch_convert(
     a rejected submit leaves no orphans. Submit-time checks mirror the single-file convert: every
     ``file_id`` must be a live upload (``404 FILE_NOT_FOUND`` / ``410 FILE_EXPIRED``), the target
     must be writable (``422 UNKNOWN_FORMAT``), the manifest must name at least one file
-    (``422 EMPTY_BATCH``), and a per-file override naming a file outside the manifest is a
-    malformed request (``400 MALFORMED_REQUEST``). Aggregation, never curation: the request has
-    no fields for selection, splitting, or deduplication (roadmap §11).
+    (``422 EMPTY_BATCH``) and no file twice (``400 MALFORMED_REQUEST`` — a ``file_id`` is the
+    identity of one upload, and both the override map and the child fan-out key on it, so a repeat
+    is an ambiguous request, not a request to convert the file twice), and a per-file override
+    naming a file outside the manifest is a malformed request (``400 MALFORMED_REQUEST``).
+    Aggregation, never curation: the request has no fields for selection, splitting, or
+    deduplication (roadmap §11) — and rejecting a duplicate is not de-duplication, it is refusing
+    to guess which of two identical, indistinguishable slots the client meant.
     """
     if not body.file_ids:
         raise ApiError(
             status_code=422,
             code="EMPTY_BATCH",
             message="A batch must name at least one file_id to fan out to.",
+        )
+    duplicate_file_ids = sorted({f for f in body.file_ids if body.file_ids.count(f) > 1})
+    if duplicate_file_ids:
+        raise ApiError(
+            status_code=400,
+            code="MALFORMED_REQUEST",
+            message="A file_id appears more than once in the batch manifest.",
+            details={"duplicate_file_ids": duplicate_file_ids},
         )
     writable = {e.format_id for e in registry.exporters()}
     if body.target_format_id not in writable:

@@ -552,23 +552,34 @@ def _run_batch_convert(
         if isinstance(c.request, dict)
     }
     for file_id in file_ids:
-        if file_id in children:
-            continue  # already fanned out on an earlier dispatch (idempotent re-drive)
-        child_id = uuid.uuid4().hex
-        repository.add_job(
-            Job(
-                job_id=child_id,
-                kind="convert",
-                state="queued",
-                parent_job_id=job.job_id,
-                request={
-                    "file_id": file_id,
-                    "target_format_id": target_format_id,
-                    "options": _merge_batch_options(shared, overrides.get(file_id)),
-                    "request_id": request_id,
-                },
+        existing = children.get(file_id)
+        if existing is not None:
+            # Fanned out on an earlier dispatch. A terminal child is done, and a child paused at
+            # ``awaiting_recovery`` is legitimately waiting for its own recovery answer — leave both
+            # untouched. But a child still ``queued`` is an **orphan**: under Tier 1 a crash between
+            # ``add_job`` and ``execute_job`` persists the row yet never runs it, and skipping it
+            # here would hang the parent on a child that can never terminate. Re-drive that child by
+            # its existing id (``execute_job`` no-ops anything already running or terminal, so this
+            # is safe on every state) rather than minting a second row for the same file_id.
+            if is_terminal(existing.state) or existing.state == "awaiting_recovery":
+                continue
+            child_id = existing.job_id
+        else:
+            child_id = uuid.uuid4().hex
+            repository.add_job(
+                Job(
+                    job_id=child_id,
+                    kind="convert",
+                    state="queued",
+                    parent_job_id=job.job_id,
+                    request={
+                        "file_id": file_id,
+                        "target_format_id": target_format_id,
+                        "options": _merge_batch_options(shared, overrides.get(file_id)),
+                        "request_id": request_id,
+                    },
+                )
             )
-        )
         # Drive the child through the ordinary lifecycle — preconditions, pause, failure, cancel
         # race — exactly as if it had been submitted solo. Inline under Tier 0; under Tier 1 the
         # parent's own worker runs each child inline too, because the parent must see every
