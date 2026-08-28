@@ -279,6 +279,53 @@ def test_crystal_positions_convert_against_the_steps_own_cell() -> None:
     assert frame.atoms.positions[1].tolist() == pytest.approx([4.0, 3.0, 2.0])
 
 
+# --- review R2: H2 (corrupt mass), M1 (stress anchor), M2 (ionic non-convergence) -----
+
+
+def test_a_corrupt_species_mass_refuses_cleanly_not_a_raw_valueerror() -> None:
+    """H2 (the crash High): a species row whose **mass** column is non-numeric must refuse the
+    layout cleanly (QEOUT_UNRECOGNIZED_LAYOUT) — never a raw float() ValueError escaping the
+    §5 contract (which surfaces as a 500 over HTTP), and never a silent truncation."""
+    text = _MINIMAL.replace(
+        "        O            6.000     15.99900     O( 1.00)\n",
+        "        O            6.000     ????????     O( 1.00)\n",
+    )
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    issue = exc.value.issues[0]
+    assert issue.code == "QEOUT_UNRECOGNIZED_LAYOUT"
+    assert "non-numeric mass" in issue.message
+
+
+def test_a_stress_block_with_looser_spacing_is_still_read() -> None:
+    """M1 (the silent-stress-drop Medium): the stress anchor must be whitespace-tolerant — a
+    build that prints `total  stress` (two spaces) instead of `total   stress` is the same
+    block and must still be read, never silently dropped to stress = None (P1)."""
+    text = _MINIMAL.replace("     total   stress", "     total  stress")
+    result = PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    stress = result.canonical.frames[0].electronic.stress
+    assert stress is not None
+    assert stress[0][0] == pytest.approx(0.00001 * 91.8157694288102, abs=1e-18)
+
+
+def test_a_relax_that_hits_max_steps_is_flagged_unconverged() -> None:
+    """M2 (the unflipped-ionic Medium): QE's relaxation non-convergence statement —
+    'The maximum number of steps has been reached.' — must fire QEOUT_UNCONVERGED for a relax
+    run (not only the SCF 'convergence NOT achieved' form), with the run still read complete
+    (JOB DONE.) and the energy kept present-with-value (P3)."""
+    text = _MINIMAL.replace(
+        "\n     JOB DONE.",
+        "\n     The maximum number of steps has been reached.\n\n     JOB DONE.",
+    )
+    result = PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    assert result.canonical.frame_count == 3
+    warnings = [i for i in result.issues if i.code == "QEOUT_UNCONVERGED"]
+    assert len(warnings) == 1
+    assert warnings[0].severity == "warning"
+    assert "maximum number of steps" in warnings[0].message
+    assert result.canonical.frames[2].electronic.total_energy is not None
+
+
 # --- streamed == materialized (D56) ---------------------------------------------------
 
 

@@ -104,7 +104,7 @@ _MASSES_NOTE = (
 )
 _STEP_CELL_NOTE = (
     "Each ionic step's own CELL_PARAMETERS card (when present) supplies that step's cell at its "
-    "declared unit; a step without one reuses the running cell (the fixed-cell form)."
+    "declared unit; a step without one reuses the initial cell (correct for fixed-cell runs)."
 )
 _STEP_POSITIONS_NOTE = (
     "Each ionic step's own ATOMIC_POSITIONS card (when present) supplies that step's positions "
