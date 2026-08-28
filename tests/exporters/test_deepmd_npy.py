@@ -25,7 +25,7 @@ from tests.golden.deepmd_npy._systems import (
 )
 from xtalate.exporters.deepmd_npy import make_deepmd_npy_exporter
 from xtalate.parsers.deepmd_npy import make_deepmd_npy_parser
-from xtalate.schema import CanonicalObject
+from xtalate.schema import CanonicalObject, Cell
 
 EXPORTER = make_deepmd_npy_exporter()
 PARSER = make_deepmd_npy_parser()
@@ -175,6 +175,54 @@ def test_unrepresentable_reports_varying_composition_and_empty() -> None:
     varying = good.model_copy(update={"frames": [good.frames[0], _object(files_b).frames[0]]})
     assert "composition or order" in (EXPORTER.unrepresentable(varying) or "")
     assert "empty" in (EXPORTER.unrepresentable(good.model_copy(update={"frames": []})) or "")
+
+
+def _degenerate_stress_object() -> CanonicalObject:
+    # A schema-legal object (DPMD-2): a non-zero but singular (zero-volume) lattice paired with a
+    # stress — the schema's Cell has no non-degenerate validator for lattice-vector-native
+    # formats, so nothing upstream stops this object from reaching the exporter.
+    good = _object(write_system(coords=[H2O_COORDS], boxes=[BOX_FLAT], virial=[VIRIAL_FLAT]))
+    return good.model_copy(
+        update={
+            "frames": [
+                frame.model_copy(
+                    update={
+                        "cell": Cell(
+                            lattice_vectors=np.array(
+                                [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+                            ),
+                            pbc=(True, True, True),
+                        )
+                    }
+                )
+                for frame in good.frames
+            ]
+        }
+    )
+
+
+def test_degenerate_cell_with_stress_refuses_via_unrepresentable() -> None:
+    # DPMD-2: the clean-refusal gate must catch a degenerate-cell-plus-stress object ahead of
+    # export_dir, which would otherwise crash in virial_from_stress on volume ≤ 0.
+    good = _object(write_system(coords=[H2O_COORDS], boxes=[BOX_FLAT], virial=[VIRIAL_FLAT]))
+    assert EXPORTER.unrepresentable(good) is None
+    message = EXPORTER.unrepresentable(_degenerate_stress_object())
+    assert message is not None
+    assert "degenerate" in message and "frame 0" in message
+
+
+def test_degenerate_cell_with_stress_refuses_cleanly_through_engine() -> None:
+    # The crash-to-refusal contract end-to-end: the conversion is a completed *refused* report
+    # (UNREPRESENTABLE_VALUE), never a raw ValueError escaping the engine.
+    from xtalate.conversion import ConversionEngine
+    from xtalate.registry import default_registry
+
+    result = ConversionEngine(default_registry()).convert(
+        _degenerate_stress_object(), source_format_id="extxyz", target_format_id="deepmd_npy"
+    )
+    assert result.report.status == "refused"
+    assert result.report.refusal is not None
+    assert result.report.refusal["code"] == "UNREPRESENTABLE_VALUE"
 
 
 def test_varying_composition_refuses_cleanly_through_engine() -> None:

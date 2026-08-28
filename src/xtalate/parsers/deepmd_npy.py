@@ -86,6 +86,13 @@ def _text(files: Mapping[str, bytes], path: str) -> list[str]:
 
 
 def _join_sets(files: Mapping[str, bytes], names: list[str], filename: str) -> np.ndarray:
+    """Concatenate one file across every set partition, refusing shape-incompatible sets.
+
+    Each set partition must share the same frame count and atom count; a per-set mismatch
+    (e.g. ``set.000`` with 3 atoms and ``set.001`` with 4) would otherwise surface as a raw
+    ``ValueError`` from ``np.concatenate`` before ``_validate_array`` ever runs — an unhandled
+    crash rather than the ``DEEPMD_INCONSISTENT_SHAPES`` refusal this module documents.
+    """
     parts = []
     for name in names:
         path = f"{name}/{filename}"
@@ -93,7 +100,17 @@ def _join_sets(files: Mapping[str, bytes], names: list[str], filename: str) -> n
             parts.append(_load(files, path))
     if not parts:
         raise _error(_MALFORMED, f"each DeePMD system needs {filename!r} in a set directory")
-    return np.concatenate(parts, axis=0)
+    try:
+        return np.concatenate(parts, axis=0)
+    except ValueError as exc:
+        shapes = ", ".join(
+            f"{name}: {part.shape}" for name, part in zip(names, parts, strict=False)
+        )
+        raise _error(
+            _SHAPES,
+            f"DeePMD {filename!r} set partitions are shape-incompatible ({shapes}); every "
+            "set must share the same frame count and atom count",
+        ) from exc
 
 
 def _validate_array(name: str, value: np.ndarray, frames: int, shape_tail: tuple[int, ...]) -> None:

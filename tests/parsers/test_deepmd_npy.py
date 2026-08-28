@@ -121,6 +121,19 @@ def test_multi_set_concatenates_in_sorted_order_and_reports_the_dropped_partitio
     assert "DEEPMD_SET_PARTITION_DROPPED" in codes
 
 
+def test_per_set_atom_count_mismatch_refuses_inconsistent_shapes() -> None:
+    # DPMD-1: set.001 carries a different atom count than set.000 (4 vs 3), so the concatenate
+    # would raise a raw ValueError before _validate_array runs. It must surface as the
+    # DEEPMD_INCONSISTENT_SHAPES refusal naming the offending set and its shape.
+    files = write_system(coords=[H2O_COORDS], boxes=[BOX_FLAT])
+    files["set.001/coord.npy"] = np_save(np.zeros((1, 12), dtype=np.float64))
+    files["set.001/box.npy"] = np_save(np.zeros((1, 9), dtype=np.float64))
+    error = _error(files)
+    assert error.issues[0].code == "DEEPMD_INCONSISTENT_SHAPES"
+    message = error.issues[0].message
+    assert "set.001" in message and "(1, 12)" in message
+
+
 def test_virial_maps_to_hand_computed_stress() -> None:
     # The S1 go/no-go: virial = -stress·volume for the hand fixture (D211, the recorded mapping).
     files = write_system(
