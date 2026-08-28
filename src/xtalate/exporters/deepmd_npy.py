@@ -112,25 +112,39 @@ class DeepmdNpyExporter(ExporterPlugin):
             )
         return dict(output)
 
-    def assemble_dir(self, contributions: list[AssembleContribution]) -> dict[str, bytes]:
+    def assemble_dir(
+        self, contributions: list[AssembleContribution]
+    ) -> tuple[dict[str, bytes], list[str]]:
         """Group contributions by composition into one system directory per group.
 
-        The group key is the exact per-atom symbol sequence of a contribution's frames (a DeePMD
-        system is fixed-composition **and** fixed-order — ``type.raw`` is a per-atom array), so
-        contributions whose atoms are ordered differently are separate systems rather than a
-        silent reorder (identity ``atom_permutation``; Xtalate never reorders). Deterministic by
-        first appearance; the grouping is named in the batch aggregate note (D214).
+        Returns ``(output, systems)`` — the written files and the per-contribution ``system_NNN``
+        assignment, **index-aligned with ``contributions``** (the ordered source→system mapping
+        the batch aggregate records; the batch layer names the sources it handed over, M56-S3 /
+        D214/D227). The group key is the exact per-atom symbol sequence of a contribution's frames
+        (a DeePMD system is fixed-composition **and** fixed-order — ``type.raw`` is a per-atom
+        array), so contributions whose atoms are ordered differently are separate systems rather
+        than a silent reorder (identity ``atom_permutation``; Xtalate never reorders).
+        Deterministic by first appearance; the grouping is named in the batch aggregate note
+        (D214).
         """
-        groups: OrderedDict[tuple[str, ...], list[AssembleContribution]] = OrderedDict()
-        for contribution in contributions:
+        groups: OrderedDict[tuple[str, ...], list[tuple[int, AssembleContribution]]] = (
+            OrderedDict()
+        )
+        for position, contribution in enumerate(contributions):
             symbols = tuple(contribution.canonical.frames[0].atoms.symbols)
-            groups.setdefault(symbols, []).append(contribution)
+            groups.setdefault(symbols, []).append((position, contribution))
         output: dict[str, bytes] = {}
+        systems: list[str] = [""] * len(contributions)
         for index, group in enumerate(groups.values()):
             prefix = f"system_{index:03d}/"
-            for path, content in self._merge_group(group).items():
+            merged = [contribution for _, contribution in group]
+            for path, content in self._merge_group(merged).items():
                 output[prefix + path] = content
-        return output
+            # Position-mapped, not regrouped: ``systems[i]`` names the system of
+            # ``contributions[i]`` (members of one group are *not* contiguous in the input).
+            for position, _ in group:
+                systems[position] = prefix.removesuffix("/")
+        return output, systems
 
     def _merge_group(self, contributions: list[AssembleContribution]) -> dict[str, bytes]:
         frames = []

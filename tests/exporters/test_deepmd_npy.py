@@ -275,11 +275,13 @@ def test_assemble_dir_groups_by_exact_composition_and_order() -> None:
         AssembleContribution(canonical=co, output=[b""]),
         AssembleContribution(canonical=water2, output=[b""]),
     ]
-    out = EXPORTER.assemble_dir(contributions)
+    out, systems = EXPORTER.assemble_dir(contributions)
     # Two composition groups, deterministic by first appearance: system_000 = the two H2O
     # sources' frames merged into one system; system_001 = the CO source.
-    systems = sorted({p.split("/", 1)[0] for p in out})
-    assert systems == ["system_000", "system_001"]
+    assert sorted({p.split("/", 1)[0] for p in out}) == ["system_000", "system_001"]
+    # The ordered source→system assignment is index-aligned with the contributions: both water
+    # sources → system_000, the CO source → system_001 (the mapping the batch aggregate records).
+    assert systems == ["system_000", "system_001", "system_000"]
     coords0 = _load(out, "system_000/set.000/coord.npy")
     assert coords0.shape == (2, 9)  # both water frames merged into one system's set.000
     assert out["system_000/type.raw"] == b"0 1 1\n"
@@ -301,5 +303,6 @@ def test_assemble_dir_refuses_an_order_mismatch_as_separate_systems() -> None:
         AssembleContribution(canonical=_object(files_a), output=[b""]),
         AssembleContribution(canonical=_object(files_b), output=[b""]),
     ]
-    out = EXPORTER.assemble_dir(contributions)
+    out, systems = EXPORTER.assemble_dir(contributions)
     assert sorted({p.split("/", 1)[0] for p in out}) == ["system_000", "system_001"]
+    assert systems == ["system_000", "system_001"]

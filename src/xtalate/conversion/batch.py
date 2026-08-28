@@ -30,7 +30,7 @@ import glob as _glob
 import io
 import re
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -42,7 +42,7 @@ from xtalate.capabilities import Registry
 from xtalate.conversion.engine import ConversionEngine
 from xtalate.conversion.parse_recovery import parse_with_recovery
 from xtalate.conversion.report import ConversionReport
-from xtalate.sdk import AssembleContribution, ParseError
+from xtalate.sdk import AssembleContribution, ParseError, ParseIssue
 from xtalate.validation.report import ValidationReport
 
 if TYPE_CHECKING:
@@ -159,13 +159,18 @@ class BatchError(_Model):
 class BatchEntry(_Model):
     """One resolved source's terminal outcome, embedding that file's ``ConversionReport`` and —
     when validation ran — its ``ValidationReport`` **verbatim** (the existing models, unchanged).
-    ``conversion`` is ``None`` only for a parse *failure* (no conversion could start)."""
+    ``conversion`` is ``None`` only for a parse *failure* (no conversion could start).
+    ``system`` names the dataset system this source landed in for a directory-assembled target
+    (``output_mode: assemble`` to a directory format — ``deepmd_npy``'s ``system_NNN``, M56-S3 /
+    D214); ``None`` in per-file mode and for non-directory assemble targets. Additive (default
+    ``None``): the field is absent from older serialized reports and round-trips to ``None``."""
 
     source: str  # The resolved source path (the concrete file that ran).
     status: Literal["converted", "refused", "failed"]
     conversion: ConversionReport | None = None
     validation: ValidationReport | None = None
     error: BatchError | None = None
+    system: str | None = None
 
 
 class LabelPresence(_Model):
@@ -381,6 +386,12 @@ def _run_per_file(
         for outcome in _convert_source(engine, registry, entry, manifest, shared_choices):
             entries.append(outcome)
             _write_per_file_outputs(out_dir, outcome, manifest.target)
+            # Per-file mode retains only the report model downstream (BATCH-2): the payload bytes
+            # and the canonical object served the write (and the assemble combine, which never
+            # runs here) — drop them so per-file peak memory tracks the small report models, not
+            # Σ output bytes + Σ structure sizes (D56 at the batch tier).
+            outcome.output_bytes = []
+            outcome.canonical = None
             if fail_fast and outcome.entry.status != "converted":
                 stopped = True
                 break
@@ -407,6 +418,11 @@ class _Outcome:
     # produced by byte-concatenation (M55-S4). Never serialized — same discipline as
     # ``output_bytes``: ``_assemble_report`` drops this holder and keeps only ``entry``.
     canonical: CanonicalObject | None = None
+    # The machine-readable row count of a multi-structure container, read from its
+    # ``ASEDB_MULTIPLE_ROWS`` refusal's issues at the first parse (BATCH-4) — so the fan-out
+    # never re-parses the container to learn how many rows it has. ``None`` for ordinary sources
+    # and for a refusal that does not name a count.
+    row_count: int | None = None
 
 
 def _convert_source(
@@ -430,7 +446,7 @@ def _convert_source(
     if not _is_multi_row_refusal(outcome):
         yield outcome
         return
-    count = _fanout_row_count(registry, entry)
+    count = outcome.row_count
     if count is None:
         # Defensive: the refusal named a count we could not read — surface it as the ordinary
         # per-file failure rather than silently dropping the source (never a phantom green batch).
@@ -451,23 +467,18 @@ def _is_multi_row_refusal(outcome: _Outcome) -> bool:
     )
 
 
-def _fanout_row_count(registry: Registry, entry: SourceEntry) -> int | None:
-    """The authoritative row count for a multi-structure container, read from the
-    ``ASEDB_MULTIPLE_ROWS`` refusal's ``location="rows N"`` by parsing with **no** row-selection
-    preset (which surfaces the refusal verbatim). ``None`` when the source does not refuse that way
-    — it is then not a container to fan out."""
-    try:
-        data = Path(entry.path).read_bytes()
-    except OSError:
-        return None
-    try:
-        parse_with_recovery(registry, data, filename=Path(entry.path).name, recovery_choices={})
-    except ParseError as exc:
-        for issue in exc.issues:
-            if issue.code == "ASEDB_MULTIPLE_ROWS" and issue.location:
-                match = _ROW_COUNT_LOCATION.match(issue.location)
-                if match:
-                    return int(match.group(1))
+def _row_count_from_issues(issues: Sequence[ParseIssue]) -> int | None:
+    """The machine-readable row count of a multi-structure container, from its refusal's issues.
+
+    The ``ASEDB_MULTIPLE_ROWS`` refusal carries ``location="rows N"`` (mirrored from
+    ``parsers.ase_db._ROW_COUNT_LOCATION``); the count is read from the refusal ``_convert_one``
+    already holds (BATCH-4), so the fan-out expands a container without ever re-parsing it to
+    learn how many rows it has. ``None`` when no issue names a count."""
+    for issue in issues:
+        if issue.code == "ASEDB_MULTIPLE_ROWS" and issue.location:
+            match = _ROW_COUNT_LOCATION.match(issue.location)
+            if match:
+                return int(match.group(1))
     return None
 
 
@@ -496,6 +507,10 @@ def _run_assemble(
     engine = ConversionEngine(registry)
     entries: list[_Outcome] = []
     contributions: list[AssembleContribution] = []
+    # The outcomes behind ``contributions``, in the same order — so the source→system mapping
+    # ``assemble_dir`` returns (index-aligned with its input) can be threaded back onto the
+    # entries' ``system`` field and spelled in the aggregate note (DPMD-3/BATCH-1).
+    contributing: list[_Outcome] = []
     atom_counts: dict[str, int] = {}
     stopped = False
     for entry in resolved:
@@ -510,6 +525,7 @@ def _run_assemble(
                         canonical=outcome.canonical, output=list(outcome.output_bytes)
                     )
                 )
+                contributing.append(outcome)
                 if outcome.canonical_atom_count is not None:
                     atom_counts[outcome.entry.source] = outcome.canonical_atom_count
             if fail_fast and outcome.entry.status != "converted":
@@ -518,14 +534,22 @@ def _run_assemble(
         if stopped:
             break
     assembled = b""
-    output_dir: dict[str, bytes] | None = None
+    output_dir: Mapping[str, bytes] | None = None
     exporter = registry.get_exporter(manifest.target)
     target_caps = exporter.capabilities()
     note: str | None = None
     if contributions:
         if target_caps.directory_format:
-            output_dir = dict(exporter.assemble_dir(contributions))
-            note = _assemble_dir_note(manifest.target, len(contributions), output_dir)
+            output_dir, systems = exporter.assemble_dir(contributions)
+            source_systems = {
+                outcome.entry.source: system
+                for outcome, system in zip(contributing, systems, strict=True)
+            }
+            note = _assemble_dir_note(
+                manifest.target, len(contributions), output_dir, source_systems
+            )
+            for outcome, system in zip(contributing, systems, strict=True):
+                outcome.entry.system = system
         else:
             buf = io.BytesIO()
             exporter.assemble(contributions, buf)
@@ -621,11 +645,15 @@ def _convert_one(
         )
     except ParseError as exc:
         issue = exc.issues[0] if exc.issues else None
-        return _failed(
+        outcome = _failed(
             label,
             issue.code if issue else "PARSE_ERROR",
             issue.message if issue else str(exc),
         )
+        # BATCH-4: the multi-row refusal this outcome reports *is* the row count — read it here,
+        # never re-parse the container in the fan-out to learn how many rows it has.
+        outcome.row_count = _row_count_from_issues(exc.issues)
+        return outcome
     if result.report.status == "refused":
         return _Outcome(entry=BatchEntry(source=label, status="refused", conversion=result.report))
     # `result.outputs` is set iff frame_selection=split_all resolved (one file per frame);
@@ -739,24 +767,34 @@ def _assembled_note(
     return None
 
 
-def _assemble_dir_note(target: str, n_sources: int, output_dir: Mapping[str, bytes]) -> str | None:
+def _assemble_dir_note(
+    target: str,
+    n_sources: int,
+    output_dir: Mapping[str, bytes],
+    source_systems: Mapping[str, str],
+) -> str | None:
     """The dataset-level grouping statement for a directory-assembled target (M56-S3, D214).
 
     A directory-format target assembles N converted sources into K dataset systems; the grouping
     itself — for ``deepmd_npy``, by composition, because a DeePMD system is fixed-composition — is
     a **declared property of the target layout** (the batch layer holds no per-format knowledge,
-    P2), so this note records only the count + the system names the target's ``assemble_dir``
-    produced, never a per-file loss (the wrapper gate: a count and a mapping, never a digest).
+    P2), so this note records the count, the system names, **and which source landed in which
+    system** (the ``source_systems`` mapping the target's ``assemble_dir`` returned, keyed by the
+    sources the batch layer named) — the wrapper gate: a count and a mapping, never a digest.
     """
     if not output_dir:
         return None
     systems = sorted({path.split("/", 1)[0] for path in output_dir})
     noun = "system" if len(systems) == 1 else "systems"
+    assignment = "; ".join(
+        f"{source} → {system}" for source, system in sorted(source_systems.items())
+    )
     return (
         f"assembled {n_sources} sources into {len(systems)} {target} {noun} "
-        f"({', '.join(systems)}) — a directory-format target is fixed-composition, so sources "
-        "group by composition into one system per group, a declared property of the target "
-        "layout, never a per-file loss."
+        f"({', '.join(systems)}) — each source landed in the system named after it "
+        f"({assignment}) — a directory-format target is fixed-composition, so sources group by "
+        "composition into one system per group, a declared property of the target layout, never "
+        "a per-file loss."
     )
 
 

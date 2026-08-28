@@ -294,6 +294,36 @@ def test_per_file_outputs_written_with_target_suffix(tmp_path: Path) -> None:
     assert (poscar_out / "water_traj").is_file()
 
 
+def test_per_file_mode_releases_payloads_before_assemble_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # BATCH-2: per-file mode retains only the report model downstream — by the time
+    # `_assemble_report` consumes the holders, each outcome's output bytes and canonical object
+    # are cleared, so peak memory tracks the small report models, not Σ output bytes + Σ
+    # structure sizes (D56 at the batch tier).
+    from xtalate.conversion import batch as batch_mod
+
+    captured: list[list[Any]] = []
+    real = batch_mod._assemble_report
+
+    def capturing(*args: Any, **kwargs: Any) -> Any:
+        captured.append(args[2])  # entries
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(batch_mod, "_assemble_report", capturing)
+    out = tmp_path / "converted"
+    run_batch(
+        BatchManifest(sources=[str(WATER), str(CO_IN_CELL)], target="extxyz"),
+        _registry(),
+        output=out,
+    )
+    assert len(captured) == 1
+    outcomes = captured[0]
+    assert len(outcomes) == 2
+    assert all(outcome.output_bytes == [] for outcome in outcomes)
+    assert all(outcome.canonical is None for outcome in outcomes)
+
+
 def test_output_name_collision_is_a_manifest_error(tmp_path: Path) -> None:
     a = tmp_path / "a"
     b = tmp_path / "b"
@@ -575,6 +605,28 @@ def test_fanned_per_file_outputs_are_row_qualified(tmp_path: Path) -> None:
     run_batch(BatchManifest(sources=[str(db)], target="extxyz"), _registry(), output=out)
     assert (out / "dataset.row0000.extxyz").is_file()
     assert (out / "dataset.row0001.extxyz").is_file()
+
+
+def test_multi_row_fanout_parses_the_container_minimally(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # BATCH-4: a 2-row .db is parsed exactly N+1 = 3 times — once for the multi-row refusal that
+    # reports the count, then once per fanned row. The row count comes from that first refusal's
+    # issues, never from an extra full re-parse of the container (the pre-R8 _fanout_row_count).
+    from xtalate.conversion import batch as batch_mod
+    from xtalate.conversion.parse_recovery import parse_with_recovery as real_parse
+
+    calls: list[str] = []
+
+    def counting(*args: Any, **kwargs: Any) -> Any:
+        calls.append(str(kwargs.get("filename")))
+        return real_parse(*args, **kwargs)
+
+    monkeypatch.setattr(batch_mod, "parse_with_recovery", counting)
+    db = _multi_row_db(tmp_path, _co(), _water())
+    report = run_batch(BatchManifest(sources=[str(db)], target="extxyz"), _registry())
+    assert report.tallies.converted == 2
+    assert len(calls) == 3
 
 
 def test_assemble_fans_multi_row_db_into_one_training_set(tmp_path: Path) -> None:
@@ -913,3 +965,23 @@ def test_assemble_to_deepmd_npy_writes_nothing_without_dash_o(tmp_path: Path) ->
     )
     assert [e.status for e in report.entries] == ["converted", "converted"]
     assert report.note is not None and "system_000" in report.note
+
+
+def test_assemble_to_deepmd_npy_report_names_each_sources_system(tmp_path: Path) -> None:
+    # DPMD-3/BATCH-1: the aggregate report records *which source landed in which system* — each
+    # converted entry carries its system_NNN, and the dataset-level note spells the assignment
+    # (never just the source count + the set of system names).
+    reg = _registry()
+    report = run_batch(
+        BatchManifest(
+            sources=[str(WATER), str(CO_IN_CELL)],
+            target="deepmd_npy",
+            output_mode="assemble",
+        ),
+        reg,
+    )
+    assert [e.status for e in report.entries] == ["converted", "converted"]
+    assert [e.system for e in report.entries] == ["system_000", "system_001"]
+    assert report.note is not None
+    assert f"{WATER} → system_000" in report.note
+    assert f"{CO_IN_CELL} → system_001" in report.note

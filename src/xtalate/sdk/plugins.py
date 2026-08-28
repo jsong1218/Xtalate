@@ -10,7 +10,7 @@ one native format, never reads native files.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, BinaryIO
 
 from xtalate.schema import CanonicalObject
@@ -245,8 +245,15 @@ class ExporterPlugin(ABC):
             "format to export_dir() or use a single-file target"
         )
 
-    def assemble_dir(self, contributions: list[AssembleContribution]) -> Mapping[str, bytes]:
+    def assemble_dir(
+        self, contributions: list[AssembleContribution]
+    ) -> tuple[Mapping[str, bytes], Sequence[str]]:
         """Combine contributions into one directory-native dataset mapping.
+
+        Returns ``(output, systems)`` — the written relative-path → bytes mapping and the
+        per-contribution ``system_NNN`` assignment, **index-aligned with ``contributions``** (the
+        ordered source→system record the batch aggregate reports; the batch layer names the
+        sources it handed over, D214/D227).
 
         Optional and additive to ``assemble``. Directory exporters override this hook and declare
         both ``directory_format`` and ``assemble_capable``; the default refuses.
