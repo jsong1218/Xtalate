@@ -26,7 +26,7 @@ import pytest
 from ase import Atoms
 from ase import units as ase_units
 from ase.calculators.singlepoint import SinglePointCalculator
-from ase.constraints import FixAtoms
+from ase.constraints import FixAtoms, FixBondLength
 from ase.db import connect
 from packaging.requirements import Requirement
 from packaging.version import Version
@@ -162,6 +162,31 @@ def test_fixatoms_maps_to_fixed_atoms_constraint() -> None:
     assert frame.dynamics.constraints is not None
     assert frame.dynamics.constraints[0].kind == "fixed_atoms"
     assert frame.dynamics.constraints[0].atom_indices == [0, 2]
+
+
+def test_non_fixatoms_constraint_is_carried_with_warning() -> None:
+    # Only FixAtoms is modelled (M14 cut line, D58): a FixBondLength must not fabricate a
+    # canonical constraint, and the warning's promise must be TRUE — the constraint is really
+    # carried as a JSON-serializable description under custom_per_frame['ase_db:constraints']
+    # (ASEDB-2, review R4), so the P1 report names data that is actually recoverable.
+    atoms = Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.9]])
+    atoms.set_constraint(FixBondLength(0, 1))
+    result = parse_bytes(_parser(), _db_bytes((atoms, {}, {})), filename="sample.db")
+    assert result.canonical.frames[0].dynamics.constraints is None
+    assert any(i.code == "ASE_DB_CONSTRAINT_NOT_MODELLED" for i in result.issues)
+    carried = result.canonical.user_metadata.custom_per_frame["ase_db:constraints"]
+    # A real, JSON-serializable description: the class ASE actually instantiates (3.29+
+    # names it FixBondLengths) plus its todict() params — the data the warning promises.
+    assert isinstance(carried, list)
+    assert isinstance(carried[0], list)
+    description = carried[0][0]
+    assert isinstance(description, dict)
+    assert description["class"] == "FixBondLengths"
+    params = description["params"]
+    assert isinstance(params, dict)
+    kwargs = params["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert kwargs["pairs"] == [[0, 1]]
 
 
 # --- key–value carry (carried, never interpreted) -------------------------------------

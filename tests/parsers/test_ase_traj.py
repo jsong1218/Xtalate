@@ -170,12 +170,25 @@ def test_stress_carried_not_mapped_to_electronic_stress() -> None:
 
 def test_non_fixatoms_constraint_is_carried_with_warning() -> None:
     # Only FixAtoms is modelled in v0.3 (M14 cut line, D58): a FixBondLength must not fabricate a
-    # canonical constraint, and the parser must warn rather than drop it silently (P1).
+    # canonical constraint, and the parser must warn rather than drop it silently (P1). The
+    # warning's promise must be TRUE — the constraint is really carried as a JSON-serializable
+    # description under custom_per_frame['ase_traj:constraints'] (ASEDB-2, review R4).
     atoms = Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.9]])
     atoms.set_constraint(FixBondLength(0, 1))
     result = parse_bytes(_parser(), _traj_bytes(atoms), filename="relax.traj")
     assert result.canonical.frames[0].dynamics.constraints is None
     assert any(i.code == "ASE_TRAJ_CONSTRAINT_NOT_MODELLED" for i in result.issues)
+    carried = result.canonical.user_metadata.custom_per_frame["ase_traj:constraints"]
+    assert isinstance(carried, list)
+    assert isinstance(carried[0], list)
+    description = carried[0][0]
+    assert isinstance(description, dict)
+    assert description["class"] == "FixBondLengths"  # ASE 3.29+ names the class so
+    params = description["params"]
+    assert isinstance(params, dict)
+    kwargs = params["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert kwargs["pairs"] == [[0, 1]]
 
 
 # --- ASE-version canary (M14 deliverable 3, D59) --------------------------------------

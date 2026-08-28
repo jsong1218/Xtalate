@@ -353,12 +353,19 @@ class AseDbExporter(ExporterPlugin):
                     continue
                 written = -np.asarray(frame.electronic.stress, dtype=float)
                 carried_arr = np.asarray(carried, dtype=float)
-                if carried_arr.shape == (6,):
-                    carried_full = np.asarray(voigt_6_to_full_3x3_stress(carried_arr), dtype=float)
-                else:
-                    carried_full = carried_arr
-                if not np.allclose(carried_full, written):
-                    dropped.append(frame.index)
+                # Only the two shapes the ASE-backed formats write are comparable (Voigt-6 or
+                # full 3×3). ASE itself can flatten a full 3×3 calculator stress to a bare
+                # length-9 array on .db write; that value cannot be judged against the written
+                # tensor — skip the drop-check rather than broadcast-crash (ASEDB-1, review
+                # R4): the field is still written, the unrecognized carry is simply not
+                # compared.
+                if carried_arr.shape in {(6,), (3, 3)}:
+                    if carried_arr.shape == (6,):
+                        carried_arr = np.asarray(
+                            voigt_6_to_full_3x3_stress(carried_arr), dtype=float
+                        )
+                    if not np.allclose(carried_arr, written):
+                        dropped.append(frame.index)
         if dropped:
             frames_desc = f"frame(s) {dropped}" if len(dropped) > 1 else f"frame {dropped[0]}"
             warnings.append(

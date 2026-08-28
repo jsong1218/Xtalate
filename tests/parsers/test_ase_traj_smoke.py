@@ -16,8 +16,16 @@ from ase.io.trajectory import TrajectoryWriter
 from xtalate.exporters.ase_traj import make_ase_traj_exporter
 from xtalate.exporters.extxyz import ExtxyzExporter
 from xtalate.exporters.poscar import make_poscar_exporter
+from xtalate.parsers._common import build_provenance
 from xtalate.parsers.ase_traj import make_ase_traj_parser
-from xtalate.schema import Constraint
+from xtalate.schema import (
+    CanonicalObject,
+    Constraint,
+    Electronic,
+    Frame,
+    UserMetadata,
+)
+from xtalate.schema.models import AtomsBlock
 
 
 def _write_traj(images: list[Atoms]) -> bytes:
@@ -114,3 +122,35 @@ def test_exports_to_other_formats() -> None:
     extxyz_out = io.BytesIO()
     ExtxyzExporter().export(canonical, extxyz_out)
     assert b"Lattice" in extxyz_out.getvalue()
+
+
+def test_length9_flattened_stress_carry_does_not_crash_export_warnings() -> None:
+    # ASEDB-1 (review R4): ASE can flatten a full 3×3 calculator stress to a bare length-9
+    # array on .traj write, so a carried value of that shape must not broadcast-crash the
+    # drop-check against the written (3, 3) tensor — the comparison is skipped (export_warnings
+    # runs unguarded from the conversion engine). The sign-change warning still fires (the
+    # field is populated); no STRESS_CARRY_DROPPED is claimed for an uncomparable carry.
+    tensor = np.array([[1.0, 0.5, 0.25], [0.5, 2.0, 0.75], [0.25, 0.75, 3.0]], dtype=float)
+    flat9 = np.arange(9, dtype=float) + 1.0
+    frame = Frame(
+        index=0,
+        atoms=AtomsBlock(
+            symbols=["H", "O"],
+            positions=np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.98]]),
+        ),
+        electronic=Electronic(stress=tensor),
+    )
+    meta = UserMetadata(custom_per_frame={"ase_traj:stress": np.array([flat9])})
+    obj = CanonicalObject(
+        frames=[frame],
+        user_metadata=meta,
+        provenance=build_provenance(
+            format_id="ase_traj",
+            filename="relax.traj",
+            original_coordinate_system="cartesian",
+            source_units={},
+            parse_notes=[],
+        ),
+    )
+    warnings = make_ase_traj_exporter().export_warnings(obj)
+    assert [w.code for w in warnings] == ["STRESS_SIGN_CONVENTION_CHANGED"]

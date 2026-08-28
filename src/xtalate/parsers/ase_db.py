@@ -78,6 +78,7 @@ from xtalate.sdk import (
 FORMAT_ID = "ase_db"
 _KEY_PREFIX = "ase_db:"
 _STRESS_KEY = "ase_db:stress"
+_CONSTRAINTS_KEY = "ase_db:constraints"
 _DATA_KEY = "ase_db:data"
 # SQLite magic at the head of every SQLite file; strong (but never authoritative — a non-ASE
 # SQLite database is sniffed as ase_db and refused at parse with ASEDB_MALFORMED).
@@ -313,11 +314,17 @@ class AseDbParser(ParserPlugin):
 
         mapped, carried = _partition_calc(atoms, len(atoms), issues)
         charges, magmoms = _electronic_arrays(atoms, mapped, issues, carried)
+        constraints, carried_constraints = self._build_constraints(atoms, issues)
         per_frame_custom: dict[str, np.ndarray | list[JsonValue]] = {}
         for key, value in carried.items():
             # A single-row object has one frame, so per-frame customs are length-1 lists
             # (custom_per_frame's first dimension is the frame count, Part 2 §3.10).
             per_frame_custom[_namespace(key)] = [value]
+        if carried_constraints:
+            # The non-FixAtoms constraints the warning names are really carried (ASEDB-2,
+            # review R4) — a JSON-serializable description per constraint, so the P1 report
+            # is true and the data is recoverable from the object.
+            per_frame_custom[_CONSTRAINTS_KEY] = [carried_constraints]
 
         frame = Frame(
             index=0,
@@ -334,7 +341,7 @@ class AseDbParser(ParserPlugin):
             dynamics=Dynamics(
                 velocities=_build_velocities(atoms),
                 forces=mapped.get("forces"),
-                constraints=self._build_constraints(atoms, issues),
+                constraints=constraints,
             ),
             electronic=Electronic(
                 total_energy=mapped.get("energy"),
@@ -362,11 +369,18 @@ class AseDbParser(ParserPlugin):
         return Cell(lattice_vectors=lattice, pbc=pbc)
 
     @staticmethod
-    def _build_constraints(atoms: Any, issues: list[ParseIssue]) -> list[Constraint] | None:
+    def _build_constraints(
+        atoms: Any, issues: list[ParseIssue]
+    ) -> tuple[list[Constraint] | None, list[JsonValue]]:
         """Map ASE ``FixAtoms`` to ``Constraint(kind=\"fixed_atoms\")`` (D58), the ase_traj rule
         verbatim: an empty constraints list is a manufactured default → None; a non-FixAtoms
-        class is carried with a warning rather than modelled (M14 cut line)."""
+        class is carried with a warning rather than modelled (M14 cut line). The carry is
+        **real** (ASEDB-2, review R4): the second return value is one JSON-serializable
+        description per non-``FixAtoms`` constraint — class name + params — which the caller
+        stores under ``custom_per_frame['ase_db:constraints']``, exactly the namespace the
+        warning names."""
         constraints: list[Constraint] = []
+        carried_constraints: list[JsonValue] = []
         for con in atoms.constraints:
             if type(con).__name__ == "FixAtoms":
                 indices = [int(i) for i in np.asarray(con.index).ravel().tolist()]
@@ -374,18 +388,19 @@ class AseDbParser(ParserPlugin):
                     Constraint(kind="fixed_atoms", atom_indices=indices, parameters={})
                 )
             else:
+                carried_constraints.append(_describe_constraint(con))
                 issues.append(
                     ParseIssue(
                         severity="warning",
                         code="ASE_DB_CONSTRAINT_NOT_MODELLED",
                         message=(
                             f"ASE constraint {type(con).__name__!r} has no canonical mapping; "
-                            "carried verbatim in custom_per_frame['ase_db:constraints'] "
+                            f"carried verbatim in custom_per_frame[{_CONSTRAINTS_KEY!r}] "
                             "(only FixAtoms is modelled)"
                         ),
                     )
                 )
-        return constraints or None
+        return constraints or None, carried_constraints
 
     # -- capabilities ------------------------------------------------------------------
 
@@ -553,6 +568,29 @@ def _is_per_atom_scalar(value: Any, n_atoms: int) -> bool:
     """True if ``value`` is a 1-D per-atom array (fits ArrayN)."""
     array = np.asarray(value)
     return array.ndim == 1 and array.shape[0] == n_atoms
+
+
+def _json_safe(value: Any) -> JsonValue:
+    """Recursively coerce an ASE constraint-params value into JSON (numpy arrays/scalars to
+    plain Python), mirroring ``_as_json`` one level deeper — ``todict()`` kwargs can nest."""
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return _as_json(value)
+
+
+def _describe_constraint(con: Any) -> dict[str, JsonValue]:
+    """A JSON-serializable description of a non-``FixAtoms`` ASE constraint — its class name
+    plus ASE's own ``todict()`` params when the constraint provides them — the value the
+    ``ASE_DB_CONSTRAINT_NOT_MODELLED`` warning names as carried, so the carry is real
+    (ASEDB-2, review R4)."""
+    try:
+        raw = con.todict()
+    except Exception:
+        raw = None
+    params: JsonValue = _json_safe(raw) if isinstance(raw, dict) else {}
+    return {"class": type(con).__name__, "params": params}
 
 
 def _as_json(value: Any) -> JsonValue:

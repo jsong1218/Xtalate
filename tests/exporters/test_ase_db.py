@@ -211,6 +211,20 @@ def test_carry_dropped_warning_when_field_and_differing_carry_coexist() -> None:
     }
 
 
+def test_length9_flattened_stress_carry_does_not_crash_export_warnings() -> None:
+    # ASEDB-1 (review R4): ase.db itself flattens a full 3×3 calculator stress to a bare
+    # length-9 array on write, so an externally produced .db can carry exactly that shape. It
+    # cannot be judged against the written (3, 3) tensor — the drop-check must skip it, never
+    # broadcast-crash (export_warnings runs unguarded from the conversion engine, so a raw
+    # exception would abort the whole conversion). The sign-change warning still fires (the
+    # field is populated); no STRESS_CARRY_DROPPED is claimed for an uncomparable carry.
+    flat9 = np.arange(9, dtype=float) + 1.0
+    frame = _frame(electronic=Electronic(stress=_TENSOR))
+    meta = UserMetadata(custom_per_frame={_STRESS_KEY: np.array([flat9])})
+    warnings = make_ase_db_exporter().export_warnings(_obj([frame], meta))
+    assert [w.code for w in warnings] == ["STRESS_SIGN_CONVENTION_CHANGED"]
+
+
 # --- capabilities ---------------------------------------------------------------------
 
 
