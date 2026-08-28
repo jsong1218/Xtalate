@@ -45,6 +45,8 @@ from __future__ import annotations
 
 import re
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, BinaryIO
 
 import ase
@@ -80,6 +82,10 @@ _KEY_PREFIX = "ase_db:"
 _STRESS_KEY = "ase_db:stress"
 _CONSTRAINTS_KEY = "ase_db:constraints"
 _DATA_KEY = "ase_db:data"
+# ASEDB-3 (review R5): a key-value pair literally named ``data`` would land on the same
+# ``ase_db:data`` key as the row's arbitrary data blob and be silently overwritten; the kv side is
+# escalated to its own distinct key so **both** values survive, with a named collision warning.
+_DATA_KV_COLLISION_KEY = "ase_db:kv:data"
 # SQLite magic at the head of every SQLite file; strong (but never authoritative — a non-ASE
 # SQLite database is sniffed as ase_db and refused at parse with ASEDB_MALFORMED).
 _SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -135,29 +141,32 @@ class AseDbParser(ParserPlugin):
         an empty one refuses ``ASEDB_EMPTY``. ``.db`` is SQLite, which ``ase.db`` opens only by
         real path, so the byte stream is spooled to a temporary file for the read (the
         conversion layer always hands this parser bytes)."""
-        rows = self._read_rows(stream)
-        if not rows:
-            raise _error("ASEDB_EMPTY", "the database contains no rows")
-        if len(rows) > 1:
-            ids = ", ".join(str(rid) for rid, _ in rows)
-            raise ParseError(
-                [
-                    ParseIssue(
-                        severity="error",
-                        code="ASEDB_MULTIPLE_ROWS",
-                        message=(
-                            f"this ASE database contains {len(rows)} rows (ids {ids}); the "
-                            "single-file path accepts one structure — re-parse one row with "
-                            "--recover asedb_row_selection=index,row=<i> (i is the 0-based row "
-                            "in the ids listed above), or convert every row under --batch (each "
-                            "row becomes its own per-row conversion)"
-                        ),
-                        location=f"rows {len(rows)}",
-                        recovery_hint="asedb_multiple_rows",
-                    )
-                ]
-            )
-        return self._row_result(rows[0][1], filename)
+        with self._spooled_db(stream) as db:
+            ids = self._row_ids(db)
+            if not ids:
+                raise _error("ASEDB_EMPTY", "the database contains no rows")
+            if len(ids) > 1:
+                id_list = ", ".join(str(rid) for rid in ids)
+                raise ParseError(
+                    [
+                        ParseIssue(
+                            severity="error",
+                            code="ASEDB_MULTIPLE_ROWS",
+                            message=(
+                                f"this ASE database contains {len(ids)} rows (ids {id_list}); "
+                                "the single-file path accepts one structure — re-parse one row "
+                                "with --recover asedb_row_selection=index,row=<i> (i is the "
+                                "0-based row in the ids listed above), or convert every row under "
+                                "--batch (each row becomes its own per-row conversion)"
+                            ),
+                            location=f"rows {len(ids)}",
+                            recovery_hint="asedb_multiple_rows",
+                        )
+                    ]
+                )
+            # ASEDB-4 (review R5): only this one row is ever decoded from its array blobs —
+            # counting the database read ids alone, never every row's materialization.
+            return self._row_result(self._select_row(db, ids[0]), filename)
 
     def parse_recover(
         self,
@@ -206,41 +215,45 @@ class AseDbParser(ParserPlugin):
                     )
                 ]
             )
-        rows = self._read_rows(stream)
-        if raw >= len(rows):
-            raise ParseError(
-                [
-                    ParseIssue(
-                        severity="error",
-                        code="ASEDB_MULTIPLE_ROWS",
-                        message=(
-                            f"row {raw} is out of range: this database has {len(rows)} "
-                            f"row(s) (ids {', '.join(str(r) for r, _ in rows)})"
-                        ),
-                        location=f"rows {len(rows)}",
-                        recovery_hint="asedb_multiple_rows",
-                    )
-                ]
+        with self._spooled_db(stream) as db:
+            ids = self._row_ids(db)
+            if raw >= len(ids):
+                raise ParseError(
+                    [
+                        ParseIssue(
+                            severity="error",
+                            code="ASEDB_MULTIPLE_ROWS",
+                            message=(
+                                f"row {raw} is out of range: this database has {len(ids)} "
+                                f"row(s) (ids {', '.join(str(r) for r in ids)})"
+                            ),
+                            location=f"rows {len(ids)}",
+                            recovery_hint="asedb_multiple_rows",
+                        )
+                    ]
+                )
+            rid = ids[raw]
+            # ASEDB-4: only the one selected row is fully decoded from its array blobs.
+            result = self._row_result(self._select_row(db, rid), filename)
+            selected = ParseIssue(
+                severity="warning",
+                code="ASEDB_ROW_SELECTED",
+                message=(
+                    f"row {rid} of {len(ids)} selected per asedb_row_selection=index,row={raw}; "
+                    "the other rows are not part of this conversion (use --batch for every row)"
+                ),
             )
-        rid, row = rows[raw]
-        result = self._row_result(row, filename)
-        selected = ParseIssue(
-            severity="warning",
-            code="ASEDB_ROW_SELECTED",
-            message=(
-                f"row {rid} of {len(rows)} selected per asedb_row_selection=index,row={raw}; "
-                "the other rows are not part of this conversion (use --batch for every row)"
-            ),
-        )
-        return ParseResult(canonical=result.canonical, issues=[selected, *result.issues])
+            return ParseResult(canonical=result.canonical, issues=[selected, *result.issues])
 
     # -- row reading + the single-row object ---------------------------------------------
 
-    def _read_rows(self, stream: BinaryIO) -> list[tuple[int, Any]]:
-        """Spool the stream to a temporary ``.db`` file and read every row via ``ase.db``,
-        normalising ASE's many exception types to the ParseError contract (§5). Returns
-        ``(row.id, AtomsRow)`` pairs in the database's insertion order (id order — ASE
-        autoincrements; the ids are what the multi-row refusal lists)."""
+    @contextmanager
+    def _spooled_db(self, stream: BinaryIO) -> Iterator[Any]:
+        """Spool the byte stream to a temporary ``.db`` file and open it via ``ase.db`` (which
+        opens only by real path), normalising ASE's many exception types to the ParseError
+        contract (§5). The handle stays open for the whole ``with`` block — the entire
+        row-selection flow (count, then decode the chosen row) happens inside, so the temp file
+        outlives every read of it."""
         data = stream.read()
         with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
             tmp.write(data)
@@ -251,12 +264,30 @@ class AseDbParser(ParserPlugin):
                 raise _error(
                     "ASEDB_MALFORMED", f"could not open the file as an ASE database: {exc}"
                 ) from exc
-            try:
-                return [(row.id, row) for row in db.select()]
-            except Exception as exc:  # noqa: BLE001
-                raise _error(
-                    "ASEDB_MALFORMED", f"could not read the file as an ASE database: {exc}"
-                ) from exc
+            yield db
+
+    def _row_ids(self, db: Any) -> list[int]:
+        """The database's row ids in insertion order — **id column only** (ASEDB-4, review R5):
+        ``db.select(columns=['id'], include_data=False)`` fetches just the ids, never the per-row
+        array blobs (which ASE would otherwise ``deblob`` on row construction), so counting /
+        refusing a multi-row database costs O(rows) rather than O(dataset bytes) — the
+        DoS-shaped concern the reviewer flagged on a service that accepts arbitrary uploads. ``id``
+        order is insertion order (ASE autoincrements); the ids are what the multi-row refusal
+        lists."""
+        try:
+            return [row.id for row in db.select(columns=["id"], include_data=False)]
+        except Exception as exc:  # noqa: BLE001
+            raise _error(
+                "ASEDB_MALFORMED", f"could not read the file as an ASE database: {exc}"
+            ) from exc
+
+    def _select_row(self, db: Any, rid: int) -> Any:
+        """Decode **one** row by id — the ASEDB-4 deferral: full row materialization happens only
+        for the row actually selected, never for the rows merely counted."""
+        try:
+            return db.get(rid)
+        except Exception as exc:  # noqa: BLE001
+            raise _error("ASEDB_MALFORMED", f"could not reconstruct row {rid}: {exc}") from exc
 
     def _row_result(self, row: Any, filename: str | None) -> ParseResult:
         issues: list[ParseIssue] = []
@@ -273,18 +304,38 @@ class AseDbParser(ParserPlugin):
         # → absence (no entry, no warning).
         custom_global: dict[str, JsonValue] = {}
         for key, value in dict(row.key_value_pairs or {}).items():
-            custom_global[_namespace(key)] = _as_json(value)
+            # ASEDB-3 (review R5): a kv pair literally named ``data`` would collide with the
+            # row's arbitrary data blob on the same ``ase_db:data`` key and be silently
+            # overwritten by it. ASE rejects the kv name ``data`` at the source, so this is
+            # adversarial/corrupt input — but never a silent overwrite: the kv side is escalated
+            # to its own distinct key, both values survive, and a named collision warning
+            # records it.
+            collision = _namespace(key) == _DATA_KEY
+            ns = _DATA_KV_COLLISION_KEY if collision else _namespace(key)
+            custom_global[ns] = _as_json(value)
             issues.append(
                 ParseIssue(
                     severity="warning",
                     code="ASEDB_KV_CARRIED",
                     message=(
                         f"key-value pair {key!r} carried verbatim in "
-                        f"user_metadata.custom_global['{_KEY_PREFIX}{key}'] (unmapped — "
-                        "carried, never interpreted, Part 2 §6.1)"
+                        f"user_metadata.custom_global['{ns}'] (unmapped — carried, never "
+                        "interpreted, Part 2 §6.1)"
                     ),
                 )
             )
+            if collision:
+                issues.append(
+                    ParseIssue(
+                        severity="warning",
+                        code="ASEDB_KV_DATA_COLLISION",
+                        message=(
+                            f"a key-value pair named 'data' collides with the row's data blob on "
+                            f"'{_DATA_KEY}'; the kv value was escalated to "
+                            f"'{_DATA_KV_COLLISION_KEY}' so neither value is dropped"
+                        ),
+                    )
+                )
         if row.data:
             custom_global[_DATA_KEY] = _as_json(row.data)
             issues.append(

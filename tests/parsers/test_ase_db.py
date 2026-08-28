@@ -16,6 +16,7 @@ The final tests are the **ASE-version canary** (D59): the installed ASE satisfie
 from __future__ import annotations
 
 import io
+import sqlite3
 import tempfile
 import tomllib
 from pathlib import Path
@@ -306,6 +307,67 @@ def test_asedb_row_selection_all_is_the_batch_fan_out_not_a_single_file_resoluti
         )
     assert excinfo.value.issues[0].code == "ASEDB_MULTIPLE_ROWS"
     assert "--batch" in excinfo.value.issues[0].message
+
+
+def test_data_kv_colliding_with_the_row_blob_is_escalated_not_overwritten() -> None:
+    # ASEDB-3 (review R5): a hand-crafted .db whose key-value pairs are literally named ``data``
+    # would collide with the row's arbitrary data blob on the same ``ase_db:data`` key and be
+    # silently overwritten by it — the value dropped with no collision report. ASE rejects that
+    # kv name on write (``ValueError: Bad key: data``), so the fixture is built by patching the
+    # persisted ``key_value_pairs`` JSON directly; the parser must detect the collision, keep the
+    # kv side and the blob under **distinct** keys, and emit a named collision warning — never a
+    # silent overwrite.
+    with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
+        db = connect(tmp.name, use_lock_file=False)
+        db.write(_bare(), key_value_pairs={"label": "x"}, data={"blob": 1})
+        con = sqlite3.connect(tmp.name)
+        con.execute(
+            "UPDATE systems SET key_value_pairs=? WHERE id=1",
+            ('{"label": "x", "data": "secret"}',),
+        )
+        con.commit()
+        con.close()
+        data = Path(tmp.name).read_bytes()
+    result = parse_bytes(_parser(), data, filename="sample.db")
+    cg = result.canonical.user_metadata.custom_global
+    # The escalated kv side survives under its own key (the old code dropped it into the blob's
+    # slot) and the row's data blob is preserved unchanged under ase_db:data — nothing is lost.
+    assert cg["ase_db:data"] == {"blob": 1}
+    assert "ase_db:kv:data" in cg
+    assert "ase_db:label" in cg
+    assert [i.code for i in result.issues].count("ASEDB_KV_DATA_COLLISION") == 1
+
+
+def test_multi_row_refusal_reads_ids_only_and_defers_full_row_decode() -> None:
+    # ASEDB-4 (review R5): the multi-row refusal must not force ASE to decode every row's array
+    # blobs just to count — that is unbounded work proportional to dataset size on a service
+    # accepting arbitrary uploads. Proof by corruption: a row whose positions blob is garbage
+    # (would fail any full decode) must not prevent the id-only refusal, and a recovery selecting
+    # an *intact* row must still succeed — full row decode is deferred to exactly the chosen row.
+    with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
+        db = connect(tmp.name, use_lock_file=False)
+        for _ in range(3):
+            db.write(Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.9]]))
+        con = sqlite3.connect(tmp.name)
+        con.execute("UPDATE systems SET positions=? WHERE id=1", (b"\x01\x02\x03\x04\x05\x06",))
+        con.commit()
+        con.close()
+        data = Path(tmp.name).read_bytes()
+    parser = _parser()
+    # The refusal succeeds off ids alone, despite the corrupted first row.
+    with pytest.raises(ParseError) as excinfo:
+        parse_bytes(parser, data, filename="sample.db")
+    assert excinfo.value.issues[0].code == "ASEDB_MULTIPLE_ROWS"
+    assert excinfo.value.issues[0].location == "rows 3"
+    # Recovery of the *intact* row (index 1) decodes only it; the corrupted row is never touched.
+    result = parser.parse_recover(
+        io.BytesIO(data),
+        filename="sample.db",
+        hint="asedb_multiple_rows",
+        choice="index",
+        parameters={"row": 1},
+    )
+    assert result.canonical.frames[0].atoms.symbols == ["H", "H"]
 
 
 # --- empty / malformed -----------------------------------------------------------------
