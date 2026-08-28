@@ -1,9 +1,10 @@
 &CONTROL
-   calculation = 'scf', ecutwfc = 40.0, ecutrho = 320.0,
+   calculation = 'scf',
    prefix = 'feo',
 /
 &SYSTEM
    ibrav = 0, nat = 2, ntyp = 2,
+   ecutwfc = 40.0, ecutrho = 320.0,
    smearing = 'gaussian', occupations = 'smearing',
    nspin = 2,
    vdw_corr = 'dft-d3',

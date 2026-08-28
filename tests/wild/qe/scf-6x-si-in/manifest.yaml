@@ -11,16 +11,15 @@ expectation:
     - QEIN_UNMAPPED_ENTRY_CARRIED
     - QEIN_UNMAPPED_ENTRY_CARRIED
     - QEIN_UNMAPPED_ENTRY_CARRIED
-    - QEIN_UNMAPPED_ENTRY_CARRIED
-    - QEIN_UNMAPPED_ENTRY_CARRIED
   frame_count: 1
   roundtrip: checked
 notes: >-
   The first nonzero-ibrav dimension (M53-S1 dimension 6): ibrav = 2 (cubic F, fcc) with
   A = 5.43 Å, one Si atom at the crystal origin, positions in {crystal} (fractional) units.
   The ibrav expansion to cell.lattice_vectors is recorded in parse_notes (the M50-S2
-  derivation, never guessed). The five declared QEIN_UNMAPPED_ENTRY_CARRIED warnings are the
-  honest carries: &control prefix / pseudo_dir, and &system ecutwfc / ecutrho / nbnd — each
-  carried verbatim (P1). roundtrip: checked — the M51 exporter rewrites the file (ibrav = 0
+  derivation, never guessed). The three declared QEIN_UNMAPPED_ENTRY_CARRIED warnings are
+  the honest carries: &control prefix / pseudo_dir and &system nbnd — each carried verbatim
+  (P1); the ecutwfc / ecutrho cutoffs (real &system variables, review R3 QE-B) are promoted
+  to simulation.extra, not carried. roundtrip: checked — the M51 exporter rewrites the file (ibrav = 0
   with the derived cell in angstrom) and the re-parse is scientifically equal, proving the
   ibrav-derived lattice survives the round-trip.

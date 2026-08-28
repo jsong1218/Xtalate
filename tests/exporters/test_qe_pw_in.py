@@ -126,7 +126,12 @@ def test_carried_payloads_write_back_verbatim() -> None:
     assert "K_POINTS automatic" in written
     assert "4 4 4 0 0 0" in written
     assert "fe.pbe.UPF" in written and "o.pbe.UPF" in written
-    assert "ecutwfc = '40.0'" in written  # recognized context from simulation.extra -> &control
+    # ecutwfc/ecutrho are &SYSTEM variables in QE (review R3 QE-B) — the exporter writes the
+    # recognized simulation context into the namelist the mapping names, i.e. back into
+    # &SYSTEM, restoring the round-trip to the real placement.
+    assert "ecutwfc = '40.0'" in written
+    sys_block = written.split("&SYSTEM")[1].split("/")[0]
+    assert "ecutwfc" in sys_block and "ecutrho" in sys_block
     assert "conv_thr = '1e-08'" in written  # &electrons
     assert "smearing = 'gaussian'" in written  # &system
     assert "nspin = 2" in written  # the carried &system entry

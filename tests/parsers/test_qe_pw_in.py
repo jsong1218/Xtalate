@@ -573,8 +573,9 @@ def test_bare_kpoints_mode_is_carried_not_dropped() -> None:
 
 def test_recognized_simulation_context_routes_to_simulation_extra() -> None:
     src = (
-        "&CONTROL\n   calculation = 'scf', ecutwfc = 30.0,\n/\n"
-        "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n\n/\n"
+        "&CONTROL\n   calculation = 'scf',\n/\n"
+        "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n"
+        "   ecutwfc = 30.0,\n/\n"
         "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n" + _positions("angstrom") + _cell_block()
     )
     obj = _parse(src).canonical
@@ -687,9 +688,10 @@ def test_same_label_mass_repeats_per_atom() -> None:
 
 def test_convergence_and_cutoff_context_routes_to_simulation_extra() -> None:
     src = (
-        "&CONTROL\n   calculation = 'relax', ecutwfc = 40.0, ecutrho = 320.0,\n/\n"
-        "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n   degauss = 0.01, smearing = 'gaussian',"
-        " occupations = 'smearing',\n/\n"
+        "&CONTROL\n   calculation = 'relax',\n/\n"
+        "&SYSTEM\n   ibrav = 0, nat = 1, ntyp = 1,\n"
+        "   ecutwfc = 40.0, ecutrho = 320.0,\n"
+        "   degauss = 0.01, smearing = 'gaussian', occupations = 'smearing',\n/\n"
         "&ELECTRONS\n   conv_thr = 1.0d-8,\n/\n"
         "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n" + _positions("angstrom") + _cell_block()
     )
@@ -704,6 +706,27 @@ def test_convergence_and_cutoff_context_routes_to_simulation_extra() -> None:
         "occupations": "smearing",
         "conv_thr": "1e-08",
     }
+
+
+def test_a_bucket_lattice_spelling_the_chosen_ibrav_does_not_use_is_carried() -> None:
+    """QE-A (review R3): only the lattice spellings the chosen ``ibrav`` actually uses are
+    consumed. A declared-but-unused ``celldm(4)`` angle under cubic ``ibrav = 1`` is inert to
+    QE, so it must be carried under ``qe_pw_in:namelists`` with a warning — never silently
+    dropped (P1), so the module's 'nothing is dropped' claim stays true."""
+    src = (
+        "&SYSTEM\n   ibrav = 1, nat = 1, ntyp = 1,\n"
+        "   celldm(1) = 9.448630664428, celldm(4) = 0.5,\n/\n"
+        "ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n"
+        "ATOMIC_POSITIONS {crystal}\n   Fe 0.0 0.0 0.0\n"
+    )
+    result = _parse(src)
+    assert [i.code for i in result.issues] == ["QEIN_UNMAPPED_ENTRY_CARRIED"]
+    carried = result.canonical.user_metadata.custom_global["qe_pw_in:namelists"]
+    assert carried == {"system": {"celldm": {"4": 0.5}}}
+    # celldm(1) (the scale) is consumed for the lattice; only the inert celldm(4) rides.
+    assert result.canonical.frames[0].cell is not None
+    assert result.canonical.frames[0].cell.lattice_vectors[0][0] == pytest.approx(5.0, abs=1e-9)
+    assert any("carried" in i.message.lower() for i in result.issues)
 
 
 def test_empty_namelists_produce_no_simulation_metadata() -> None:

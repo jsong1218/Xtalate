@@ -9,15 +9,15 @@ origin:
 expectation:
   issue_codes:
     - QEIN_UNMAPPED_ENTRY_CARRIED
-    - QEIN_UNMAPPED_ENTRY_CARRIED
   frame_count: 1
   roundtrip: checked
 notes: >-
   The second nonzero-ibrav dimension (M53-S1 dimension 6): ibrav = 4 (hexagonal) with
   A = 3.2 Å, C = 5.2 Å and Mg at (1/3, 2/3, 1/4) crystal — a distinct Bravais encoding from
   the scf-6x-si fcc case. The expansion to cell.lattice_vectors is recorded in parse_notes
-  (the M50-S2 derivation, never guessed). The two QEIN_UNMAPPED_ENTRY_CARRIED warnings are
-  the honest carries: &system ecutwfc and nosym (P1). roundtrip: checked — the ibrav-derived
+  (the M50-S2 derivation, never guessed). The one QEIN_UNMAPPED_ENTRY_CARRIED warning is
+  the honest carry: &system nosym (P1); the &system ecutwfc is promoted to simulation.extra
+  (review R3 QE-B, the real &system placement). roundtrip: checked — the ibrav-derived
   hexagonal lattice survives the M51 export/re-parse scientifically equal. Both supported
   parameter spellings (celldm(1..6) and A,B,C) are covered across the batch by the M50
   goldens; this case uses the A,C spelling.

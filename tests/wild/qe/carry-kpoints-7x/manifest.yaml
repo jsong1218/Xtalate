@@ -1,7 +1,7 @@
 case: carry-kpoints-7x
 format_id: qe_pw_in
 source_file: pw.in
-sha256: "7e8ab4304225eae3be718a61aaae6659988b330ab4f9a4df7b55dca74a86a67d"
+sha256: "4834efbd01a2a7394b428d2ab4ee134c2f34bdb145e5c9076eb2115342663285"
 origin:
   kind: synthetic
   source: "Authored-realistic QE pw.x input carrying pseudopotential filenames + a K_POINTS card verbatim (M53-S1), generalizing the committed M50 carry-kpoints golden with spin + vdW context for realism."

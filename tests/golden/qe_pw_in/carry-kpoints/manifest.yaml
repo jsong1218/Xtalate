@@ -12,5 +12,5 @@ notes: 'M50-S3 golden: recognized simulation context (calculation, ecutwfc, ecut
   entry nspin and the K_POINTS card (no canonical k-point model in the schema - stated,
   not modeled) carry verbatim under qe_pw_in:namelists / qe_pw_in:unmapped_cards,
   each with the QEIN_UNMAPPED_ENTRY_CARRIED warning (kept + reported, never refused).'
-sha256: 05866e81d98d6e76173cd8c9c6587134ea33d858191bfa88ff16fda5aa191fac
+sha256: b62609f1f89ba61f49b335553df0f4e60e246c300b05769426acd8ed963fc339
 expected_sha256: 013ee1e2cbac2393a7ca267a2cdd993e8ff9993c8abbdb3ee8d91639cd9afc4a
