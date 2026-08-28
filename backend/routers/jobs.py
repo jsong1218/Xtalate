@@ -38,7 +38,7 @@ from backend.jobs.expiry import expire_if_due
 from backend.jobs.logging import log_event
 from backend.jobs.queue import JobQueue
 from backend.jobs.result import build_job_result
-from backend.jobs.state_machine import is_terminal
+from backend.jobs.state_machine import InvalidTransition, is_terminal
 from backend.models import (
     AssumptionPreview,
     BatchConvertRequest,
@@ -224,7 +224,6 @@ def convert(
     "/batch/convert",
     response_model=JobEnvelope,
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=_SUBMIT_GUARD,
 )
 def batch_convert(
     body: BatchConvertRequest,
@@ -233,6 +232,7 @@ def batch_convert(
     object_store: ObjectStore = Depends(get_object_store),
     registry: Registry = Depends(get_registry),
     job_queue: JobQueue = Depends(get_job_queue),
+    settings: Settings = Depends(get_settings),
 ) -> JobEnvelope:
     """Submit a batch conversion (Part 6 §2, v1.5 M58): N uploaded files, one aggregate job.
 
@@ -255,6 +255,26 @@ def batch_convert(
             code="EMPTY_BATCH",
             message="A batch must name at least one file_id to fan out to.",
         )
+    # The hard manifest cap (API-1, v1.5 review R9): a manifest over ``batch_max_files`` is
+    # refused outright, before any per-file work — the dedicated code, never the generic
+    # pydantic validation envelope (the same pattern as ``EMPTY_BATCH`` above: manifest-level
+    # checks live here with their own codes).
+    manifest_cap = settings.batch_max_files
+    if len(body.file_ids) > manifest_cap:
+        raise ApiError(
+            status_code=422,  # literal, not status.HTTP_422_* (deprecated upstream; see errors.py)
+            code="BATCH_TOO_LARGE",
+            message=(
+                f"A batch may name at most {manifest_cap} files; this manifest names "
+                f"{len(body.file_ids)}."
+            ),
+            details={"batch_max_files": manifest_cap, "file_count": len(body.file_ids)},
+        )
+    # Capacity accounting for the whole fan-out (API-1): the batch submit is the one place the
+    # worker will mint N children, so the concurrent-job cap must see the full fan-out size, not
+    # just the parent (the ordinary ``_SUBMIT_GUARD`` counted only 1). Refused ``429
+    # TOO_MANY_ACTIVE_JOBS`` when ``count_active_jobs() + len(file_ids)`` would exceed the cap.
+    enforce_active_job_limit(request, settings, repository, extra_jobs=len(body.file_ids))
     duplicate_file_ids = sorted({f for f in body.file_ids if body.file_ids.count(f) > 1})
     if duplicate_file_ids:
         raise ApiError(
@@ -710,12 +730,25 @@ def _maybe_redrive_batch_parent(
     """
     if job.kind != "batch_convert" or job.state != "awaiting_recovery":
         return job
-    children = [
-        expire_if_due(c, repository, settings) for c in repository.get_child_jobs(job.job_id)
-    ]
-    if children and all(is_terminal(c.state) for c in children):
-        job_queue.enqueue(job.job_id)
-        reloaded = repository.get_job(job.job_id)
-        if reloaded is not None:
-            return reloaded
+    try:
+        children = [
+            expire_if_due(c, repository, settings) for c in repository.get_child_jobs(job.job_id)
+        ]
+        if children and all(is_terminal(c.state) for c in children):
+            job_queue.enqueue(job.job_id)
+            reloaded = repository.get_job(job.job_id)
+            if reloaded is not None:
+                return reloaded
+    except InvalidTransition as exc:
+        # API-4 (v1.5 review R9): the check+enqueue is a TOCTOU — a concurrent poll (or a cancel
+        # racing this redrive) may have moved this parent or one of its children out from under
+        # us between the state read and the transition (e.g. a child expired here while another
+        # execution cancelled it). The other execution owns the outcome; a 500 would be a noisy
+        # false alarm on a benign double-poll. Log and ignore — the parent's own next poll
+        # re-drives it.
+        log_event(
+            "batch.redrive_race_ignored",
+            job_id=job.job_id,
+            transition=str(exc),
+        )
     return job

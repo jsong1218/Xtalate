@@ -26,7 +26,7 @@ import secrets
 import threading
 import time
 
-from fastapi import Depends, Request, status
+from fastapi import Depends, Query, Request, status
 
 from backend.config import Settings
 from backend.db import Repository
@@ -166,20 +166,30 @@ def enforce_active_job_limit(
     request: Request,
     settings: Settings = Depends(get_settings),
     repository: Repository = Depends(get_repository),
+    *,
+    # A batch submit passes its whole fan-out size (API-1, v1.5 review R9); the ordinary submit
+    # leaves it at 1. Hidden from the schema: it is an internal accounting knob of this submit
+    # dependency, never a client-settable query parameter.
+    extra_jobs: int = Query(default=1, include_in_schema=False),
 ) -> None:
     """Per-endpoint dependency on job submission: refuse past the concurrent-job cap (§5).
 
-    ``429 TOO_MANY_ACTIVE_JOBS`` when the instance already holds ``max_concurrent_jobs`` active
-    jobs. A non-positive cap disables the check. Applied only to the submit endpoints, so polling,
-    downloads, and record reads are never blocked by a full worker pool.
+    ``429 TOO_MANY_ACTIVE_JOBS`` when ``extra_jobs`` more jobs would exceed ``max_concurrent_jobs``
+    (default ``1`` — the ordinary submit, which refuses at the cap). A batch submit passes its
+    whole fan-out size (API-1, v1.5 review R9): one accepted batch mints N children, so the
+    capacity the submit claims is ``count_active_jobs() + len(file_ids)`` — the check counts the
+    jobs the request is about to create, not just the parent, so the fan-out can never push the
+    instance past the cap in one shot. A non-positive cap disables the check. Applied only to the
+    submit endpoints, so polling, downloads, and record reads are never blocked by a full pool.
     """
     cap = settings.max_concurrent_jobs
     if cap <= 0:
         return
-    if repository.count_active_jobs() >= cap:
+    if repository.count_active_jobs() + extra_jobs > cap:
         raise ApiError(
             status_code=429,  # literal, not status.HTTP_429_* (deprecated upstream)
             code="TOO_MANY_ACTIVE_JOBS",
-            message=f"At most {cap} active jobs are allowed at once; wait for one to finish.",
-            details={"max_concurrent_jobs": cap},
+            message=f"At most {cap} active jobs are allowed at once; this request needs "
+            f"{extra_jobs} more; wait for one to finish.",
+            details={"max_concurrent_jobs": cap, "needed": extra_jobs},
         )

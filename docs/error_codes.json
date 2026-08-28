@@ -1,6 +1,11 @@
 {
   "codes": [
     {
+      "code": "BATCH_TOO_LARGE",
+      "http_status": 422,
+      "summary": "A batch_convert submission named more `file_ids` than the instance's `batch_max_files` hard cap. A manifest over the cap is refused outright; a manifest whose fan-out would exceed the remaining concurrency is separately refused as `TOO_MANY_ACTIVE_JOBS`."
+    },
+    {
       "code": "CONVERSION_NOT_FOUND",
       "http_status": 404,
       "summary": "No conversion record has this `conversion_id` on this instance (it never existed, or it passed report retention)."
@@ -74,6 +79,11 @@
       "code": "JOB_NOT_FOUND",
       "http_status": 404,
       "summary": "No job has this `job_id` on this instance."
+    },
+    {
+      "code": "JOB_STALE",
+      "http_status": null,
+      "summary": "A batch child's run went stale: its worker crashed mid-run and never returned, and the child sat `running` past the instance's `running_child_ttl_minutes`. The parent's re-drive fails it explicitly so the aggregate cannot hang on it forever. Recorded on the failed child job."
     },
     {
       "code": "MALFORMED_REQUEST",

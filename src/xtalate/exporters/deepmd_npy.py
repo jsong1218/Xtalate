@@ -127,9 +127,7 @@ class DeepmdNpyExporter(ExporterPlugin):
         Deterministic by first appearance; the grouping is named in the batch aggregate note
         (D214).
         """
-        groups: OrderedDict[tuple[str, ...], list[tuple[int, AssembleContribution]]] = (
-            OrderedDict()
-        )
+        groups: OrderedDict[tuple[str, ...], list[tuple[int, AssembleContribution]]] = OrderedDict()
         for position, contribution in enumerate(contributions):
             symbols = tuple(contribution.canonical.frames[0].atoms.symbols)
             groups.setdefault(symbols, []).append((position, contribution))

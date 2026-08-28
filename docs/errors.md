@@ -46,6 +46,14 @@ values the service returns.
 **HTTP 422.** A `batch_convert` submission named no files. A batch must list at least one
 `file_id` to fan out to; an empty manifest would be a job that can never complete.
 
+### BATCH_TOO_LARGE
+
+**HTTP 422.** A `batch_convert` submission named more `file_ids` than the instance's
+`batch_max_files` hard cap. A manifest over the cap is refused outright — it would fan out to
+more children than the batch surface should mint from one request. A manifest that fits the cap
+but whose fan-out would still exceed the *remaining* concurrency is refused separately as
+`TOO_MANY_ACTIVE_JOBS` (the cap counts `count_active_jobs() + file_ids`, not just the parent).
+
 ### NOT_FOUND
 
 **HTTP 404.** No route matches the requested path and method. Check the path against the
@@ -166,6 +174,13 @@ itself may still have completed; only the post-conversion validation step is mis
 
 **HTTP 409.** A recovery resolution was posted to a job that is not paused at `awaiting_recovery`.
 Only a job actually waiting for a recovery decision can accept one.
+
+### JOB_STALE
+
+**Recorded on a failed job.** A batch child's run went stale: its worker crashed mid-run and
+never returned, leaving the child `running` past the instance's `running_child_ttl_minutes`. The
+batch parent's re-drive fails it explicitly (rather than silently re-attempting a no-op) so the
+aggregate cannot hang on a child that can never terminate on its own.
 
 ### JOB_CANCELLED
 

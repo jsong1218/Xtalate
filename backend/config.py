@@ -76,6 +76,20 @@ class Settings(BaseSettings):
     #: Concurrent non-terminal jobs a single caller may hold (enforced in M24 → ``429``).
     max_concurrent_jobs: int = 4
 
+    #: Hard ceiling on the number of ``file_ids`` one batch manifest may name (v1.5 review R9,
+    #: API-1 → ``422 BATCH_TOO_LARGE``). A structural cap, independent of current load: the
+    #: fan-out's concurrency is separately accounted against ``max_concurrent_jobs`` at submit
+    #: (a manifest larger than the remaining capacity is refused → ``429 TOO_MANY_ACTIVE_JOBS``).
+    batch_max_files: int = 100
+
+    #: How long a ``running`` batch child may go without being heard from before the parent's
+    #: re-drive fails it explicitly (v1.5 review R9, API-3). A Tier-1 worker that crashed mid-run
+    #: leaves the child ``running`` forever — no re-drive can run it and no reaper existed — so the
+    #: parent could hang on it indefinitely. Symmetric to ``awaiting_recovery_ttl_minutes``; a
+    #: child whose ``started_at`` is older than this horizon is failed (``JOB_STALE``) instead of
+    #: silently re-attempted.
+    running_child_ttl_minutes: int = 30
+
     #: Sustained request rate per caller per minute (enforced in M24 → ``429`` + ``Retry-After``).
     rate_limit_per_minute: int = 120
 

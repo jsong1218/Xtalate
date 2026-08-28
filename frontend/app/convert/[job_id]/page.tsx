@@ -355,8 +355,8 @@ export default function ConversionJobPage() {
           <Card title="Cancelled">
             <p className="text-sm text-strong">
               You cancelled this batch, so <strong>no aggregate result exists for it</strong> —
-              not an empty one, none at all. The individual conversions it had already launched
-              are ordinary jobs and keep their own records.
+              not an empty one, none at all. Files it had not yet launched were never started;
+              the conversions already launched are ordinary jobs and keep their own records.
             </p>
           </Card>
           <StartOver />
@@ -413,7 +413,7 @@ export default function ConversionJobPage() {
           </button>
           <p className="text-xs text-faint">
             {batch
-              ? "Cancelling abandons the batch's aggregate; the conversions it already launched keep their own records."
+              ? "Cancelling stops the batch from launching any remaining files; conversions already launched keep their own records."
               : "Cancelling is best-effort: work already underway may finish first, and a conversion that has already produced its result keeps it."}
           </p>
           {cancelError ? <ErrorEnvelope envelope={cancelError} /> : null}
