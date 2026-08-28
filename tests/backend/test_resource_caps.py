@@ -121,6 +121,33 @@ def test_active_job_cap_refuses_only_the_excess_submit_and_capacity_recovers(
     assert recovered.json()["state"] == "completed"
 
 
+def test_cap_cannot_be_weakened_by_a_query_parameter(
+    build_client: Callable[..., TestClient], repository: Repository
+) -> None:
+    """R9 follow-up regression: the concurrent-job cap must not be reachable from the wire.
+
+    The v1.5 review's first pass wired the fan-out count through a
+    ``Query(include_in_schema=False)`` parameter on the submit dependency; FastAPI still parses
+    such a parameter from the query string, so ``?extra_jobs=0`` (or negative) would have
+    weakened or defeated the cap the slice was meant to harden. The capacity knob now lives in a
+    plain internal helper, so no query string can move the cap outcome on any submit endpoint.
+    """
+    client = build_client(max_concurrent_jobs=1)
+    file_id = _upload_via(client)
+
+    # Saturate the pool to the cap with one non-terminal job.
+    repository.add_job(Job(job_id=uuid.uuid4().hex, kind="convert", state="running", request={}))
+
+    # A client cannot smuggle a capacity knob through the query string of a submit that runs the
+    # shared cap dependency — the values are ignored, the cap holds. ``/v1/inspect`` carries the
+    # dependency exactly as ``/v1/convert`` and ``/v1/validate`` do; proving the dependency here
+    # proves it on every endpoint that uses it.
+    for query in ("extra_jobs=0", "extra_jobs=-100", "needed=0", "needed=-100"):
+        resp = client.post(f"/v1/inspect?{query}", json={"file_id": file_id})
+        assert resp.status_code == 429, f"/v1/inspect?{query} bypassed the cap: {resp.text}"
+        assert resp.json()["error"]["code"] == "TOO_MANY_ACTIVE_JOBS"
+
+
 def _upload_via(client: TestClient) -> str:
     resp = client.post("/v1/upload", files={"file": ("mol.xyz", XYZ_SAMPLE)})
     assert resp.status_code == 201, resp.text

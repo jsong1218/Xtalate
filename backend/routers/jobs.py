@@ -49,7 +49,7 @@ from backend.models import (
     RevalidateRequest,
 )
 from backend.records import report_retention_expired
-from backend.security import enforce_active_job_limit
+from backend.security import enforce_active_job_limit, enforce_capacity
 from backend.storage import ObjectStore
 from xtalate.capabilities import Registry
 
@@ -274,7 +274,9 @@ def batch_convert(
     # worker will mint N children, so the concurrent-job cap must see the full fan-out size, not
     # just the parent (the ordinary ``_SUBMIT_GUARD`` counted only 1). Refused ``429
     # TOO_MANY_ACTIVE_JOBS`` when ``count_active_jobs() + len(file_ids)`` would exceed the cap.
-    enforce_active_job_limit(request, settings, repository, extra_jobs=len(body.file_ids))
+    # A plain call to the internal capacity helper — ``needed`` is the server-computed fan-out
+    # size, never a client-settable knob (R9 follow-up fix).
+    enforce_capacity(repository, settings, needed=len(body.file_ids))
     duplicate_file_ids = sorted({f for f in body.file_ids if body.file_ids.count(f) > 1})
     if duplicate_file_ids:
         raise ApiError(

@@ -26,7 +26,7 @@ import secrets
 import threading
 import time
 
-from fastapi import Depends, Query, Request, status
+from fastapi import Depends, Request, status
 
 from backend.config import Settings
 from backend.db import Repository
@@ -162,34 +162,45 @@ def enforce_public_rate_limit(
     return caller
 
 
-def enforce_active_job_limit(
-    request: Request,
-    settings: Settings = Depends(get_settings),
-    repository: Repository = Depends(get_repository),
-    *,
-    # A batch submit passes its whole fan-out size (API-1, v1.5 review R9); the ordinary submit
-    # leaves it at 1. Hidden from the schema: it is an internal accounting knob of this submit
-    # dependency, never a client-settable query parameter.
-    extra_jobs: int = Query(default=1, include_in_schema=False),
-) -> None:
-    """Per-endpoint dependency on job submission: refuse past the concurrent-job cap (§5).
+def enforce_capacity(repository: Repository, settings: Settings, *, needed: int) -> None:
+    """Refuse a submission that would push the instance past the concurrent-job cap (§5).
 
-    ``429 TOO_MANY_ACTIVE_JOBS`` when ``extra_jobs`` more jobs would exceed ``max_concurrent_jobs``
-    (default ``1`` — the ordinary submit, which refuses at the cap). A batch submit passes its
-    whole fan-out size (API-1, v1.5 review R9): one accepted batch mints N children, so the
-    capacity the submit claims is ``count_active_jobs() + len(file_ids)`` — the check counts the
-    jobs the request is about to create, not just the parent, so the fan-out can never push the
-    instance past the cap in one shot. A non-positive cap disables the check. Applied only to the
-    submit endpoints, so polling, downloads, and record reads are never blocked by a full pool.
+    ``429 TOO_MANY_ACTIVE_JOBS`` when ``needed`` more jobs would exceed ``max_concurrent_jobs``.
+    The ordinary submit needs ``1``; a batch submit needs its whole fan-out size (API-1, v1.5
+    review R9): one accepted batch mints N children, so the check must count the jobs the request
+    is about to create, not just the parent, or the fan-out could push the instance past the cap in
+    one shot. A non-positive cap disables the check.
+
+    This is a plain internal helper, **not** a FastAPI dependency: ``needed`` is decided by the
+    server from the request body (1, or ``len(file_ids)``), never read from the wire. The v1.5
+    review's first pass wired the count through a ``Query(include_in_schema=False)`` parameter on
+    the submit *dependency*, which FastAPI still parses from the query string — so a client could
+    send ``?extra_jobs=0`` (or negative) and weaken or defeat the very cap the slice hardened. The
+    capacity knob must live nowhere in an injected signature (R9 follow-up fix).
     """
     cap = settings.max_concurrent_jobs
     if cap <= 0:
         return
-    if repository.count_active_jobs() + extra_jobs > cap:
+    if repository.count_active_jobs() + needed > cap:
         raise ApiError(
             status_code=429,  # literal, not status.HTTP_429_* (deprecated upstream)
             code="TOO_MANY_ACTIVE_JOBS",
             message=f"At most {cap} active jobs are allowed at once; this request needs "
-            f"{extra_jobs} more; wait for one to finish.",
-            details={"max_concurrent_jobs": cap, "needed": extra_jobs},
+            f"{needed} more; wait for one to finish.",
+            details={"max_concurrent_jobs": cap, "needed": needed},
         )
+
+
+def enforce_active_job_limit(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    repository: Repository = Depends(get_repository),
+) -> None:
+    """Per-endpoint submit dependency: refuse the ordinary single-job submit past the cap (§5).
+
+    The whole-fan-out accounting for a batch submit is done by the router calling
+    ``enforce_capacity(..., needed=len(file_ids))`` directly — this dependency claims exactly the
+    one job the request creates. Applied only to the submit endpoints, so polling, downloads, and
+    record reads are never blocked by a full pool.
+    """
+    enforce_capacity(repository, settings, needed=1)
