@@ -78,6 +78,67 @@ a refusal — the CLI rings the terminal bell (`\a`) on **stderr**, but only whe
 (a piped or redirected stream never receives control bytes). Opt out per-invocation with `--no-bell`,
 or globally by setting `XTALATE_NO_BELL` (any non-empty value).
 
+### Batch conversion (`--batch`) — v1.5 M54
+
+Convert many sources through one manifest, run as the **ordinary single-file path per file**, and
+aggregated into one `BatchReport` (with per-file `ConversionReport`/`ValidationReport` embedded
+verbatim). The manifest carries the target and the shared settings, so passing them on the command
+line (`--mode`/`--recover`/`--tolerance-profile`/the acknowledge flags) is a usage error in batch
+mode — the manifest wins by design.
+
+```
+xtalate convert --batch MANIFEST.yaml -o PATH [--fail-fast] [--json] [--no-bell]
+```
+
+| Flag | Meaning |
+|---|---|
+| `--batch MANIFEST` | Run batch conversion from a YAML manifest (mutually exclusive with `FILE`). |
+| `-o`, `--output PATH` | **Required.** A directory (per-file mode) or a file path (assemble mode). |
+| `--fail-fast` | Stop at the first source that is not `converted` (default: partial completion with per-file honesty). |
+| `--json` | Print the `BatchReport` as JSON (stdout stays pure JSON; status goes to stderr). |
+
+**The manifest grammar.** A YAML mapping with an **ordered** `sources` list (one literal path *or*
+glob per entry — resolved deterministically, and manifest order is processing/report order), **one**
+`target`, and optional per-source `overrides`. It has *no* fields for selection, splitting, or
+deduplication — those are rejected (the scope refusal), because curation is a scientific judgment
+about data, not a translation of it.
+
+```yaml
+sources:
+  - path: "./inputs/*.xyz"            # literal paths and globs mix
+  - path: "./inputs/step.db"          # a multi-row .db fans out to N per-row conversions
+    override:
+      mode: strict                     # per-file override replaces the shared setting
+  - "./inputs/single.xyz"             # a bare string is a source with no override
+target: extxyz
+output_mode: per-file                  # "per-file" (default) or "assemble"
+mode: permissive
+recovery_choices:                      # the same --recover grammar: SCENARIO=CHOICE[,param=value…]
+  - "missing_lattice=bounding_box,padding_ang=5.0"
+tolerance_profile: default
+acknowledge_loss: false
+acknowledge_parse_warnings: false
+```
+
+Per-file `override` fields (`mode`, `recovery_choices`, `tolerance_profile`, `acknowledge_loss`,
+`acknowledge_parse_warnings`) replace the shared value for that one source; `recovery_choices`
+*replaces* (never merges) the manifest's preset list.
+
+**Output modes.** `per-file` (default) writes one converted file per source into `-o` as a directory
+(a multi-row `.db` writes one file per row, named `<stem>.rowNNNN`); `assemble` combines the
+converted sources into **one** artifact at `-o` through the target's declared assemble capability
+(a multi-frame extXYZ / multi-row ASE `.db` dataset container). For a **directory-format target**
+such as `deepmd_npy`, `assemble` writes a `system_NNN/` tree — grouping sources by composition into
+one system per group — and the report's aggregate `note` and each converted entry's `system` field
+record **which source landed in which `system_NNN`**. A multi-row `.db` in a batch is a fan-out: each
+row becomes an independent per-row conversion (the rows are a dataset, never one merged structure).
+
+**Exit code.** The batch exits with the **worst per-file outcome** under the 0–5 vocabulary below
+(each entry folds through the same single-file logic with its effective mode): a failed file is `4`
+(parse error), a refused file is `2`, validation failures are `3`, and so on. A malformed manifest or
+a manifest-level refusal (unknown target, an `assemble` to a non-assemble-capable target) is a usage
+error (`1`) — it never produces a partial run.
+
 ## validate
 
 Re-parse a converted file and diff it against the source within tolerance, or re-threshold a
@@ -124,3 +185,8 @@ parse stdout. These six codes are the frozen 1.x contract.
 | `3` | Validation failed. |
 | `4` | Parse error. |
 | `5` | Passed with warnings under `--mode strict`. |
+
+In batch mode (`convert --batch`) the process exits with the **worst per-file outcome** under this
+exact ladder — each entry folds through the same 0–5 mapping with its effective mode, and the maximum
+wins — while `1` still names a *manifest* mistake (a malformed manifest, an unknown target, an
+`assemble` to a non-assemble-capable target).

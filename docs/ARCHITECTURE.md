@@ -213,6 +213,27 @@ deleting the first two stages and re-exposing the same calls, leaving the valida
 error contract and the builder untouched. CIF is priced at more than the other six formats
 combined, which is what makes that reversibility worth its cost.
 
+The v1.4/v1.5 line adds the QE pair (`qe_pw_in` read/write, `qe_pw_out` read-only parser plus an
+`ase_db` read/write ASE Database format, the `deepmd_npy` DeePMD-kit directory format
+(read/write + assemble-capable), and the pymatgen **adapters** (`adapters/pymatgen.py`) that bridge
+ASE/pymatgen objects through the same engine seam). The v1.4/v1.5 line also adds the **batch surface**
+(`xtalate.conversion.batch`): a YAML manifest fans out to N ordinary single-file conversions and
+aggregates their reports into one `BatchReport` (per-file reports embedded verbatim, failure
+isolation structural), exposed to users as `xtalate convert --batch` (per-file and `assemble` output
+modes, directory output for `deepmd_npy`) and on the API as the `batch_convert` job kind behind
+`POST /v1/batch/convert` — one parent job whose worker fans out to ordinary `convert` child jobs.
+
+CIF is the one format whose reader is a **package rather than a module**
+(`src/xtalate/parsers/cif/`), split into four stages with a one-way data flow: tokens (`_lexer`) →
+a format-shaped document (`_document`) → CIF-level invariants (`_validate`, with `_symmetry` for
+operation strings) → the Canonical Object (`_build`). The stage boundary is drawn by what each
+stage is allowed to *know*: the first three know nothing of the Canonical Model, which is enforced
+by two dedicated import-linter contracts rather than left as convention. Stage 2's output is
+deliberately shaped like `gemmi.cif`'s `Document`/`Block` API, so adopting gemmi later means
+deleting the first two stages and re-exposing the same calls, leaving the validation rules, the
+error contract and the builder untouched. CIF is priced at more than the other six formats
+combined, which is what makes that reversibility worth its cost.
+
 The Plugin SDK is the **frozen 1.x contract** as of the v1.0 contract freeze:
 the ABCs a plugin builds against evolve additively only within 1.x, so a plugin built against 1.0
 keeps working across the series; a breaking change waits for 2.0. (See
