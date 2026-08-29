@@ -29,8 +29,11 @@ test("a cell-less XYZ renders atoms in open space: no box, and the caption says 
   const mount = page.locator("[data-mounted=true]");
   await expect(mount).toBeVisible({ timeout: 60_000 });
   await expect(mount).toHaveAttribute("data-atoms", "3"); // O + 2 H
-  // …and cell-less: no wireframe, ever.
+  // …and cell-less: no wireframe, ever. `data-has-cell` mirrors the endpoint's input answer;
+  // `data-unitcell-drawn` is the render-level proof — Mol* actually drew no box (P3), so the
+  // absence invariant is asserted where it lives, not on the input.
   await expect(mount).toHaveAttribute("data-has-cell", "false");
+  await expect(mount).toHaveAttribute("data-unitcell-drawn", "false");
   // The explicit caption — absence rendered as absence, never a fabricated box.
   await expect(page.getByText(/declares no simulation cell/)).toBeVisible();
   // The legend lists exactly the file's elements (the icon+text a11y rule).
@@ -53,6 +56,7 @@ test("a celled POSCAR renders the unit-cell wireframe and its element legend", a
   await expect(mount).toBeVisible({ timeout: 60_000 });
   // The source carries a 5.64 Å NaCl cell → the wireframe is drawn, and no caption.
   await expect(mount).toHaveAttribute("data-has-cell", "true");
+  await expect(mount).toHaveAttribute("data-unitcell-drawn", "true");
   await expect(page.getByText(/declares no simulation cell/)).toHaveCount(0);
   await expect(page.getByTestId("legend-row-Na")).toHaveText("Na");
   await expect(page.getByTestId("legend-row-Cl")).toHaveText("Cl");
@@ -72,6 +76,7 @@ test("a celled CIF renders the unit-cell wireframe and its element legend", asyn
   const mount = page.locator("[data-mounted=true]");
   await expect(mount).toBeVisible({ timeout: 60_000 });
   await expect(mount).toHaveAttribute("data-has-cell", "true");
+  await expect(mount).toHaveAttribute("data-unitcell-drawn", "true");
   await expect(page.getByTestId("legend-row-Zn")).toHaveText("Zn");
   await expect(page.getByTestId("legend-row-O")).toHaveText("O");
 });

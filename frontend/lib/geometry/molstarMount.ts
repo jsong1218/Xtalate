@@ -112,14 +112,24 @@ export async function mountStructureViewer(
   // absence renders as absence (P3) — the box can never be fabricated on the client. (M59's
   // `showUnitcell: true` only created a **hidden** cell, so the visible box is S2's addition.)
   const model = plugin.managers.structure.hierarchy.current.models[0]?.cell;
+  let unitcellDrawn = false;
   if (model) {
     // Full param values (defaults + our color): the unitcell params are non-optional once passed.
     const cellColor = options.suppliedCell ? SUPPLIED_CELL_COLOR : UNITCELL_COLOR;
     const unitcellParams = { ...PD.getDefaultValues(UnitcellParams), cellColor };
-    await plugin.builders.structure.tryCreateUnitcell(model, unitcellParams, {
+    const unitcell = await plugin.builders.structure.tryCreateUnitcell(model, unitcellParams, {
       isHidden: false,
     });
+    // `tryCreateUnitcell` returns nothing when the model has no non-zero symmetry cell — it bails
+    // on `!m` or `SpacegroupCell.isZero(cell)` — so a truthy result means a box was actually drawn.
+    unitcellDrawn = Boolean(unitcell);
   }
+  // The render-level P3 proof (v1.6 M60 review follow-up): unlike `data-has-cell`, which mirrors
+  // the endpoint's *input* answer, this attribute reflects whether Mol\* ACTUALLY drew a wireframe.
+  // It catches a fabricated box at the render — the absence invariant is asserted where it lives,
+  // not on the input — so a regression (a Mol\* bump, a loader leaking a symmetry provider) that
+  // drew a box for a cell-less file would fail the fidelity e2e instead of passing green.
+  target.dataset.unitcellDrawn = unitcellDrawn ? "true" : "false";
   PluginCommands.Camera.Reset(plugin);
 
   return () => {

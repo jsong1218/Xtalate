@@ -50,9 +50,11 @@ export default function StructureViewerMolstar({
       ref={containerRef}
       className="h-full w-full"
       data-atoms={geometry.species.length}
-      // The unit-cell wireframe signal (M60-S2): the mount draws the box only when the geometry
-      // carries a cell — `data-has-cell` mirrors the endpoint's presence answer, so the e2e
-      // render proof can assert the box/no-box state honestly (same pattern as `data-atoms`).
+      // The unit-cell presence signal (M60-S2): `data-has-cell` mirrors the endpoint's *input*
+      // answer (whether the canonical geometry carried a cell) — same pattern as `data-atoms`.
+      // It is NOT the render proof: the mount separately sets `data-unitcell-drawn` from whether
+      // Mol* actually drew a box, and the fidelity e2e asserts that render-level attribute so the
+      // P3 no-box invariant is tested against the render, not the input.
       data-has-cell={geometry.cell ? "true" : "false"}
       // The supplied-violet signal (M60-S3, D235): the fabricated cell's wireframe is drawn in
       // the ◆ assumption violet — set from the report-sourced flag, never re-derived here.
