@@ -36,7 +36,15 @@ vi.mock("@/lib/api/client", () => ({
 }));
 
 function renderWithRecord(body: unknown) {
-  apiGet.mockResolvedValue({ data: body, error: undefined });
+  // The record GET answers with the fixture; the Structure tab's geometry GET (M60-S1) is **not**
+  // under test here, so answering it with the record body would feed a fabricated "geometry" to
+  // the viewer — leave it loading so the tab renders its honest loading state.
+  apiGet.mockImplementation((path: unknown) => {
+    if (typeof path === "string" && path.includes("/geometry")) {
+      return Promise.resolve({ data: undefined, error: undefined });
+    }
+    return Promise.resolve({ data: body, error: undefined });
+  });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>

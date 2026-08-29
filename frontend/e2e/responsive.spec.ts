@@ -21,7 +21,9 @@ async function assertNoHorizontalOverflow(page: Page): Promise<void> {
 }
 
 test("the report panels stack on a phone and sit side by side on a desktop", async ({ page }) => {
-  await page.route("**/v1/conversions/**", (route) => route.fulfill({ json: happyRecord }));
+  // Narrowed to the record itself (`*`, no `/`): the Structure tab's geometry request (M60) must
+  // not receive the record body — the tab renders its own honest state from the live endpoint.
+  await page.route("**/v1/conversions/*", (route) => route.fulfill({ json: happyRecord }));
 
   const columns = page.locator('[data-testid="report-columns"] > *');
 

@@ -12,7 +12,11 @@ import { StructureTab } from "./StructureTab";
 
 vi.mock("./StructureViewerMolstar", () => ({
   default: ({ geometry }: { geometry: CanonicalGeometry }) => (
-    <div data-testid="molstar-mount" data-atoms={geometry.species.length} />
+    <div
+      data-testid="molstar-mount"
+      data-atoms={geometry.species.length}
+      data-has-cell={geometry.cell ? "true" : "false"}
+    />
   ),
 }));
 

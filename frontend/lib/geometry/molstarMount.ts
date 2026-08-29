@@ -14,6 +14,8 @@ import { PluginCommands } from "molstar/lib/mol-plugin/commands.js";
 import { PluginStateObject as SO } from "molstar/lib/mol-plugin-state/objects.js";
 import { PluginStateTransform } from "molstar/lib/mol-plugin-state/objects.js";
 import { ParamDefinition as PD } from "molstar/lib/mol-util/param-definition.js";
+import { Color } from "molstar/lib/mol-util/color/color.js";
+import { UnitcellParams } from "molstar/lib/mol-repr/shape/model/unitcell.js";
 import { Task } from "molstar/lib/mol-task/index.js";
 import { geometryToTrajectory } from "./molstarLoader";
 import type { CanonicalGeometry } from "./useGeometry";
@@ -55,6 +57,13 @@ const ATOMS_ONLY_REPRESENTATION = {
 } as const;
 
 /**
+ * The ordinary unit-cell wireframe color — a neutral slate bound to the app's chrome token, chosen
+ * so the box is never confused with any §4 loss hue (in particular the S3 supplied-violet). Mol*'s
+ * stock unit-cell default is orange.
+ */
+const UNITCELL_COLOR = Color(0x475569);
+
+/**
  * Mount an embedded Mol\* view of the geometry into `target` (which must be positioned).
  * Returns a cleanup function that disposes the plugin instance.
  */
@@ -74,7 +83,6 @@ export async function mountStructureViewer(
 
   await plugin.builders.structure.hierarchy.applyPreset(trajectory, "default", {
     representationPreset: "empty",
-    showUnitcell: true,
   });
 
   const structure = plugin.managers.structure.hierarchy.current.structures[0];
@@ -83,6 +91,20 @@ export async function mountStructureViewer(
       structure.cell,
       ATOMS_ONLY_REPRESENTATION
     );
+  }
+
+  // The unit-cell wireframe (v1.6 M60-S2): drawn **only when the model carries a cell**.
+  // `tryCreateUnitcell` resolves the model's crystal symmetry and returns nothing for a
+  // cell-less/zero-volume model (the loader attaches no symmetry provider without a cell), so
+  // absence renders as absence (P3) — the box can never be fabricated on the client. (M59's
+  // `showUnitcell: true` only created a **hidden** cell, so the visible box is S2's addition.)
+  const model = plugin.managers.structure.hierarchy.current.models[0]?.cell;
+  if (model) {
+    // Full param values (defaults + our color): the unitcell params are non-optional once passed.
+    const unitcellParams = { ...PD.getDefaultValues(UnitcellParams), cellColor: UNITCELL_COLOR };
+    await plugin.builders.structure.tryCreateUnitcell(model, unitcellParams, {
+      isHidden: false,
+    });
   }
   PluginCommands.Camera.Reset(plugin);
 

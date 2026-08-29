@@ -42,6 +42,12 @@ export const FIXTURES = {
   rotatedLattice: { file: "rotated-lattice.extxyz", mimeType: "chemical/x-xyz" },
   /** A Word document's byte signature — the sniffer must answer UNKNOWN_FORMAT for it. */
   notAStructure: { file: "not-a-structure.docx", mimeType: "application/octet-stream" },
+  /** A cell-less water trajectory (golden corpus `xyz/water-traj`) — the M60-S2 absence case. */
+  noCellXyz: { file: "no-cell.xyz", mimeType: "chemical/x-xyz" },
+  /** A celled NaCl primitive cell (golden corpus `poscar/nacl-primitive`) — wireframe case. */
+  celledPoscar: { file: "celled.poscar", mimeType: "application/octet-stream" },
+  /** A celled ZnO hexagonal P1 cell (golden corpus `cif/zno-hexagonal-p1`) — wireframe case. */
+  celledCif: { file: "celled.cif", mimeType: "application/octet-stream" },
 } as const;
 
 /** Absolute path to an `e2e/fixtures/` file, for `setInputFiles`. */

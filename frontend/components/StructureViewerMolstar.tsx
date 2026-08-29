@@ -47,6 +47,10 @@ export default function StructureViewerMolstar({
       ref={containerRef}
       className="h-full w-full"
       data-atoms={geometry.species.length}
+      // The unit-cell wireframe signal (M60-S2): the mount draws the box only when the geometry
+      // carries a cell — `data-has-cell` mirrors the endpoint's presence answer, so the e2e
+      // render proof can assert the box/no-box state honestly (same pattern as `data-atoms`).
+      data-has-cell={geometry.cell ? "true" : "false"}
     />
   );
 }
