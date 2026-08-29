@@ -10,11 +10,18 @@ import type { CanonicalGeometry } from "@/lib/geometry/useGeometry";
 import { StructureViewer } from "./StructureViewer";
 
 vi.mock("./StructureViewerMolstar", () => ({
-  default: ({ geometry }: { geometry: CanonicalGeometry }) => (
+  default: ({
+    geometry,
+    suppliedCell,
+  }: {
+    geometry: CanonicalGeometry;
+    suppliedCell?: boolean;
+  }) => (
     <div
       data-testid="molstar-mount"
       data-atoms={geometry.species.length}
       data-has-cell={geometry.cell ? "true" : "false"}
+      data-cell-supplied={suppliedCell ? "true" : "false"}
     />
   ),
 }));

@@ -11,8 +11,11 @@ import type { CanonicalGeometry } from "@/lib/geometry/useGeometry";
 
 export default function StructureViewerMolstar({
   geometry,
+  suppliedCell,
 }: {
   geometry: CanonicalGeometry;
+  /** When true the unit-cell wireframe is drawn in the supplied-violet (D235). */
+  suppliedCell?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -21,7 +24,7 @@ export default function StructureViewerMolstar({
     if (!target) return;
     let disposed = false;
     let cleanup: (() => void) | undefined;
-    void mountStructureViewer(target, geometry)
+    void mountStructureViewer(target, geometry, { suppliedCell: Boolean(suppliedCell) })
       .then((dispose) => {
         if (disposed) dispose();
         else {
@@ -51,6 +54,9 @@ export default function StructureViewerMolstar({
       // carries a cell — `data-has-cell` mirrors the endpoint's presence answer, so the e2e
       // render proof can assert the box/no-box state honestly (same pattern as `data-atoms`).
       data-has-cell={geometry.cell ? "true" : "false"}
+      // The supplied-violet signal (M60-S3, D235): the fabricated cell's wireframe is drawn in
+      // the ◆ assumption violet — set from the report-sourced flag, never re-derived here.
+      data-cell-supplied={suppliedCell ? "true" : "false"}
     />
   );
 }

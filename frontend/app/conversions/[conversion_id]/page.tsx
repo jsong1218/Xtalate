@@ -221,8 +221,13 @@ export default function ConversionRecordPage() {
       </div>
 
       {/* The Structure tab (M60-S1, Part 7 §6): the conversion's output geometry. A **refused**
-          conversion has no output bytes, so no viewer — the RefusalPanel above is the substance. */}
-      {refused ? null : <StructureTab geometryState={outputGeometry} />}
+          conversion has no output bytes, so no viewer — the RefusalPanel above is the substance.
+          The report rides along (M60-S3, D235) so a fabricated lattice — `supplied[].path` —
+          renders in the ◆ violet with its Assumption one click away, report-sourced, never
+          re-derived from the geometry. */}
+      {refused ? null : (
+        <StructureTab geometryState={outputGeometry} conversionReport={report} />
+      )}
 
       {/* Re-validate: appends, never replaces (Part 6 §2), and works after the bytes are gone. The
           reader chooses the tolerance profile (M32-S2) — the bar is never changed without asking. */}

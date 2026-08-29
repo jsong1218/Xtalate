@@ -58,10 +58,22 @@ const ATOMS_ONLY_REPRESENTATION = {
 
 /**
  * The ordinary unit-cell wireframe color — a neutral slate bound to the app's chrome token, chosen
- * so the box is never confused with any §4 loss hue (in particular the S3 supplied-violet). Mol*'s
+ * so the box is never confused with any §4 loss hue (in particular the supplied-violet). Mol*'s
  * stock unit-cell default is orange.
  */
 const UNITCELL_COLOR = Color(0x475569);
+
+/**
+ * The supplied-violet wireframe color (v1.6 M60-S3, D235): the ◆ `text-cb-assumption` token
+ * (`--cb-assumption: #6d28d9`) — the same violet the reports use for supplied/assumptions, so a
+ * fabricated lattice looks different from a source lattice everywhere it appears.
+ */
+const SUPPLIED_CELL_COLOR = Color(0x6d28d9);
+
+export interface MountStructureViewerOptions {
+  /** When true, the unit-cell wireframe is drawn in the supplied-violet (D235). */
+  suppliedCell?: boolean;
+}
 
 /**
  * Mount an embedded Mol\* view of the geometry into `target` (which must be positioned).
@@ -69,7 +81,8 @@ const UNITCELL_COLOR = Color(0x475569);
  */
 export async function mountStructureViewer(
   target: HTMLDivElement,
-  geometry: CanonicalGeometry
+  geometry: CanonicalGeometry,
+  options: MountStructureViewerOptions = {}
 ): Promise<() => void> {
   const plugin = new PluginContext(DefaultPluginSpec());
   await plugin.init();
@@ -101,7 +114,8 @@ export async function mountStructureViewer(
   const model = plugin.managers.structure.hierarchy.current.models[0]?.cell;
   if (model) {
     // Full param values (defaults + our color): the unitcell params are non-optional once passed.
-    const unitcellParams = { ...PD.getDefaultValues(UnitcellParams), cellColor: UNITCELL_COLOR };
+    const cellColor = options.suppliedCell ? SUPPLIED_CELL_COLOR : UNITCELL_COLOR;
+    const unitcellParams = { ...PD.getDefaultValues(UnitcellParams), cellColor };
     await plugin.builders.structure.tryCreateUnitcell(model, unitcellParams, {
       isHidden: false,
     });

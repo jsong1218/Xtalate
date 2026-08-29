@@ -20,9 +20,10 @@
  *     the `RefusalPanel` is the substance); here the same rule holds: no geometry, no viewer.
  */
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
-import { StructureViewer } from "@/components/StructureViewer";
+import { StructureViewer, type SuppliedCell } from "@/components/StructureViewer";
 import { toErrorEnvelope } from "@/lib/api/useInspection";
 import type { GeometryState } from "@/lib/geometry/useGeometry";
+import type { ConversionReport } from "@/lib/report/types";
 
 const EXPIRED_FILE_COPY =
   "This file's bytes have expired; the reports below remain the complete record.";
@@ -34,18 +35,30 @@ export interface StructureTabProps {
   geometryState: GeometryState;
   /** Optional label shown above the viewport (e.g. the source filename). */
   label?: string;
+  /**
+   * The conversion's report (conversion page only, M60-S3 D235). When a rendered quantity's
+   * canonical path appears in `conversion_report.supplied`, the viewer marks it violet with its
+   * Assumption one click away — the correlation is **report-sourced** (a lookup of `supplied[].path`
+   * + `from_assumption`), never re-derived from the geometry. The files page passes nothing, so it
+   * never renders violet.
+   */
+  conversionReport?: ConversionReport;
 }
 
-export function StructureTab({ geometryState, label }: StructureTabProps) {
+export function StructureTab({ geometryState, label, conversionReport }: StructureTabProps) {
   return (
     <section aria-label="Structure" className="space-y-2">
       <h2 className="text-lg font-semibold text-strong">Structure</h2>
-      <StructureTabBody geometryState={geometryState} label={label} />
+      <StructureTabBody
+        geometryState={geometryState}
+        label={label}
+        conversionReport={conversionReport}
+      />
     </section>
   );
 }
 
-function StructureTabBody({ geometryState, label }: StructureTabProps) {
+function StructureTabBody({ geometryState, label, conversionReport }: StructureTabProps) {
   if (geometryState.status === "loading") {
     return (
       <p role="status" className="text-sm text-muted">
@@ -74,5 +87,30 @@ function StructureTabBody({ geometryState, label }: StructureTabProps) {
   // re-deriving anything.
   const geometry = geometryState.geometry;
   if (!geometry) return null;
-  return <StructureViewer geometry={geometry} label={label} />;
+
+  // The supplied-geometry correlation (D235): the fabricated-lattice case. The engine records the
+  // fabrication on the `cell` canonical family's leaf paths (`cell.lattice_vectors`, `cell.pbc` —
+  // the wire carries no bare `cell` entry), so the check matches the `cell.*` family and is
+  // structured so other supplied paths extend cleanly. This is a lookup against the report already
+  // on the page — no arithmetic on positions/cell, never re-derived.
+  const suppliedCell = conversionReport?.supplied.find(
+    (entry) => entry.path === "cell" || entry.path.startsWith("cell."),
+  );
+  const suppliedAssumption = suppliedCell
+    ? conversionReport?.assumptions.find((a) => a.id === suppliedCell.from_assumption)
+    : undefined;
+  const suppliedCellInfo: SuppliedCell | undefined = suppliedCell
+    ? {
+        fromAssumption: suppliedCell.from_assumption,
+        description: suppliedAssumption?.description,
+      }
+    : undefined;
+
+  return (
+    <StructureViewer
+      geometry={geometry}
+      label={label}
+      suppliedCell={suppliedCellInfo}
+    />
+  );
 }

@@ -59,7 +59,11 @@ beforeEach(() => {
   urlSearchParams.delete("file_id");
 });
 
-describe("ConversionRecordPage", () => {
+// The Structure tab (M60) pulls Mol*'s color-module graph into the page, so the first test in
+// this file pays a heavier one-time module-init cost than the 5 s default allows.
+describe(
+  "ConversionRecordPage",
+  () => {
   it("puts the download panel below the loss summary in the document", async () => {
     renderWithRecord(lossyRecord);
     const chips = await screen.findByTestId("summary-chips");
@@ -172,4 +176,6 @@ describe("ConversionRecordPage", () => {
     await screen.findByRole("heading", { level: 1 });
     expect(screen.queryByRole("region", { name: /resolve and retry/i })).not.toBeInTheDocument();
   });
-});
+  },
+  20_000,
+);
