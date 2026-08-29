@@ -39,6 +39,10 @@ export const queryKeys = {
   job: (jobId: string) => ["jobs", jobId] as const,
   conversion: (conversionId: string) => ["conversions", conversionId] as const,
   history: ["history"] as const,
+  fileGeometry: (fileId: string, frames?: string) =>
+    ["files", fileId, "geometry", frames ?? null] as const,
+  conversionGeometry: (conversionId: string, side: "source" | "output", frames?: string) =>
+    ["conversions", conversionId, "geometry", side, frames ?? null] as const,
 } as const;
 
 /**
@@ -53,6 +57,44 @@ export function isTerminalJobState(state: string): boolean {
 }
 
 /** `GET /v1/capabilities` — the Capability Matrix (landing format count, target picker, /formats). */
+export function fileGeometryQuery(fileId: string, frames?: string) {
+  return queryOptions({
+    queryKey: queryKeys.fileGeometry(fileId, frames),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await apiClient.GET("/v1/files/{file_id}/geometry", {
+        params: { path: { file_id: fileId }, query: { frames: frames ?? null } },
+        signal,
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function conversionGeometryQuery(
+  conversionId: string,
+  side: "source" | "output",
+  frames?: string
+) {
+  return queryOptions({
+    queryKey: queryKeys.conversionGeometry(conversionId, side, frames),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await apiClient.GET(
+        "/v1/conversions/{conversion_id}/geometry",
+        {
+          params: {
+            path: { conversion_id: conversionId },
+            query: { side, frames: frames ?? null },
+          },
+          signal,
+        }
+      );
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
 export function capabilitiesQuery() {
   return queryOptions({
     queryKey: queryKeys.capabilities,

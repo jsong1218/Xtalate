@@ -19,6 +19,7 @@ from xtalate.capabilities import Registry
 if TYPE_CHECKING:
     from backend.db import Repository
     from backend.jobs.queue import JobQueue
+    from backend.routers.geometry import GeometryCache
     from backend.storage import ObjectStore
 
 
@@ -44,6 +45,18 @@ def get_job_queue(request: Request) -> JobQueue:
     """The app's :class:`~backend.jobs.queue.JobQueue` — inline (Tier 0) or RQ (Tier 1)."""
     job_queue: JobQueue = request.app.state.job_queue
     return job_queue
+
+
+def get_geometry_cache(request: Request) -> GeometryCache:
+    """The app's bounded geometry cache (v1.6 M59-S1, D232) — shared across requests.
+
+    The parsed-geometry LRU lives on ``app.state`` beside the repository/store the publishers
+    build, so the common viewer/scrub traffic rides it while memory stays flat. Reading it through
+    ``Request.app.state`` (never a module global) keeps the test-isolation guarantee: a test builds
+    an isolated app with its own bounded cache.
+    """
+    geometry_cache: GeometryCache = request.app.state.geometry_cache
+    return geometry_cache
 
 
 def get_registry(request: Request) -> Registry:

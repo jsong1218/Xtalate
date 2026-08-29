@@ -323,6 +323,62 @@ class HistoryItem(BaseModel):
     file_id: str | None = None
 
 
+class GeometrySource(BaseModel):
+    """Which bytes a geometry response projects (v1.6 M59-S1) — the wire identity of the source.
+
+    A faithful projection answers *what was parsed*, so the viewer shows a format-named origin
+    rather
+    than a silent blob. ``filename`` is the upload name for a ``file_id``/``side=source`` read and
+    the conventional output name for ``side=output``; it may be ``None`` only when none exists.
+    """
+
+    format_id: str
+    filename: str | None = None
+
+
+class GeometryFrame(BaseModel):
+    """One projected frame's geometry (v1.6 M59-S1) — positions + per-frame cell as nested lists.
+
+    ``positions`` is the ``(N, 3)`` Cartesian array as a nested JSON list (the canonical array wire
+    form, Part 2 §1). ``cell`` is the frame's ``(3, 3)`` lattice as a nested list, and ``null`` when
+    the source carried none — absence renders as absence (P3), never a fabricated box. ``index`` is
+    the frame's **absolute** 0-based position in the whole trajectory, so a ranged read is
+    addressable even though the frame arrived inside a ``[start, end)`` slice.
+    """
+
+    index: int
+    positions: list[list[float]]
+    cell: list[list[float]] | None = None
+
+
+class GeometryResponse(BaseModel):
+    """``GET /v1/files/{id}/geometry`` and ``GET /v1/conversions/{id}/geometry`` (v1.6 M59).
+
+    A **wire projection** of the Canonical Object, assembled from the parsed ``FrameStream`` — the
+    geometric subset a molecular viewer needs, never a second canonical artifact and never a report
+    (Part 6 §7 additive read-only geometry). Load-bearing rules:
+
+    * **Absence renders as absence (P3).** ``species``/``positions``/``cell`` hold only what the
+      source stated; a ``cell = None`` source answers ``cell: null``, and ``cell`` is ``null`` on
+      any frame whose lattice the source did not provide — nothing is zero-filled or fabricated.
+    * **No bonds.** The Canonical Model holds no bonds, so this projection carries none — an atomic
+      coordination bond is a *display* heuristic (D234), never file content and never served here.
+    * **Ranged by frame index.** ``frames`` holds the exact requested ``[start, end)`` slice (or
+      frame 0 when ``frames`` is omitted); ``frame_index_base`` names the absolute index of its
+      first member and ``frame_count`` the whole object's total, so a scrubber knows both where a
+      page sits and how far it could go.
+    * ``species``/``cell`` are the object-level shape: the atom-count-invariant symbols and frame-
+      0's lattice (or ``null``), read from the parsed stream before any range slice.
+    """
+
+    source: GeometrySource
+    species: list[str]
+    cell: list[list[float]] | None = None
+    frame_index_base: int = 0
+    frame_count: int
+    frames: list[GeometryFrame] = Field(default_factory=list)
+
+
 class HistoryResponse(BaseModel):
     """``GET /v1/history`` — a page of :class:`HistoryItem` plus the opaque next-page cursor.
 

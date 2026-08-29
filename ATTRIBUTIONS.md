@@ -88,6 +88,7 @@ per-package license report from it with any standard tool (e.g. `npx license-che
 | react-markdown | `^9.1.0` | MIT |
 | remark-gfm | `^4.0.1` | MIT |
 | rehype-slug | `^6.0.0` | MIT |
+| molstar | `5.11.0` (pinned — the v1.6 M59-S2 geometry viewer, D233) | MIT |
 
 ## Test data
 

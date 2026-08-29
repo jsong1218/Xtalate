@@ -63,6 +63,13 @@ ERROR_CODES: tuple[ErrorCodeSpec, ...] = (
         "first page and follow `next_cursor` values only.",
     ),
     ErrorCodeSpec(
+        "INVALID_FRAME_RANGE",
+        400,
+        "The `frames` parameter on a geometry endpoint is not a well-formed half-open `start:end` "
+        "range of non-negative integers (or it is empty/reversed). Geometry serves 0-based frame "
+        "windows only (Part 6 §7).",
+    ),
+    ErrorCodeSpec(
         "EMPTY_BATCH",
         422,
         "A batch_convert submission named no files. A batch must list at least one `file_id` to "

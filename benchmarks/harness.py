@@ -54,10 +54,12 @@ import json
 import os
 import resource
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 from collections.abc import Callable, Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from csv import writer as csv_writer
@@ -346,6 +348,127 @@ def _bench_preflight_latency(workdir: Path, scale: str) -> dict[str, float]:
     return {"frames": float(obj.frame_count), "preflight_seconds": preflight_seconds}
 
 
+def _process_rss_bytes(pid: int) -> int:
+    """Another process's current RSS in bytes, via ``ps -o rss=`` (KiB on macOS and Linux).
+
+    The server under test runs in a subprocess, so its memory cannot be read with
+    ``resource.getrusage(RUSAGE_SELF)`` (that is the *child's own* high-water mark); sampling the
+    server's RSS after each ranged read is the honest "server-side memory stays flat" number.
+    ``ps`` is available on both supported platforms — no new dependency."""
+    out = subprocess.check_output(["ps", "-o", "rss=", "-p", str(pid)], text=True)
+    return int(out.strip()) * 1024
+
+
+def _bench_geometry_endpoint_1e4_frames(workdir: Path, scale: str) -> dict[str, float]:
+    """The M59-S3 spike: ranged reads of a 10⁴-frame extXYZ through the **S1 end-
+    point** on a real uvicorn server, measuring server-side memory across a sliding read window.
+
+    The geometry endpoint streams through the streaming seam (never materializing the whole
+    trajectory) and holds a byte-bounded cache of projected objects; the S3 question is whether
+    server memory stays **flat** across scrubs. The first ranged read parses the stream once and
+    (the 10⁴×8 projection fits the default 16 MB cache bound) caches the full projection; every
+    later read slices a window from cache. RSS is sampled after each read; ``server_rss_growth``
+    (last − after-first) is the flatness number — a leak or an unbounded accumulation would show
+    as a rising line. Scrub latency is per-window wall time (cache-served after the first read).
+    Measured-not-gated: the budget is a reported target, never a non-zero exit.
+    """
+    import httpx  # service/dev dependency, lazily imported like the ase case above
+    from alembic import command
+    from alembic.config import Config
+
+    sz = _sized(scale, full=Scale(10_000, 8), micro=Scale(200, 4))
+    src = write_extxyz_trajectory(workdir / "spike.xyz", n_frames=sz.n_frames, n_atoms=sz.n_atoms)
+
+    # A free loopback port for the server under test.
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    base_url = f"http://127.0.0.1:{port}"
+    db_path = workdir / "spike.db"
+    objects_root = workdir / "objects"
+
+    # Migrate the temp SQLite database, then boot the real API against temp DB + object store.
+    # (``-x db_url=`` is the literal SQLAlchemy URL, dialect included — same value server reads.)
+    alembic_ini = Path(__file__).resolve().parents[1] / "alembic.ini"
+    cfg = Config(str(alembic_ini))
+    cfg.cmd_opts = type("_Opts", (), {"x": [f"db_url=sqlite+pysqlite:///{db_path}"]})()
+    command.upgrade(cfg, "head")
+    env = dict(os.environ)
+    env.update(
+        {
+            "XTALATE_DATABASE_URL": f"sqlite+pysqlite:///{db_path}",
+            "XTALATE_OBJECT_STORE_ROOT": str(objects_root),
+        }
+    )
+    driver = (
+        "import uvicorn; "
+        "from backend.app import create_app; "
+        f"uvicorn.run(create_app(), host='127.0.0.1', port={port}, log_level='warning')"
+    )
+    repo_root = Path(__file__).resolve().parents[1]
+    proc = subprocess.Popen([sys.executable, "-c", driver], env=env, cwd=str(repo_root))
+    try:
+        deadline = time.monotonic() + 60.0
+        while True:
+            try:
+                with urllib.request.urlopen(f"{base_url}/v1/health?ready=true", timeout=2) as resp:
+                    if resp.status == 200:
+                        break
+            except Exception:
+                pass
+            if time.monotonic() > deadline:
+                raise RuntimeError("geometry-endpoint benchmark: server did not become ready")
+            time.sleep(0.25)
+
+        with httpx.Client(timeout=120.0) as client:
+            with src.open("rb") as fh:
+                up = client.post(
+                    f"{base_url}/v1/upload",
+                    files={"file": (src.name, fh, "chemical/x-xyz")},
+                )
+            up.raise_for_status()
+            file_id = str(up.json()["file_id"])
+
+            # Warm-up reads: one window read to establish the cache, then sample the baseline.
+            r = client.get(f"{base_url}/v1/files/{file_id}/geometry", params={"frames": "0:100"})
+            r.raise_for_status()
+            first_body = r.json()
+            rss_after_first = _process_rss_bytes(proc.pid)
+            first_read_seconds = float(
+                r.elapsed.total_seconds()
+            )  # timing below is per-read, not the warm-up
+
+            # The sliding window: ten 100-frame windows spread across the 10⁴-frame trajectory.
+            latencies: list[float] = []
+            for start in range(0, sz.n_frames, max(sz.n_frames // 10, 1)):
+                end = min(start + 100, sz.n_frames)
+                t0 = time.perf_counter()
+                r = client.get(
+                    f"{base_url}/v1/files/{file_id}/geometry",
+                    params={"frames": f"{start}:{end}"},
+                )
+                r.raise_for_status()
+                latencies.append(time.perf_counter() - t0)
+            rss_after_last = _process_rss_bytes(proc.pid)
+
+        return {
+            "frames": float(first_body["frame_count"]),
+            "atoms": float(sz.n_atoms),
+            "first_read_seconds": first_read_seconds,
+            "scrub_median_seconds": float(sorted(latencies)[len(latencies) // 2]),
+            "server_rss_after_first_bytes": float(rss_after_first),
+            "server_rss_after_last_bytes": float(rss_after_last),
+            "server_rss_growth_bytes": float(rss_after_last - rss_after_first),
+        }
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+
 def _bench_batch_convert_100_files(workdir: Path, scale: str) -> dict[str, float]:
     """The v1.5 batch fan-out (M54/M58) at the 100-file scale: N ordinary files → one aggregate.
 
@@ -460,6 +583,13 @@ BENCHMARKS: tuple[Benchmark, ...] = (
     # "completes" is the whole bound — child exit 0 is the pass — so no threshold budget. Peak RSS
     # is recorded as a measured-only number (the sub-linear-memory demonstration).
     Benchmark("frame_limit_ceiling", _bench_frame_limit_ceiling, ()),
+    # The M59-S3 spike: the S1 geometry endpoint at 10⁴-frame scale. server_rss_growth is the
+    # flat-memory number (last − after-first ranged read); measured-not-gated like every budget.
+    Benchmark(
+        "geometry_endpoint_1e4_frames",
+        _bench_geometry_endpoint_1e4_frames,
+        (Budget("server_rss_growth_bytes", 64 * 1024 * 1024, "bytes"),),
+    ),
     Benchmark(
         "preflight_latency",
         _bench_preflight_latency,
