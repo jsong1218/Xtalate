@@ -44,7 +44,8 @@ tracks the resident step, not the file.
   promote to ``atoms.masses``; the verbatim declared table rides
   ``user_metadata.custom_global['qe_pw_out:atomic_species']``.
 * **Per-step cells** — a step's own ``CELL_PARAMETERS`` card (the ``vc-relax``/``vc-md`` form)
-  supplies that step's cell; a step without one reuses the running cell (the fixed-cell form).
+  supplies that step's cell; a step without one reuses the initial cell (correct for fixed-cell
+  runs).
 * **``pbc = (T,T,T)``** by format definition, as a ``parse_notes`` entry.
 
 **Error contract (Part 3 §5; D195/D196).** ``QEOUT_EMPTY`` (a truly empty file, or a
@@ -55,13 +56,16 @@ in a way that is **not** a torn tail: refused, never a silent partial parse, **P
 layouts beyond 6.x/7.x land here with a corpus-contribution call), ``QEOUT_INCONSISTENT_STEP``
 (an atom-keyed step block — force rows / position rows — whose row count disagrees with the
 header's atom count: refused, never silently truncated to the shorter, **P3**),
-``QEOUT_TRUNCATED`` (the file ends mid-step-block — a run killed while writing: recoverable
-through the shared ``truncate_corrupt_tail`` scenario (Revision 1.15) via
-``recovery_hint="truncate_at_last_valid_frame"`` and ``parse_recover`` (M52-S3, D197), never
-by default — the plain read refuses, P1/P4), the warning ``QEOUT_UNCONVERGED`` (QE's own
-statement that an SCF did not converge; the step's energy is still read present-with-value and
-flagged, **P3**), and the warning ``QEOUT_UNMAPPED_BLOCK_CARRIED`` (a recognized-but-unmapped
-diagnostic — the per-step ``total force`` scalar — carried verbatim, **P1**).
+``QEOUT_TRUNCATED`` (a run killed while writing: the file ends **mid-step-block** *or*
+reaches EOF without QE's ``JOB DONE.`` completion sentinel behind a complete-but-not-final
+step — either way a torn tail, recoverable through the shared ``truncate_corrupt_tail``
+scenario (Revision 1.15) via ``recovery_hint="truncate_at_last_valid_frame"`` and
+``parse_recover`` (M52-S3, D197), never by default — the plain read refuses, P1/P4), the
+warning ``QEOUT_UNCONVERGED`` (QE's own
+statement that an SCF **or an ionic relaxation** did not converge; the step's energy is still
+read present-with-value and flagged, **P3**), and the warning ``QEOUT_UNMAPPED_BLOCK_CARRIED``
+(a recognized-but-unmapped diagnostic — the per-step ``total force`` scalar — carried verbatim,
+**P1**).
 
 **S2 scope.** Both QE major layouts (6.x and 7.x) are read completely. The scanning anchors on
 stable substrings and whitespace-splits (``str.split()``), never fixed byte columns, so the
@@ -176,14 +180,34 @@ _AXES_ROW_RE = re.compile(rf"[abc]\(\d+\)\s*=\s*{_TRIPLE}")
 _FORCE_ROW_RE = re.compile(rf"force\s*=\s*({_FLOAT})\s+({_FLOAT})\s+({_FLOAT})")
 #: The recognized-but-unmapped `total force = …` scalar (carried verbatim per frame, P1).
 _TOTAL_FORCE_RE = re.compile(rf"total\s+force\s*=\s*({_FLOAT})")
-#: QE's own statement that an SCF did not converge — `convergence NOT achieved after N
-#: iterations` (printed when ``scf_must_converge = .false.``, or when a relaxation step's SCF
-#: is allowed to run on): the QEOUT_UNCONVERGED warning anchor (D196). The energy of the step
-#: is still read present-with-value (P3) — the honesty is in surfacing the flag, never in
-#: withholding the value.
+#: QE's own statement that an SCF or an ionic relaxation did not converge — the
+#: QEOUT_UNCONVERGED warning anchor (D196; review R2): ``convergence NOT achieved after N
+#: iterations`` (printed when ``scf_must_converge = .false.``, or when a relaxation step's
+#: SCF is allowed to run on) for an unconverged SCF, and QE's ``The maximum number of steps
+#: has been reached.`` for a bfgs/vc relaxation that hit its step cap without converging.
+#: The energy of the last step is still read present-with-value (P3) — the honesty is in
+#: surfacing the flag, never in withholding the value.
 _UNCONVERGED_RE = re.compile(
-    r"convergence\s+not\s+achieved\s+after\s+(\d+)\s+iterations", re.IGNORECASE
+    r"(?:"
+    r"convergence\s+not\s+achieved\s+after\s+(\d+)\s+iterations"  # SCF non-convergence
+    r"|"
+    r"the\s+maximum\s+number\s+of\s+steps\s+has\s+been\s+reached"  # ionic (bfgs/vc) non-convergence
+    r")",
+    re.IGNORECASE,
 )
+#: The stress block anchor — `total   stress` with any spacing — matching `_ENERGY_RE`'s
+#: whitespace tolerance (D196's drift discipline: anchors are on stable substrings and
+#: whitespace-splits, never fixed byte columns, so a present stress block never vanishes on
+#: spacing drift; review R2).
+_STRESS_RE = re.compile(r"total\s+stress")
+#: QE's completion sentinel — the ``JOB DONE.`` line pw.x prints only when the run reaches
+#: its natural end (an SCF converged-and-closed, a relaxation that completed, or the final
+#: MD frame). It is the discriminator QEOUT-C1 needs: a file that *ends* without it carries
+#: an incomplete final step (a run killed while still writing), so the pending last frame —
+#: a real energy paired with an arbitrary geometry, exactly the poisoned MLIP training pair
+#: the mission exists to prevent — must be a torn tail (QEOUT_TRUNCATED), not a complete
+#: frame reuse of the initial positions (P1/P4).
+_JOB_DONE_RE = re.compile(r"JOB\s*DONE\.")
 
 #: The per-card unit annotation, the input parser's spelling (brace/paren/bare) — the output
 #: uses the paren form (`ATOMIC_POSITIONS (angstrom)`).
@@ -752,6 +776,16 @@ def _read_header(lines: Iterator[str]) -> tuple[_Header | None, str | None, list
                 # The pseudopotential column is often `O( 1.00)` — the label and its parenthesized
                 # factor split on whitespace, so a 5-token row is the same 4-column declaration
                 # (rejoined verbatim with its separating space).
+                if not _is_float(tokens[2]):
+                    # H2 (review R2): a row in the species-shaped form whose **mass** column is
+                    # non-numeric is corrupt, not the end of the table — refuse the layout rather
+                    # than let a raw float() ValueError escape the §5 contract (a 500 over HTTP).
+                    raise _error(
+                        "QEOUT_UNRECOGNIZED_LAYOUT",
+                        f"the atomic species row {line.strip()!r} declares a non-numeric mass "
+                        f"({tokens[2]!r}) — a corrupt species table cannot be recognized as a "
+                        "6.x/7.x pw.x run; refused, never a silent partial parse (P1)",
+                    )
                 pseudo = tokens[3] if len(tokens) == 4 else tokens[3] + " " + tokens[4]
                 species.append((tokens[0], float(tokens[1]), float(tokens[2]), pseudo))
                 continue
@@ -863,6 +897,45 @@ def _read_stress_block(lines: _Lookahead, *, location: str) -> np.ndarray:
     return stress_from_qe(rows[:, :3])
 
 
+def _resolve_step_positions(
+    header: _Header,
+    raw: tuple[np.ndarray, str] | None,
+    *,
+    cell: np.ndarray | None,
+    cell_alat: float | None,
+    location: str,
+) -> np.ndarray | None:
+    """Cartesian Å positions from a step's ``ATOMIC_POSITIONS`` card, against the step's **own**
+    cell (QEOUT-H1).
+
+    In a ``vc-relax``/``vc-md`` step the cell changes, so a ``crystal``-coordinate positions
+    card must convert against the step's updated cell — the one the frame actually carries —
+    never the initial header cell, or the frame pairs positions built from one cell with a
+    lattice from another (silent geometry corruption, **P1**, the sharpest litmus failure).
+    ``cell``/``cell_alat`` are the running values accumulated in the step window (QE prints the
+    step's ``CELL_PARAMETERS`` card before its ``ATOMIC_POSITIONS``); a step without its own
+    cell falls back to the initial header cell/alat (correct for fixed-cell runs). ``raw`` is
+    the ``(rows, declared unit)`` of the card, or ``None`` when the step declared no positions
+    card (the initial configuration is then reused — ``_build_frame``'s fallback). A unit the
+    shared core cannot convert is refused ``QEOUT_UNRECOGNIZED_LAYOUT``, never a silent drop.
+    """
+    if raw is None:
+        return None
+    rows, unit = raw
+    lattice = cell if cell is not None else header.lattice
+    alat = cell_alat if cell_alat is not None else header.alat
+    try:
+        positions, _ = positions_cartesian(rows, unit, lattice=lattice, alat=alat)
+    except ValueError as exc:
+        raise _error(
+            "QEOUT_UNRECOGNIZED_LAYOUT",
+            f"the step's ATOMIC_POSITIONS card is present but unparseable as a 6.x/7.x "
+            f"block ({exc}); refused, never a silent partial read (P1)",
+            location=location,
+        ) from exc
+    return positions
+
+
 def _build_frame(
     header: _Header,
     *,
@@ -904,6 +977,13 @@ def _steps(
     QE's own ``convergence NOT achieved`` statement, which fires the ``QEOUT_UNCONVERGED``
     warning (D196) while the step's energy is still read present-with-value (P3).
 
+    **QEOUT-C1 (the Critical).** The frame is emitted at EOF **only** when the stream reached
+    QE's ``JOB DONE.`` completion sentinel — pw.x prints it only when the run finishes, so its
+    absence behind a complete-looking tail is exactly the torn case (a run killed at a clean
+    line boundary) and is refused ``QEOUT_TRUNCATED`` rather than emitting a real-energy /
+    arbitrary-geometry frame (the poisoned MLIP training pair, P1/P4). This is what lets a
+    genuine SCF-single-point run (which *does* end in ``JOB DONE.``) still yield its one frame.
+
     Lines are read through ``_Lookahead`` so the atom-count guard can inspect the line after a
     block's rows without consuming it (QEOUT_INCONSISTENT_STEP, D196).
     """
@@ -912,10 +992,17 @@ def _steps(
     energy: float | None = None
     forces: np.ndarray | None = None
     stress: np.ndarray | None = None
-    step_positions: np.ndarray | None = None
+    step_positions: tuple[np.ndarray, str] | None = None  # (rows, declared unit) of the card
     cell: np.ndarray | None = None
+    cell_alat: float | None = None
     carry: dict[str, Any] = {}
+    job_done = False
     while (line := lookahead.next_nonblank()) is not None:
+        if _JOB_DONE_RE.search(line) is not None:
+            # QEOUT-C1: the run reached QE's completion sentinel — the stream is complete.
+            # A pending final step now ends a genuinely finished run, so it is not a torn tail.
+            job_done = True
+            continue
         match = _ENERGY_RE.search(line)
         if match is not None:
             if energy is not None:
@@ -925,7 +1012,13 @@ def _steps(
                     energy=energy,
                     forces=forces,
                     stress=stress,
-                    step_positions=step_positions,
+                    step_positions=_resolve_step_positions(
+                        header,
+                        step_positions,
+                        cell=cell,
+                        cell_alat=cell_alat,
+                        location=f"frame {frame_index}",
+                    ),
                     cell=cell,
                     carry=carry,
                 )
@@ -934,6 +1027,7 @@ def _steps(
                 stress = None
                 step_positions = None
                 cell = None
+                cell_alat = None
                 carry = {}
             energy = float(match.group(1))
             continue
@@ -944,9 +1038,9 @@ def _steps(
                     severity="warning",
                     code="QEOUT_UNCONVERGED",
                     message=(
-                        "QE states the SCF did not converge: "
-                        f"{line.strip()!r} — the step's energy is still read "
-                        "(present-with-value, P3) and flagged so a training set sees it"
+                        "QE states the SCF or ionic relaxation did not converge: "
+                        f"{line.strip()!r} — the energy is still read present-with-value (P3) "
+                        "and flagged so a training set sees it"
                     ),
                     location=f"frame {frame_index}",
                 )
@@ -958,9 +1052,15 @@ def _steps(
             forces = forces_from_ry_bohr(
                 _read_force_rows(lookahead, header.n_atoms, location=f"frame {frame_index}")
             )
-        elif "total   stress" in line:
+        elif _STRESS_RE.search(line) is not None:
+            # M1 (review R2): anchored on `total\s+stress` (whitespace-tolerant), never a fixed
+            # spacing — a present stress block must not vanish on layout drift (P1).
             stress = _read_stress_block(lookahead, location=f"frame {frame_index}")
         elif "ATOMIC_POSITIONS" in line:
+            # QEOUT-H1: only the rows + declared unit are held here; the conversion to Å is
+            # deferred to _resolve_step_positions at frame build, once the step's own cell
+            # (read from its CELL_PARAMETERS card) is in hand — never converted against the
+            # initial header cell/alat.
             unit = _card_unit(line.split("ATOMIC_POSITIONS", 1)[1]) or "alat"
             rows = _read_float_rows(
                 lookahead,
@@ -971,17 +1071,7 @@ def _steps(
                 col_offset=1,
                 atom_keyed=True,
             )
-            try:
-                step_positions, _ = positions_cartesian(
-                    rows, unit, lattice=header.lattice, alat=header.alat
-                )
-            except ValueError as exc:
-                raise _error(
-                    "QEOUT_UNRECOGNIZED_LAYOUT",
-                    f"the step's ATOMIC_POSITIONS card is present but unparseable as a 6.x/7.x "
-                    f"block ({exc}); refused, never a silent partial read (P1)",
-                    location=f"frame {frame_index}",
-                ) from exc
+            step_positions = (rows, unit)
         elif "CELL_PARAMETERS" in line:
             unit, alat_bohr = _cell_card_unit(line.split("CELL_PARAMETERS", 1)[1])
             rows = _read_float_rows(
@@ -1002,19 +1092,44 @@ def _steps(
                     f"block ({exc}); refused, never a silent partial read (P1)",
                     location=f"frame {frame_index}",
                 ) from exc
+            cell_alat = alat_ang
         else:
             total_force = _TOTAL_FORCE_RE.search(line)
             if total_force is not None:
                 carry[f"{FORMAT_ID}:{_TOTAL_FORCE_KEY}"] = float(total_force.group(1))
                 issues.append(_carry_warning(_TOTAL_FORCE_KEY, location=f"frame {frame_index}"))
     if energy is not None:
+        if not job_done:
+            # QEOUT-C1 (the Critical): the stream ended without QE's ``JOB DONE.`` sentinel.
+            # Distinguishing a genuinely finished SCF-only run (which *does* print it) from a
+            # run killed mid-write is exactly what the sentinel is for — a file cut at a clean
+            # line boundary otherwise looks like a complete step and would pair its real energy
+            # with an arbitrary geometry, the poisoned MLIP training pair (P1/P4). The complete
+            # earlier steps are the recoverable prefix, kept only under the explicit
+            # truncate_corrupt_tail choice, never by default.
+            raise _error(
+                "QEOUT_TRUNCATED",
+                f"the run reached EOF with step {frame_index} incomplete: pw.x's 'JOB DONE.' "
+                "completion sentinel was never reached, so a run killed before finishing is "
+                "being reported — the final frame would pair its real energy with a geometry "
+                "that is not the step's (a torn tail, P1/P4); the complete earlier steps are "
+                "kept only under the explicit truncate_corrupt_tail choice, never by default",
+                location=f"frame {frame_index}",
+                hint=_TRUNCATE_HINT,
+            )
         yield _build_frame(
             header,
             frame_index=frame_index,
             energy=energy,
             forces=forces,
             stress=stress,
-            step_positions=step_positions,
+            step_positions=_resolve_step_positions(
+                header,
+                step_positions,
+                cell=cell,
+                cell_alat=cell_alat,
+                location=f"frame {frame_index}",
+            ),
             cell=cell,
             carry=carry,
         )
@@ -1112,9 +1227,9 @@ class QePwOutParser(ParserPlugin):
                     severity="warning",
                     code="QEOUT_UNCONVERGED",
                     message=(
-                        "QE states the SCF did not converge: "
-                        f"{statement!r} — the step's energy is still read "
-                        "(present-with-value, P3) and flagged so a training set sees it"
+                        "QE states the SCF or ionic relaxation did not converge: "
+                        f"{statement!r} — the energy is still read present-with-value (P3) "
+                        "and flagged so a training set sees it"
                     ),
                     location="frame 0",
                 )
@@ -1188,7 +1303,8 @@ class QePwOutParser(ParserPlugin):
                     level=full.level,
                     notes="The initial cell is read from the 'crystal axes' block in units of "
                     "alat; each step's own CELL_PARAMETERS card (the vc-relax/vc-md form) "
-                    "supplies that step's cell, else the running cell is reused.",
+                    "supplies that step's cell, else the initial cell is reused (correct for "
+                    "fixed-cell runs).",
                 ),
                 "cell.pbc": FieldCapability(
                     level=partial,

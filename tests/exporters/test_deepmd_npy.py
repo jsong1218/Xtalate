@@ -25,7 +25,7 @@ from tests.golden.deepmd_npy._systems import (
 )
 from xtalate.exporters.deepmd_npy import make_deepmd_npy_exporter
 from xtalate.parsers.deepmd_npy import make_deepmd_npy_parser
-from xtalate.schema import CanonicalObject
+from xtalate.schema import CanonicalObject, Cell
 
 EXPORTER = make_deepmd_npy_exporter()
 PARSER = make_deepmd_npy_parser()
@@ -177,6 +177,54 @@ def test_unrepresentable_reports_varying_composition_and_empty() -> None:
     assert "empty" in (EXPORTER.unrepresentable(good.model_copy(update={"frames": []})) or "")
 
 
+def _degenerate_stress_object() -> CanonicalObject:
+    # A schema-legal object (DPMD-2): a non-zero but singular (zero-volume) lattice paired with a
+    # stress — the schema's Cell has no non-degenerate validator for lattice-vector-native
+    # formats, so nothing upstream stops this object from reaching the exporter.
+    good = _object(write_system(coords=[H2O_COORDS], boxes=[BOX_FLAT], virial=[VIRIAL_FLAT]))
+    return good.model_copy(
+        update={
+            "frames": [
+                frame.model_copy(
+                    update={
+                        "cell": Cell(
+                            lattice_vectors=np.array(
+                                [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+                            ),
+                            pbc=(True, True, True),
+                        )
+                    }
+                )
+                for frame in good.frames
+            ]
+        }
+    )
+
+
+def test_degenerate_cell_with_stress_refuses_via_unrepresentable() -> None:
+    # DPMD-2: the clean-refusal gate must catch a degenerate-cell-plus-stress object ahead of
+    # export_dir, which would otherwise crash in virial_from_stress on volume ≤ 0.
+    good = _object(write_system(coords=[H2O_COORDS], boxes=[BOX_FLAT], virial=[VIRIAL_FLAT]))
+    assert EXPORTER.unrepresentable(good) is None
+    message = EXPORTER.unrepresentable(_degenerate_stress_object())
+    assert message is not None
+    assert "degenerate" in message and "frame 0" in message
+
+
+def test_degenerate_cell_with_stress_refuses_cleanly_through_engine() -> None:
+    # The crash-to-refusal contract end-to-end: the conversion is a completed *refused* report
+    # (UNREPRESENTABLE_VALUE), never a raw ValueError escaping the engine.
+    from xtalate.conversion import ConversionEngine
+    from xtalate.registry import default_registry
+
+    result = ConversionEngine(default_registry()).convert(
+        _degenerate_stress_object(), source_format_id="extxyz", target_format_id="deepmd_npy"
+    )
+    assert result.report.status == "refused"
+    assert result.report.refusal is not None
+    assert result.report.refusal["code"] == "UNREPRESENTABLE_VALUE"
+
+
 def test_varying_composition_refuses_cleanly_through_engine() -> None:
     # A schema-legal trajectory (constant atom *count*, differing per-atom symbols) converted to
     # deepmd_npy must be a completed *refused* report, not a raw ValueError escaping the engine.
@@ -227,11 +275,13 @@ def test_assemble_dir_groups_by_exact_composition_and_order() -> None:
         AssembleContribution(canonical=co, output=[b""]),
         AssembleContribution(canonical=water2, output=[b""]),
     ]
-    out = EXPORTER.assemble_dir(contributions)
+    out, systems = EXPORTER.assemble_dir(contributions)
     # Two composition groups, deterministic by first appearance: system_000 = the two H2O
     # sources' frames merged into one system; system_001 = the CO source.
-    systems = sorted({p.split("/", 1)[0] for p in out})
-    assert systems == ["system_000", "system_001"]
+    assert sorted({p.split("/", 1)[0] for p in out}) == ["system_000", "system_001"]
+    # The ordered source→system assignment is index-aligned with the contributions: both water
+    # sources → system_000, the CO source → system_001 (the mapping the batch aggregate records).
+    assert systems == ["system_000", "system_001", "system_000"]
     coords0 = _load(out, "system_000/set.000/coord.npy")
     assert coords0.shape == (2, 9)  # both water frames merged into one system's set.000
     assert out["system_000/type.raw"] == b"0 1 1\n"
@@ -253,5 +303,6 @@ def test_assemble_dir_refuses_an_order_mismatch_as_separate_systems() -> None:
         AssembleContribution(canonical=_object(files_a), output=[b""]),
         AssembleContribution(canonical=_object(files_b), output=[b""]),
     ]
-    out = EXPORTER.assemble_dir(contributions)
+    out, systems = EXPORTER.assemble_dir(contributions)
     assert sorted({p.split("/", 1)[0] for p in out}) == ["system_000", "system_001"]
+    assert systems == ["system_000", "system_001"]

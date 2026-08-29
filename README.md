@@ -2,215 +2,93 @@
 
 [![CI](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml/badge.svg)](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](CHANGELOG.md)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-**The trusted translation layer between computational-chemistry file formats — a converter that tells you exactly what it kept, what it lost, and why.**
+**A loss-aware converter for computational-chemistry file formats — it tells you exactly what each conversion kept, dropped, or had to fabricate, and proves it.**
 
-Every conversion produces a structured **Conversion Report** (what was preserved, dropped, or fabricated, and the reason for each) and an automatic **Validation Report** (the output re-parsed and diffed against the source to prove the report told the truth). The guiding rule is simple: *never silently lose scientific information.* If you diffed the input and output by hand, nothing should surprise you that Xtalate didn't already tell you about.
-
-## What it is
-
-Xtalate does **one thing**: loss-aware, fully transparent conversion between structure and trajectory file formats. It is a single Python package with four ways to use it, all over the same engine:
-
-- **A library** — parse a file into one Canonical Object, convert it, read the reports.
-- **A CLI** (`xtalate`) — `inspect` / `convert` / `validate` / `capabilities`, JSON-emitting and CI-native.
-- **An HTTP service** (`/v1`) — a FastAPI app that exposes the engine as async jobs; ships as the optional `service` extra.
-- **A Web UI** — a Next.js front end that walks upload → inspect → convert → recover → record → download, rendering the engine's reports verbatim.
-
-The scientific logic lives in the engine and nowhere else; the service and the UI are thin presenters that embed the report models unchanged. Visualization, structure editing, MD, and analysis are explicitly **out of scope** — Xtalate stores and translates data computed elsewhere.
-
-## Formats
-
-The **seven Phase-1 formats** are every one **read *and* written**, so every pair among them
-converts (the nightly suite runs the full 7 × 7 matrix):
-
-**XYZ** · **extended XYZ** (ASE-backed) · **POSCAR** · **CONTCAR** (incl. the velocity block, Cartesian + Direct) · **XDATCAR** · **ASE `.traj`** · **CIF**.
-
-**Plus two read-only VASP-output formats — `vasprun.xml` and `OUTCAR` — as parser-only sources.**
-A code's output is a conversion *source*, never a *target*: both formats are registered with a
-parser and **no** exporter, so they appear read-only in `xtalate capabilities` and there is no
-`convert --to vasprun` (or `--to outcar`). The flagship MLIP conversion reads either one into a
-label-complete training file — per-frame energy, per-atom forces, first-class tension-positive
-stress, and (from OUTCAR) first-class per-atom magnetic moments — via
-`xtalate convert OUTCAR --to extxyz` (equally `vasprun.xml --to extxyz`).
-
-**Plus two full read+write LAMMPS formats — `lammps_dump` and `lammps_data` — as a first-class conversion pair.**
-A dump is the production log of a running simulation (one snapshot per chosen interval), a data file
-the self-contained single-configuration input/restart of one system — both register a parser **and** an
-exporter, so each appears read **and** write in `xtalate capabilities` and `convert --to lammps_dump` /
-`--to lammps_data` are real conversions. Together they close the MLIP loop the read-only VASP formats
-feed: **train (extXYZ) → deploy (`lammps_data` restart) → produce (`lammps_dump`) → relabel (extXYZ)**,
-every arrow a reported conversion with its own Conversion Report. The pair carries two never-guessed
-resolutions: `ambiguous_units` (`metal` / `real` / `si`) — a file that declares no unit system is
-**refused** until you supply the choice as a preset (recorded as an Assumption; a dump with a declared
-`ITEM: UNITS` header fires nothing) — and `ambiguous_atom_style` (`atomic` / `charge` / `full`) for data
-files. Image flags, `compute`/`fix` columns, molecular topology, and the run-time step ride as reported
-carries, and a dump whose atom count varies between snapshots is refused with the measured per-frame
-counts (recorded v2.0 groundwork). In the nightly matrix `lammps_data` enrols as a **target** for every
-golden source — a data file declares no units or symbols, so it cannot bare-parse to enrol as a source,
-and its source-side fidelity is proven instead by a dedicated identity round-trip; `lammps_dump` enrols
-as a full source **and** target.
-
-**Plus the Quantum ESPRESSO pw.x pair — one full read+write format and one read-only output format.**
-`qe_pw_in` (the pw.x **input** — the namelist + card grammar that defines a QE calculation) is
-**full read+write**: it appears read **and** write in `xtalate capabilities`, `convert --to qe_pw_in`
-is a real conversion (the extXYZ → QE relabeling-setup arrow, with an honest-incompleteness warning
-naming exactly what physics — plane-wave cutoff, k-points, pseudopotential files — you must still
-supply before pw.x will run, never invented for you), and it enrols in the nightly matrix as a
-source **and** target. `qe_pw_out` (the pw.x **output**) joins the VASP read-only class: parser-only
-via the source-never-target seam, so there is no `convert --to qe_pw_out` — the flagship MLIP
-conversion reads a pw.x run into a **label-complete extXYZ training file** (`xtalate convert
-pw.out --to extxyz`): per-frame energy (Ry → eV), per-atom forces (Ry/bohr → eV/Å),
-tension-positive stress (QE prints compression-positive; the sign is mapped, never assumed), and
-per-step cells from each `CELL_PARAMETERS` card in a variable-cell run. Both readers tolerate the
-QE 6.x ↔ 7.x layout drift, refuse an unrecognized layout rather than partial-parsing it, and — the
-pair's central honesty guard — the input and output parsers must **agree** on the same run's cell /
-species / positions (a silent unit or sign disagreement between the two QE readers of one
-calculation is exactly the bug that poisons a training set at scale). With the read-only VASP
-formats and the LAMMPS pair, QE closes the DFT-relabel loop: **production frames → re-label with
-DFT (QE or VASP) → label-complete canonical training data.** The QE formats declare their own
-per-card units, so no unit scenario ever fires for a QE source — but a label that resolves to no
-element (and a torn pw.x output) refuse by default and recover through the same presets the LAMMPS
-formats use.
-
-**CP2K: shipped as an advertised community-plugin handoff — not an in-tree parser.** The three
-dominant periodic-DFT ecosystems for MLIP reference data are VASP (in-tree since v1.2), Quantum
-ESPRESSO (in-tree since v1.4), and CP2K — and CP2K ships via the **post-1.0 contributor model**: a
-public "CP2K plugin wanted" call pointing at the frozen SDK seam (`xtalate.parsers` /
-`xtalate.exporters` entry-point groups + the stable parser/exporter base classes — no core change
-is needed to add CP2K out-of-tree), with the reference plugin (`plugins/example-format/`) as the
-template to copy and the v1.2–v1.4 parser families as three worked examples of the exact patterns a
-CP2K plugin would follow: **structured input** (`qe_pw_in`, POSCAR, CIF), **log output**
-(`qe_pw_out`, OUTCAR, vasprun — parser-only via the source-never-target seam), and the **input +
-output pairing** the QE pair demonstrates end to end. The maintainer reviews a well-formed CP2K
-plugin contribution. CP2K in-tree, if it ever happens, is a new milestone — not a silent gap in
-this version.
-
-**Plus the ASE `.db` database — full read+write, and the first multi-structure dataset container.**
-`ase_db` reads and writes ASE's SQLite database, the third ASE-backed format (after extended XYZ and
-the ASE `.traj`); like every ASE-backed
-reader it launders the defaults ASE manufactures for a row (an all-zero cell, Z-derived masses,
-zeroed momenta) back to honest absence rather than reading them as data, and carries each row's
-key-value pairs and `data` blob verbatim. A **dataset is aggregation, not a new model**: a single-row
-`.db` is one structure, but a **multi-row** `.db` holds N independent structures — possibly of
-different composition — so it is never folded into one trajectory. On a single-file conversion a
-multi-row `.db` is **refused** (with the row count, recoverable by choosing one row); under
-`xtalate convert --batch` it **fans out** into N ordinary per-row conversions, each individually
-reported and validated. And `.db` is the second target the batch `assemble` mode can build (extXYZ
-was the first): N single-structure sources combine into one N-row `.db` dataset, so `extxyz ↔ ase_db`
-dataset translation is symmetric — build a training set into either container, fan it back out of
-either. This is the aggregation seam the DeePMD dataset format rides too.
-
-**Plus DeePMD-kit NumPy systems — full read+write, and the first *directory* format.**
-`deepmd_npy` reads and writes a DeePMD *system*: a **directory** of NumPy arrays
-(`type.raw`, `type_map.raw`, `set.000/coord.npy`, `set.000/box.npy`, and the label arrays
-`energy`/`force`/`virial` when present) — the MLIP training layout DeePMD-kit consumes directly.
-It is the first format whose native form is a directory rather than a file, so it rides a new
-directory I/O seam: a directory goes in through a generic directory sniffer + `parse_dir`, and a
-conversion writes a system directory under `-o DIR` (`xtalate convert train.xyz --to deepmd_npy
--o my_system/`). One DeePMD system is one Canonical Object (fixed-composition, the constant-N
-invariant's natural ally); a multi-frame trajectory is one system's `set.000`, and DeePMD's
-`set.000`/`set.001`/… train/test sharding — a scientific judgment, not a translation — is
-concatenated on read with the dropped partition **reported**, never silently discarded, and never
-emitted on write (one `set.000`). The virial is a recorded deterministic mapping
-(`virial ↔ stress` via stress·volume), and a missing `type_map.raw` resolves through the existing
-`missing_species` recovery. Under `--batch`, `assemble` to `deepmd_npy` groups a mixed-composition
-training set **by composition** into N systems (`system_000/`, `system_001/`, …) — never into one
-object.
-
-**CIF is treated as real crystallography.** Cell parameters become lattice vectors, fractional coordinates become Cartesian at the parser boundary, and symmetry is expanded **from the operations the file declares** — parsed as exact affine maps over rationals, with sites on a symmetry element merged on a physical 0.05 Å threshold. A file that names a space group but declares *no* operations is **refused**, never read as a partial structure. Site occupancy is a first-class canonical field (`atoms.occupancies`); a target that cannot represent a partial occupancy says so in the report rather than dropping it silently. The exporter writes every atom explicitly under an identity symmetry loop with no space-group symbol — the coordinates it emits are the already-expanded cell, and any symbol above them would assert a setting they no longer encode.
-
-**Not formats: the in-memory adapters.** `xtalate.adapters.from_pymatgen`/`to_pymatgen`
-translate between in-memory pymatgen objects (`Structure`/`Molecule`) and Xtalate's Canonical
-Object inside one process — behind the optional `xtalate[pymatgen]` extra, consumed lazily at
-the seam (Xtalate does not become a pymatgen-style toolkit; it adapts at a seam). They are not a
-registered format: nothing appears in the capability matrix, the sniffer, or the CLI, and there is
-no file to sniff or report to render.
-
-## What every conversion gives you
-
-- **Inspect first.** The Information Discovery Engine reports a ✓/✗ inventory of which canonical fields a file actually contains, each annotated with the format's capability — no conversion required.
-- **Predict loss before writing.** A per-format **Capability Matrix** tells the exporter what the target can hold *before* it writes, so loss is predicted (**P5**), not discovered after the fact.
-- **Recover explicitly, never guess.** When a target needs a field the source lacks — a lattice, velocities, masses — or can hold only one frame, you supply a preset choice and it is recorded as an **Assumption**. With no choice, the conversion **refuses** rather than inventing data (**P4**). Fabrication is exactly what you asked for and nothing more.
-- **Validate, always.** Every completed conversion is re-parsed through the ordinary reader and diffed against the expected object under a numeric tolerance profile (`default` / `strict` / `loose`, or a custom table). There is no switch to skip it.
-- **Absence is information (P3).** The Canonical Model distinguishes "the source never had this" (`None`) from "the source had it, and the value is zero." Parsers never default an absent field.
-- **Scale to large trajectories.** A frame-chunked streaming core keeps pipeline memory sub-linear in the number of frames — a 10⁴-configuration XDATCAR streams at roughly constant memory and yields a report byte-identical to the materialized path.
-- **Third-party formats via plugins.** A parser/exporter shipped in a separate package is discovered automatically through Python entry points (`xtalate.parsers` / `xtalate.exporters`), with no fork or edit; it joins sniffing, discovery, conversion, and validation on equal footing. First-party formats hold no privileged API.
+Every conversion produces a **Conversion Report** (what was preserved, dropped, or supplied — with a reason for each) and a **Validation Report** (the output re-parsed and diffed against the source). The rule behind the whole tool: *never silently lose scientific information.* If you diffed the input and output by hand, nothing should surprise you that Xtalate didn't already flag.
 
 ## Install
 
 ```bash
-pip install xtalate                 # the library + the `xtalate` CLI
-pip install "xtalate[service]"      # add the FastAPI /v1 service layer
-# or, from a checkout:
-pip install -e ".[dev]"
+pip install xtalate
 ```
 
-Requires Python ≥ 3.11. The only scientific dependency is ASE (for extended XYZ and the ASE `.traj` format); NumPy and pydantic power the Canonical Model, and PyYAML parses custom tolerance tables and corpus manifests.
+Python ≥ 3.11. ASE is the only scientific dependency.
 
-## Quickstart (CLI)
+## Quickstart
 
-**Inspect** a file — see what's actually inside it, before converting anything:
+See what's inside a file before touching it:
 
-```console
-$ xtalate inspect water_traj.xyz
-File:   water_traj.xyz  (164 bytes)
-Format: Plain XYZ [xyz]  confidence 0.9
-Structure: 2 frame(s) × 3 atoms; species O, H
-
-Canonical fields (✓ present / ✗ absent / ◐ mixed · read capability):
-  ✓ atoms.symbols                    [full]  — O, H, H
-  ✓ atoms.positions                  [full]  — 2 frame(s) × 3 atoms, Cartesian (Å)
-  ✗ atoms.masses                     [none]
-  ✗ cell.lattice_vectors             [none]
-  … (16 canonical leaf paths, each shown present or absent)
+```bash
+xtalate inspect water_traj.xyz
 ```
 
-**Convert** a 2-frame, lattice-less XYZ trajectory to POSCAR. POSCAR needs a single structure *and* a lattice, so we supply two explicit recovery choices; each becomes a recorded Assumption:
+Convert it. This XYZ trajectory has no lattice, and POSCAR needs one structure *and* a cell — so you supply those two choices explicitly, and each is recorded as an Assumption:
 
-```console
-$ xtalate convert water_traj.xyz --to poscar -o POSCAR \
+```bash
+xtalate convert water_traj.xyz --to poscar -o POSCAR \
     --recover frame_selection=last \
     --recover missing_lattice=bounding_box,padding_ang=5.0
-Conversion Report  [final · completed · permissive]
+```
+
+```
+Conversion Report  [completed]
   xyz → poscar
-  preserved (2): atoms.symbols, atoms.positions
-  removed (2):   custom_per_frame['xyz:comment']; 1 dropped frame
-  supplied (2):  cell.lattice_vectors, cell.pbc  (from A2)
-  assumptions (2):
-    ~ A1 frame_selection=last:   frame 1 of 2 retained …
-    ~ A2 missing_lattice=bounding_box:  axis-aligned box + 5.0 Å padding …
+  preserved: atoms.symbols, atoms.positions
+  supplied:  cell.lattice_vectors, cell.pbc
+  assumptions:
+    ~ A1 frame_selection=last          frame 1 of 2 retained
+    ~ A2 missing_lattice=bounding_box   axis-aligned box + 5.0 Å padding
 
-Validation Report  [passed]  (tolerance profile: default)
-  ✓ atom_count · ✓ species_preservation · ✓ positions_rmsd · ✓ lattice_consistency
-  ✓ frame_count · – numeric_field_fidelity · ✓ metadata_preservation
-  ✓ absence_conformance · ✓ report_consistency
+Validation Report  [passed]  (tolerance: default)
+  ✓ atom_count · ✓ species_preservation · ✓ positions_rmsd · ✓ lattice_consistency …
 ```
 
-Without the `--recover` flags the same command **refuses** (exit code 2) and prints exactly which decisions are needed — a refusal is a first-class, reported outcome, never a silent default. Exit codes make the CLI CI-native: `0` ok · `2` refused · `3` validation failed · `4` parse error · `5` warnings under `--mode strict` · `1` usage error. Any command accepts `--json` to emit the report schema verbatim. **Convert a directory at once** with a batch manifest — one record for the whole dataset,
-per-file honesty preserved (each file's reports embedded verbatim, tallies on top; one file's
-failure never aborts the batch):
+Leave out the `--recover` flags and the command **refuses**, printing the exact decisions it needs — a refusal is a reported outcome, never a silent default. Exit codes make it CI-native (`0` ok · `2` refused · `3` validation failed · `4` parse error · `5` strict-mode warnings · `1` usage), and `--json` on any command emits the report schema verbatim.
 
-```console
-$ cat manifest.yaml
-sources: [run1/vasprun.xml, run2/*.out]
-target: extxyz
-$ xtalate convert --batch manifest.yaml -o train/
-Batch Report  [2 converted · 0 refused · 0 failed]
-  ✓ run1/vasprun.xml  converted [passed]
-  ✓ run2/relax.out    converted [passed]
-  labels: 2 energy · 2 forces · 0 stress
-```
+Full [CLI reference](docs/cli.md) · [library example](examples/convert_extxyz_to_poscar.py).
 
-`output_mode: assemble` appends every source's frames into one artifact (`-o train.extxyz`);
-selection, splitting, and deduplication are deliberately **not** batch features — curation is a
-scientific judgment, conversion is a translation (roadmap §11). The batch exit code is the worst
-per-file outcome under the same 0–5 ladder.
+## Supported formats
 
-See the [CLI reference](docs/cli.md).
+| Format | Read | Write | Notes |
+|---|:---:|:---:|---|
+| XYZ | ✓ | ✓ | Plain coordinates |
+| extended XYZ | ✓ | ✓ | ASE-backed; MLIP labels (energy, forces, stress) |
+| POSCAR / CONTCAR | ✓ | ✓ | VASP structure; CONTCAR keeps the velocity block |
+| XDATCAR | ✓ | ✓ | VASP trajectory |
+| ASE `.traj` | ✓ | ✓ | |
+| CIF | ✓ | ✓ | Symmetry from declared operations; site occupancy is first-class |
+| LAMMPS dump | ✓ | ✓ | MD trajectory; unit system resolved explicitly |
+| LAMMPS data | ✓ | ✓ | Input / restart; atom style resolved explicitly |
+| Quantum ESPRESSO pw.x input | ✓ | ✓ | Namelists + cards |
+| ASE `.db` | ✓ | ✓ | Multi-structure dataset |
+| DeePMD-kit npy | ✓ | ✓ | Directory system; MLIP training layout |
+| vasprun.xml | ✓ | — | VASP output (source only) |
+| OUTCAR | ✓ | — | VASP output; per-atom magnetic moments |
+| Quantum ESPRESSO pw.x output | ✓ | — | QE output (source only) |
 
-## Quickstart (library)
+Read-only formats are conversion *sources*, never targets — a code's output is never something Xtalate writes back. In-memory adapters also translate pymatgen `Structure`/`Molecule` objects (`pip install "xtalate[pymatgen]"`), and **CP2K** is available through the community-plugin seam. Any pair of read+write formats converts; the nightly suite runs the full n×n matrix.
+
+These formats close the MLIP data loop end to end — **relabel** production frames with DFT (`OUTCAR`/`vasprun.xml`/QE output → extended XYZ), **assemble** them into a dataset (`ase_db`, `deepmd_npy`), and **deploy** back to an engine (LAMMPS) — every arrow a reported, validated conversion.
+
+## What every conversion gives you
+
+- **Inspect first.** A ✓/✗ inventory of which canonical fields a file actually holds, each annotated with the format's capability — no conversion needed.
+- **Loss predicted before writing.** A per-format Capability Matrix tells the exporter what the target can hold *before* it writes (**P5**).
+- **Recovery is explicit, never guessed.** When a target needs a field the source lacks, you choose a preset and it becomes an Assumption; with no choice, the conversion refuses rather than invent data (**P4**).
+- **Validation is not optional.** Every conversion is re-parsed and diffed against the source under a tolerance profile (`default` / `strict` / `loose`, or a custom table). There is no switch to skip it.
+- **Absence is information (P3).** The model distinguishes "the source never had this" (`None`) from "the source had it, and the value is zero." Parsers never default an absent field.
+- **Scales to large trajectories.** A frame-chunked streaming core keeps memory sub-linear in frame count; a 10⁴-frame XDATCAR streams at roughly constant memory and yields a byte-identical report.
+- **Extensible by plugins.** A parser/exporter in a separate package is discovered through Python entry points (`xtalate.parsers` / `xtalate.exporters`) with no fork or edit. First-party formats hold no privileged API.
+
+## Beyond the CLI
+
+The same engine drives four surfaces; the scientific logic lives in the engine and nowhere else.
+
+**Library:**
 
 ```python
 from xtalate.registry import default_registry
@@ -225,57 +103,22 @@ result = ConversionEngine(registry).convert(
 )
 print(result.report.model_dump_json(indent=2))   # the Conversion Report
 print(result.validation.status)                   # "passed"
-with open("POSCAR", "wb") as fh:
-    fh.write(result.output)
 ```
 
-A complete, runnable example is in [`examples/convert_extxyz_to_poscar.py`](examples/convert_extxyz_to_poscar.py).
-
-## Quickstart (HTTP service)
-
-Run a dependency-free instance (SQLite + local filesystem, jobs executed in-process):
+**HTTP service** — a FastAPI app exposing the engine as async jobs under `/v1`:
 
 ```bash
 pip install "xtalate[service]"
 python -m backend                       # http://localhost:8000
-```
-
-…or bring up the full stack — API, worker, PostgreSQL, MinIO, Redis — with one command:
-
-```bash
+# or the full stack (API, worker, Postgres, MinIO, Redis):
 docker compose up --build --wait
-curl -s "http://localhost:8000/v1/health?ready=true"
 ```
 
-Conversion is an async job; a refusal comes back as a **completed HTTP-200 job**, not an error:
+A refusal comes back as a completed HTTP-200 job, not an error; reports outlive the bytes they describe. The `curl` walkthrough is in [`docs/API.md`](docs/API.md), and the machine-readable contract is [`docs/openapi.json`](docs/openapi.json).
 
-```bash
-BASE=http://localhost:8000/v1
-FILE_ID=$(curl -s -F "file=@in.extxyz" "$BASE/upload" | jq -r .file_id)
-JOB=$(curl -s "$BASE/convert" -H 'content-type: application/json' \
-  -d "{\"file_id\":\"$FILE_ID\",\"target_format_id\":\"poscar\"}" | jq -r .job_id)
-curl -s "$BASE/jobs/$JOB" | jq '.state, .result.conversion_report.status'
-CID=$(curl -s "$BASE/jobs/$JOB" | jq -r .result.conversion_id)
-curl -s "$BASE/download/$CID" -o POSCAR
-```
+**Web UI** — a Next.js front end over `/v1` that walks upload → inspect → convert → recover → download, rendering the engine's reports verbatim (no scientific logic of its own). Self-hosting is the primary deployment; see the [self-hosting guide](docs/self-hosting.md).
 
-Reports **outlive the bytes** they describe: input and output expire on independent lifecycle windows while `GET /v1/conversions/{id}` still serves both reports. The full flow — including interactive recovery (`allow_recovery` → pause → resume) — is walked with `curl` in [`docs/API.md`](docs/API.md), and the machine-readable contract is the committed [`docs/openapi.json`](docs/openapi.json).
-
-**Convert a whole directory at once** over HTTP the same way `--batch` does on the CLI: `POST
-/v1/batch/convert` takes an ordered list of uploaded `file_id`s with one target and shared
-options, fans out to **ordinary child convert jobs** (each a navigable record with its own
-pause and report), and returns one aggregate — the reused library tallies plus each child's
-reports embedded **verbatim**; the parent completes only when every child is settled, and a
-child that needs a decision pauses on its own record rather than asking the batch. **Not a
-dataset curator**: selection, splitting, and deduplication are scientific judgments, not
-translations (roadmap §11) — the batch converts what it is given, completely and reported.
-
-## Web UI
-
-A faithful web front end over `/v1` — the whole workflow in a browser, with the loss report as the thing you cannot miss. It is a **presentation layer only** (carries no scientific logic): every number, code, and reason on screen is the engine's own, rendered verbatim. The wizard is four steps — upload & inspect, preview the predicted loss, convert & recover (one decision card per unresolved scenario, no option preselected, the exact Assumption shown before you confirm it), then a consolidated record whose outcome header is quantitative ("Converted — 7 fields removed", never "Done!") and whose download control sits *below* the loss summary by layout law. Two read-only pages — `/formats` (the Capability Matrix, generated from `GET /v1/capabilities`) and `/history` — make the engine's own knowledge browsable, and the whole `docs/` corpus renders as an in-app docs site.
-
-Self-hosting is the primary supported deployment: a hardened [`docker-compose.prod.yml`](docker-compose.prod.yml) points at external Postgres and S3-compatible storage. See the **[self-hosting guide](docs/self-hosting.md)**.There is also a **hosted demo** on Render — ephemeral, anonymous, with a 10 MB cap — whose deploy
-recipe lives in [`docs/hosted-demo.md`](docs/hosted-demo.md).
+**Batch** — `xtalate convert --batch manifest.yaml -o out/` (and `POST /v1/batch/convert`) converts a whole directory into one record: each file's reports embedded verbatim, tallies on top, one file's failure never aborting the rest. Selection, splitting, and deduplication are deliberately out of scope — curation is a scientific judgment, conversion is a translation.
 
 ## How it works
 
@@ -286,23 +129,15 @@ Native File → Format Sniffer → Parser → Canonical Object → Exporter → 
                          Recovery Engine (explicit only) → Validation Engine
 ```
 
-The **Canonical Object** is the only thing that crosses the parser/exporter boundary — no parser ever calls another parser, and no conversion takes a format-to-format shortcut (**P2**). That single spine is what makes **adding a format O(1)** in the number already present: each of XDATCAR, ASE `.traj`, and CIF arrived as one parser and one exporter plus a Capability Matrix row, joining sniffing, discovery, conversion, validation, and the full n×n round-trip matrix without a single edit to any other format.
+The **Canonical Object** is the only thing that crosses the parser/exporter boundary — no parser calls another parser, and no conversion takes a format-to-format shortcut (**P2**). That single spine makes adding a format O(1) in the number already present: each new format is one parser, one exporter, and a Capability Matrix row, joining sniffing, discovery, conversion, and validation without touching any other format.
 
-The design and its principles are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); the library and CLI surface in [`docs/API.md`](docs/API.md); building and extending Xtalate in [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md). Architectural decisions (the D-log) and the master specification are maintained privately; public commits may reference decision IDs. If you need the rationale for a particular decision, open an issue.
+Design and principles: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · library/CLI surface: [`docs/API.md`](docs/API.md) · building and extending: [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md).
 
-## Versioning and stability
+## Versioning
 
-Xtalate follows [Semantic Versioning](https://semver.org/) (the current release is shown in the badge above), and the version number protects a **named public surface**: within a major series each of these evolves **additively only** — new formats, scenarios, optional fields, and hooks arrive with safe defaults; nothing already documented is removed, renamed, or given a new meaning. Anything that would break one of them waits for the next major version, with migration notes.
+Xtalate follows [Semantic Versioning](https://semver.org/). Within a major series a named public surface — the canonical schema, the report schemas, the plugin SDK, the `/v1` REST surface, and the documented CLI — evolves **additively only**: new formats, scenarios, and optional fields arrive with safe defaults, and nothing already documented is removed or given a new meaning. The `_`-prefixed internal surface is not part of the contract.
 
-- **The canonical schema** — field names, shapes, unit conventions, and absence semantics (**P3**) of the eight-category Canonical Model.
-- **The report schemas** — `DiscoveryReport`, `ConversionReport`, `ValidationReport`, embedded verbatim in every result.
-- **The plugin SDK ABCs** — `ParserPlugin`, `ExporterPlugin`, the streaming surface, `ParseResult`/`ParseIssue`/`ParseError`, and `FormatCapabilities` (see [CONTRIBUTING.md](CONTRIBUTING.md)).
-- **The `/v1` REST surface** — endpoints, response envelopes, and error codes; [`docs/openapi.json`](docs/openapi.json) is its versioned, machine-readable form.
-- **The documented CLI** — the four subcommands, their flags, the `--json` convention, and the exit-code ladder `0`–`5` (see the [CLI reference](docs/cli.md)).
-
-The internal, `_`-prefixed surface is explicitly **not** part of the contract.
-
-**Two version axes, moving under distinct rules.** The **product version** (`xtalate.__version__`, `pyproject.toml`, `CITATION.cff` — guarded to agree) is the SemVer of the distribution and bumps on every release. The **canonical `schema_version`** is the on-the-wire version of the Canonical Model, stamped into every object; it bumps only when the schema itself changes, and always behind a **real migration** — an older stored object is carried forward on load and gains a `ConversionRecord(operation="migrate")`, never silently. A release can ship without a schema change, so the two numbers are decoupled by design.
+The product version and the on-the-wire `schema_version` move on separate axes: the schema version bumps only when the model changes, and always behind a real migration that carries older stored objects forward with a recorded `migrate` step — never silently.
 
 ## Development
 
@@ -314,14 +149,12 @@ lint-imports                             # acyclic package layering (P2)
 pytest                                   # tests
 ```
 
-CI runs this matrix on Python 3.11 and 3.13, plus the corpus governance suite over both corpus roots (manifest schema + license, source hashes, `ATTRIBUTIONS.md` regeneration) and a coverage ratchet.
+CI runs on Python 3.11 and 3.13, plus corpus governance over both corpus roots and a coverage ratchet.
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). The invited path is **corpus contributions**: real, licensed sample files that harden the converter. A **golden** case (`tests/golden/`) asserts what a file *should* produce and needs an expectation you verified by hand; a **wild** case (`tests/wild/`) is a real third-party file asserting what it *does* produce — the exact set of issue codes plus the composition it declares for itself — so it needs a triage rather than a derivation. Both need a manifest and a license; no manifest, no license, no merge. Parser plugins are welcome too — the plugin SDK is a stable contract (see [CONTRIBUTING.md](CONTRIBUTING.md) for the stability promise and its scope).
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). The invited path is **corpus contributions**: real, licensed sample files that harden the converter. A **golden** case (`tests/golden/`) asserts what a file *should* produce; a **wild** case (`tests/wild/`) is a real third-party file asserting what it *does* produce. Both need a manifest and a license — no manifest, no license, no merge. Parser plugins are welcome too; the plugin SDK is a stable contract.
 
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
-</content>
-</invoke>

@@ -98,6 +98,15 @@ _INCOMPLETE_INPUT = "QEIN_INCOMPLETE_INPUT"
 #: is never written back (the exporter is the authority on the structure it writes).
 _STRUCTURAL_SYSTEM_KEYS = _CONSUMED_SYSTEM_KEYS  # ibrav/nat/ntyp are in the shared set
 
+#: A carried `&system` lattice spelling the source declared but the exporter drops on write
+#: (Part 4 §1; v1.5 review R3 follow-up). The reader carries an `ibrav`-inert spelling — an
+#: unused `celldm(N)` slot, or a `b`/`c`/`cos*` an `ibrav` does not consume — so the read side is
+#: honest (QEIN_UNMAPPED_ENTRY_CARRIED). The exporter always respells the lattice as `ibrav = 0`
+#: + explicit `CELL_PARAMETERS`, so it cannot re-emit those spellings; dropping them loses no
+#: geometry (they were inert to the source's own `ibrav`), but the drop is still stated here so
+#: the write report never goes silent (P1).
+_LATTICE_SPELLING_DROPPED = "QEIN_LATTICE_SPELLING_DROPPED"
+
 
 class QePwInExporter(ExporterPlugin):
     """Quantum ESPRESSO pw.x input writer (Part 3 §3; M51-S1)."""
@@ -167,18 +176,34 @@ class QePwInExporter(ExporterPlugin):
                 "pseudopotential files were not provided for: "
                 f"{', '.join(pseudo_missing)} — replace the placeholders"
             )
-        if not missing:
-            return []
-        return [
-            ExporterWarning(
-                code=_INCOMPLETE_INPUT,
-                message=(
-                    "This pw.x input is structurally complete but not yet runnable: "
-                    + "; ".join(missing)
-                    + "."
-                ),
+        warnings: list[ExporterWarning] = []
+        if missing:
+            warnings.append(
+                ExporterWarning(
+                    code=_INCOMPLETE_INPUT,
+                    message=(
+                        "This pw.x input is structurally complete but not yet runnable: "
+                        + "; ".join(missing)
+                        + "."
+                    ),
+                )
             )
-        ]
+        dropped = _dropped_lattice_spellings(header)
+        if dropped:
+            warnings.append(
+                ExporterWarning(
+                    code=_LATTICE_SPELLING_DROPPED,
+                    message=(
+                        "The source declared &system lattice parameter(s) "
+                        + ", ".join(dropped)
+                        + " that its ibrav does not use; the exporter writes the cell explicitly "
+                        "as ibrav = 0 + CELL_PARAMETERS, so these inert spellings are not written "
+                        "back. No cell geometry is lost — they were inert to the source's own "
+                        "ibrav — but the drop is reported so the conversion stays fully auditable."
+                    ),
+                )
+            )
+        return warnings
 
     def unrepresentable(self, canonical: Any) -> str | None:
         """Why a pw.x input cannot express ``canonical``'s *values*, or ``None`` when it can
@@ -403,6 +428,26 @@ def _namelist_entries(header: StreamHeader, name: str) -> dict[str, Any]:
             continue  # ibrav/nat/ntyp (and the ibrav spellings) are the exporter's to write
         entries[key] = value
     return entries
+
+
+def _dropped_lattice_spellings(header: StreamHeader) -> list[str]:
+    """The carried `&system` lattice spellings the write will filter (v1.5 review R3 follow-up).
+
+    These are exactly the keys `_namelist_entries` drops under the `_STRUCTURAL_SYSTEM_KEYS`
+    filter: an `ibrav`-inert spelling the reader carried (`QEIN_UNMAPPED_ENTRY_CARRIED`). Returned
+    as readable spellings — an indexed `celldm` dict becomes one `celldm(N)` per leftover slot — so
+    `export_warnings` can name them. `ibrav`/`nat`/`ntyp`/`a` are always consumed on read and so
+    never reach the carry, but the filter (and this listing) key on the shared set defensively."""
+    carried = _carried_namelists(header).get("system", {})
+    spellings: list[str] = []
+    for key, value in carried.items():
+        if key not in _STRUCTURAL_SYSTEM_KEYS:
+            continue
+        if key == "celldm" and isinstance(value, dict):
+            spellings.extend(f"celldm({index})" for index in sorted(value))
+        else:
+            spellings.append(key)
+    return spellings
 
 
 def _carried_namelists(header: StreamHeader) -> dict[str, dict[str, Any]]:

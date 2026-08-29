@@ -129,7 +129,6 @@ from xtalate.sdk import (
 )
 from xtalate.sdk.qe import (
     _ATOMIC_SPECIES_KEY,
-    _CONSUMED_SYSTEM_KEYS,
     _NAMELISTS_KEY,
     _PSEUDOPOTENTIALS_KEY,
     _SIMULATION_EXTRA_KEYS,
@@ -183,6 +182,85 @@ _NAMELIST_HEAD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 #: str). An indexed key (``celldm(1)``) stores a ``{index: value}`` dict under the bare key.
 _NamelistValue: TypeAlias = int | float | str | bool
 _NamelistEntry: TypeAlias = _NamelistValue | dict[int, _NamelistValue]
+
+# --- &system lattice consumption per ibrav (QE-A, review R3) -------------------------
+# The reader consumes from &system exactly the lattice spellings the chosen ``ibrav``
+# actually uses (QE ``Modules/latgen.f90``; INPUT_PW v7.5 ``ibrav`` table). The structural
+# facts and the scale are always consumed; a spelling the chosen lattice does NOT use (e.g.
+# ``celldm(4)`` under cubic ``ibrav = 1``) is inert to QE and, if declared, is **carried**
+# under ``qe_pw_in:namelists`` with the ``QEIN_UNMAPPED_ENTRY_CARRIED`` warning — never
+# silently dropped — so the module's "nothing is dropped (P1)" claim stays true.
+
+#: The &system entries always consumed (never carried): the structural facts the exporter
+#: owns (``ibrav``/``nat``/``ntyp``) and the angstrom lattice scale ``a`` (every derivation
+#: and the explicit-cell alat-relative path need it).
+_SYSTEM_ALWAYS_KEYS = frozenset({"ibrav", "nat", "ntyp", "a"})
+#: The non-scale lattice spellings whose consumption is per-ibrav. ``b``/``c`` are the
+#: b/a, c/a ratios; ``cosab``/``cosac``/``cosbc`` the angle cosines.
+_SYSTEM_LATTICE_KEYS = frozenset({"b", "c", "cosab", "cosac", "cosbc"})
+#: Per ibrav, the non-scale lattice spellings the chosen lattice actually uses. A value
+#: absent from every frozenset (a cubic lattice) uses none of them.
+_IBRAV_NONSCALE_CONSUMED: Mapping[int, frozenset[str]] = {
+    0: frozenset(),  # explicit cell: only the scale (a / celldm(1)) is used
+    1: frozenset(),  # cubic P
+    2: frozenset(),  # cubic F
+    3: frozenset(),  # cubic I
+    4: frozenset({"c"}),  # hexagonal: c/a
+    6: frozenset({"c"}),  # tetragonal: c/a
+    8: frozenset({"b", "c"}),  # orthorhombic
+    12: frozenset({"b", "c", "cosab"}),  # monoclinic (unique axis c)
+    -12: frozenset({"b", "c", "cosac"}),  # monoclinic (unique axis b)
+    14: frozenset({"b", "c", "cosbc", "cosac", "cosab"}),  # triclinic
+}
+#: Per ibrav, which ``celldm(N)`` slots the lattice uses (slot 1 — the scale — is always
+#: used). Slots here map 1:1 to the same facts as the ``A,B,C,cos*`` spelling: ``celldm(2)``
+#: = b/a, ``celldm(3)`` = c/a, ``celldm(4..6)`` = the angle cosines per latgen.
+_IBRAV_CELDDM_SLOTS: Mapping[int, frozenset[int]] = {
+    0: frozenset({1}),
+    1: frozenset({1}),
+    2: frozenset({1}),
+    3: frozenset({1}),
+    4: frozenset({1, 3}),
+    6: frozenset({1, 3}),
+    8: frozenset({1, 2, 3}),
+    12: frozenset({1, 2, 3, 4}),
+    -12: frozenset({1, 2, 3, 5}),
+    14: frozenset({1, 2, 3, 4, 5, 6}),
+}
+
+
+def _remaining_system_entries(
+    entries: dict[str, _NamelistEntry], ibrav: int
+) -> dict[str, _NamelistEntry]:
+    """The ``&system`` entries that ride the carry after the chosen ``ibrav`` has consumed
+    what it uses (QE-A): the structural facts + scale drop wholly; the non-scale lattice
+    spellings drop only when the ibrav uses them; ``celldm`` keeps only the *unused* slots.
+    A declared-but-unused spelling (e.g. ``celldm(4)`` under cubic ``ibrav = 1``) survives
+    here to be carried + warned — it is inert to QE, never silently dropped (P1). The
+    recognized simulation context (``_SIMULATION_EXTRA_KEYS``) is withdrawn by the caller."""
+    unconsumed_nonscale = _IBRAV_NONSCALE_CONSUMED.get(ibrav, frozenset())
+    consumed_slots = _IBRAV_CELDDM_SLOTS.get(ibrav, frozenset({1}))
+    remaining: dict[str, _NamelistEntry] = {}
+    for key, value in entries.items():
+        if key in _SYSTEM_ALWAYS_KEYS:
+            continue
+        if key in _SYSTEM_LATTICE_KEYS:
+            if key in unconsumed_nonscale:
+                continue  # this ibrav consumes it
+            remaining[key] = value
+            continue
+        if key == "celldm":
+            if isinstance(value, dict):
+                leftover: dict[int, _NamelistValue] = {
+                    index: item for index, item in value.items() if index not in consumed_slots
+                }
+                if leftover:
+                    remaining[key] = leftover
+            else:
+                remaining[key] = value  # a non-dict celldm is refused upstream (never here)
+            continue
+        remaining[key] = value
+    return remaining
 
 
 def _error(
@@ -1126,9 +1204,19 @@ class QePwInParser(ParserPlugin):
         issues: list[ParseIssue] = []
         carried_namelists: dict[str, dict[str, JsonValue]] = {}
         for name, entries in namelists.items():
-            consumed = set(_CONSUMED_SYSTEM_KEYS) if name == "system" else set()
-            consumed |= set(_SIMULATION_EXTRA_KEYS.get(name, frozenset()))
-            remaining = {key: value for key, value in entries.items() if key not in consumed}
+            if name == "system":
+                # QE-A: consume only the lattice spellings the chosen ibrav uses; a
+                # declared-but-unused one (e.g. celldm(4) under cubic ibrav=1) is carried.
+                remaining = _remaining_system_entries(entries, ibrav)
+                # Withdraw the recognized simulation context (promoted to simulation.extra).
+                remaining = {
+                    key: value
+                    for key, value in remaining.items()
+                    if key not in _SIMULATION_EXTRA_KEYS.get("system", frozenset())
+                }
+            else:
+                consumed = set(_SIMULATION_EXTRA_KEYS.get(name, frozenset()))
+                remaining = {key: value for key, value in entries.items() if key not in consumed}
             if remaining:
                 carried_namelists[name] = _jsonify_namelist(remaining)
                 for key in remaining:

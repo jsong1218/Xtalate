@@ -211,21 +211,24 @@ class AseDbExporter(ExporterPlugin):
     def _row_metadata(self, canonical: CanonicalObject) -> tuple[dict[str, Any], dict[str, Any]]:
         """Invert the parser's key–value / data carry. ``ase_db:data`` → the row's ``data`` blob;
         every other ``ase_db:<key>`` scalar → a ``key_value_pairs`` entry under the bare ``<key>``.
-        A foreign-namespace or non-scalar entry cannot be an ASE key/value and is not written (the
-        Conversion Engine reports it ``removed`` per the custom_global key pattern)."""
+        A drop *by name* (a foreign-namespace key) is reported ``removed`` by the Conversion
+        Engine's key-pattern pre-flight. A drop *by value type* (a non-dict ``ase_db:data``, a
+        non-scalar ``ase_db:<key>``) cannot be an ASE key/value and is skipped here — but never
+        silently: ``export_warnings`` reports each such drop (ASEDB-5, review R5), so the write
+        report is honest (P5)."""
         custom_global = canonical.user_metadata.custom_global
         key_value_pairs: dict[str, Any] = {}
         data: dict[str, Any] = {}
         for key, value in custom_global.items():
-            if key == _DATA_KEY:
-                if isinstance(value, dict):
-                    data = dict(value)
-                continue
             if not key.startswith(_KEY_PREFIX):
                 continue  # a colon-bearing foreign key is not a valid ASE key; reported removed
-            bare = key[len(_KEY_PREFIX) :]
-            if isinstance(value, _KV_SCALARS):
-                key_value_pairs[bare] = value
+            if _value_drop_reason(key, value) is not None:
+                continue  # dropped by value type; export_warnings reports it (ASEDB-5)
+            if key == _DATA_KEY:
+                assert isinstance(value, dict)  # _value_drop_reason guaranteed it for ase_db:data
+                data = dict(value)
+                continue
+            key_value_pairs[key[len(_KEY_PREFIX) :]] = value
         return key_value_pairs, data
 
     # -- capabilities ------------------------------------------------------------------
@@ -353,12 +356,19 @@ class AseDbExporter(ExporterPlugin):
                     continue
                 written = -np.asarray(frame.electronic.stress, dtype=float)
                 carried_arr = np.asarray(carried, dtype=float)
-                if carried_arr.shape == (6,):
-                    carried_full = np.asarray(voigt_6_to_full_3x3_stress(carried_arr), dtype=float)
-                else:
-                    carried_full = carried_arr
-                if not np.allclose(carried_full, written):
-                    dropped.append(frame.index)
+                # Only the two shapes the ASE-backed formats write are comparable (Voigt-6 or
+                # full 3×3). ASE itself can flatten a full 3×3 calculator stress to a bare
+                # length-9 array on .db write; that value cannot be judged against the written
+                # tensor — skip the drop-check rather than broadcast-crash (ASEDB-1, review
+                # R4): the field is still written, the unrecognized carry is simply not
+                # compared.
+                if carried_arr.shape in {(6,), (3, 3)}:
+                    if carried_arr.shape == (6,):
+                        carried_arr = np.asarray(
+                            voigt_6_to_full_3x3_stress(carried_arr), dtype=float
+                        )
+                    if not np.allclose(carried_arr, written):
+                        dropped.append(frame.index)
         if dropped:
             frames_desc = f"frame(s) {dropped}" if len(dropped) > 1 else f"frame {dropped[0]}"
             warnings.append(
@@ -371,7 +381,51 @@ class AseDbExporter(ExporterPlugin):
                     ),
                 )
             )
+
+        # ASEDB-5 (review R5): a custom_global key that matches the writable namespace *by name*
+        # but holds a value type ASE cannot store — a non-scalar ``ase_db:<key>``, a non-dict
+        # ``ase_db:data`` — is dropped on write. The pre-flight predicts it preserved by name, so
+        # this audit is what keeps the write report honest (P5): the value-type exclusion the name
+        # pattern cannot see is surfaced here, never left as a silent skip.
+        for key, value in canonical.user_metadata.custom_global.items():
+            reason = _value_drop_reason(key, value)
+            if reason is not None:
+                warnings.append(
+                    ExporterWarning(
+                        code="ASE_DB_KV_VALUE_DROPPED",
+                        message=(
+                            f"custom_global entry {key!r} matches the writable ase_db namespace "
+                            f"but its value cannot be stored as an ASE row key/value or data blob "
+                            f"and was not written: {reason}"
+                        ),
+                    )
+                )
         return warnings
+
+
+def _value_drop_reason(key: str, value: Any) -> str | None:
+    """Why an ``ase_db``-namespaced ``custom_global`` entry is dropped *by value type* on write,
+    or ``None`` if it can be written. ``ase_db:data`` needs a ``dict``; an ``ase_db:<key>`` needs a
+    scalar (``_KV_SCALARS``, the values ASE persists as key_value_pairs). Shared by the write path
+    (``_row_metadata``) and ``export_warnings`` so the two can never drift on what is silently
+    dropped (ASEDB-5, review R5). A foreign-namespace key returns ``None``: it is dropped by name
+    and reported ``removed`` by the pre-flight key pattern, not by this value audit."""
+    if not key.startswith(_KEY_PREFIX):
+        return None
+    if key == _DATA_KEY:
+        if isinstance(value, dict):
+            return None
+        return (
+            f"the '{_DATA_KEY}' data blob must be a JSON object (dict) to be stored as the row's "
+            "data blob; a non-dict value cannot be written"
+        )
+    if isinstance(value, _KV_SCALARS):
+        return None
+    return (
+        f"an 'ase_db:<key>' value must be a scalar (str/bool/int/float), but "
+        f"'{key[len(_KEY_PREFIX) :]}' holds a {type(value).__name__}; ASE cannot store it as a "
+        "key_value_pairs entry"
+    )
 
 
 def make_ase_db_exporter() -> AseDbExporter:

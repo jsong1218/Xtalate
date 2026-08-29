@@ -14,6 +14,20 @@
 # together when updating. Because the pins are frozen (there is no Dependabot config), the maintainer
 # advances them by hand when adopting a new action release.
 #
+# KNOWN, ACCEPTED SCORECARD EXCEPTIONS (documented, v1.5 review R10; deliberate policy decision, not
+# an oversight — present both sides and record the choice):
+#   (i) The CI `pip install --no-deps ./tests/fixtures/…` and editable installs that Scorecard's
+#       `Pinned-Dependencies` probe cannot fully score. There is nothing to pin: these are local-path
+#       installs of the in-tree test fixture package and the in-tree example plugin, not third-party
+#       dependencies fetched from a registry, so a SHA/digest pin is meaningless. Every genuine
+#       third-party supply-chain edge (GitHub Actions `uses:` refs and every Docker `FROM`) is
+#       already SHA/digest-pinned and was confirmed current in the v1.4/v1.5 architectural review; no
+#       open Dependabot alerts exist. Accepted deliberately rather than contorting CI to silence the
+#       probe.
+#   (ii) The solo-maintainer maturity heuristics (`Maintained`, `CII-Best-Practices`, `Fuzzing`,
+#        `Code-Review`). These are intrinsic to a single-maintainer open-source project and are
+#        accepted as-is; they are not resolvable by code or config change.
+#
 # NOTE for the maintainer: the SARIF upload needs GitHub code scanning enabled for the repo (free on
 # public repositories). `publish_results: true` publishes the score to the OpenSSF API, which is what
 # powers the Scorecard badge — remove it if a public score is not wanted.

@@ -552,6 +552,14 @@ def _run_batch_convert(
         if isinstance(c.request, dict)
     }
     for file_id in file_ids:
+        # API-2 (v1.5 review R9): a cancel may have raced this fan-out. Re-read the parent's own
+        # state every iteration and stop dispatching new children once it is no longer ``running``
+        # — a cancelled batch launches nothing further (files not yet launched are never started);
+        # children already launched keep their own records. The aggregate is then the cancel's,
+        # never rebuilt by a worker that did not notice it.
+        parent_now = repository.get_job(job.job_id)
+        if parent_now is None or parent_now.state != "running":
+            return
         existing = children.get(file_id)
         if existing is not None:
             # Fanned out on an earlier dispatch. A terminal child is done, and a child paused at
@@ -560,8 +568,26 @@ def _run_batch_convert(
             # ``add_job`` and ``execute_job`` persists the row yet never runs it, and skipping it
             # here would hang the parent on a child that can never terminate. Re-drive that child by
             # its existing id (``execute_job`` no-ops anything already running or terminal, so this
-            # is safe on every state) rather than minting a second row for the same file_id.
+            # is safe on every state) rather than minting a second row for the same file_id. A child
+            # stuck ``running`` is a **crashed run** (API-3): every re-drive of it is the guard's
+            # silent no-op, so a ``running`` child past the TTL is failed explicitly — the parent
+            # can then see it terminal instead of hanging on it forever.
             if is_terminal(existing.state) or existing.state == "awaiting_recovery":
+                continue
+            if existing.state == "running" and _is_stale_running(existing, settings):
+                repository.transition_job(
+                    existing.job_id,
+                    "failed",
+                    finished_at=utcnow(),
+                    error={
+                        "code": "JOB_STALE",
+                        "message": (
+                            "this child's run went stale: its worker never returned and it sat "
+                            f"running past the {settings.running_child_ttl_minutes}-minute TTL; "
+                            "failed explicitly by the batch parent's re-drive"
+                        ),
+                    },
+                )
                 continue
             child_id = existing.job_id
         else:
@@ -599,6 +625,28 @@ def _run_batch_convert(
     # input bytes to outlive; the child's pause TTL governs). A poll re-drives once terminal.
     repository.transition_job(job.job_id, "awaiting_recovery", progress={"phase": "recovery"})
     log_event("job.awaiting_recovery", job_id=job.job_id, kind=job.kind, request_id=request_id)
+
+
+def _is_stale_running(child: Any, settings: Settings) -> bool:
+    """Whether a ``running`` batch child is a crashed run past its TTL (API-3, v1.5 review R9).
+
+    A Tier-1 worker that dies mid-dispatch leaves the child ``running`` with no one to ever move
+    it; the parent's re-drive of it is the ``execute_job`` guard's silent no-op, so without a
+    horizon the parent waits forever (there is no reaper and no TTL on ``running``). Symmetric to
+    the ``awaiting_recovery`` expiry: a child whose ``started_at`` is older than
+    ``running_child_ttl_minutes`` is stale. A zero/negative horizon fails every ``running`` child
+    (the test seam); an unstarted ``running`` row has no staleness evidence and is kept.
+    """
+    ttl = timedelta(minutes=settings.running_child_ttl_minutes)
+    if ttl <= timedelta(0):
+        return True
+    started = child.started_at
+    if started is None:
+        return False
+    started_utc = as_utc(started)
+    if started_utc is None:
+        return False
+    return started_utc < utcnow() - ttl
 
 
 def _awaiting_recovery_deadline(upload: Any, settings: Settings) -> datetime:

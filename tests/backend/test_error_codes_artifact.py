@@ -34,7 +34,16 @@ _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent / "backend"
 #:   - ``PARSE_ERROR``    — ``jobs/runner.py`` ``_failure_body`` (positional, not ``code=``).
 #:   - ``VALIDATION_UNAVAILABLE`` — ditto, the revalidate-failure branch of ``_failure_body``.
 #:   - ``FRAME_LIMIT_EXCEEDED`` — ditto, the frame-cap branch of ``_failure_body`` (M39-S3, F1).
-_DYNAMIC_CODES = {"HTTP_ERROR", "PARSE_ERROR", "VALIDATION_UNAVAILABLE", "FRAME_LIMIT_EXCEEDED"}
+#:   - ``JOB_STALE`` — ``jobs/runner.py`` ``_run_batch_convert``'s explicit failure of a
+#:     ``running`` child past its TTL (v1.5 review R9, API-3): the code is carried in the error
+#:     *body* dict the transition writes, not a ``code="…"`` keyword literal.
+_DYNAMIC_CODES = {
+    "HTTP_ERROR",
+    "PARSE_ERROR",
+    "VALIDATION_UNAVAILABLE",
+    "FRAME_LIMIT_EXCEEDED",
+    "JOB_STALE",
+}
 
 _CODE_LITERAL = re.compile(r'code="([A-Z][A-Z_]*)"')
 

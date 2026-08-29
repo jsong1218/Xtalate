@@ -41,6 +41,14 @@ manufactured construction-time defaults back into absence** (P3; the ASE ``.traj
   convention pymatgen's VASP tooling uses), everything else carried verbatim.
   ``selective_dynamics`` is carried rather than modelled as a ``fixed_atoms``
   constraint: its per-axis booleans would be silently flattened to whole-atom fixes.
+* **Partial site occupancy.** Occupancy now takes the mapped path, not a silent fourth
+  one (R6): a ``site.is_ordered`` site is full occupancy (absent a partial claim, P3),
+  a *single-species* disordered site declares partial occupancy →
+  ``atoms.occupancies`` (the CIF discipline: ``1.0`` for full sites, the fraction for
+  partial ones, the field ``None`` only when nothing is partial); ``to_pymatgen``
+  restores it as a per-site ``{species: fraction}`` dict. A site disordered across
+  *multiple* species is refused, never silently reduced to one — ``atoms.occupancies``
+  holds one number per atom, so there is no lossless canonical spelling for it.
 
 Provenance records the wrapped library's version (D58/D59 precedent): the adapter stamps
 ``source_format = "pymatgen"`` (an in-memory source label, not a registered format id),
@@ -75,6 +83,7 @@ from xtalate.schema import (
     Provenance,
     UserMetadata,
 )
+from xtalate.schema.paths import is_full_occupancy
 
 if TYPE_CHECKING:
     from pymatgen.core import Molecule, Structure
@@ -120,19 +129,62 @@ def from_pymatgen(obj: Any) -> CanonicalObject:
     return _from_molecule(obj)
 
 
-def _read_sites(source: Any) -> tuple[list[str], list[float | None], bool]:
-    """Symbols (oxidation decorations stripped) and the declared per-site states."""
+def _read_sites(
+    source: Any,
+) -> tuple[list[str], list[float | None], bool, list[float | None] | None]:
+    """Symbols (oxidation decorations stripped), the declared per-site oxidation states, and
+    partial site occupancies. A site that ``is_ordered`` is full occupancy — absence of a
+    partial claim (P3); a *single-species* disordered site (``Fe:0.8``) declares partial
+    occupancy, which maps onto ``atoms.occupancies`` (one number per atom); a site disordered
+    across **multiple** species is refused — ``atoms.occupancies`` holds one occupancy per
+    atom, so there is no lossless spelling for it, and silently keeping one species would be
+    a P1 drop. The parallel occupancy list is ``None`` unless some site is genuinely partial
+    (never a fabricated all-full list)."""
     symbols: list[str] = []
     oxi_states: list[float | None] = []
+    occupancies: list[float | None] = []
     has_oxi_state = False
+    has_partial = False
     for site in source.sites:
-        specie = site.specie
-        symbols.append(str(specie.symbol))
-        state: float | None = getattr(specie, "oxi_state", None)
+        if site.is_ordered:
+            specie = site.specie
+            symbols.append(str(specie.symbol))
+            state: float | None = getattr(specie, "oxi_state", None)
+            occ = 1.0
+        else:
+            composition = site.species
+            if len(composition) != 1:
+                raise ValueError(_disordered_refusal(composition))
+            ((element, fraction),) = composition.items()
+            symbols.append(element.symbol)
+            state = getattr(element, "oxi_state", None)
+            occ = float(fraction)
+        oxi_states.append(state)
         if state is not None:
             has_oxi_state = True
-        oxi_states.append(state)
-    return symbols, oxi_states, has_oxi_state
+        if not is_full_occupancy(occ):
+            has_partial = True
+        occupancies.append(occ)
+    # A parallel occupancy list only when some site is genuinely partial; otherwise the
+    # field stays None (absence of any partial claim) — never a fabricated all-full list.
+    return symbols, oxi_states, has_oxi_state, occupancies if has_partial else None
+
+
+def _disordered_refusal(composition: Any) -> str:
+    """The clear refusal message for a mixed-species disordered pymatgen site — the PMG-2
+    replacement for pymatgen's raw ``AttributeError`` on ``site.specie``."""
+    from pymatgen.core import Composition
+
+    if isinstance(composition, Composition):
+        spell = composition.formula
+    else:
+        spell = str(composition)
+    return (
+        f"a pymatgen site is disordered across multiple species ({spell}); the Canonical "
+        "Object's atoms.occupancies holds one occupancy per atom, so mixed-species disorder "
+        "has no lossless representation — refusing rather than silently keeping one species "
+        "or fabricating occupancies (P1)"
+    )
 
 
 def _read_site_properties(
@@ -161,7 +213,7 @@ def _read_site_properties(
 def _from_structure(structure: Any) -> CanonicalObject:
     """The periodic case: lattice mapped to ``cell`` (never absent, never fabricated);
     only a caller-set total charge is data (pymatgen fabricates 0/the oxi-state sum)."""
-    symbols, oxi_states, has_oxi_state = _read_sites(structure)
+    symbols, oxi_states, has_oxi_state, occupancies = _read_sites(structure)
     positions = np.asarray(structure.cart_coords, dtype=np.float64)
 
     custom_per_atom: dict[str, Any] = {}
@@ -186,6 +238,7 @@ def _from_structure(structure: Any) -> CanonicalObject:
             pbc=(bool(pbc[0]), bool(pbc[1]), bool(pbc[2])),
         ),
         original_coordinate_system="fractional",
+        occupancies=occupancies,
         charges=charges,
         magmoms=magmoms,
         velocities=velocities,
@@ -197,7 +250,7 @@ def _from_structure(structure: Any) -> CanonicalObject:
 def _from_molecule(molecule: Any) -> CanonicalObject:
     """The non-periodic case (D216): ``cell = None`` — never an identity lattice — with
     the ``Molecule``-specific charge/spin manufactures laundered (see module docstring)."""
-    symbols, oxi_states, has_oxi_state = _read_sites(molecule)
+    symbols, oxi_states, has_oxi_state, occupancies = _read_sites(molecule)
     positions = np.asarray(molecule.cart_coords, dtype=np.float64)
 
     custom_per_atom: dict[str, Any] = {}
@@ -217,6 +270,7 @@ def _from_molecule(molecule: Any) -> CanonicalObject:
         positions=positions,
         cell=None,
         original_coordinate_system="cartesian",
+        occupancies=occupancies,
         charges=charges,
         magmoms=magmoms,
         velocities=velocities,
@@ -231,6 +285,7 @@ def _assemble(
     positions: np.ndarray,
     cell: Cell | None,
     original_coordinate_system: str,
+    occupancies: list[float | None] | None,
     charges: np.ndarray | None,
     magmoms: np.ndarray | None,
     velocities: np.ndarray | None,
@@ -243,7 +298,7 @@ def _assemble(
         frames=[
             Frame(
                 index=0,
-                atoms=AtomsBlock(symbols=symbols, positions=positions),
+                atoms=AtomsBlock(symbols=symbols, positions=positions, occupancies=occupancies),
                 cell=cell,
                 dynamics=Dynamics(velocities=velocities),
                 electronic=Electronic(charges=charges, magnetic_moments=magmoms),
@@ -299,7 +354,22 @@ def to_pymatgen(canonical: CanonicalObject) -> Structure | Molecule:
     carried_spin = um.custom_global.get(_SPIN_KEY)
     if carried_spin is not None:
         kwargs["spin_multiplicity"] = _numeric_carry(carried_spin, _SPIN_KEY)
+    # With fractional species the caller never declared a charge/spin, pymatgen derives its
+    # own default spin from the faux (fractional) electron count and its `charge_spin_check`
+    # then rejects the honest restoration as "impossible". That check guards *declared* charge
+    # vs spin; restoring fractional species is not a charge/spin claim, so it is suppressed
+    # only on this genuine partial-occupancy path (a fully-ordered molecule keeps it on).
+    if _any_partial_occupancy(frame):
+        kwargs["charge_spin_check"] = False
     return Molecule(**kwargs)
+
+
+def _any_partial_occupancy(frame: Frame) -> bool:
+    """True when some site's ``atoms.occupancies`` value is not full — the signal that
+    fractional species are being restored (see the ``charge_spin_check`` gating)."""
+    return frame.atoms.occupancies is not None and any(
+        not is_full_occupancy(value) for value in frame.atoms.occupancies
+    )
 
 
 def _numeric_carry(value: JsonValue, key: str) -> float:
@@ -311,14 +381,32 @@ def _numeric_carry(value: JsonValue, key: str) -> float:
 
 def _restore_species(frame: Frame, um: UserMetadata) -> list[Any]:
     """Re-decorate species with carried oxidation states (bare element symbols where none
-    was declared)."""
+    was declared) and restore partial site occupancy. A site whose ``atoms.occupancies``
+    value is not full becomes a per-site ``{species: fraction}`` dict — pymatgen's native
+    spelling of a partially-occupied site (the PMG-1 inverse of reading ``Fe:0.8``). Full
+    occupancy (``1.0``, or the field absent) stays a bare species; a per-site ``None`` — an
+    *unknown* occupancy, CIF '?' — is refused: pymatgen has no way to express it without
+    fabricating a fraction the source withheld (**P4**), and writing it as full would
+    silently change the chemistry."""
     from pymatgen.core import Species
 
     oxi_states = um.custom_per_atom.get(_OXI_STATE_KEY)
+    occupancies = frame.atoms.occupancies
     sites: list[Any] = []
     for i, symbol in enumerate(frame.atoms.symbols):
         state = oxi_states[i] if oxi_states is not None else None
-        sites.append(Species(symbol, state) if state is not None else symbol)
+        species = Species(symbol, state) if state is not None else symbol
+        if occupancies is not None and not is_full_occupancy(occupancies[i]):
+            occ = occupancies[i]
+            if occ is None:
+                raise ValueError(
+                    f"atoms.occupancies[{i}] is None (an unknown occupancy); a pymatgen "
+                    "object cannot represent it without fabricating a fraction the source "
+                    "withheld — refuse rather than silently treat it as fully occupied (P4)"
+                )
+            sites.append({species: float(occ)})
+        else:
+            sites.append(species)
     return sites
 
 

@@ -426,6 +426,250 @@ def test_a_queued_orphan_child_is_redriven_not_skipped(
     assert _tally_tuple(env["result"]["tallies"]) == (1, 1, 0, 0)
 
 
+# --- review R9 hardening: manifest cap, cancel cascade, running-child TTL, redrive TOCTOU --------
+
+
+def test_batch_manifest_over_the_hard_cap_is_422(settings: Settings) -> None:
+    # API-1: a manifest naming more file_ids than `batch_max_files` is refused at submit with the
+    # dedicated 422 BATCH_TOO_LARGE — the hard cap, independent of current load — before any
+    # per-file work (the same manifest-level-check pattern as EMPTY_BATCH).
+    from tests.backend.conftest import _migrate
+
+    fast = settings.model_copy(update={"batch_max_files": 2})
+    _migrate(fast.database_url)
+    with TestClient(create_app(fast), raise_server_exceptions=False) as client:
+        resp = client.post(
+            "/v1/batch/convert",
+            json={"file_ids": ["a", "b", "c"], "target_format_id": "poscar"},
+        )
+        assert resp.status_code == 422
+        body = resp.json()["error"]
+        assert body["code"] == "BATCH_TOO_LARGE"
+        assert body["details"]["batch_max_files"] == 2
+        # The cap is structural: an at-cap manifest proceeds past it to the per-file checks.
+        at_cap = client.post(
+            "/v1/batch/convert",
+            json={"file_ids": ["a", "b"], "target_format_id": "poscar"},
+        )
+        # Past the structural cap → the fake file_id is a FILE_NOT_FOUND, not BATCH_TOO_LARGE.
+        assert at_cap.status_code == 404
+        assert at_cap.json()["error"]["code"] == "FILE_NOT_FOUND"
+
+
+def test_batch_fan_out_exceeding_concurrency_cap_is_rejected_at_submit(settings: Settings) -> None:
+    # API-1: the concurrent-job cap accounts for the whole fan-out, not just the parent — a submit
+    # whose len(file_ids) would push count_active_jobs() past max_concurrent_jobs is refused 429
+    # at submit, so one accepted batch can never mint more children than the cap allows.
+    from tests.backend.conftest import _migrate
+
+    fast = settings.model_copy(update={"max_concurrent_jobs": 2})
+    _migrate(fast.database_url)
+    with TestClient(create_app(fast), raise_server_exceptions=False) as client:
+        over = client.post(
+            "/v1/batch/convert",
+            json={"file_ids": ["a", "b", "c"], "target_format_id": "poscar"},
+        )
+        assert over.status_code == 429
+        assert over.json()["error"]["code"] == "TOO_MANY_ACTIVE_JOBS"
+        # Boundary: exactly max_concurrent_jobs files pass the capacity check (0 active + 3 ≤ 3)
+        # and proceed to the per-file checks.
+        at_cap = settings.model_copy(update={"max_concurrent_jobs": 3})
+        _migrate(at_cap.database_url)
+        with TestClient(create_app(at_cap), raise_server_exceptions=False) as client3:
+            ok = client3.post(
+                "/v1/batch/convert",
+                json={"file_ids": ["a", "b", "c"], "target_format_id": "poscar"},
+            )
+            assert ok.status_code == 404  # past capacity → the fake file_id is FILE_NOT_FOUND
+            assert ok.json()["error"]["code"] == "FILE_NOT_FOUND"
+
+
+def test_cancel_racing_the_fan_out_stops_further_children(
+    client: TestClient, repository: Repository
+) -> None:
+    # API-2: the worker re-reads the parent's state every fan-out iteration, so a cancel racing a
+    # genuinely running batch stops it — files not yet launched are never started, and already
+    # launched children keep their own records (never a second fan-out of the same manifest).
+    import uuid
+
+    from backend.db.models import Job
+    from backend.jobs.runner import _run_batch_convert
+
+    file_id = _upload(client, POSCAR_SAMPLE, "POSCAR")
+    parent_id, child_id = uuid.uuid4().hex, uuid.uuid4().hex
+    repository.add_job(
+        Job(
+            job_id=parent_id,
+            kind="batch_convert",
+            state="cancelled",
+            request={
+                "file_ids": [file_id, "ghost-file"],
+                "target_format_id": "poscar",
+                "options": {},
+                "overrides": {},
+                "request_id": None,
+            },
+        )
+    )
+    repository.add_job(
+        Job(
+            job_id=child_id,
+            kind="convert",
+            state="completed",
+            parent_job_id=parent_id,
+            request={
+                "file_id": file_id,
+                "target_format_id": "poscar",
+                "options": {},
+                "request_id": None,
+            },
+        )
+    )
+    state = client.app.state  # type: ignore[attr-defined]
+    parent = repository.get_job(parent_id)
+    assert parent is not None
+    # The worker is already inside the loop when the cancel lands: the very first re-read of the
+    # parent sees `cancelled` and the fan-out stops before touching any child.
+    _run_batch_convert(
+        parent,
+        repository=repository,
+        object_store=state.object_store,
+        registry=state.registry,
+        settings=state.settings,
+    )
+    assert [c.job_id for c in repository.get_child_jobs(parent_id)] == [child_id]
+    launched = repository.get_job(child_id)
+    assert launched is not None and launched.state == "completed"
+
+
+def test_stale_running_child_is_failed_explicitly_not_hung(
+    client: TestClient, repository: Repository
+) -> None:
+    # API-3: a child whose worker crashed mid-run sits `running` forever — every re-drive of it is
+    # the execute_job guard's silent no-op, so without a TTL the parent hangs on it indefinitely
+    # (and it leaks a concurrency slot). A `running` child past running_child_ttl_minutes is now
+    # failed explicitly, so the parent sees it terminal and completes.
+    import uuid
+    from datetime import timedelta
+
+    from backend.db import utcnow
+    from backend.db.models import Job
+    from backend.jobs.runner import execute_job
+
+    file_id = _upload(client, POSCAR_SAMPLE, "POSCAR")
+    parent_id, child_id = uuid.uuid4().hex, uuid.uuid4().hex
+    repository.add_job(
+        Job(
+            job_id=parent_id,
+            kind="batch_convert",
+            state="queued",
+            request={
+                "file_ids": [file_id],
+                "target_format_id": "poscar",
+                "options": {},
+                "overrides": {},
+                "request_id": None,
+            },
+        )
+    )
+    repository.add_job(
+        Job(
+            job_id=child_id,
+            kind="convert",
+            state="running",
+            parent_job_id=parent_id,
+            started_at=utcnow() - timedelta(hours=1),  # older than the 30-minute default TTL
+            request={
+                "file_id": file_id,
+                "target_format_id": "poscar",
+                "options": {},
+                "request_id": None,
+            },
+        )
+    )
+    state = client.app.state  # type: ignore[attr-defined]
+    execute_job(
+        parent_id,
+        repository=repository,
+        object_store=state.object_store,
+        registry=state.registry,
+        settings=state.settings,
+    )
+    child = repository.get_job(child_id)
+    parent = repository.get_job(parent_id)
+    assert child is not None and child.state == "failed"
+    assert child.error is not None and child.error["code"] == "JOB_STALE"
+    assert parent is not None and parent.state == "completed"
+    env = client.get(f"/v1/jobs/{parent_id}").json()
+    assert env["state"] == "completed"
+    assert _tally_tuple(env["result"]["tallies"]) == (1, 0, 0, 1)
+    assert client.get(f"/v1/jobs/{child_id}").json()["error"]["code"] == "JOB_STALE"
+
+
+def test_double_poll_redrive_does_not_raise(client: TestClient, repository: Repository) -> None:
+    # API-4: the redrive's check-then-enqueue is a TOCTOU — two near-simultaneous polls can both
+    # hold the stale awaiting_recovery read and both enqueue. The second enqueue is a no-op
+    # through execute_job's idempotent guard (and the inline queue runs it synchronously), so the
+    # double-poll never raises and never fans out a second time.
+    from backend.routers.jobs import _maybe_redrive_batch_parent
+
+    parent_id, child_id = _paused_batch(client)
+    resumed = client.post(
+        f"/v1/jobs/{child_id}/recovery",
+        json={
+            "choices": {
+                "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}}
+            }
+        },
+    ).json()
+    assert resumed["state"] == "completed"
+    parent = repository.get_job(parent_id)
+    assert parent is not None and parent.state == "awaiting_recovery"
+    state = client.app.state  # type: ignore[attr-defined]
+    # Both polls pass the *same stale* parent object — the exact double-poll interleaving.
+    first = _maybe_redrive_batch_parent(parent, repository, state.settings, state.job_queue)
+    second = _maybe_redrive_batch_parent(parent, repository, state.settings, state.job_queue)
+    assert first.state == "completed"
+    assert second.state == "completed"
+    completed = repository.get_job(parent_id)
+    assert completed is not None and completed.state == "completed"
+
+
+def test_redrive_tolerates_a_concurrent_invalid_transition(
+    client: TestClient, repository: Repository, monkeypatch: Any
+) -> None:
+    # API-4: a concurrent cancel racing the redrive can move a child out from under the
+    # expire-if-due cascade (awaiting_recovery → expired becomes illegal once it is cancelled).
+    # The redrive tolerates the InvalidTransition — logs and ignores, because the other execution
+    # owns the outcome — rather than crashing the poll with a 500.
+    from backend.jobs.state_machine import InvalidTransition
+    from backend.routers.jobs import _maybe_redrive_batch_parent
+
+    parent_id, child_id = _paused_batch(client)
+    resumed = client.post(
+        f"/v1/jobs/{child_id}/recovery",
+        json={
+            "choices": {
+                "missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}}
+            }
+        },
+    ).json()
+    assert resumed["state"] == "completed"
+    parent = repository.get_job(parent_id)
+    assert parent is not None and parent.state == "awaiting_recovery"
+    state = client.app.state  # type: ignore[attr-defined]
+
+    def racing_expiry(*args: Any, **kwargs: Any) -> Any:
+        raise InvalidTransition("awaiting_recovery", "expired")
+
+    monkeypatch.setattr("backend.routers.jobs.expire_if_due", racing_expiry)
+    returned = _maybe_redrive_batch_parent(parent, repository, state.settings, state.job_queue)
+    # Tolerated and unchanged — the poll is not a 500, and the parent's own next poll re-drives.
+    assert returned is parent
+    still = repository.get_job(parent_id)
+    assert still is not None and still.state == "awaiting_recovery"
+
+
 # --- submit-time validation ----------------------------------------------------------------------
 
 

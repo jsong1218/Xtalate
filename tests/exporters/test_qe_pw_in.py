@@ -126,7 +126,12 @@ def test_carried_payloads_write_back_verbatim() -> None:
     assert "K_POINTS automatic" in written
     assert "4 4 4 0 0 0" in written
     assert "fe.pbe.UPF" in written and "o.pbe.UPF" in written
-    assert "ecutwfc = '40.0'" in written  # recognized context from simulation.extra -> &control
+    # ecutwfc/ecutrho are &SYSTEM variables in QE (review R3 QE-B) — the exporter writes the
+    # recognized simulation context into the namelist the mapping names, i.e. back into
+    # &SYSTEM, restoring the round-trip to the real placement.
+    assert "ecutwfc = '40.0'" in written
+    sys_block = written.split("&SYSTEM")[1].split("/")[0]
+    assert "ecutwfc" in sys_block and "ecutrho" in sys_block
     assert "conv_thr = '1e-08'" in written  # &electrons
     assert "smearing = 'gaussian'" in written  # &system
     assert "nspin = 2" in written  # the carried &system entry
@@ -186,6 +191,37 @@ def test_incomplete_warning_names_only_what_is_missing() -> None:
     assert "ecutwfc" in warnings[0].message
     assert "K_POINTS" not in warnings[0].message
     assert "Fe" not in warnings[0].message  # pseudos are still carried
+
+
+def test_carried_inert_lattice_spelling_is_reported_dropped_not_silently_filtered() -> None:
+    """v1.5 review R3 follow-up (P1): the read side carries a lattice spelling the source's own
+    ``ibrav`` does not use (``QEIN_UNMAPPED_ENTRY_CARRIED``); the write side always respells the
+    cell as ``ibrav = 0`` + ``CELL_PARAMETERS`` and so cannot re-emit it. That drop loses no
+    geometry — the spelling was inert to the source ibrav — but it must be *reported*, never
+    silently filtered, so a ``qe_pw_in → qe_pw_in`` round-trip stays fully auditable.
+
+    Source is the QE-A case: an inert ``celldm(4)`` angle under cubic ``ibrav = 1`` rides in the
+    canonical as ``{"system": {"celldm": {"4": 0.5}}}`` (pinned in the parser suite)."""
+    src = (
+        b"&SYSTEM\n   ibrav = 1, nat = 1, ntyp = 1,\n"
+        b"   celldm(1) = 9.448630664428, celldm(4) = 0.5,\n/\n"
+        b"ATOMIC_SPECIES\n   Fe 55.845 fe.pbe.UPF\n"
+        b"ATOMIC_POSITIONS {crystal}\n   Fe 0.0 0.0 0.0\n"
+    )
+    obj = make_qe_pw_in_parser().parse(io.BytesIO(src), filename=None).canonical
+    assert obj.user_metadata.custom_global["qe_pw_in:namelists"] == {
+        "system": {"celldm": {"4": 0.5}}
+    }
+
+    warnings = make_qe_pw_in_exporter().export_warnings(obj)
+    dropped = [w for w in warnings if w.code == "QEIN_LATTICE_SPELLING_DROPPED"]
+    assert len(dropped) == 1, [w.code for w in warnings]
+    assert "celldm(4)" in dropped[0].message
+    # The inert spelling is genuinely absent from the written file (it is filtered on write) —
+    # the warning is what keeps that drop honest.
+    written = _export(obj).decode("utf-8")
+    assert "celldm(4)" not in written
+    assert "ibrav = 0" in written
 
 
 # --- recovery scenarios (existing, reused unchanged) -------------------------------------------

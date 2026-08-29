@@ -129,6 +129,50 @@ dataset-level variable-N note stated aloud, plus two measured benchmarks
 (`batch_convert_100_files`, `parse_asedb_1k_rows`). New error codes `EMPTY_BATCH` (422) and
 `JOB_CANCELLED` (job-body) join the D104 registry. Schema stays **1.0.0**.
 
+### Fixed — the v1.4/v1.5 architectural review (D220–D229)
+
+The combined v1.4 + v1.5 architectural review (`v1.4.0` was already tagged, so its fixes fold here
+alongside v1.5's own, per D64). The architecture held — the Ry→eV unit tables and stress sign
+conventions, the P3 absence discipline, the verbatim-embedding "a dataset is aggregation, not a new
+model" invariant, worst-status exit codes, and failure isolation all verified — but the review found
+and fixed:
+
+- **QE output, a torn run silently accepted as complete (Critical).** `qe_pw_out` never consulted
+  QE's `JOB DONE.` completion sentinel, so a run cut at a clean line boundary emitted a final frame
+  pairing that step's real energy with the *initial* geometry — a poisoned training pair. The parser
+  now refuses an unterminated tail with `QEOUT_TRUNCATED` (recoverable via `truncate_corrupt_tail`),
+  and a `crystal`-unit position in a variable-cell step now converts against the step's own updated
+  cell, not the initial one (D220).
+- **QE output robustness:** a non-numeric species-mass column refuses `QEOUT_UNRECOGNIZED_LAYOUT`
+  instead of crashing; the stress anchor tolerates whitespace drift so a present block is never
+  dropped; ionic-relaxation non-convergence is flagged, not only SCF (D221).
+- **QE input transparency:** `&system` lattice parameters a chosen `ibrav` does not use are now
+  carried and warned rather than silently dropped, and `ecutwfc`/`ecutrho` are bucketed under
+  `&system` (their real QE namelist), so the "nothing is dropped (P1)" claim holds (D222).
+- **ASE `.db`/`.traj`:** a length-9 flattened calculator stress no longer crashes `export_warnings`,
+  and a non-`FixAtoms` constraint the report claimed to carry is now actually carried (P1) — both
+  fixed in the `.db` and mirrored `.traj` paths (D223); the `ase_db:data` kv/blob namespace collision,
+  the full-row materialization on the multi-row refusal path, and a value-blind writability
+  prediction were also resolved (D224).
+- **pymatgen adapters:** partial site occupancy now round-trips through `to_pymatgen`/`from_pymatgen`
+  instead of being silently promoted to 1.0, and a disordered input refuses cleanly instead of raising
+  `AttributeError` (D225).
+- **DeePMD:** a per-set atom-count mismatch refuses `DEEPMD_INCONSISTENT_SHAPES` and a degenerate
+  (zero-volume) cell with stress refuses via `unrepresentable()`, both instead of a raw `ValueError`
+  (D226).
+- **Batch core:** the assemble source→`system_NNN` assignment is now recorded (auditable, not merely
+  recomputable), per-file mode releases each file's output bytes and canonical object after writing
+  (memory tracks reports, not payloads), and a multi-row container is no longer parsed three times
+  (D227).
+- **Batch API (security + lifecycle):** the `file_ids` manifest is hard-capped (`422 BATCH_TOO_LARGE`)
+  and counted against the concurrency limit at submit, so a fan-out can no longer bypass
+  `max_concurrent_jobs`; a cancel now stops in-flight children; a child crashed mid-run expires and
+  fails the parent rather than hanging it forever; and the batch-parent re-drive no longer races into
+  a double-enqueue (D228).
+- **Docs:** `docs/cli.md` documents `--batch`, `docs/ARCHITECTURE.md` §9 catches up to the QE and v1.5
+  formats, and the residual OpenSSF Scorecard findings are documented as accepted solo-maintainer
+  exceptions (D229).
+
 ## [1.4.0] — 2026-08-23
 
 Schema version: 1.0.0

@@ -201,6 +201,131 @@ def test_unconverged_run_warns_and_still_reads_the_energy() -> None:
     )
 
 
+# --- QEOUT-C1 (the Critical): the JOB DONE. completion sentinel ------------------------
+
+
+def _scf_only_run() -> str:
+    """An SCF-single-point run: the header + one '!    total energy' line and NO ionic loop,
+    ending in pw.x's 'JOB DONE.' completion sentinel — the shape C1 must keep yielding its
+    one frame (a correctly completed run is not a torn tail)."""
+    idx = _MINIMAL.index("     !\n     !    total energy")
+    return (
+        _MINIMAL[:idx]
+        + "     !\n     !    total energy =     -49.12345678 Ry\n     !\n\n"
+        + "     End of self-consistent calculation\n\n     JOB DONE.\n"
+    )
+
+
+def test_scf_single_point_run_ending_in_job_done_still_yields_its_one_frame() -> None:
+    """A genuinely finished SCF run *does* end in 'JOB DONE.', so the completion sentinel is
+    exactly what distinguishes it from a torn relax tail (QEOUT-C1): it keeps its single
+    frame, with forces/stress absent (P3) and energies read present-with-value."""
+    result = PARSER.parse(io.BytesIO(_scf_only_run().encode()), filename="pw.out")
+    assert result.canonical.frame_count == 1
+    frame = result.canonical.frames[0]
+    assert frame.dynamics.forces is None
+    assert frame.electronic.stress is None
+    assert frame.electronic.total_energy == pytest.approx(-49.12345678 * 13.605693122994)
+
+
+def test_a_run_without_job_done_is_refused_even_at_a_clean_boundary() -> None:
+    """C1's core: a file cut at a clean line boundary (after the energy line, no blocks, no
+    'JOB DONE.') is a run killed while still writing — reintroducing QEOUT-C1's poisoned
+    frame (a real energy paired with the initial geometry) is exactly what must never happen.
+    It is a recoverable torn tail, never a silently complete frame."""
+    torn = _scf_only_run().replace("\n     JOB DONE.\n", "\n")
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse(io.BytesIO(torn.encode()), filename="pw.out")
+    issue = exc.value.issues[0]
+    assert issue.code == "QEOUT_TRUNCATED"
+    assert issue.recovery_hint == "truncate_at_last_valid_frame"
+
+
+# --- QEOUT-H1: a step's crystal-coordinate positions convert against its own cell ---------
+
+
+def _vc_relax_crystal_run() -> str:
+    """A one-step vc-relax run whose CELL_PARAMETERS doubles the cell to 10 Å (printed before
+    the positions card, the real QE order) with crystal-coordinate positions: O at fractional
+    0.5,0.5,0.5 must decode to 5.0 Å against the 10 Å cell, never 2.5 (× the initial 5 Å)."""
+    idx = _MINIMAL.index("     !\n     !    total energy")
+    return (
+        _MINIMAL[:idx]
+        + "     !\n     !    total energy =     -49.12345678 Ry\n     !\n\n"
+        + "     CELL_PARAMETERS (angstrom)\n"
+        + "      10.0  0.0  0.0\n"
+        + "       0.0 10.0  0.0\n"
+        + "       0.0  0.0 10.0\n\n"
+        + "     ATOMIC_POSITIONS (crystal)\n"
+        + "     O   0.5  0.5  0.5\n"
+        + "     H   0.4  0.3  0.2\n"
+        + "     H   0.2  0.3  0.5\n\n"
+        + "     JOB DONE.\n"
+    )
+
+
+def test_crystal_positions_convert_against_the_steps_own_cell() -> None:
+    """QEOUT-H1 (the geometry High): a vc-relax step's crystal-coordinate positions must
+    convert against the step's **updated** cell — the one the frame carries — so the doubled
+    cell and fractional 0.5 land 5.0 Å, mutually consistent (never 2.5 = 0.5 × the initial
+    5 Å cell). A frame whose cell and positions disagree is silent geometry corruption (P1)."""
+    result = PARSER.parse(io.BytesIO(_vc_relax_crystal_run().encode()), filename="pw.out")
+    frame = result.canonical.frames[0]
+    assert frame.cell is not None
+    assert frame.cell.lattice_vectors[0][0] == pytest.approx(10.0)
+    # O at fractional 0.5 → 0.5 × 10 Å = 5.0 Å against the doubled cell (not 2.5).
+    assert frame.atoms.positions[0].tolist() == pytest.approx([5.0, 5.0, 5.0])
+    # The H site at fractional 0.4,0.3,0.2 → 4.0,3.0,2.0 Å.
+    assert frame.atoms.positions[1].tolist() == pytest.approx([4.0, 3.0, 2.0])
+
+
+# --- review R2: H2 (corrupt mass), M1 (stress anchor), M2 (ionic non-convergence) -----
+
+
+def test_a_corrupt_species_mass_refuses_cleanly_not_a_raw_valueerror() -> None:
+    """H2 (the crash High): a species row whose **mass** column is non-numeric must refuse the
+    layout cleanly (QEOUT_UNRECOGNIZED_LAYOUT) — never a raw float() ValueError escaping the
+    §5 contract (which surfaces as a 500 over HTTP), and never a silent truncation."""
+    text = _MINIMAL.replace(
+        "        O            6.000     15.99900     O( 1.00)\n",
+        "        O            6.000     ????????     O( 1.00)\n",
+    )
+    with pytest.raises(ParseError) as exc:
+        PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    issue = exc.value.issues[0]
+    assert issue.code == "QEOUT_UNRECOGNIZED_LAYOUT"
+    assert "non-numeric mass" in issue.message
+
+
+def test_a_stress_block_with_looser_spacing_is_still_read() -> None:
+    """M1 (the silent-stress-drop Medium): the stress anchor must be whitespace-tolerant — a
+    build that prints `total  stress` (two spaces) instead of `total   stress` is the same
+    block and must still be read, never silently dropped to stress = None (P1)."""
+    text = _MINIMAL.replace("     total   stress", "     total  stress")
+    result = PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    stress = result.canonical.frames[0].electronic.stress
+    assert stress is not None
+    assert stress[0][0] == pytest.approx(0.00001 * 91.8157694288102, abs=1e-18)
+
+
+def test_a_relax_that_hits_max_steps_is_flagged_unconverged() -> None:
+    """M2 (the unflipped-ionic Medium): QE's relaxation non-convergence statement —
+    'The maximum number of steps has been reached.' — must fire QEOUT_UNCONVERGED for a relax
+    run (not only the SCF 'convergence NOT achieved' form), with the run still read complete
+    (JOB DONE.) and the energy kept present-with-value (P3)."""
+    text = _MINIMAL.replace(
+        "\n     JOB DONE.",
+        "\n     The maximum number of steps has been reached.\n\n     JOB DONE.",
+    )
+    result = PARSER.parse(io.BytesIO(text.encode()), filename="pw.out")
+    assert result.canonical.frame_count == 3
+    warnings = [i for i in result.issues if i.code == "QEOUT_UNCONVERGED"]
+    assert len(warnings) == 1
+    assert warnings[0].severity == "warning"
+    assert "maximum number of steps" in warnings[0].message
+    assert result.canonical.frames[2].electronic.total_energy is not None
+
+
 # --- streamed == materialized (D56) ---------------------------------------------------
 
 

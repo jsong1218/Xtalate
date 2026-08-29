@@ -46,8 +46,12 @@ class DeepmdNpyExporter(ExporterPlugin):
         constant atom *count*) has no such array, so it is refused **cleanly**
         (``UNREPRESENTABLE_VALUE``, a completed refused report) rather than crashing mid-write in
         ``export_dir``. Reordering or splitting atoms to force a fit would silently permute the
-        structure, which Xtalate never does (identity ``atom_permutation``, D43). The engine calls
-        this once on the write-plan-filtered object, ahead of ``export_dir``.
+        structure, which Xtalate never does (identity ``atom_permutation``, D43). A frame that
+        pairs a stress with a degenerate (zero-volume) cell is refused the same way: writing that
+        stress as a virial requires multiplying by the cell volume, so ``virial_from_stress``
+        would crash mid-write on volume ≤ 0 — the honest outcome is this refusal, not a crash
+        (and Xtalate will not fabricate a volume to force a fit). The engine calls this once on
+        the write-plan-filtered object, ahead of ``export_dir``.
         """
         if not canonical.frames:
             return "DeePMD requires at least one frame; the write plan left an empty system."
@@ -58,6 +62,16 @@ class DeepmdNpyExporter(ExporterPlugin):
                 "this trajectory's atom composition or order changes across frames. Xtalate will "
                 "not silently reorder or split atoms to force a fit."
             )
+        for index, frame in enumerate(canonical.frames):
+            if frame.electronic.stress is None or frame.cell is None:
+                continue
+            lattice = np.asarray(frame.cell.lattice_vectors, dtype=np.float64)
+            if np.abs(np.linalg.det(lattice)) <= 0:
+                return (
+                    f"DeePMD writes stress as virial = -stress·volume, which requires a non-zero "
+                    f"cell volume, but frame {index} has a stress paired with a degenerate "
+                    "(zero-volume) lattice. Xtalate will not fabricate a volume to force a fit."
+                )
         return None
 
     def export_dir(self, canonical: CanonicalObject) -> dict[str, bytes]:
@@ -98,25 +112,37 @@ class DeepmdNpyExporter(ExporterPlugin):
             )
         return dict(output)
 
-    def assemble_dir(self, contributions: list[AssembleContribution]) -> dict[str, bytes]:
+    def assemble_dir(
+        self, contributions: list[AssembleContribution]
+    ) -> tuple[dict[str, bytes], list[str]]:
         """Group contributions by composition into one system directory per group.
 
-        The group key is the exact per-atom symbol sequence of a contribution's frames (a DeePMD
-        system is fixed-composition **and** fixed-order — ``type.raw`` is a per-atom array), so
-        contributions whose atoms are ordered differently are separate systems rather than a
-        silent reorder (identity ``atom_permutation``; Xtalate never reorders). Deterministic by
-        first appearance; the grouping is named in the batch aggregate note (D214).
+        Returns ``(output, systems)`` — the written files and the per-contribution ``system_NNN``
+        assignment, **index-aligned with ``contributions``** (the ordered source→system mapping
+        the batch aggregate records; the batch layer names the sources it handed over, M56-S3 /
+        D214/D227). The group key is the exact per-atom symbol sequence of a contribution's frames
+        (a DeePMD system is fixed-composition **and** fixed-order — ``type.raw`` is a per-atom
+        array), so contributions whose atoms are ordered differently are separate systems rather
+        than a silent reorder (identity ``atom_permutation``; Xtalate never reorders).
+        Deterministic by first appearance; the grouping is named in the batch aggregate note
+        (D214).
         """
-        groups: OrderedDict[tuple[str, ...], list[AssembleContribution]] = OrderedDict()
-        for contribution in contributions:
+        groups: OrderedDict[tuple[str, ...], list[tuple[int, AssembleContribution]]] = OrderedDict()
+        for position, contribution in enumerate(contributions):
             symbols = tuple(contribution.canonical.frames[0].atoms.symbols)
-            groups.setdefault(symbols, []).append(contribution)
+            groups.setdefault(symbols, []).append((position, contribution))
         output: dict[str, bytes] = {}
+        systems: list[str] = [""] * len(contributions)
         for index, group in enumerate(groups.values()):
             prefix = f"system_{index:03d}/"
-            for path, content in self._merge_group(group).items():
+            merged = [contribution for _, contribution in group]
+            for path, content in self._merge_group(merged).items():
                 output[prefix + path] = content
-        return output
+            # Position-mapped, not regrouped: ``systems[i]`` names the system of
+            # ``contributions[i]`` (members of one group are *not* contiguous in the input).
+            for position, _ in group:
+                systems[position] = prefix.removesuffix("/")
+        return output, systems
 
     def _merge_group(self, contributions: list[AssembleContribution]) -> dict[str, bytes]:
         frames = []

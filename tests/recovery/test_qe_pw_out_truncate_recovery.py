@@ -138,10 +138,46 @@ def test_a_structurally_wrong_step_is_not_truncated_away() -> None:
 
 
 def test_an_intact_file_needs_no_recovery_and_invents_no_truncation() -> None:
-    result = _recover(_GOOD)
-    assert result.canonical.frame_count == 2
+    """A *genuinely* intact run (the one that reached pw.x's 'JOB DONE.' sentinel) needs no
+    recovery and invents no truncation — QEOUT-C1: the completion sentinel is exactly what
+    marks the file whole, and only then is the last frame emitted complete."""
+    result = _recover(_FULL)
+    assert result.canonical.frame_count == 3
     assert result.assumptions == []
     assert "QEOUT_TRUNCATED" not in {i.code for i in result.issues}
+
+
+def test_a_clean_boundary_cut_lacking_job_done_is_not_accepted_as_complete() -> None:
+    """The QEOUT-C1 gap: ``_GOOD`` ends at a clean line boundary (after step 2's positions
+    card) with **no** 'JOB DONE.', so a run killed there must not be read as a complete
+    2-frame run — the pending final frame would pair its real energy with a geometry the run
+    was never verified to finish. It is refused by default and, under the explicit truncate
+    choice, keeps only the steps the stream acknowledged before the incomplete tail."""
+    with pytest.raises(ParseError) as exc:
+        parse_with_recovery(_REGISTRY, _GOOD.encode(), filename="pw.out")
+    issue = exc.value.issues[0]
+    assert issue.code == "QEOUT_TRUNCATED"
+    assert issue.recovery_hint == "truncate_at_last_valid_frame"
+    kept = _recover(_GOOD).canonical
+    assert [f.index for f in kept.frames] == [0]  # step 1 acknowledged; step 2 is the torn tail
+    assert "QEOUT_TRUNCATED" in {i.code for i in _recover(_GOOD).issues}
+
+
+def test_a_run_cut_after_the_last_energy_line_before_its_blocks_recovers_to_the_prefix() -> None:
+    """The slice-plan shape: a 3-step run cut after step 3's '!    total energy' line but
+    before its force block. Step 3's frame is never emitted — no real-energy/arbitrary-
+    geometry 3rd frame — and truncation keeps the two acknowledged steps."""
+    torn = _FULL[: _FULL.index("     Forces acting on atoms", _STEP3)]
+    with pytest.raises(ParseError) as exc:
+        parse_with_recovery(_REGISTRY, torn.encode(), filename="pw.out")
+    assert exc.value.issues[0].code == "QEOUT_TRUNCATED"
+    kept = _recover(torn).canonical
+    assert [f.index for f in kept.frames] == [0, 1]
+    # The torn third frame must never carry step 3's energy with a geometry that is not its
+    # own — under the old behavior frame 2 would have paired -49.13012345 Ry with the initial
+    # 2.49… positions. Now that geometry is simply refused.
+    assert all(f.electronic.total_energy is not None for f in kept.frames)
+    assert kept.frames[1].atoms.positions[0].tolist() == pytest.approx([2.48, 2.5, 2.5])
 
 
 def test_recovery_keeps_the_prefix_lazily() -> None:

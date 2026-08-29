@@ -56,9 +56,12 @@ _PSEUDOPOTENTIALS_KEY = "qe:pseudopotentials"
 _NAMELISTS_KEY = "qe_pw_in:namelists"
 _UNMAPPED_CARDS_KEY = "qe_pw_in:unmapped_cards"
 
-#: The &system facts the reader consumes; everything else in &system (and every other
-#: namelist) rides the carry under the Part 2 §6.1 routing rule. The exporter computes
-#: ``ibrav``/``nat``/``ntyp`` itself and refuses any carried spelling of this set.
+#: The full &system structural + lattice-spelling set the **exporter refuses to write as a
+#: carry** (it computes ``ibrav``/``nat``/``ntyp`` and writes an explicit CELL_PARAMETERS
+#: cell, so any carried spelling of this set would contradict its output). The reader
+#: consumes a per-``ibrav`` **subset** of this set (``qe_pw_in``'s ``_remaining_system_entries``,
+#: review R3 QE-A): a declared-but-unused spelling is carried on the read side, then refused
+#: on the write side by this set — the two sides stay targeted, never a silent drop.
 _CONSUMED_SYSTEM_KEYS = frozenset(
     {"ibrav", "nat", "ntyp", "celldm", "a", "b", "c", "cosab", "cosac", "cosbc"}
 )
@@ -71,8 +74,12 @@ _CONSUMED_SYSTEM_KEYS = frozenset(
 #: stored as strings per the ``SimulationMetadata.extra: dict[str, str]`` contract. The
 #: exporter writes each key back into the namelist this mapping names.
 _SIMULATION_EXTRA_KEYS: Mapping[str, frozenset[str]] = {
-    "control": frozenset({"calculation", "ecutwfc", "ecutrho"}),
-    "system": frozenset({"degauss", "smearing", "occupations"}),
+    # ``ecutwfc``/``ecutrho`` are **&SYSTEM** variables in real QE (INPUT_PW), not
+    # &CONTROL — the D191-intended promotion to simulation.extra fires only when they ride
+    # the &system namelist (QE-B, review R3); a file that puts them under &control (a
+    # non-QE placement) carries them unmapped instead, never a fabricated promotion.
+    "control": frozenset({"calculation"}),
+    "system": frozenset({"ecutwfc", "ecutrho", "degauss", "smearing", "occupations"}),
     "electrons": frozenset({"conv_thr"}),
 }
 

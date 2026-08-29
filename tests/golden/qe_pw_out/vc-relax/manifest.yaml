@@ -4,7 +4,7 @@ source_file: pw.out
 expected_canonical: expected.canonical.json
 canonical_schema_version: 1.0.0
 sha256: c3d6132b46deede3cbaeb4165b7fdd82502e53cf18ddc747ee4e30cb3f974f17
-expected_sha256: c48fcf83fa990270df0ea56ecfd807167f9306e65ec44cbcd7735177b5a8bfb9
+expected_sha256: 22709308a48036a6ba5a78f802aabfb1095e04c426e57f367a3348d3207cf98f
 origin:
   kind: synthetic
   source: Hand-written for M52-S1 (QE pw.x output parser, QE 7.x layout).

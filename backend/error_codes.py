@@ -69,6 +69,21 @@ ERROR_CODES: tuple[ErrorCodeSpec, ...] = (
         "fan out to.",
     ),
     ErrorCodeSpec(
+        "BATCH_TOO_LARGE",
+        422,
+        "A batch_convert submission named more `file_ids` than the instance's `batch_max_files` "
+        "hard cap. A manifest over the cap is refused outright; a manifest whose fan-out would "
+        "exceed the remaining concurrency is separately refused as `TOO_MANY_ACTIVE_JOBS`.",
+    ),
+    ErrorCodeSpec(
+        "JOB_STALE",
+        None,
+        "A batch child's run went stale: its worker crashed mid-run and never returned, and the "
+        "child sat `running` past the instance's `running_child_ttl_minutes`. The parent's "
+        "re-drive fails it explicitly so the aggregate cannot hang on it forever. Recorded on "
+        "the failed child job.",
+    ),
+    ErrorCodeSpec(
         "NOT_FOUND",
         404,
         "No route matches the requested path and method. Check the URL against the API reference.",

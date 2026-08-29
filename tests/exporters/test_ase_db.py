@@ -154,6 +154,26 @@ def test_ase_db_namespaced_keys_restore_as_key_value_pairs_and_data() -> None:
     assert rp.user_metadata.custom_global["ase_db:data"] == {"note": [1, 2]}
 
 
+def test_non_scalar_kv_and_non_dict_data_are_reported_dropped_not_silent() -> None:
+    # ASEDB-5 (review R5): a custom_global entry that matches the writable ase_db namespace *by
+    # name* but holds a value type ASE cannot store — a non-scalar ``ase_db:<key>``, a non-dict
+    # ``ase_db:data`` — is dropped on write. The pre-flight predicts it preserved by name, so the
+    # exporter must report the value-type drop (``ASE_DB_KV_VALUE_DROPPED``) to keep the write
+    # report honest (P5); an entry that *can* be written is neither dropped nor warned.
+    meta = UserMetadata(
+        custom_global={
+            "ase_db:list": [1, 2],
+            "ase_db:data": "notadict",
+            "ase_db:ok": 5,
+        }
+    )
+    obj = _obj([_frame()], meta)
+    warnings = make_ase_db_exporter().export_warnings(obj)
+    assert [w.code for w in warnings] == ["ASE_DB_KV_VALUE_DROPPED", "ASE_DB_KV_VALUE_DROPPED"]
+    # And the write round-trip keeps only the conforming entry — the drop is real, and reported.
+    assert _reparse(_export(obj)).user_metadata.custom_global == {"ase_db:ok": 5}
+
+
 def test_foreign_namespace_key_is_not_written() -> None:
     # ASE forbids ':' in a key, so a foreign-namespace custom_global entry cannot be spelled as an
     # ASE key; the exporter drops it (the Conversion Engine reports it removed per the
@@ -209,6 +229,20 @@ def test_carry_dropped_warning_when_field_and_differing_carry_coexist() -> None:
         "STRESS_SIGN_CONVENTION_CHANGED",
         "STRESS_CARRY_DROPPED",
     }
+
+
+def test_length9_flattened_stress_carry_does_not_crash_export_warnings() -> None:
+    # ASEDB-1 (review R4): ase.db itself flattens a full 3×3 calculator stress to a bare
+    # length-9 array on write, so an externally produced .db can carry exactly that shape. It
+    # cannot be judged against the written (3, 3) tensor — the drop-check must skip it, never
+    # broadcast-crash (export_warnings runs unguarded from the conversion engine, so a raw
+    # exception would abort the whole conversion). The sign-change warning still fires (the
+    # field is populated); no STRESS_CARRY_DROPPED is claimed for an uncomparable carry.
+    flat9 = np.arange(9, dtype=float) + 1.0
+    frame = _frame(electronic=Electronic(stress=_TENSOR))
+    meta = UserMetadata(custom_per_frame={_STRESS_KEY: np.array([flat9])})
+    warnings = make_ase_db_exporter().export_warnings(_obj([frame], meta))
+    assert [w.code for w in warnings] == ["STRESS_SIGN_CONVENTION_CHANGED"]
 
 
 # --- capabilities ---------------------------------------------------------------------
