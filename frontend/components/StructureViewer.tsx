@@ -19,8 +19,11 @@ import type { CanonicalGeometry } from "@/lib/geometry/useGeometry";
 
 const MolstarView = dynamic(() => import("./StructureViewerMolstar"), {
   ssr: false,
+  // The loading affordance uses the `text-muted` token (not a raw slate shade): the Structure tab
+  // mounts this viewer on axe-scanned pages, and the placeholder must clear the AA contrast bar on
+  // both surfaces (v1.6 M60-S1 — found by the e2e accessibility journey on the conversion page).
   loading: () => (
-    <div className="flex h-full items-center justify-center text-sm text-slate-400">
+    <div className="flex h-full items-center justify-center text-sm text-muted">
       Loading structure…
     </div>
   ),

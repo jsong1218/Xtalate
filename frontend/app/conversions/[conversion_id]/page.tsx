@@ -7,6 +7,8 @@ import { DownloadPanel } from "@/components/DownloadPanel";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { Provenance } from "@/components/Provenance";
 import { ResolveAndRetry } from "@/components/ResolveAndRetry";
+import { StructureTab } from "@/components/StructureTab";
+import { useConversionGeometry } from "@/lib/geometry/useGeometry";
 import { BackLink } from "@/components/shell/BackLink";
 import { ConversionReportPanel } from "@/components/report/ConversionReportPanel";
 import { RefusalPanel } from "@/components/report/RefusalPanel";
@@ -114,6 +116,11 @@ export default function ConversionRecordPage() {
 
   const query = useQuery(conversionQuery(conversionId));
 
+  // The conversion's **output** geometry (M60-S1): the Structure tab renders the result — the
+  // bytes the user downloads — fed straight from `GET /v1/conversions/{id}/geometry?side=output`
+  // at the default frame (D232). Source/output side-by-side is M62 (Compare), not this tab.
+  const outputGeometry = useConversionGeometry(conversionId, "output");
+
   async function handleRevalidate() {
     setRevalidateError(null);
     setRevalidating(true);
@@ -212,6 +219,10 @@ export default function ConversionRecordPage() {
           </section>
         )}
       </div>
+
+      {/* The Structure tab (M60-S1, Part 7 §6): the conversion's output geometry. A **refused**
+          conversion has no output bytes, so no viewer — the RefusalPanel above is the substance. */}
+      {refused ? null : <StructureTab geometryState={outputGeometry} />}
 
       {/* Re-validate: appends, never replaces (Part 6 §2), and works after the bytes are gone. The
           reader chooses the tolerance profile (M32-S2) — the bar is never changed without asking. */}
