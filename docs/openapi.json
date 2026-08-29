@@ -337,6 +337,128 @@
         "title": "DownloadInfo",
         "type": "object"
       },
+      "GeometryFrame": {
+        "description": "One projected frame's geometry (v1.6 M59-S1) \u2014 positions + per-frame cell as nested lists.\n\n``positions`` is the ``(N, 3)`` Cartesian array as a nested JSON list (the canonical array wire\nform, Part 2 \u00a71). ``cell`` is the frame's ``(3, 3)`` lattice as a nested list, and ``null`` when\nthe source carried none \u2014 absence renders as absence (P3), never a fabricated box. ``index`` is\nthe frame's **absolute** 0-based position in the whole trajectory, so a ranged read is\naddressable even though the frame arrived inside a ``[start, end)`` slice.",
+        "properties": {
+          "cell": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "positions": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Positions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "index",
+          "positions"
+        ],
+        "title": "GeometryFrame",
+        "type": "object"
+      },
+      "GeometryResponse": {
+        "description": "``GET /v1/files/{id}/geometry`` and ``GET /v1/conversions/{id}/geometry`` (v1.6 M59).\n\nA **wire projection** of the Canonical Object, assembled from the parsed ``FrameStream`` \u2014 the\ngeometric subset a molecular viewer needs, never a second canonical artifact and never a report\n(Part 6 \u00a77 additive read-only geometry). Load-bearing rules:\n\n* **Absence renders as absence (P3).** ``species``/``positions``/``cell`` hold only what the\n  source stated; a ``cell = None`` source answers ``cell: null``, and ``cell`` is ``null`` on\n  any frame whose lattice the source did not provide \u2014 nothing is zero-filled or fabricated.\n* **No bonds.** The Canonical Model holds no bonds, so this projection carries none \u2014 an atomic\n  coordination bond is a *display* heuristic (D234), never file content and never served here.\n* **Ranged by frame index.** ``frames`` holds the exact requested ``[start, end)`` slice (or\n  frame 0 when ``frames`` is omitted); ``frame_index_base`` names the absolute index of its\n  first member and ``frame_count`` the whole object's total, so a scrubber knows both where a\n  page sits and how far it could go.\n* ``species``/``cell`` are the object-level shape: the atom-count-invariant symbols and frame-\n  0's lattice (or ``null``), read from the parsed stream before any range slice.",
+        "properties": {
+          "cell": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell"
+          },
+          "frame_count": {
+            "title": "Frame Count",
+            "type": "integer"
+          },
+          "frame_index_base": {
+            "default": 0,
+            "title": "Frame Index Base",
+            "type": "integer"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/GeometryFrame"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/GeometrySource"
+          },
+          "species": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Species",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source",
+          "species",
+          "frame_count"
+        ],
+        "title": "GeometryResponse",
+        "type": "object"
+      },
+      "GeometrySource": {
+        "description": "Which bytes a geometry response projects (v1.6 M59-S1) \u2014 the wire identity of the source.\n\nA faithful projection answers *what was parsed*, so the viewer shows a format-named origin\nrather\nthan a silent blob. ``filename`` is the upload name for a ``file_id``/``side=source`` read and\nthe conventional output name for ``side=output``; it may be ``None`` only when none exists.",
+        "properties": {
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "format_id": {
+            "title": "Format Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "format_id"
+        ],
+        "title": "GeometrySource",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1087,6 +1209,80 @@
         ]
       }
     },
+    "/v1/conversions/{conversion_id}/geometry": {
+      "get": {
+        "description": "Canonical geometry of a conversion's source or output bytes (read-only, Part 6 \u00a77).",
+        "operationId": "conversion_geometry_v1_conversions__conversion_id__geometry_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversion_id",
+            "required": true,
+            "schema": {
+              "title": "Conversion Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Which side's bytes to project: 'source' (the upload) or 'output'.",
+            "in": "query",
+            "name": "side",
+            "required": false,
+            "schema": {
+              "default": "source",
+              "description": "Which side's bytes to project: 'source' (the upload) or 'output'.",
+              "pattern": "^(source|output)$",
+              "title": "Side",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Half-open 0-based frame range 'start:end' (e.g. '0:100'); omitting it returns only frame 0 (the structure).",
+            "in": "query",
+            "name": "frames",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Half-open 0-based frame range 'start:end' (e.g. '0:100'); omitting it returns only frame 0 (the structure).",
+              "title": "Frames"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeometryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Conversion Geometry",
+        "tags": [
+          "conversions"
+        ]
+      }
+    },
     "/v1/convert": {
       "post": {
         "description": "Submit a conversion (Part 6 \u00a72.1). A refusal is a completed job, not an error (\u00a71).",
@@ -1210,6 +1406,67 @@
           }
         },
         "summary": "Delete File"
+      }
+    },
+    "/v1/files/{file_id}/geometry": {
+      "get": {
+        "description": "Canonical geometry of an uploaded file (read-only, Part 6 \u00a77).",
+        "operationId": "file_geometry_v1_files__file_id__geometry_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Half-open 0-based frame range 'start:end' (e.g. '0:100'); omitting it returns only frame 0 (the structure).",
+            "in": "query",
+            "name": "frames",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Half-open 0-based frame range 'start:end' (e.g. '0:100'); omitting it returns only frame 0 (the structure).",
+              "title": "Frames"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeometryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "File Geometry",
+        "tags": [
+          "files"
+        ]
       }
     },
     "/v1/health": {

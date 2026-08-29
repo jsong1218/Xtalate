@@ -41,6 +41,13 @@ without scraping the message.
 service issued. Cursors are opaque; start from the first page and follow only the `next_cursor`
 values the service returns.
 
+### INVALID_FRAME_RANGE
+
+**HTTP 400.** The `frames` parameter on a geometry endpoint is not a well-formed half-open
+`start:end` range of non-negative integers, or it is empty/reversed (`start >= end`). Geometry
+serves 0-based frame windows only — the projection is ranged by frame index (Part 6 §7), so an
+ambiguously-specified request is rejected rather than guessed.
+
 ### EMPTY_BATCH
 
 **HTTP 422.** A `batch_convert` submission named no files. A batch must list at least one

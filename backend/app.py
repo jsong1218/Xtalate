@@ -28,11 +28,13 @@ from backend.routers import (
     capabilities,
     conversions,
     downloads,
+    geometry,
     health,
     jobs,
     limits,
     uploads,
 )
+from backend.routers.geometry import GeometryCache
 from backend.security import RateLimiter, enforce_public_rate_limit, enforce_request_policy
 from backend.storage import create_object_store
 from xtalate.registry import default_registry
@@ -93,6 +95,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = engine
     app.state.repository = repository
     app.state.object_store = object_store
+    # The bounded server-side geometry cache (v1.6 M59-S1, D232): shared across requests so a
+    # viewer that scrubs across ranges does not re-parse per request while memory stays flat — the
+    # byte bound (never a module global) keeps a huge trajectory out of it, so big files stream per
+    # request with bounded per-range memory.
+    app.state.geometry_cache = GeometryCache(settings.geometry_cache_max_bytes)
     # The in-memory per-caller rate limiter (M24 slice 5), shared across requests. Per-process, so
     # a multi-replica hosted instance swaps it for a shared (Redis) limiter behind the same seam.
     app.state.rate_limiter = RateLimiter()
@@ -152,6 +159,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(jobs.router, prefix="/v1", dependencies=guarded)
     app.include_router(downloads.router, prefix="/v1", dependencies=guarded)
     app.include_router(conversions.router, prefix="/v1", dependencies=guarded)
+    # Geometry is a data surface (Part 6 §7 additive read-only): it resolves live bytes and parses,
+    # so it carries the full request policy just like conversions/downloads — not the public POST
+    # cost, but a guarded read of the caller's own uploads/records.
+    app.include_router(geometry.router, prefix="/v1", dependencies=guarded)
 
     return app
 

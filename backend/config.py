@@ -108,6 +108,16 @@ class Settings(BaseSettings):
     #: windows; Revision 1.5). ``None`` = indefinite, the self-hosted default posture.
     report_retention_days: int | None = 30
 
+    #: Maximum bytes of parsed geometry the server-side ``/v1/…/geometry`` cache may hold total
+    #: (v1.6 M59-S1, D232). The cache is an LRU of **projected** geometry keyed by
+    #: ``(file_id | conversion_id+side)`` so a viewer that scrubs across ranges does not re-parse
+    #: per request while memory stays flat. The bound is per-*cache*, not per-entry: an object whose
+    #: projected bytes alone exceed the cap is never cached at all — parsing runs per request, the
+    #: honest bounded-memory posture for a genuinely huge trajectory that the S3 spike measures —
+    #: and within the cap the LRU evicts oldest-first. Tuned small enough that a single-hosted
+    #: instance cannot be pressured into holding many whole trajectories.
+    geometry_cache_max_bytes: int = 16 * 1024 * 1024
+
     #: Sub-day override for the report window, in **hours**. When set it *wins* over
     #: ``report_retention_days`` (so ``report_retention_window`` is hours, not days) — the hosted
     #: demo sets ``1`` because a shared, anonymous instance should not keep another visitor's

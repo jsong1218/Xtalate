@@ -56,6 +56,11 @@
       "summary": "The `cursor` passed to a paginated listing is not one this service issued. Start from the first page and follow `next_cursor` values only."
     },
     {
+      "code": "INVALID_FRAME_RANGE",
+      "http_status": 400,
+      "summary": "The `frames` parameter on a geometry endpoint is not a well-formed half-open `start:end` range of non-negative integers (or it is empty/reversed). Geometry serves 0-based frame windows only (Part 6 \u00a77)."
+    },
+    {
       "code": "INVALID_RECOVERY_CHOICE",
       "http_status": 422,
       "summary": "A supplied recovery choice does not match the paused conversion's offered scenario or its allowed values."
