@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import happyRecord from "../components/__fixtures__/conversion.record.json";
+import { API_URL, FIXTURES, fixtureBuffer, pollJob, uploadFixture } from "./support/api";
 
 /**
  * Automated WCAG 2.1 A/AA checks in a real browser (MASTER_SPEC Part 7 §4–§5; slice M30-S2). jsdom
@@ -49,6 +50,66 @@ test("the conversion record page has no serious accessibility violations", async
   await page.route("**/v1/conversions/*", (route) => route.fulfill({ json: happyRecord }));
   await page.goto(`/conversions/${(happyRecord as { conversion_id: string }).conversion_id}`);
   await expect(page.getByRole("heading", { name: /^Converted/ })).toBeVisible();
+
+  const violations = await seriousViolations(page);
+  expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
+});
+
+test("the Structure tab's viewer chrome has no serious accessibility violations (M63-S2)", async ({
+  page,
+  request,
+}) => {
+  // A live multi-frame file so the chrome under test is the whole bar: the species legend, the
+  // frame scrubber (range + play/pause + readout), and the bonds toggle — the canvas itself is
+  // not the accessible record (D241), so the scan judges the chrome around it.
+  const fileId = await uploadFixture(request, FIXTURES.multiFrame);
+  await page.goto(`/files/${fileId}`);
+  await expect(
+    page.getByRole("heading", { name: "Structure", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("[data-mounted=true]")).toBeVisible({ timeout: 60_000 });
+
+  const violations = await seriousViolations(page);
+  expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
+});
+
+test("the Compare tab's viewer chrome has no serious accessibility violations (M63-S2)", async ({
+  page,
+  request,
+}) => {
+  // Seed a completed conversion whose Compare tab mounts both viewers (multi-frame → POSCAR with
+  // a `frame_selection` — the source scrubs, the output holds its frame, and the RMSD overlay +
+  // removed-reasons + exported-frame marker render beside the two canvases).
+  const upload = await request.post(`${API_URL}/v1/upload`, {
+    multipart: {
+      file: {
+        name: FIXTURES.multiFrame.file,
+        mimeType: FIXTURES.multiFrame.mimeType,
+        buffer: fixtureBuffer(FIXTURES.multiFrame.file),
+      },
+    },
+  });
+  expect(upload.status(), await upload.text()).toBe(201);
+  const fileId = String((await upload.json()).file_id);
+  const submit = await request.post(`${API_URL}/v1/convert`, {
+    data: { file_id: fileId, target_format_id: "poscar", options: { allow_recovery: true } },
+  });
+  expect([200, 201, 202]).toContain(submit.status());
+  const jobId = String((await submit.json()).job_id);
+  const paused = await pollJob(request, jobId, ["awaiting_recovery"]);
+  expect(paused.state).toBe("awaiting_recovery");
+  const resume = await request.post(`${API_URL}/v1/jobs/${jobId}/recovery`, {
+    data: { choices: { frame_selection: { choice: "index", parameters: { frame_index: 3 } } } },
+  });
+  expect(resume.ok(), await resume.text()).toBeTruthy();
+  const done = await pollJob(request, jobId, ["completed"]);
+  const conversionId = String((done.result as { conversion_id: string }).conversion_id);
+
+  await page.goto(`/conversions/${conversionId}`);
+  await expect(page.getByRole("tab", { name: "Compare" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("tab", { name: "Compare" }).click();
+  const compare = page.locator('section[aria-label="Compare"]');
+  await expect(compare.locator("[data-mounted=true]")).toHaveCount(2, { timeout: 60_000 });
 
   const violations = await seriousViolations(page);
   expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);

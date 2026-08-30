@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fixturePath, FIXTURES } from "./support/api";
+import { API_URL, FIXTURES, fixtureBuffer, fixturePath, pollJob, uploadFixture } from "./support/api";
 
 /**
  * Keyboard traversal of the wizard (MASTER_SPEC Part 7 §4; slice M30-S2). A conversion must be
@@ -59,4 +59,96 @@ test("the conversion can be chosen and started with the keyboard", async ({ page
   await expect(finalConvert).toBeFocused(); // focus lands on the confirm card's primary action
   await page.keyboard.press("Enter");
   await page.waitForURL("**/convert/**");
+});
+
+test("the frame scrubber and the bonds toggle are keyboard-operable (M63-S2)", async ({
+  page,
+  request,
+}) => {
+  const fileId = await uploadFixture(request, FIXTURES.multiFrame);
+  await page.goto(`/files/${fileId}`);
+  await expect(
+    page.getByRole("heading", { name: "Structure", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  const mount = page.locator("[data-mounted=true]");
+  await expect(mount).toBeVisible({ timeout: 60_000 });
+
+  // The scrubber is a native range input: the arrow keys move it (the real-browser focus model
+  // the M63 keyboard bar asserts — jsdom cannot represent it).
+  const slider = page.getByRole("slider", { name: "Trajectory frame" });
+  await expect(slider).toBeVisible({ timeout: 30_000 });
+  await slider.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(mount).toHaveAttribute("data-current-frame", "1", { timeout: 30_000 });
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(mount).toHaveAttribute("data-current-frame", "3", { timeout: 30_000 });
+  await page.keyboard.press("ArrowLeft");
+  await expect(mount).toHaveAttribute("data-current-frame", "2", { timeout: 30_000 });
+  await expect(page.getByRole("status")).toContainText("2 / 6");
+
+  // The bonds toggle is a real button: keyboard-Enter flips it, and the state is announced via
+  // aria-pressed (never a color-only signal).
+  const toggle = page.getByRole("button", { name: /bonds heuristic/i });
+  await toggle.focus();
+  await page.keyboard.press("Enter");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByText("Bonds are a display heuristic, not file content"),
+  ).toBeVisible();
+});
+
+test("the Structure/Compare tab control switches tabs by keyboard (M63-S2)", async ({
+  page,
+  request,
+}) => {
+  // Seed a completed conversion whose record carries both tabs (multi-frame → POSCAR with a
+  // `frame_selection`, exactly the Compare journeys' seeding).
+  const upload = await request.post(`${API_URL}/v1/upload`, {
+    multipart: {
+      file: {
+        name: FIXTURES.multiFrame.file,
+        mimeType: FIXTURES.multiFrame.mimeType,
+        buffer: fixtureBuffer(FIXTURES.multiFrame.file),
+      },
+    },
+  });
+  expect(upload.status(), await upload.text()).toBe(201);
+  const fileId = String((await upload.json()).file_id);
+  const submit = await request.post(`${API_URL}/v1/convert`, {
+    data: { file_id: fileId, target_format_id: "poscar", options: { allow_recovery: true } },
+  });
+  expect([200, 201, 202]).toContain(submit.status());
+  const jobId = String((await submit.json()).job_id);
+  const paused = await pollJob(request, jobId, ["awaiting_recovery"]);
+  expect(paused.state).toBe("awaiting_recovery");
+  const resume = await request.post(`${API_URL}/v1/jobs/${jobId}/recovery`, {
+    data: { choices: { frame_selection: { choice: "index", parameters: { frame_index: 3 } } } },
+  });
+  expect(resume.ok(), await resume.text()).toBeTruthy();
+  const done = await pollJob(request, jobId, ["completed"]);
+  const conversionId = String((done.result as { conversion_id: string }).conversion_id);
+
+  await page.goto(`/conversions/${conversionId}`);
+  const structureTab = page.getByRole("tab", { name: "Structure" });
+  const compareTab = page.getByRole("tab", { name: "Compare" });
+  await expect(compareTab).toBeVisible({ timeout: 30_000 });
+
+  // Keyboard-switch to Compare: focus the tab control (a real button) and activate it with Enter;
+  // the panel swaps and aria-selected moves with focus.
+  await compareTab.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Compare", exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(compareTab).toHaveAttribute("aria-selected", "true");
+  await expect(structureTab).toHaveAttribute("aria-selected", "false");
+
+  // And back to Structure.
+  await structureTab.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Structure", exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(structureTab).toHaveAttribute("aria-selected", "true");
 });

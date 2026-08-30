@@ -130,6 +130,23 @@ function checkTheme(theme: string, block: () => string) {
     it("accent foreground clears AA on the accent surface (primary buttons)", () => {
       expect(contrast(t("accent-fg"), t("accent"))).toBeGreaterThanOrEqual(AA);
     });
+
+    // The viewer chrome pairs (v1.6 M63-S2, D241): the Structure/Compare tab chrome must meet the
+    // WCAG AA bar of the v0.6 pass — the canvas is not the accessible record, but the chrome is.
+    // The ◆ supplied-violet annotation and the exported-frame marker reuse the already-guarded §4
+    // loss tokens (`cb-assumption` on `cb-assumption-bg`, `cb-assumption` on `surface` — guarded
+    // above), so only the viewer's own non-loss pairs are listed here. The legend rows, the
+    // cell-less caption, and the Compare RMSD caption are `text-muted`/`text-body` on the same
+    // surfaces, asserted here at the exact chrome combination.
+    it.each([
+      ["bonds-fg", "bonds-bg"], // the bonds-heuristic badge (its text on its own fill)
+      ["text-body", "surface-raised"], // scrubber readout + Play button on the scrubber bar
+      ["text-muted", "surface-raised"], // the "frame" label on the scrubber bar
+      ["text-body", "surface-muted"], // the Compare RMSD overlay caption on its well fill
+      ["text-muted", "surface"], // the species-legend rows and the cell-less caption
+    ] as const)("viewer chrome %s clears AA on %s", (fg, bg) => {
+      expect(contrast(t(fg), t(bg))).toBeGreaterThanOrEqual(AA);
+    });
   });
 }
 

@@ -82,12 +82,12 @@ export function TrajectoryScrubber({
   }, [playing, frame, max, playIntervalMs, onScrub]);
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-line bg-raised px-2 py-1.5">
       <button
         type="button"
         aria-pressed={playing}
         onClick={() => setPlaying((v) => !v)}
-        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+        className="rounded border border-line bg-surface px-2 py-0.5 text-xs font-medium text-body hover:bg-well"
       >
         {playing ? "Pause" : "Play"}
       </button>
@@ -110,12 +110,12 @@ export function TrajectoryScrubber({
             <span
               data-testid="exported-frame-track-marker"
               aria-hidden="true"
-              className="pointer-events-none absolute top-1/2 z-0 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-cb-assumption bg-white"
+              className="pointer-events-none absolute top-1/2 z-0 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-cb-assumption bg-surface"
               style={{ left: `${markerPct}%` }}
             />
           ) : null}
         </div>
-        <span role="status" className="min-w-[5.5rem] text-xs font-medium text-slate-700">
+        <span role="status" className="min-w-[5.5rem] text-xs font-medium text-body">
           {frame} / {frameCount}
         </span>
       </label>

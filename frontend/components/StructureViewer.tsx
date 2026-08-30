@@ -189,7 +189,7 @@ export function StructureViewer({
   return (
     <div className="flex flex-col gap-2">
       {label ? (
-        <div className="text-xs font-medium text-slate-500">{label}</div>
+        <div className="text-xs font-medium text-muted">{label}</div>
       ) : null}
       {suppliedCell ? (
         <div
@@ -211,7 +211,7 @@ export function StructureViewer({
           {NO_CELL_CAPTION}
         </p>
       ) : null}
-      <div className="relative h-96 w-full overflow-hidden rounded border border-slate-200">
+      <div className="relative h-96 w-full overflow-hidden rounded border border-line">
         {multiFrame && trajectorySource ? (
           <TrajectoryViewer
             geometry={geometry}
@@ -232,7 +232,7 @@ export function StructureViewer({
         {bondsEnabled ? (
           <div
             role="status"
-            className="absolute bottom-2 left-2 rounded bg-amber-100 px-2 py-1 text-xs text-amber-900"
+            className="absolute bottom-2 left-2 rounded bg-bonds-bg px-2 py-1 text-xs text-bonds-fg"
           >
             {BONDS_HEURISTIC_BADGE}
           </div>
@@ -242,7 +242,7 @@ export function StructureViewer({
         type="button"
         aria-pressed={bondsEnabled}
         onClick={() => setBondsEnabled((v) => !v)}
-        className="self-start rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+        className="self-start rounded border border-line px-2 py-1 text-xs text-muted hover:bg-raised"
       >
         {bondsEnabled ? "Hide bonds heuristic" : "Show bonds heuristic"}
       </button>
