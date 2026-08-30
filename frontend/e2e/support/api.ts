@@ -52,6 +52,13 @@ export const FIXTURES = {
   multiFrame: { file: "multi-frame.extxyz", mimeType: "chemical/x-xyz" },
   /** A 6-frame extXYZ with a cell in the first frames and none in the last — the M61 cell-flip case. */
   variableCell: { file: "variable-cell.extxyz", mimeType: "chemical/x-xyz" },
+  /** An NpT XDATCAR (golden corpus `xdatcar/si-npt-variable-cell`) — 3 frames, per-frame cells
+   *  5.6 → 5.8 → 6.0 Å: the M63-S1 §5.3 cell-breathing case (the wireframe must track the
+   *  frame's own cell). */
+  nptXdatcar: { file: "npt.XDATCAR", mimeType: "application/octet-stream" },
+  /** A fixed-cell NaCl MD XDATCAR (golden corpus `xdatcar/nacl-md-fixed-cell`) — 3 frames,
+   *  timestep-less by format (XDATCAR declares no time axis): the M63-S1 §5.3 no-time-axis case. */
+  mdXdatcar: { file: "md.XDATCAR", mimeType: "application/octet-stream" },
 } as const;
 
 /** Absolute path to an `e2e/fixtures/` file, for `setInputFiles`. */

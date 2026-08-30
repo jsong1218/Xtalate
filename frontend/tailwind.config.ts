@@ -65,6 +65,10 @@ const config: Config = {
           "assumption-bg": "var(--cb-assumption-bg)",
           "warning-bg": "var(--cb-warning-bg)",
           "fail-bg": "var(--cb-fail-bg)",
+          // The viewer's bonds-heuristic badge (M63-S2, D241): amber notice, distinct from the §4
+          // palette; both values are AA-guarded tokens in globals.css (never a hard-coded hue).
+          "bonds-bg": "var(--bonds-bg)",
+          "bonds-fg": "var(--bonds-fg)",
         },
       },
     },

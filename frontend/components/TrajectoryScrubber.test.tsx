@@ -20,6 +20,40 @@ describe("TrajectoryScrubber", () => {
     expect(screen.queryByText(/(ps|fs|step|time|picosecond)/i)).toBeNull();
   });
 
+  it("exposes the keyboard contract: a native range with an accessible name and frame bounds (M63-S2)", () => {
+    // The scrubber's keyboard bar (D241): the control is a native `range` input — role slider,
+    // an accessible name, and integer frame bounds/step — so a keyboard user can arrow through
+    // the trajectory exactly as a mouse user scrubs (the real-browser behavior is proven by the
+    // keyboard e2e journey; this pins the ARIA contract jsdom can assert).
+    render(
+      <TrajectoryScrubber frameCount={6} frameIndexBase={100} frame={103} onScrub={vi.fn()} />,
+    );
+    const range = screen.getByRole("slider", { name: "Trajectory frame" });
+    expect(range.tagName).toBe("INPUT");
+    expect(range).toHaveAttribute("type", "range");
+    expect(range).toHaveAttribute("min", "100"); // the absolute base — report indices, not local
+    expect(range).toHaveAttribute("max", "105");
+    expect(range).toHaveAttribute("step", "1");
+    expect(range).toHaveAttribute("value", "103");
+  });
+
+  it("labels the exported-frame marker with the report's own frame number (M63-S2)", () => {
+    render(
+      <TrajectoryScrubber
+        frameCount={6}
+        frameIndexBase={0}
+        frame={2}
+        onScrub={vi.fn()}
+        markerFrame={3}
+      />,
+    );
+    // The marker is labeled text — the report's own integer, rendered verbatim (D237) — not a
+    // bare tick; the track tick itself is decorative (aria-hidden) so it never doubles the name.
+    expect(screen.getByTestId("exported-frame-marker")).toHaveTextContent("Exported frame 3");
+    const tick = screen.getByTestId("exported-frame-track-marker");
+    expect(tick).toHaveAttribute("aria-hidden", "true");
+  });
+
   it("reports the scrubbed absolute index; the readout is absolute even with a non-zero base", () => {
     const onScrub = vi.fn();
     render(

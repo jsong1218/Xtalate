@@ -74,6 +74,11 @@
   --cb-assumption-bg: #f5f3ff;
   --cb-warning-bg: #fffbeb;
   --cb-fail-bg: #fef2f2;
+
+  /* The bonds-heuristic badge (v1.6 M63-S2, D241): a display-inference notice, distinct from the
+     §4 loss palette — amber on amber, AA-guarded in both themes (8.15:1 light / 9.51:1 dark). */
+  --bonds-bg: #fef3c7; /* amber-100 — the badge fill (was bg-amber-100, now a token) */
+  --bonds-fg: #78350f; /* amber-900 — the badge text (was text-amber-900, now a token) */
 }
 
 :root[data-theme="dark"] {
@@ -121,6 +126,11 @@
   --cb-assumption-bg: #1d1a33;
   --cb-warning-bg: #2a2008;
   --cb-fail-bg: #2b1417;
+
+  /* Dark bonds-badge: a low-luminance amber tint with a light amber foreground (the dark-tint
+     convention of the cb-* tints), AA-guarded (9.51:1). */
+  --bonds-bg: #3a2b0e;
+  --bonds-fg: #fcd34d; /* amber-300 */
 }
 
 @layer base {

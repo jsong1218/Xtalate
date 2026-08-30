@@ -106,3 +106,72 @@ test("a conversion whose output is multi-frame scrubs on the output side", async
   await slider.fill("4");
   await expect(mount).toHaveAttribute("data-current-frame", "4", { timeout: 30_000 });
 });
+
+test("an NpT XDATCAR's cell animates — the wireframe persists while the per-frame cell breathes (§5.3)", async ({
+  page,
+  request,
+}) => {
+  const fileId = await uploadFixture(request, FIXTURES.nptXdatcar);
+
+  // The data fact first: the endpoint answers a *different* cell per frame (5.6 → 5.8 → 6.0 Å) —
+  // the per-frame cell the renderer must follow, never a reused frame-0 lattice (the exact class
+  // of loss the M13 golden exists to catch).
+  const geo = await request.get(`${API_URL}/v1/files/${fileId}/geometry?frames=0:3`);
+  expect(geo.status(), await geo.text()).toBe(200);
+  const body = await geo.json();
+  expect(body.frame_count).toBe(3);
+  const aLengths = body.frames.map(
+    (f: { cell: number[][] | null }) => f.cell?.[0]?.[0],
+  );
+  expect(aLengths).toEqual([5.6, 5.8, 6.0]); // the cell breathes frame to frame
+
+  await page.goto(`/files/${fileId}`);
+  await expect(
+    page.getByRole("heading", { name: "Structure", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+
+  const mount = page.locator("[data-mounted=true]");
+  await expect(mount).toBeVisible({ timeout: 60_000 });
+  await expect(mount).toHaveAttribute("data-has-cell", "true");
+  await expect(mount).toHaveAttribute("data-unitcell-drawn", "true");
+  await expect(mount).toHaveAttribute("data-current-frame", "0");
+
+  // Scrub across the whole trajectory: the box stays drawn at every frame while the cell it draws
+  // changes — the per-frame cell animates (cell breathing), absence never invented anywhere.
+  const slider = page.getByRole("slider", { name: "Trajectory frame" });
+  await expect(slider).toBeVisible({ timeout: 30_000 });
+  await slider.fill("2");
+  await expect(mount).toHaveAttribute("data-current-frame", "2", { timeout: 30_000 });
+  await expect(mount).toHaveAttribute("data-unitcell-drawn", "true");
+  await expect(page.getByRole("status")).toContainText("2 / 3");
+});
+
+test("a timestep-less XDATCAR scrubs by frame number with no invented time axis (§5.3)", async ({
+  page,
+  request,
+}) => {
+  const fileId = await uploadFixture(request, FIXTURES.mdXdatcar);
+
+  await page.goto(`/files/${fileId}`);
+  await expect(
+    page.getByRole("heading", { name: "Structure", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+
+  const mount = page.locator("[data-mounted=true]");
+  await expect(mount).toBeVisible({ timeout: 60_000 });
+
+  // The scrubber is a *frame-number* control: the readout is exactly "frame N / M" — the wire
+  // carries no timestep (XDATCAR declares none; the canonical object answers `time: null`, P3), so
+  // a frame number is the honest readout, never an invented time label.
+  const slider = page.getByRole("slider", { name: "Trajectory frame" });
+  await expect(slider).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("status")).toHaveText("0 / 3");
+  await slider.fill("2");
+  await expect(mount).toHaveAttribute("data-current-frame", "2", { timeout: 30_000 });
+  await expect(page.getByRole("status")).toHaveText("2 / 3");
+
+  // No time axis anywhere in the viewer chrome: no unit label (ps/fs/picosecond/femtosecond) and
+  // no timestep word — the frame-number readout is the whole time story.
+  const structure = page.locator('section[aria-label="Structure"]');
+  await expect(structure.getByText(/ps|fs|picosecond|femtosecond|timestep/i)).toHaveCount(0);
+});

@@ -36,7 +36,12 @@ Xtalate stores and translates data computed elsewhere. It is deliberately **not*
 
 Visualization, File Repair, Analysis, and an AI assistant are **deferred secondary goals**, not
 core work. Each is a *consumer* of the Canonical Object and the reports, and attaches later at a
-defined extensibility seam (§8) — none is built into the conversion core.
+defined extensibility seam (§8) — none is built into the conversion core. The first such consumer
+is present as of v1.6: the **viewer** is a read-only presentation layer over the geometry endpoints
+and the reports (it renders the Canonical Object the engine already parsed — never a hidden export,
+never a new canonical artifact), and it stays read-only: measurement, selection, and rendering
+export are named omissions (a viewer, never an editor), and the empty seams the viewer does not
+cross — analysis overlays, repair — belong to future versions.
 
 Every augmentation Xtalate makes — a filled mass, an inferred symbol, a fabricated lattice,
 generated velocities — is recorded as an Assumption and rendered in plain language in the
@@ -182,7 +187,7 @@ each is a *consumer* of an existing seam, never a modifier of it (P6):
 | Future feature | Attachment seam |
 |---|---|
 | **New file formats** | A `ParserPlugin` and/or `ExporterPlugin` via the Plugin SDK plus the corresponding Capability Matrix declaration. A parser-only source deliberately supplies only the parser side — as `vasprun` and `outcar` do — while read+write formats supply both. Third-party formats are discovered through Python **entry points** (`xtalate.parsers` / `xtalate.exporters`) with no fork or edit to Xtalate. |
-| **Visualization** | A read-only consumer of the Canonical Object and the reports; renders in a future UI route. |
+| **Visualization** | **Present (v1.6, M59–M63, D232–D241):** the read-only viewer — the Structure tab (M60), trajectory scrubber (M61), and Compare tab (M62) — consumes the M59 read-only geometry endpoints and the reports; it renders the Canonical Object the engine already parsed and never re-derives a fact (measurement/selection/export are documented omissions; the reports are the accessible record, D241). |
 | **File Repair** | Operates Canonical Object → Canonical Object between parse and export, each repair recorded in Provenance and the Conversion Report. |
 | **Analysis** | Plugins that read a Canonical Object and emit results into namespaced `user_metadata`; they never touch parsers or exporters. |
 | **AI assistant** | A reader of the already-machine-readable Discovery/Conversion/Validation reports. |
@@ -222,6 +227,16 @@ aggregates their reports into one `BatchReport` (per-file reports embedded verba
 isolation structural), exposed to users as `xtalate convert --batch` (per-file and `assemble` output
 modes, directory output for `deepmd_npy`) and on the API as the `batch_convert` job kind behind
 `POST /v1/batch/convert` — one parent job whose worker fans out to ordinary `convert` child jobs.
+
+The v1.6 line is **API-additive + frontend**: two read-only geometry endpoints (`GET
+/v1/files/{file_id}/geometry`, `GET /v1/conversions/{conversion_id}/geometry?side=source|output`,
+ranged by a half-open `?frames=start:end` window, byte-expiring with the underlying bytes) feed a
+Mol\* Structure viewer — the Structure tab (species legend, per-frame unit cells, the supplied-violet
+rule), the trajectory scrubber + playback (client-side sliding window, frame-number readout, no
+invented time axis), and the Compare tab (source vs re-parsed output, camera-locked, annotations
+read from the reports only). The viewer is a read-only presentation of the Canonical Object and the
+reports, never an information channel of record (the reports are the accessible record, D241); the
+schema stays `1.0.0` and no library/CLI surface changed.
 
 CIF is the one format whose reader is a **package rather than a module**
 (`src/xtalate/parsers/cif/`), split into four stages with a one-way data flow: tokens (`_lexer`) →

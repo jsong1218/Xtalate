@@ -19,6 +19,80 @@ Schema version: 1.0.0
 
 _The next release accrues here._
 
+## [1.6.0] — 2026-08-30
+
+Schema version: 1.0.0
+
+v1.6 is **API-additive + frontend**: the read-only geometry endpoints of M59 and the Mol\* Structure /
+trajectory / Compare viewer of M60–M63. It changes **no library/CLI surface** — `xtalate capabilities`
+lists exactly what v1.5 listed — and adds **zero schema fields** (the schema stays `1.0.0`). The viewer
+is a read-only presentation of the Canonical Object and the reports; measurement, selection, and
+rendering export are deliberate omissions (a viewer, never an editor). The git tag and publish are the
+maintainer's manual, nightly-green-gated step.
+
+### Added — read-only canonical-geometry endpoints (v1.6 M59; D232)
+
+Two additive `GET` routes under `/v1` expose an uploaded file's — or a conversion's source/output —
+canonical geometry as JSON, for read-only consumers (the structure viewer among them):
+`GET /v1/files/{file_id}/geometry` and `GET /v1/conversions/{conversion_id}/geometry?side=source|output`.
+Both take a half-open, 0-based `?frames=start:end` window (default `0:1`, a single structure) and
+return `species`, an optional per-frame `cell`, and per-frame `positions` as nested lists. The
+endpoints ride the existing streaming engine — never materializing a whole trajectory — behind a
+byte-bounded server-side cache, so server memory stays bounded by the window plus the cache budget.
+Two honesty rules are pinned: **absence renders as absence** — a cell-less source answers `cell:
+null`, never a fabricated box, and the projection carries no bonds; and **geometry expires with the
+bytes** — `410 FILE_EXPIRED` / `OUTPUT_EXPIRED` once the underlying bytes are gone, while the
+conversion record and its reports remain readable. A malformed or reversed range is
+`400 INVALID_FRAME_RANGE`.
+
+### Added — the Structure tab (v1.6 M60; D235)
+
+The **Structure** tab on `/files/[file_id]` and `/conversions/[conversion_id]` renders the structure
+*the report describes*: the M59 Mol\* viewer fed from the geometry endpoints, with a species legend
+(color paired with the element label as text), the unit-cell wireframe drawn **only when a cell is
+present** (a cell-less file renders boxless with the explicit no-simulation-cell caption — P3), and
+the ◆ supplied-violet rule — a lattice fabricated by recovery renders violet with its Assumption one
+click away (the flagship: `relax.traj → POSCAR`'s bounding box). Honest loading / expired / refused
+states throughout: expired bytes read the expired copy with the reports intact; a refused conversion
+mounts no viewer.
+
+### Added — trajectory animation (v1.6 M61; D236–D238)
+
+Multi-frame objects gain a **frame scrubber + playback** on the Structure tab: a client-side sliding
+window over the ranged geometry endpoint keeps decoded frames memory-bounded (never the whole
+trajectory — browser memory stays flat under sustained playback), the readout is a **frame number**
+(`frame N / M`) with **no invented time axis** (the wire carries no timestep), and each displayed
+frame draws **that frame's** unit cell (a variable-cell NpT trajectory breathes; a cell-less frame
+draws no box). Frame indices are the report's own indices, and a `frame_selection` conversion names
+its source frame from the report's Assumption — one click away. Large trajectories degrade honestly:
+the scrubber states that windows re-stream from the server, never a hidden stall.
+
+### Added — the Compare tab (v1.6 M62; D239–D240)
+
+The **Compare** tab on `/conversions/[conversion_id]` renders the two objects the Validation Engine
+diffed — source and re-parsed output — side by side in two synchronized viewers (camera-locked
+always, frame-locked only where the frame counts match, with the exported-frame marker on the source
+track). Every annotation is report-sourced, never a client computation: the RMSD overlay reads the
+Validation Report's own `positions_rmsd` measured value (the sole quantitative number on the tab,
+check row one click away), dropped-field reasons render the Conversion Report's `removed` entries
+verbatim on the source side, and the supplied-violet correlation marks a fabricated lattice on the
+output side only. A one-side-expired Compare names the expired side and renders no viewer; a refused
+conversion's page is its refusal.
+
+### Added — accessibility posture, e2e/perf hardening, the release (v1.6 M63; D241)
+
+The viewer is a `<canvas>` and is not the accessible record — and does not need to be, because every
+fact it presents exists as text in a report: **the reports are the accessible record; the viewer is
+an additional presentation**. What meets the WCAG AA bar is the viewer chrome — legend, captions,
+scrubber, badges, Compare overlays — contrast-guarded in both themes and keyboard-traversable (tab
+switch + arrow scrub + reachable controls), swept by axe over the live Structure and Compare tabs.
+The impl-plan §5 browser suite is closed as asserted e2e journeys (cell-less boxless caption, an NpT
+cell animating, a timestep-less XDATCAR scrubbing by frame number with no time axis, geometry 410s
+with the reports intact, the Compare flagship, bonds off by default with the persistent heuristic
+badge and no report mentioning them), and the M59/M61 spike numbers were re-measured on the finished
+tabs and recorded as release artifacts — no regression (browser playback holds flat at 55→57 MiB;
+high-atom scrub re-streams at ~2.6 s/window).
+
 ## [1.5.0] — 2026-08-27
 
 Schema version: 1.0.0

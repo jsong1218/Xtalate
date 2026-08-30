@@ -187,3 +187,112 @@ test("a refused conversion's page is its refusal — no Structure/Compare viewer
   await expect(page.getByRole("tablist")).toHaveCount(0);
   await expect(page.locator("[data-mounted=true]")).toHaveCount(0);
 });
+
+test("the Compare flagship: RMSD from the Validation Report, verbatim removed reasons on the source side, violet on the output side only (§5.5)", async ({
+  page,
+  request,
+}) => {
+  // Seed the flagship exactly as structure-violet.spec.ts does: relax.traj → POSCAR needs a frame
+  // choice + a lattice, the recovery fabricates the bounding box, and the completed record carries
+  // the whole §5.5 payload — a supplied cell (violet), dropped fields (verbatim reasons), and a
+  // validation report with a measured positions_rmsd.
+  const upload = await request.post(`${API_URL}/v1/upload`, {
+    multipart: {
+      file: {
+        name: FIXTURES.relaxTraj.file,
+        mimeType: FIXTURES.relaxTraj.mimeType,
+        buffer: fixtureBuffer(FIXTURES.relaxTraj.file),
+      },
+    },
+  });
+  expect(upload.status(), await upload.text()).toBe(201);
+  const fileId = String((await upload.json()).file_id);
+
+  const submit = await request.post(`${API_URL}/v1/convert`, {
+    data: { file_id: fileId, target_format_id: "poscar", options: { allow_recovery: true } },
+  });
+  expect([200, 201, 202]).toContain(submit.status());
+  const jobId = String((await submit.json()).job_id);
+  const paused = await pollJob(request, jobId, ["awaiting_recovery"]);
+  expect(paused.state).toBe("awaiting_recovery");
+  const resume = await request.post(`${API_URL}/v1/jobs/${jobId}/recovery`, {
+    data: {
+      choices: {
+        frame_selection: { choice: "last", parameters: {} },
+        missing_lattice: { choice: "bounding_box", parameters: { padding_ang: 5 } },
+      },
+    },
+  });
+  expect(resume.ok(), await resume.text()).toBeTruthy();
+  const done = await pollJob(request, jobId, ["completed"]);
+  expect(done.state).toBe("completed");
+  const conversionId = String((done.result as { conversion_id: string }).conversion_id);
+
+  // The reports are the record: read the exact values the tab must render — never a client
+  // computation (the tab's go/no-go grep for position arithmetic stays clean; D240).
+  const recordResp = await request.get(`${API_URL}/v1/conversions/${conversionId}`);
+  expect(recordResp.ok(), await recordResp.text()).toBeTruthy();
+  const record = (await recordResp.json()) as {
+    conversion_report: {
+      removed: { path: string; reason: string }[];
+      supplied: { path: string; from_assumption: string }[];
+    };
+    validation_report: {
+      checks: { check_id: string; status: string; measured?: { rmsd_ang: number } }[];
+    };
+  };
+  const removed = record.conversion_report.removed;
+  expect(
+    removed.length,
+    "the flagship POSCAR output drops fields the target cannot hold",
+  ).toBeGreaterThan(0);
+  const rmsdCheck = record.validation_report.checks.find(
+    (c) => c.check_id === "positions_rmsd",
+  );
+  expect(rmsdCheck, "the completed conversion must carry the positions_rmsd check").toBeDefined();
+  const rmsdAng = rmsdCheck!.measured!.rmsd_ang;
+  const suppliedCell = record.conversion_report.supplied.find(
+    (e) => e.path === "cell" || e.path.startsWith("cell."),
+  );
+  expect(suppliedCell, "the fabricated lattice must be recorded in supplied").toBeDefined();
+
+  await page.goto(`/conversions/${conversionId}`);
+  await expect(page.getByRole("tab", { name: "Compare" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("tab", { name: "Compare" }).click();
+  const compare = page.locator('section[aria-label="Compare"]');
+  await expect(compare.getByRole("heading", { name: "Compare", exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // 1. The RMSD overlay renders the Validation Report's own measured value — the sole quantitative
+  //    number on the tab — with the check row one click away (D240).
+  const overlay = compare.getByTestId("rmsd-overlay");
+  await expect(overlay).toBeVisible({ timeout: 30_000 });
+  await expect(overlay).toContainText("positions_rmsd measured:");
+  await expect(overlay).toContainText(String(rmsdAng));
+  const checkLink = overlay.getByRole("link", { name: "See the check row" });
+  await expect(checkLink).toHaveAttribute("href", "#check-positions_rmsd");
+  await checkLink.click();
+  await expect(page.locator("#check-positions_rmsd")).toBeVisible();
+
+  // 2. Dropped fields render the ConversionReport's reasons verbatim on the source side — the
+  //    report's own words, never a paraphrase (D240).
+  for (const entry of removed) {
+    const row = compare.getByTestId(`removed-${entry.path}`);
+    await expect(row).toBeVisible();
+    await expect(row).toContainText(entry.path);
+    await expect(row).toContainText(entry.reason);
+  }
+
+  // 3. The supplied lattice renders violet on the **output** side only — the source never wears the
+  //    assumption violet (D235 correlation, Assumption one click away on the output badge).
+  const mounts = compare.locator("[data-mounted=true]");
+  await expect(mounts).toHaveCount(2, { timeout: 60_000 });
+  await expect(mounts.nth(0)).toHaveAttribute("data-cell-supplied", "false"); // source: never violet
+  await expect(mounts.nth(1)).toHaveAttribute("data-cell-supplied", "true"); // output: the fabricated box
+  const badge = compare.getByTestId("supplied-lattice");
+  await expect(badge).toContainText(/This lattice was supplied by recovery/);
+  await expect(
+    compare.locator(`a[href="#assumption-${suppliedCell!.from_assumption}"]`),
+  ).toBeVisible();
+});
