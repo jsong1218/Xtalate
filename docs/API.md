@@ -325,7 +325,8 @@ the contract, and they are the same three the service ships as machine-readable 
 - the **endpoint set** — the paths and methods enumerated above (`upload`, `inspect`, `convert`,
   `validate`, `batch/convert` (v1.5), `jobs/{id}` and its `recovery` / `recovery/preview` /
   `cancel` sub-resources, `conversions/{id}`, `download/{id}`, `history`,
-  `capabilities[/{format_id}]`, `limits`, `health`);
+  `capabilities[/{format_id}]`, `limits`, `health`, plus the v1.6 additive **read-only geometry**
+  routes `files/{id}/geometry` and `conversions/{id}/geometry` (below));
 - the **response envelopes** — the pydantic report models of §3, embedded verbatim, and the single
   error envelope `{ error: { code, message, details, request_id, documentation_url } }`; and
 - the **error-code set** — the stable machine strings each non-2xx response carries, cataloged in
@@ -402,3 +403,25 @@ Semantics worth knowing before you call it:
 The committed [`openapi.json`](openapi.json) is regenerated (`python -m backend.openapi`) and
 contains the exact request/response schema; `EMPTY_BATCH` and `JOB_CANCELLED` are cataloged in
 [`error_codes.json`](error_codes.json).
+
+
+### 5.5 Read-only geometry endpoints (`GET /v1/files/{id}/geometry`, `GET /v1/conversions/{id}/geometry`) — an additive read surface (v1.6 M59)
+
+Two **additive** `GET` routes expose the canonical geometry the viewer renders, as a wire projection
+of the Canonical Object — never a second canonical artifact and never a hidden export:
+
+- `GET /v1/files/{file_id}/geometry` — an uploaded file's own geometry;
+- `GET /v1/conversions/{conversion_id}/geometry?side=source|output` — a conversion's source or
+  re-parsed output geometry (the two objects the Validation Engine diffed).
+
+Both take a half-open, 0-based `?frames=start:end` window (default `0:1`, a single structure) and
+return `species` (one symbol per atom), an optional per-frame `cell` (a `(3, 3)` lattice; `null`
+when the source carried none — absence renders as absence, P3), per-frame `positions` as nested
+lists, `frame_index_base` (the window's absolute first index) and `frame_count` (the whole object's
+total). The endpoints ride the existing streaming engine behind a byte-bounded server-side cache —
+never materializing a whole trajectory. **Geometry expires with the bytes**: once the underlying
+bytes are gone the route answers `410 FILE_EXPIRED` / `OUTPUT_EXPIRED`, while the conversion record
+and its reports remain readable (reports outlive bytes). A malformed or reversed range is
+`400 INVALID_FRAME_RANGE`. **No bonds**: the Canonical Model holds no bonds, so the projection
+carries none — a coordination bond is a display heuristic (D234), never file content and never served
+here. This surface changes **no** library/CLI surface; it is the Web UI viewer's read path only.

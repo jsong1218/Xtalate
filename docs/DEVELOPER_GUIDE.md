@@ -749,6 +749,18 @@ convenient:
   local `.env` and referenced by name. (The current library + CLI has no network calls or
   credentials; this discipline is established ahead of the future Service layer.)
 
+## 7.5 The viewer: a read-only consumer seam (v1.6 M59–M63)
+
+The Web UI's Structure/Compare viewer is the first realized consumer of the §3.2 secondary goals: it
+**reads** the M59 geometry endpoints (`GET /v1/files/{file_id}/geometry`, `GET
+/v1/conversions/{conversion_id}/geometry?side=source|output`) and the reports, renders the Canonical
+Object the engine already parsed, and never re-derives a fact (no client unit math, no recomputed
+diffs, no hidden export — §3.2). It is read-only by contract: measurement, selection, and rendering
+export are documented omissions, and analysis overlays are v1.8's seam. Bonds are a **display
+heuristic** (D234): off by default, the enabled view carries the persistent badge, and no report
+mentions them. The a11y posture (D241): the reports are the accessible record; the viewer is an
+additional presentation — viewer chrome, not the canvas, meets the WCAG AA bar.
+
 ## 8. Where to go next
 
 - [Architecture Overview](ARCHITECTURE.md) — the design and the principles.
