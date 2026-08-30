@@ -11,8 +11,9 @@
  * **M61-S1 adds the imperative frame API** (D236): the mount builds a Mol\\* trajectory from the
  * *window* of frames the scrubber hands it (bounded — never the whole trajectory) and,
  * within that window, sets the visible frame by updating `ModelFromTrajectory`'s `modelIndex`
- * (a cheap in-place transform update — `immediateUpdate: true` — so scrubbing inside a window
- * never rebuilds the trajectory). The per-frame unit cell is honoured deliverable 3: on a frame
+ * (a cheap in-place transform update — re-applying the transform with the new index, not a
+ * trajectory rebuild — so scrubbing inside a window never rebuilds the trajectory). The per-frame
+ * unit cell is honoured deliverable 3: on a frame
  * change the wireframe is re-created for **that frame's** model (a variable-cell trajectory
  * breathes; a cell-less frame draws no box — the `data-unitcell-drawn` render proof stays honest
  * per displayed frame). A window *change* (new frame set) is handled by the caller re-mounting; the
@@ -28,7 +29,7 @@ import { ParamDefinition as PD } from "molstar/lib/mol-util/param-definition.js"
 import { Color } from "molstar/lib/mol-util/color/color.js";
 import { UnitcellParams } from "molstar/lib/mol-repr/shape/model/unitcell.js";
 import { Task } from "molstar/lib/mol-task/index.js";
-import { geometryToTrajectory } from "./molstarLoader";
+import { geometryToTrajectory, latticeIsRenderable } from "./molstarLoader";
 import type { CanonicalGeometry } from "./useGeometry";
 
 /**
@@ -163,24 +164,17 @@ export async function mountStructureViewer(
   }
 
   /**
-   * Whether the displayed frame declares a renderable cell — the same validity `cellFromLattice`
-   * enforces in the loader (a (3, 3) lattice with non-zero volume). This is the honest per-frame
-   * presence decision: Mol*'s per-frame model **inherits the topology model's symmetry** when its
-   * own frame declares no cell (the trajectory spread carries the static property), so the box
-   * presence must be decided from the frame the source actually declared — never a fabricated box.
+   * Whether the displayed frame declares a renderable cell — decided by the loader's own
+   * {@link latticeIsRenderable} (`cellFromLattice(...) !== undefined`), the **single source of
+   * truth** for cell presence, so this gate can never disagree with the cell the loader built into
+   * the model. This is the honest per-frame presence decision: Mol*'s per-frame model **inherits the
+   * topology model's symmetry** when its own frame declares no cell (the trajectory spread carries
+   * the static property), so the box presence must be decided from the frame the source actually
+   * declared — never a fabricated box.
    */
   function frameHasRenderableCell(absoluteIndex: number): boolean {
     const localIndex = Math.max(0, absoluteIndex - frameIndexBase);
-    const cell = geometry.frames?.[localIndex]?.cell;
-    if (!cell || cell.length !== 3) return false;
-    for (const row of cell) {
-      if (row.length !== 3) return false;
-    }
-    const det =
-      cell[0][0] * (cell[1][1] * cell[2][2] - cell[1][2] * cell[2][1]) -
-      cell[0][1] * (cell[1][0] * cell[2][2] - cell[1][2] * cell[2][0]) +
-      cell[0][2] * (cell[1][0] * cell[2][1] - cell[1][1] * cell[2][0]);
-    return Math.abs(det) > 1e-6;
+    return latticeIsRenderable(geometry.frames?.[localIndex]?.cell);
   }
 
   /**
@@ -211,8 +205,8 @@ export async function mountStructureViewer(
 
   // The imperative frame set (M61-S1): within the mounted window, update `ModelFromTrajectory`'s
   // `modelIndex` (re-applying the transform with the new index), then redraw that frame's unit
-  // cell. `immediateUpdate` on modelIndex keeps the update in place, so scrubbing inside a window
-  // is cheap.
+  // cell. This is an in-place update of the existing transform, not a trajectory rebuild, so
+  // scrubbing inside a window is cheap.
   async function setFrame(absoluteIndex: number): Promise<void> {
     if (disposed) return;
     const modelCell = resolveModelCell();
@@ -231,14 +225,16 @@ export async function mountStructureViewer(
 
   // Initial render: apply the starting frame + its cell wireframe, and expose the render proofs
   // the e2e asserts against — mounted = the canvas is live, atoms = the declared atom count,
-  // current-frame/unitcell-drawn = what is actually displayed.
+  // current-frame/unitcell-drawn = what is actually displayed. `setFrame` draws the frame's cell
+  // and sets `unitcellDrawn`, so it is the sole owner of that proof (no separate init draw); the
+  // default below keeps the proof present-and-honest if `setFrame` bails before drawing.
+  target.dataset.unitcellDrawn = "false";
   try {
-    target.dataset.unitcellDrawn = (await drawUnitcellForFrame(initial)) ? "true" : "false";
+    await setFrame(initial);
   } catch {
-    // A failed unitcell draw must not fail the structure render; presence stays false.
+    // A failed initial frame/unitcell draw must not fail the structure render; presence stays false.
     target.dataset.unitcellDrawn = "false";
   }
-  await setFrame(initial);
   PluginCommands.Camera.Reset(plugin);
 
   return {

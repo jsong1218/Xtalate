@@ -122,7 +122,6 @@ export function useTrajectoryWindow(
 
   const storeRef = useRef<CachedWindow[]>([]);
   const currentKeyRef = useRef<string | null>(null);
-  const requestedFrameRef = useRef(0);
   // The windows whose neighbour-prefetch is already in flight (dedupe, never a fetch storm).
   const inflightPrefetchRef = useRef<Set<string>>(new Set());
 
@@ -162,7 +161,6 @@ export function useTrajectoryWindow(
       if (disabled) return;
       const n = frameCount as number;
       const clamped = Math.max(0, Math.min(n - 1, index));
-      requestedFrameRef.current = clamped;
       setFrame(clamped);
     },
     [disabled, frameCount],
