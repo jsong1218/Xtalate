@@ -10,8 +10,19 @@ import type { CanonicalGeometry } from "@/lib/geometry/useGeometry";
 import { StructureViewer } from "./StructureViewer";
 
 vi.mock("./StructureViewerMolstar", () => ({
-  default: ({ geometry }: { geometry: CanonicalGeometry }) => (
-    <div data-testid="molstar-mount" data-atoms={geometry.species.length} />
+  default: ({
+    geometry,
+    suppliedCell,
+  }: {
+    geometry: CanonicalGeometry;
+    suppliedCell?: boolean;
+  }) => (
+    <div
+      data-testid="molstar-mount"
+      data-atoms={geometry.species.length}
+      data-has-cell={geometry.cell ? "true" : "false"}
+      data-cell-supplied={suppliedCell ? "true" : "false"}
+    />
   ),
 }));
 
@@ -41,12 +52,40 @@ const fixture: CanonicalGeometry = {
   ],
 };
 
+/** The same object with no lattice anywhere — the `cell: null` case (P3). */
+const cellLessFixture: CanonicalGeometry = {
+  ...fixture,
+  cell: null,
+  frames: fixture.frames!.map((f) => ({ ...f, cell: null })),
+};
+
 describe("StructureViewer", () => {
   it("renders the Mol* mount fed by the geometry, with bonds off by default", async () => {
     render(<StructureViewer geometry={fixture} />);
     const mount = await screen.findByTestId("molstar-mount");
     expect(mount).toHaveAttribute("data-atoms", "2");
     expect(screen.queryByText(/display heuristic/)).toBeNull();
+  });
+
+  it("renders the species legend and no cell-less caption for a celled geometry", async () => {
+    render(<StructureViewer geometry={fixture} />);
+    await screen.findByTestId("molstar-mount");
+    // Legend completeness: exactly the species present, each with its label as text.
+    expect(screen.getAllByTestId(/^legend-row-/)).toHaveLength(2);
+    expect(screen.getByTestId("legend-row-C")).toHaveTextContent("C");
+    expect(screen.getByTestId("legend-row-H")).toHaveTextContent("H");
+    expect(screen.queryByTestId("no-cell-caption")).toBeNull();
+  });
+
+  it("renders the no-simulation-cell caption and no box for a cell-less geometry (P3)", async () => {
+    render(<StructureViewer geometry={cellLessFixture} />);
+    const mount = await screen.findByTestId("molstar-mount");
+    // The caption says why there is no box…
+    expect(screen.getByTestId("no-cell-caption")).toHaveTextContent(
+      /declares no simulation cell/
+    );
+    // …and the loader/render path receives a cell-less geometry — no cell wireframe possible.
+    expect(mount).toHaveAttribute("data-has-cell", "false");
   });
 
   it("shows the bonds heuristic badge iff the toggle is on", async () => {

@@ -19,6 +19,7 @@ export function Row({
   detail,
   testId,
   children,
+  id,
 }: {
   kind: LossKind;
   label: ReactNode;
@@ -27,9 +28,15 @@ export function Row({
   /** Stable hook so a section can assert its row count against the report array (fixture-first). */
   testId?: string;
   children?: ReactNode;
+  /** Fragment anchor (v1.6 M60-S3): lets an Assumption row be the landing target of a link. */
+  id?: string;
 }) {
   return (
-    <li data-testid={testId} className="flex gap-2.5 px-3 py-2">
+    <li
+      id={id}
+      data-testid={testId}
+      className="flex scroll-mt-24 gap-2.5 px-3 py-2"
+    >
       <LossIcon kind={kind} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1 space-y-1">
         <div className="text-sm font-medium text-strong">{label}</div>

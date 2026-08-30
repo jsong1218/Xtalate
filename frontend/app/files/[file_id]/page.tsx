@@ -5,8 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { Inventory } from "@/components/Inventory";
+import { StructureTab } from "@/components/StructureTab";
 import { BackLink } from "@/components/shell/BackLink";
 import { TargetPicker } from "@/components/TargetPicker";
+import { useFileGeometry } from "@/lib/geometry/useGeometry";
 import { apiClient } from "@/lib/api/client";
 import { capabilitiesQuery } from "@/lib/api/queries";
 import { toErrorEnvelope, useInspection } from "@/lib/api/useInspection";
@@ -114,6 +116,9 @@ export default function FilePage() {
   const [submitError, setSubmitError] = useState<ErrorEnvelopeModel | null>(null);
 
   const inspection = useInspection(fileId, override);
+  // The file's own geometry (M60-S1): the Structure tab renders it at the default frame
+  // (frames=0:1), fed straight from `GET /v1/files/{file_id}/geometry` (D232).
+  const fileGeometry = useFileGeometry(fileId);
   const capabilities = useQuery(capabilitiesQuery());
   const targets = useMemo(
     () => (capabilities.data ? writableTargets(capabilities.data as CapabilitiesMap) : []),
@@ -176,6 +181,13 @@ export default function FilePage() {
         <>
           <FileHeader report={inspection.report} override={override} onOverride={setOverride} />
           <StructureSummary report={inspection.report} />
+          {/* The Structure tab (M60-S1, Part 7 §6): the file's geometry from the M59 endpoint.
+              Additive — the panels above and below are untouched. A file that could not be
+              inspected renders no viewer (the page's error branch, above). */}
+          <StructureTab
+            geometryState={fileGeometry}
+            label={inspection.report.file.filename}
+          />
           <Inventory report={inspection.report} />
           {submitError ? <ErrorEnvelope envelope={submitError} /> : null}
           {targets.length > 0 ? (

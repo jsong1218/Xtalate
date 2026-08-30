@@ -14,6 +14,8 @@ import { PluginCommands } from "molstar/lib/mol-plugin/commands.js";
 import { PluginStateObject as SO } from "molstar/lib/mol-plugin-state/objects.js";
 import { PluginStateTransform } from "molstar/lib/mol-plugin-state/objects.js";
 import { ParamDefinition as PD } from "molstar/lib/mol-util/param-definition.js";
+import { Color } from "molstar/lib/mol-util/color/color.js";
+import { UnitcellParams } from "molstar/lib/mol-repr/shape/model/unitcell.js";
 import { Task } from "molstar/lib/mol-task/index.js";
 import { geometryToTrajectory } from "./molstarLoader";
 import type { CanonicalGeometry } from "./useGeometry";
@@ -55,12 +57,32 @@ const ATOMS_ONLY_REPRESENTATION = {
 } as const;
 
 /**
+ * The ordinary unit-cell wireframe color — a neutral slate bound to the app's chrome token, chosen
+ * so the box is never confused with any §4 loss hue (in particular the supplied-violet). Mol*'s
+ * stock unit-cell default is orange.
+ */
+const UNITCELL_COLOR = Color(0x475569);
+
+/**
+ * The supplied-violet wireframe color (v1.6 M60-S3, D235): the ◆ `text-cb-assumption` token
+ * (`--cb-assumption: #6d28d9`) — the same violet the reports use for supplied/assumptions, so a
+ * fabricated lattice looks different from a source lattice everywhere it appears.
+ */
+const SUPPLIED_CELL_COLOR = Color(0x6d28d9);
+
+export interface MountStructureViewerOptions {
+  /** When true, the unit-cell wireframe is drawn in the supplied-violet (D235). */
+  suppliedCell?: boolean;
+}
+
+/**
  * Mount an embedded Mol\* view of the geometry into `target` (which must be positioned).
  * Returns a cleanup function that disposes the plugin instance.
  */
 export async function mountStructureViewer(
   target: HTMLDivElement,
-  geometry: CanonicalGeometry
+  geometry: CanonicalGeometry,
+  options: MountStructureViewerOptions = {}
 ): Promise<() => void> {
   const plugin = new PluginContext(DefaultPluginSpec());
   await plugin.init();
@@ -74,7 +96,6 @@ export async function mountStructureViewer(
 
   await plugin.builders.structure.hierarchy.applyPreset(trajectory, "default", {
     representationPreset: "empty",
-    showUnitcell: true,
   });
 
   const structure = plugin.managers.structure.hierarchy.current.structures[0];
@@ -84,6 +105,31 @@ export async function mountStructureViewer(
       ATOMS_ONLY_REPRESENTATION
     );
   }
+
+  // The unit-cell wireframe (v1.6 M60-S2): drawn **only when the model carries a cell**.
+  // `tryCreateUnitcell` resolves the model's crystal symmetry and returns nothing for a
+  // cell-less/zero-volume model (the loader attaches no symmetry provider without a cell), so
+  // absence renders as absence (P3) — the box can never be fabricated on the client. (M59's
+  // `showUnitcell: true` only created a **hidden** cell, so the visible box is S2's addition.)
+  const model = plugin.managers.structure.hierarchy.current.models[0]?.cell;
+  let unitcellDrawn = false;
+  if (model) {
+    // Full param values (defaults + our color): the unitcell params are non-optional once passed.
+    const cellColor = options.suppliedCell ? SUPPLIED_CELL_COLOR : UNITCELL_COLOR;
+    const unitcellParams = { ...PD.getDefaultValues(UnitcellParams), cellColor };
+    const unitcell = await plugin.builders.structure.tryCreateUnitcell(model, unitcellParams, {
+      isHidden: false,
+    });
+    // `tryCreateUnitcell` returns nothing when the model has no non-zero symmetry cell — it bails
+    // on `!m` or `SpacegroupCell.isZero(cell)` — so a truthy result means a box was actually drawn.
+    unitcellDrawn = Boolean(unitcell);
+  }
+  // The render-level P3 proof (v1.6 M60 review follow-up): unlike `data-has-cell`, which mirrors
+  // the endpoint's *input* answer, this attribute reflects whether Mol\* ACTUALLY drew a wireframe.
+  // It catches a fabricated box at the render — the absence invariant is asserted where it lives,
+  // not on the input — so a regression (a Mol\* bump, a loader leaking a symmetry provider) that
+  // drew a box for a cell-less file would fail the fidelity e2e instead of passing green.
+  target.dataset.unitcellDrawn = unitcellDrawn ? "true" : "false";
   PluginCommands.Camera.Reset(plugin);
 
   return () => {

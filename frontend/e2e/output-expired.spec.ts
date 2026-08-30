@@ -19,7 +19,9 @@ import expiredRecord from "../components/__fixtures__/conversion.record.expired.
 test("an expired output reads as expired, with the record surviving", async ({ page }) => {
   const record = expiredRecord as { conversion_id: string };
 
-  await page.route("**/v1/conversions/**", (route) =>
+  // Narrowed to the record itself (`*`, no `/`): the Structure tab's geometry request (M60) must
+  // not receive the record body — the tab renders its own honest state from the live endpoint.
+  await page.route("**/v1/conversions/*", (route) =>
     route.fulfill({ status: 200, json: expiredRecord }),
   );
 

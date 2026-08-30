@@ -229,6 +229,9 @@ function AssumptionRow({
     <Row
       kind="assumption"
       testId="assumption-row"
+      // The stable fragment anchor the Structure tab's supplied-geometry link lands on — the
+      // Assumption one click away from the violet cell (v1.6 M60-S3, D235).
+      id={`assumption-${assumption.id}`}
       label={
         <span>
           {scenario.label}{" "}

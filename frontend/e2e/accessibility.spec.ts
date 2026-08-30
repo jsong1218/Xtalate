@@ -42,7 +42,11 @@ test("the landing page has no serious accessibility violations", async ({ page }
 test("the conversion record page has no serious accessibility violations", async ({ page }) => {
   // Render a full, loss-carrying record from the real captured body — the page's whole palette on
   // screen at once (summary chips, both report panels, download, provenance).
-  await page.route("**/v1/conversions/**", (route) => route.fulfill({ json: happyRecord }));
+  // The record GET is served from the captured body (deterministic scan); the route pattern is
+  // narrowed to the record itself (`*`, no `/`) so the Structure tab's geometry request goes to
+  // the live backend — feeding it the record body would crash the viewer's species legend, and a
+  // fabricated "geometry" is exactly what the tab must never render (M60-S2).
+  await page.route("**/v1/conversions/*", (route) => route.fulfill({ json: happyRecord }));
   await page.goto(`/conversions/${(happyRecord as { conversion_id: string }).conversion_id}`);
   await expect(page.getByRole("heading", { name: /^Converted/ })).toBeVisible();
 
