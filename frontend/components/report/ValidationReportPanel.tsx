@@ -66,6 +66,10 @@ function CheckRow({ check }: { check: CheckResult }) {
     <Row
       kind={kind}
       testId="check-row"
+      // Fragment anchor (v1.6 M62-S2, D240): lets the Compare tab's RMSD caption land "one click
+      // away" on this exact check row (`#check-<check_id>`). Per-check, so each catalog row is
+      // individually linkable regardless of any duplicate `check_id` in a multi-frame trajectory.
+      id={`check-${check.check_id}`}
       label={
         <span className="flex flex-wrap items-center gap-2">
           <code

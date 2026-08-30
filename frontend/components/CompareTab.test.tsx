@@ -8,7 +8,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Schemas } from "@/lib/api/client";
-import type { ConversionReport } from "@/lib/report/types";
+import type { ConversionReport, ValidationReport } from "@/lib/report/types";
 import type { StructureViewerCamera } from "@/lib/geometry/molstarMount";
 import { CompareTab } from "./CompareTab";
 import type { CameraControls } from "./StructureViewerMolstar";
@@ -46,6 +46,7 @@ const store = vi.hoisted(() => {
     label: string;
     frameControl?: { frame: number };
     cameraControls?: CameraControls;
+    suppliedCell?: { fromAssumption: string; description?: string };
   }> = [];
   return { viewerCalls };
 });
@@ -55,11 +56,13 @@ vi.mock("@/components/StructureViewer", () => ({
     label: string;
     frameControl?: { frame: number };
     cameraControls?: unknown;
+    suppliedCell?: { fromAssumption: string; description?: string };
   }) => {
     store.viewerCalls.push({
       label: props.label,
       frameControl: props.frameControl,
       cameraControls: props.cameraControls as unknown as CameraControls,
+      suppliedCell: props.suppliedCell,
     });
     return (
       <div data-testid={`viewer-${props.label}`} data-frame={props.frameControl?.frame ?? 0}>
@@ -145,7 +148,12 @@ beforeEach(() => {
   store.viewerCalls.length = 0;
 });
 
-function renderReady(sourceCount: number, outputCount: number, conversionReport?: ConversionReport) {
+function renderReady(
+  sourceCount: number,
+  outputCount: number,
+  conversionReport?: ConversionReport,
+  validationReport?: ValidationReport,
+) {
   geometryHook.mockImplementation((_id: string, side: "source" | "output") =>
     side === "source"
       ? { status: "ready", geometry: geometryFixture(sourceCount) }
@@ -155,8 +163,36 @@ function renderReady(sourceCount: number, outputCount: number, conversionReport?
     <CompareTab
       conversionId="cnv-1"
       conversionReport={conversionReport ?? emptyReport()}
+      validationReport={validationReport}
     />,
   );
+}
+
+/** A Validation Report whose `positions_rmsd` check carries the given `rmsd_ang` measurement. */
+function validationWith(
+  rmsdAng: number,
+  status: "pass" | "warn" | "fail" | "skipped" = "pass",
+): ValidationReport {
+  return {
+    report_id: "v1",
+    conversion_report_id: "r1",
+    created_at: "2026-01-01T00:00:00Z",
+    status: status === "fail" ? "failed" : status === "warn" ? "passed_with_warnings" : "passed",
+    checks: [
+      {
+        check_id: "positions_rmsd",
+        status,
+        paths: ["atoms.positions"],
+        measured: { rmsd_ang: rmsdAng, frames_compared: 1 },
+        tolerance_applied: null,
+        message: "positions equal within tolerance",
+        skip_reason: status === "skipped" ? "frames not comparable across formats" : null,
+      },
+    ],
+    tolerance_profile: { name: "default" },
+    reparse_issues: [],
+    schema_version: "1.0.0",
+  };
 }
 
 function viewer(label: "Source" | "Output") {
@@ -237,5 +273,79 @@ describe("CompareTab — two synchronized viewers", () => {
     expect(screen.queryByLabelText("Trajectory frame")).not.toBeInTheDocument();
     expect(screen.getByTestId("viewer-Source")).toHaveAttribute("data-frame", "0");
     expect(screen.getByTestId("viewer-Output")).toHaveAttribute("data-frame", "0");
+  });
+});
+
+describe("CompareTab — report-sourced difference annotations (M62-S2, D240)", () => {
+  it("shows the ValidationReport's own positions_rmsd measured value — read, never computed", () => {
+    renderReady(1, 1, emptyReport(), validationWith(3.2e-13));
+    const overlay = screen.getByTestId("rmsd-overlay");
+    expect(overlay).toHaveTextContent("3.2e-13");
+    // The check row is one click away, on the ValidationReportPanel's per-check anchor.
+    const link = screen.getByRole("link", { name: /see the check row/i });
+    expect(link).toHaveAttribute("href", "#check-positions_rmsd");
+  });
+
+  it("shows a different report value, proving it is read and not computed", () => {
+    renderReady(1, 1, emptyReport(), validationWith(0.0184));
+    const overlay = screen.getByTestId("rmsd-overlay");
+    expect(overlay).toHaveTextContent("0.0184");
+    expect(overlay).not.toHaveTextContent("3.2e-13");
+  });
+
+  it("renders a skipped positions_rmsd honestly, with no number and no overlay", () => {
+    renderReady(1, 1, emptyReport(), validationWith(0, "skipped"));
+    expect(screen.queryByTestId("rmsd-overlay")).not.toBeInTheDocument();
+  });
+
+  it("renders no RMSD overlay when the validation report is absent", () => {
+    renderReady(1, 1);
+    expect(screen.queryByTestId("rmsd-overlay")).not.toBeInTheDocument();
+  });
+
+  it("lists the dropped fields with verbatim reasons on the source side", () => {
+    const reportWithRemoved: ConversionReport = {
+      ...emptyReport(),
+      removed: [
+        {
+          path: "dynamics.velocities",
+          reason: "XYZ cannot hold velocities — they were not written.",
+          detail: null,
+        },
+      ],
+    };
+    renderReady(1, 1, reportWithRemoved, validationWith(0));
+    const row = screen.getByTestId("removed-dynamics.velocities");
+    expect(row).toHaveTextContent("dynamics.velocities");
+    // The report's own words, never a paraphrase.
+    expect(row).toHaveTextContent("XYZ cannot hold velocities — they were not written.");
+  });
+
+  it("marks a supplied lattice violet on the output side only (the M60 D235 rule doing its comparison job)", () => {
+    const reportWithSupplied: ConversionReport = {
+      ...emptyReport(),
+      supplied: [{ path: "cell.lattice_vectors", from_assumption: "A2", detail: null }],
+      assumptions: [
+        {
+          id: "A2",
+          scenario: "missing_lattice",
+          choice: "bounding_box",
+          parameters: {},
+          origin: "user",
+          description: "Bounding-box lattice for the selected frame.",
+        },
+      ],
+    };
+    renderReady(1, 1, reportWithSupplied, validationWith(0));
+    expect(viewer("Output")!.suppliedCell?.fromAssumption).toBe("A2");
+    // The source side conspicuously lacks the fabricated lattice.
+    expect(viewer("Source")!.suppliedCell).toBeUndefined();
+  });
+
+  it("shows neither overlay nor dropped list on a conversion with no removed/supplied/rmsd", () => {
+    renderReady(1, 1);
+    expect(screen.queryByTestId("rmsd-overlay")).not.toBeInTheDocument();
+    expect(screen.queryByText(/fields the target could not hold/i)).not.toBeInTheDocument();
+    expect(viewer("Output")!.suppliedCell).toBeUndefined();
   });
 });

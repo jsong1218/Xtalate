@@ -32,7 +32,8 @@
  */
 import { useCallback, useRef, useState } from "react";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
-import { StructureViewer } from "@/components/StructureViewer";
+import { LossTag, type LossKind } from "@/components/loss/icons";
+import { StructureViewer, type SuppliedCell } from "@/components/StructureViewer";
 import { TrajectoryScrubber } from "@/components/TrajectoryScrubber";
 import { toErrorEnvelope } from "@/lib/api/useInspection";
 import { exportedFrameAnnotation } from "@/lib/exportedFrame";
@@ -45,6 +46,15 @@ const EXPIRED_FILE_COPY =
   "This file's bytes have expired; the reports below remain the complete record.";
 const EXPIRED_OUTPUT_COPY =
   "The output bytes have expired; the reports below remain the complete record.";
+
+/** Validation check status → the shared §4 loss vocabulary (the RMSD caption is not a number-color). */
+const CHECK_KIND: Record<CheckResultStatus, LossKind> = {
+  pass: "preserved",
+  warn: "warning",
+  fail: "fail",
+  skipped: "skipped",
+};
+type CheckResultStatus = "pass" | "warn" | "fail" | "skipped";
 
 /**
  * The camera-lock broadcast (M62-S1, D239), held for one tab: when a viewer's camera changes
@@ -143,7 +153,11 @@ function ComparePrecondition({
   return null;
 }
 
-export function CompareTab({ conversionId, conversionReport }: CompareTabProps) {
+export function CompareTab({
+  conversionId,
+  conversionReport,
+  validationReport,
+}: CompareTabProps) {
   const sourceGeometry = useConversionGeometry(conversionId, "source");
   const outputGeometry = useConversionGeometry(conversionId, "output");
   const { onSourceReady, onOutputReady } = useCameraLock();
@@ -181,9 +195,56 @@ export function CompareTab({ conversionId, conversionReport }: CompareTabProps) 
   const sourceFrameControl = sourceIsTrajectory ? { frame } : undefined;
   const outputFrameControl = countsMatch ? { frame } : undefined;
 
+  // S2 — the report-sourced difference annotations (D240). Every number and every dropped-field
+  // reason below is a *render* of a value already in the record; nothing is computed client-side
+  // (no subtraction of positions, no re-derived RMSD — the go/no-go grep must find no arithmetic
+  // on positions in this tab).
+  //  1. The RMSD overlay: the `ValidationReport`'s own `positions_rmsd` check's `measured` value
+  //     (`rmsd_ang` — the key spelling from `validation/report.py`), the sole quantitative number
+  //     on the tab, with the check row **one click away** (`#check-positions_rmsd`). A `skipped`/
+  //     absent check renders the honest no-overlay state, never a computed fallback.
+  //  2. Dropped fields on the **source** side: the `ConversionReport.removed` entries verbatim.
+  //  3. Supplied violet on the **output** side: the M60 D235 report-sourced `cell` correlation —
+  //     a fabricated lattice looks different from a source lattice.
+  const rmsdCheck = validationReport?.checks.find((c) => c.check_id === "positions_rmsd");
+  const rmsdAng = rmsdCheck?.measured?.rmsd_ang;
+  const rmsdShown =
+    rmsdCheck !== undefined && rmsdCheck.status !== "skipped" && typeof rmsdAng === "number";
+  const rmsdKind: LossKind = rmsdCheck ? CHECK_KIND[rmsdCheck.status] : "preserved";
+  const removedEntries = conversionReport?.removed ?? [];
+  const suppliedCellEntry = conversionReport?.supplied.find(
+    (entry) => entry.path === "cell" || entry.path.startsWith("cell."),
+  );
+  const suppliedAssumption = suppliedCellEntry
+    ? conversionReport?.assumptions.find((a) => a.id === suppliedCellEntry.from_assumption)
+    : undefined;
+  const outputSuppliedCell: SuppliedCell | undefined = suppliedCellEntry
+    ? {
+        fromAssumption: suppliedCellEntry.from_assumption,
+        description: suppliedAssumption?.description,
+      }
+    : undefined;
+
   return (
     <section aria-label="Compare" className="space-y-2">
       <h2 className="text-lg font-semibold text-strong">Compare</h2>
+      {rmsdShown ? (
+        <div
+          data-testid="rmsd-overlay"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-line bg-well px-3 py-2"
+        >
+          <LossTag kind={rmsdKind}>RMSD</LossTag>
+          <span className="text-sm text-body">
+            positions_rmsd measured: <code className="font-mono">{String(rmsdAng)}</code> Å
+          </span>
+          <a
+            href="#check-positions_rmsd"
+            className="text-xs font-medium text-strong underline"
+          >
+            See the check row
+          </a>
+        </div>
+      ) : null}
       {sourceIsTrajectory ? (
         <TrajectoryScrubber
           frameCount={srcCount}
@@ -194,20 +255,45 @@ export function CompareTab({ conversionId, conversionReport }: CompareTabProps) 
         />
       ) : null}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <StructureViewer
-          geometry={sourceGeo}
-          label="Source"
-          trajectorySource={{ kind: "conversion", conversionId, side: "source" }}
-          cameraControls={{ onReady: onSourceReady }}
-          frameControl={sourceFrameControl}
-        />
-        <StructureViewer
-          geometry={outputGeo}
-          label="Output"
-          trajectorySource={{ kind: "conversion", conversionId, side: "output" }}
-          cameraControls={{ onReady: onOutputReady }}
-          frameControl={outputFrameControl}
-        />
+        <div className="space-y-2">
+          <StructureViewer
+            geometry={sourceGeo}
+            label="Source"
+            trajectorySource={{ kind: "conversion", conversionId, side: "source" }}
+            cameraControls={{ onReady: onSourceReady }}
+            frameControl={sourceFrameControl}
+          />
+          {removedEntries.length > 0 ? (
+            <div className="space-y-1 rounded border border-line px-3 py-2">
+              <p className="text-xs font-semibold text-strong">
+                Fields the target could not hold
+              </p>
+              <ul className="space-y-1">
+                {removedEntries.map((entry) => (
+                  <li
+                    key={entry.path}
+                    data-testid={`removed-${entry.path}`}
+                    className="flex flex-wrap items-baseline gap-x-2 text-xs"
+                  >
+                    <code className="font-mono text-muted">{entry.path}</code>
+                    {/* The report's own words, never a paraphrase (D240). */}
+                    <span className="text-body">{entry.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+        <div className="space-y-2">
+          <StructureViewer
+            geometry={outputGeo}
+            label="Output"
+            trajectorySource={{ kind: "conversion", conversionId, side: "output" }}
+            cameraControls={{ onReady: onOutputReady }}
+            frameControl={outputFrameControl}
+            suppliedCell={outputSuppliedCell}
+          />
+        </div>
       </div>
     </section>
   );
