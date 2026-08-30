@@ -11,7 +11,7 @@ authors:
   - family-names: Song
     given-names: Jiayu
 version: 1.6.0
-date-released: 2026-08-28
+date-released: 2026-08-30
 license: Apache-2.0
 repository-code: "https://github.com/jsong1218/Xtalate"
 keywords:
