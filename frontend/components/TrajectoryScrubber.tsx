@@ -39,6 +39,14 @@ export interface TrajectoryScrubberProps {
    * quickly. Never a production branch — the default keeps the fixed rate everywhere else.
    */
   playIntervalMs?: number;
+  /**
+   * The exported-frame marker (M62-S1, D239): the absolute source frame a `frame_selection` output
+   * came from — literally the report's resolved `parameters.frame_index`, passed in verbatim (the
+   * caller reads it with `exportedFrameAnnotation`, never client arithmetic). Renders a labeled
+   * marker on the track; the number shown is the report's own integer, and is rendered even when
+   * the value falls outside the displayed track (an honest outlier is still named, never hidden).
+   */
+  markerFrame?: number;
 }
 
 export function TrajectoryScrubber({
@@ -49,9 +57,18 @@ export function TrajectoryScrubber({
   isLoading = false,
   isLarge = false,
   playIntervalMs = PLAY_INTERVAL_MS,
+  markerFrame,
 }: TrajectoryScrubberProps) {
   const max = frameIndexBase + frameCount - 1;
   const [playing, setPlaying] = useState(false);
+  // The marker's proportional position on the track (clamped layout math — never position/RMSD
+  // arithmetic; the true marker *number* is the report's own integer, rendered verbatim below).
+  const markerInRange =
+    markerFrame !== undefined && markerFrame >= frameIndexBase && markerFrame <= max;
+  const markerPct =
+    markerInRange && max > frameIndexBase
+      ? ((markerFrame as number) - frameIndexBase) / (max - frameIndexBase) * 100
+      : 0;
 
   // Playback: while playing, advance one frame per interval until the last frame, then stop.
   useEffect(() => {
@@ -76,20 +93,40 @@ export function TrajectoryScrubber({
       </button>
       <label className="flex items-center gap-2">
         <span className="text-xs text-muted">frame</span>
-        <input
-          type="range"
-          aria-label="Trajectory frame"
-          min={frameIndexBase}
-          max={max}
-          step={1}
-          value={frame}
-          onChange={(e) => onScrub(Number(e.target.value))}
-          className="w-40"
-        />
+        <div className="relative">
+          <input
+            type="range"
+            aria-label="Trajectory frame"
+            min={frameIndexBase}
+            max={max}
+            step={1}
+            value={frame}
+            onChange={(e) => onScrub(Number(e.target.value))}
+            className="relative z-10 w-40"
+          />
+          {markerInRange ? (
+            // The exported-frame tick (M62-S1): a violet dot over the track at the report-named
+            // frame. Purely visual + labeled; `pointer-events-none` so it never blocks the range.
+            <span
+              data-testid="exported-frame-track-marker"
+              aria-hidden="true"
+              className="pointer-events-none absolute top-1/2 z-0 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-cb-assumption bg-white"
+              style={{ left: `${markerPct}%` }}
+            />
+          ) : null}
+        </div>
         <span role="status" className="min-w-[5.5rem] text-xs font-medium text-slate-700">
           {frame} / {frameCount}
         </span>
       </label>
+      {markerFrame !== undefined ? (
+        <span
+          data-testid="exported-frame-marker"
+          className="rounded bg-cb-assumption-bg px-1.5 py-0.5 text-xs font-medium text-cb-assumption"
+        >
+          Exported frame {markerFrame}
+        </span>
+      ) : null}
       {isLoading ? (
         <span className="text-xs text-muted" data-testid="trajectory-loading">
           loading…

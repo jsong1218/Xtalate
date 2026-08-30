@@ -20,6 +20,7 @@
  * mount's `frame_index_base` maps an absolute report index to a window-local model index with no
  * arithmetic on positions.
  */
+import type { Camera } from "molstar/lib/mol-canvas3d/camera.js";
 import { PluginContext } from "molstar/lib/mol-plugin/context.js";
 import { DefaultPluginSpec } from "molstar/lib/mol-plugin/spec.js";
 import { PluginCommands } from "molstar/lib/mol-plugin/commands.js";
@@ -106,6 +107,30 @@ export interface MountedStructureViewer {
   setWindow(geometry: CanonicalGeometry, absoluteIndex: number): Promise<void>;
   /** Dispose the plugin instance. Idempotent. */
   dispose(): void;
+  /**
+   * The camera get/set/observe seam (M62-S1, D239): lets the Compare tab lock the two viewers'
+   * cameras together. Reading and applying a snapshot is lossless over the plugin's own state — it
+   * is the {@link Camera.Snapshot} the canvas already uses — and `onChange` fires when *this*
+   * viewer's camera mutates (including direct user orbit-control drags), which is the signal the
+   * broadcast listens to. The Compare tab holds one of these per side and reads one to push the
+   * other, guarded against the re-entrant echo (an "applying remote camera" flag).
+   */
+  camera: StructureViewerCamera;
+}
+
+/**
+ * The camera-lock seam on one viewer (M62-S1, D239). A thin wrapper over the live plugin camera:
+ * `getSnapshot`/`setSnapshot` round-trip the exact `Camera.Snapshot` object the plugin owns, and
+ * `onChange` subscribes to `camera.changed` — which fires on any view/projection mutation,
+ * including direct control drags — returning an unsubscribe.
+ */
+export interface StructureViewerCamera {
+  /** Read the current camera snapshot (the plugin's own state). */
+  getSnapshot(): Camera.Snapshot;
+  /** Apply a camera snapshot, e.g. one read from the sibling viewer (camera-lock broadcast). */
+  setSnapshot(snapshot: Camera.Snapshot): void;
+  /** Subscribe to this viewer's camera changes; returns an unsubscribe. */
+  onChange(listener: () => void): () => void;
 }
 
 export interface MountStructureViewerOptions {
@@ -291,6 +316,29 @@ export async function mountStructureViewer(
   // Fit the camera once, on the initial mount only — window swaps preserve the user's view.
   PluginCommands.Camera.Reset(plugin);
 
+  // The camera get/set/observe seam (M62-S1, D239): `plugin.canvas3d.camera` is guaranteed after
+  // `mountAsync`. Reading/applying the `Camera.Snapshot` round-trips the plugin's own state (a
+  // camera-lock broadcast is lossless), and `camera.changed` fires on any view/projection
+  // mutation, including direct user orbit-control drags — the signal the Compare tab's broadcast
+  // listens to. The same subscription mirrors a position/target fingerprint onto `data-camera-*`
+  // so the e2e can assert two locked viewers track each other without touching the WebGL canvas.
+  const pluginCamera = plugin.canvas3d!.camera;
+  const cameraSeam: StructureViewerCamera = {
+    getSnapshot: () => pluginCamera.getSnapshot(),
+    setSnapshot: (snapshot) => {
+      pluginCamera.setState(snapshot);
+    },
+    onChange(listener) {
+      const sub = pluginCamera.changed.subscribe(() => {
+        listener();
+        const p = pluginCamera.getSnapshot().position;
+        const t = pluginCamera.getSnapshot().target;
+        target.dataset.cameraPos = `${p[0].toFixed(3)},${p[1].toFixed(3)},${p[2].toFixed(3)},${t[0].toFixed(3)},${t[1].toFixed(3)},${t[2].toFixed(3)}`;
+      });
+      return () => sub.unsubscribe();
+    },
+  };
+
   return {
     async setFrame(idx: number) {
       await setFrame(idx);
@@ -303,5 +351,6 @@ export async function mountStructureViewer(
       disposed = true;
       plugin.dispose();
     },
+    camera: cameraSeam,
   };
 }

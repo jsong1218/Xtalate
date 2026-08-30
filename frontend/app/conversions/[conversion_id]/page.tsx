@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { CompareTab } from "@/components/CompareTab";
 import { DownloadPanel } from "@/components/DownloadPanel";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { Provenance } from "@/components/Provenance";
@@ -113,6 +114,9 @@ export default function ConversionRecordPage() {
   const [revalidateError, setRevalidateError] = useState<ErrorEnvelopeModel | null>(null);
   const [revalidating, setRevalidating] = useState(false);
   const [profile, setProfile] = useState("default");
+  // The viewer tab switch (M62-S1): one visualization surface at a time — the M60 Structure tab
+  // (output) is the default, the M62 Compare tab (source + output side by side) is one toggle away.
+  const [vizTab, setVizTab] = useState<"structure" | "compare">("structure");
 
   const query = useQuery(conversionQuery(conversionId));
 
@@ -220,17 +224,70 @@ export default function ConversionRecordPage() {
         )}
       </div>
 
-      {/* The Structure tab (M60-S1, Part 7 §6): the conversion's output geometry. A **refused**
-          conversion has no output bytes, so no viewer — the RefusalPanel above is the substance.
-          The report rides along (M60-S3, D235) so a fabricated lattice — `supplied[].path` —
-          renders in the ◆ violet with its Assumption one click away, report-sourced, never
-          re-derived from the geometry. */}
+      {/* The Structure / Compare viewer tabs (M60-S1 + M62-S1, Part 7 §6). One visualization
+          surface at a time (a genuine tab control, the M60 "tab" seam now with its sibling), each
+          rendering the conversion's Canonical Object(s) fed from the M59 geometry endpoint. The
+          panels and reports above are untouched; only the active tab mounts, so the page carries
+          exactly one live structure surface at a time. A **refused** conversion has no output
+          bytes, so no viewer — the RefusalPanel above is the substance. */}
       {refused ? null : (
-        <StructureTab
-          geometryState={outputGeometry}
-          conversionReport={report}
-          trajectorySource={{ kind: "conversion", conversionId, side: "output" }}
-        />
+        <section aria-label="Structure and Compare">
+          <div
+            role="tablist"
+            aria-label="Structure and Compare"
+            className="flex flex-wrap gap-1 border-b border-line"
+          >
+            <button
+              type="button"
+              role="tab"
+              id="tab-structure"
+              aria-selected={vizTab === "structure"}
+              aria-controls="panel-structure"
+              onClick={() => setVizTab("structure")}
+              className="rounded-t border border-b-0 border-line px-3 py-1.5 text-sm font-medium text-body aria-selected:bg-well aria-selected:text-strong"
+            >
+              Structure
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="tab-compare"
+              aria-selected={vizTab === "compare"}
+              aria-controls="panel-compare"
+              onClick={() => setVizTab("compare")}
+              className="rounded-t border border-b-0 border-line px-3 py-1.5 text-sm font-medium text-body aria-selected:bg-well aria-selected:text-strong"
+            >
+              Compare
+            </button>
+          </div>
+          {vizTab === "structure" ? (
+            <div
+              role="tabpanel"
+              id="panel-structure"
+              aria-labelledby="tab-structure"
+              className="pt-3"
+            >
+              <StructureTab
+                geometryState={outputGeometry}
+                conversionReport={report}
+                trajectorySource={{ kind: "conversion", conversionId, side: "output" }}
+              />
+            </div>
+          ) : (
+            <div
+              role="tabpanel"
+              id="panel-compare"
+              aria-labelledby="tab-compare"
+              className="pt-3"
+            >
+              <CompareTab
+                conversionId={conversionId}
+                conversionReport={report}
+                validationReport={record.validation_report ?? undefined}
+              />
+            </div>
+          )}
+        </section>
       )}
 
       {/* Re-validate: appends, never replaces (Part 6 §2), and works after the bytes are gone. The

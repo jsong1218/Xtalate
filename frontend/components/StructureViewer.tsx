@@ -21,7 +21,7 @@
  * mounts for a multi-frame object, the single-frame render path stays react-query-free.
  */
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CanonicalGeometry } from "@/lib/geometry/useGeometry";
 import {
   useTrajectoryWindow,
@@ -30,6 +30,7 @@ import {
 import { TrajectoryScrubber } from "./TrajectoryScrubber";
 import { LossTag } from "@/components/loss/icons";
 import { StructureLegend } from "./StructureLegend";
+import type { CameraControls } from "./StructureViewerMolstar";
 
 const MolstarView = dynamic(() => import("./StructureViewerMolstar"), {
   ssr: false,
@@ -91,25 +92,52 @@ export interface StructureViewerProps {
    * a production caller.
    */
   playIntervalMs?: number;
+  /**
+   * Additive camera-lock seam (M62-S1, D239): when present, the viewer's plugin camera is handed
+   * upward on mount so a parent (the Compare tab) can lock two viewers together. A lone viewer
+   * passes nothing and behaves exactly as it does today.
+   */
+  cameraControls?: CameraControls;
+  /**
+   * Controlled-frame mode (M62-S1): when present, the parent owns the shared scrubber and tells
+   * this viewer which **absolute** report index to display. The viewer renders **no scrubber of
+   * its own** and windows over `trajectorySource` to show `frameControl.frame` — one scrubber in
+   * the Compare tab drives both sides (honest frame-lock: only where the frame counts match, by the
+   * caller's decision).
+   */
+  frameControl?: { frame: number };
 }
 
 /**
- * The multi-frame trajectory mount (M61-S1): owns the sliding-window hook and the frame scrubber,
- * feeding the mount the window's decoded frames at the currently displayed absolute report index.
- * Mounted only for `frame_count > 1`, so a single-frame object never touches react-query here.
+ * The multi-frame trajectory mount (M61-S1, extended M62-S1): owns the sliding-window hook and,
+ * in the standalone (Structure-tab) path, the frame scrubber; in controlled mode (Compare) the
+ * parent's scrubber drives `frameControl.frame` and no local scrubber renders — one scrubber, no
+ * fork.
  */
 function TrajectoryViewer({
   geometry,
   suppliedCell,
   trajectorySource,
+  cameraControls,
   playIntervalMs,
+  frameControl,
 }: {
   geometry: CanonicalGeometry;
   suppliedCell?: boolean;
   trajectorySource: GeometrySource;
+  cameraControls?: CameraControls;
   playIntervalMs?: number;
+  frameControl?: { frame: number };
 }) {
   const trajectory = useTrajectoryWindow(trajectorySource, geometry.frame_count);
+  // Controlled mode (M62-S1): the parent owns the frame; drive the sliding window to it. The hook's
+  // `ensureFrame` is stable per `frame_count`, so this effect only re-runs on an actual frame change.
+  useEffect(() => {
+    if (frameControl) trajectory.ensureFrame(frameControl.frame);
+    // Deps are keyed on the frame number (not the `frameControl` object or the whole hook result)
+    // so the window only re-targets on an actual frame move; `ensureFrame` is stable per frame_count.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frameControl?.frame, trajectory.ensureFrame]);
   // The window's geometry when loaded, else the static frame (first paint); always an absolute index.
   const mountGeometry = trajectory.currentWindow ? trajectory.currentWindow : geometry;
   const mountFrame =
@@ -119,16 +147,23 @@ function TrajectoryViewer({
 
   return (
     <>
-      <TrajectoryScrubber
-        frameCount={geometry.frame_count}
-        frameIndexBase={geometry.frame_index_base ?? 0}
-        frame={trajectory.frame}
-        onScrub={trajectory.ensureFrame}
-        isLoading={trajectory.isLoading}
-        isLarge={trajectory.isLarge}
-        playIntervalMs={playIntervalMs}
+      {frameControl ? null : (
+        <TrajectoryScrubber
+          frameCount={geometry.frame_count}
+          frameIndexBase={geometry.frame_index_base ?? 0}
+          frame={trajectory.frame}
+          onScrub={trajectory.ensureFrame}
+          isLoading={trajectory.isLoading}
+          isLarge={trajectory.isLarge}
+          playIntervalMs={playIntervalMs}
+        />
+      )}
+      <MolstarView
+        geometry={mountGeometry}
+        frameIndex={mountFrame}
+        suppliedCell={suppliedCell}
+        cameraControls={cameraControls}
       />
-      <MolstarView geometry={mountGeometry} frameIndex={mountFrame} suppliedCell={suppliedCell} />
       {trajectory.error ? (
         <p role="status" className="text-xs text-muted" data-testid="trajectory-error">
           Could not load this frame window from the server.
@@ -143,7 +178,9 @@ export function StructureViewer({
   label,
   suppliedCell,
   trajectorySource,
+  cameraControls,
   playIntervalMs,
+  frameControl,
 }: StructureViewerProps) {
   const [bondsEnabled, setBondsEnabled] = useState(false);
   const multiFrame =
@@ -180,13 +217,16 @@ export function StructureViewer({
             geometry={geometry}
             suppliedCell={Boolean(suppliedCell)}
             trajectorySource={trajectorySource}
+            cameraControls={cameraControls}
             playIntervalMs={playIntervalMs}
+            frameControl={frameControl}
           />
         ) : (
           <MolstarView
             geometry={geometry}
             frameIndex={geometry.frame_index_base ?? 0}
             suppliedCell={Boolean(suppliedCell)}
+            cameraControls={cameraControls}
           />
         )}
         {bondsEnabled ? (

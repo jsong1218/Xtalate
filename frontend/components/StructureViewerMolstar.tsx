@@ -22,19 +22,34 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   mountStructureViewer,
   type MountedStructureViewer,
+  type StructureViewerCamera,
 } from "@/lib/geometry/molstarMount";
 import type { CanonicalGeometry } from "@/lib/geometry/useGeometry";
+
+/**
+ * The additive camera-lock seam (M62-S1, D239): when present, the parent hands the mount's camera
+ * (`handle.camera`) upward once the plugin is mounted, so the Compare tab can lock two viewers
+ * together. A lone Structure-tab viewer (M60) passes nothing and behaves exactly as before — the
+ * seam is optional and never mounted in the single-viewer path.
+ */
+export interface CameraControls {
+  /** Called with the viewer's camera controls once the plugin mount resolves; returns an unsubscribe. */
+  onReady(camera: StructureViewerCamera): () => void;
+}
 
 export default function StructureViewerMolstar({
   geometry,
   frameIndex,
   suppliedCell,
+  cameraControls,
 }: {
   geometry: CanonicalGeometry;
   /** The absolute report index to display (defaults to the geometry's frame_index_base). */
   frameIndex?: number;
   /** When true the unit-cell wireframe is drawn in the supplied-violet (D235). */
   suppliedCell?: boolean;
+  /** Additive camera-lock seam (M62-S1): surfaced to its parent on mount, if supplied. */
+  cameraControls?: CameraControls;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<MountedStructureViewer | null>(null);
@@ -55,6 +70,12 @@ export default function StructureViewerMolstar({
   const frameRef = useRef(frame);
   frameRef.current = frame;
 
+  // Mirror the camera-controls prop into a ref so the mount effect (which runs on `suppliedCell`
+  // only) always reads the latest seam without becoming a dependency that re-mounts the plugin.
+  const cameraControlsRef = useRef(cameraControls);
+  cameraControlsRef.current = cameraControls;
+  // The unsubscribe the camera seam returned from `onReady`; called on unmount/re-mount.
+  const cameraWriteupRef = useRef<(() => void) | null>(null);
   // A frame-only change within the mounted window: cheap in-place frame set (no rebuild). Skips
   // when the window is not yet the mounted one (the window swap below sets the frame on arrival).
   const applyFrame = useCallback(async () => {
@@ -129,6 +150,12 @@ export default function StructureViewerMolstar({
         mountedGeoRef.current = JSON.stringify(mountGeometry);
         mountedFrameRef.current = mountFrame;
         target.dataset.mounted = "true";
+        // The additive camera-lock seam (M62-S1): hand the mount's camera upward so the Compare tab
+        // can broadcast it to the sibling viewer (the mount already exposes get/set/observe). The
+        // returned unsubscribe is released on unmount/re-mount below.
+        cameraWriteupRef.current?.();
+        cameraWriteupRef.current =
+          cameraControlsRef.current?.onReady(handle.camera) ?? null;
         // A window/frame changed while the plugin was mounting → reconcile now.
         if (geometryJsonRef.current !== mountedGeoRef.current) void applyWindow();
         else if (frameRef.current !== mountedFrameRef.current) void applyFrame();
@@ -141,6 +168,8 @@ export default function StructureViewerMolstar({
       });
     return () => {
       cancelled = true;
+      cameraWriteupRef.current?.();
+      cameraWriteupRef.current = null;
       if (handleRef.current) {
         try {
           handleRef.current.dispose();
