@@ -1,12 +1,23 @@
 /**
- * The Mol\* plugin mount (v1.6 M59-S2): renders a canonical-geometry structure inside a target
- * DOM element. Client-only by construction — this module is only ever loaded through the viewer's
- * SSR-safe dynamic import (it pulls the WebGL plugin).
+ * The Mol\\* plugin mount (v1.6 M59-S2, extended M61-S1): renders a canonical-geometry structure
+ * inside a target DOM element. Client-only by construction — this module is only ever loaded
+ * through the viewer's SSR-safe dynamic import (it pulls the WebGL plugin).
  *
  * The display is deliberately **atoms-only**: the representation added is `spacefill` (no bond
- * visual), so Mol\*'s lazy distance heuristic is never drawn — bonds are a display heuristic,
+ * visual), so Mol\\*'s lazy distance heuristic is never drawn — bonds are a display heuristic,
  * off by default, and any enabled bonds view carries the badge in `StructureViewer` (D234). The
  * unit cell is shown when the source carried one; a cell-less source draws no box (P3).
+ *
+ * **M61-S1 adds the imperative frame API** (D236): the mount builds a Mol\\* trajectory from the
+ * *window* of frames the scrubber hands it (bounded — never the whole trajectory) and,
+ * within that window, sets the visible frame by updating `ModelFromTrajectory`'s `modelIndex`
+ * (a cheap in-place transform update — `immediateUpdate: true` — so scrubbing inside a window
+ * never rebuilds the trajectory). The per-frame unit cell is honoured deliverable 3: on a frame
+ * change the wireframe is re-created for **that frame's** model (a variable-cell trajectory
+ * breathes; a cell-less frame draws no box — the `data-unitcell-drawn` render proof stays honest
+ * per displayed frame). A window *change* (new frame set) is handled by the caller re-mounting; the
+ * mount's `frame_index_base` maps an absolute report index to a window-local model index with no
+ * arithmetic on positions.
  */
 import { PluginContext } from "molstar/lib/mol-plugin/context.js";
 import { DefaultPluginSpec } from "molstar/lib/mol-plugin/spec.js";
@@ -21,7 +32,7 @@ import { geometryToTrajectory } from "./molstarLoader";
 import type { CanonicalGeometry } from "./useGeometry";
 
 /**
- * The state transform that turns the canonical geometry JSON into a Mol\* trajectory cell —
+ * The state transform that turns the canonical geometry JSON into a Mol\\* trajectory cell —
  * the plugin-state seam between the loader and the display pipeline (no intermediate format).
  */
 const GeometryTrajectory = PluginStateTransform.BuiltIn({
@@ -70,24 +81,52 @@ const UNITCELL_COLOR = Color(0x475569);
  */
 const SUPPLIED_CELL_COLOR = Color(0x6d28d9);
 
+/**
+ * The imperative handle the mount returns — the viewer drives frames with it (M61-S1, D236). The
+ * mount owns one bounded window's trajectory for its lifetime; callers re-mount on a window change.
+ */
+export interface MountedStructureViewer {
+  /**
+   * Display the window frame at the given **absolute** report index. Only indices inside the
+   * mounted window are meaningful (the caller clamps); the mount maps to the window-local model
+   * index from its `frame_index_base` and redraws that frame's unit-cell wireframe.
+   */
+  setFrame(absoluteIndex: number): Promise<void>;
+  /** Dispose the plugin instance. Idempotent. */
+  dispose(): void;
+}
+
 export interface MountStructureViewerOptions {
   /** When true, the unit-cell wireframe is drawn in the supplied-violet (D235). */
   suppliedCell?: boolean;
+  /**
+   * The absolute report index to display initially (defaults to `geometry.frame_index_base`).
+   * Only meaningful when the mounted geometry carries multiple frames.
+   */
+  initialFrameIndex?: number;
+}
+
+/** The unit-cell params: full defaults + the ordinary/supplied color (D235). */
+function unitcellParamsFor(suppliedCell: boolean) {
+  const cellColor = suppliedCell ? SUPPLIED_CELL_COLOR : UNITCELL_COLOR;
+  return { ...PD.getDefaultValues(UnitcellParams), cellColor };
 }
 
 /**
- * Mount an embedded Mol\* view of the geometry into `target` (which must be positioned).
- * Returns a cleanup function that disposes the plugin instance.
+ * Mount an embedded Mol\\* view of the geometry into `target` (which must be positioned).
+ * Returns the imperative frame handle (see {@link MountedStructureViewer}).
  */
 export async function mountStructureViewer(
   target: HTMLDivElement,
   geometry: CanonicalGeometry,
   options: MountStructureViewerOptions = {}
-): Promise<() => void> {
+): Promise<MountedStructureViewer> {
   const plugin = new PluginContext(DefaultPluginSpec());
   await plugin.init();
   await plugin.mountAsync(target, {});
 
+  // Restore the M59/M60 mount: build the trajectory (the window's frames), the default preset
+  // (model + structure + component), and the atoms-only representation.
   const trajectory = await plugin.state.data
     .build()
     .to(plugin.state.data.root)
@@ -106,33 +145,110 @@ export async function mountStructureViewer(
     );
   }
 
-  // The unit-cell wireframe (v1.6 M60-S2): drawn **only when the model carries a cell**.
-  // `tryCreateUnitcell` resolves the model's crystal symmetry and returns nothing for a
-  // cell-less/zero-volume model (the loader attaches no symmetry provider without a cell), so
-  // absence renders as absence (P3) — the box can never be fabricated on the client. (M59's
-  // `showUnitcell: true` only created a **hidden** cell, so the visible box is S2's addition.)
-  const model = plugin.managers.structure.hierarchy.current.models[0]?.cell;
-  let unitcellDrawn = false;
-  if (model) {
-    // Full param values (defaults + our color): the unitcell params are non-optional once passed.
-    const cellColor = options.suppliedCell ? SUPPLIED_CELL_COLOR : UNITCELL_COLOR;
-    const unitcellParams = { ...PD.getDefaultValues(UnitcellParams), cellColor };
-    const unitcell = await plugin.builders.structure.tryCreateUnitcell(model, unitcellParams, {
-      isHidden: false,
-    });
-    // `tryCreateUnitcell` returns nothing when the model has no non-zero symmetry cell — it bails
-    // on `!m` or `SpacegroupCell.isZero(cell)` — so a truthy result means a box was actually drawn.
-    unitcellDrawn = Boolean(unitcell);
+  const frameIndexBase = geometry.frame_index_base ?? 0;
+  let disposed = false;
+  let unitcellCell: { ref: unknown } | undefined;
+
+  // The initial displayed frame (the geometry endpoint serves the object's whole `frame_count`,
+  // so a multi-frame window carries them all; the preset shows frame base by default).
+  const initial = options.initialFrameIndex ?? frameIndexBase;
+
+  /**
+   * The `SO.Molecule.Model` cell currently driving the display, resolved **fresh** from the
+   * hierarchy manager. Re-applying `ModelFromTrajectory` (a frame change) produces a new cell,
+   * so any reference captured at mount goes stale.
+   */
+  function resolveModelCell() {
+    return plugin.managers.structure.hierarchy.current.models[0]?.cell;
   }
-  // The render-level P3 proof (v1.6 M60 review follow-up): unlike `data-has-cell`, which mirrors
-  // the endpoint's *input* answer, this attribute reflects whether Mol\* ACTUALLY drew a wireframe.
-  // It catches a fabricated box at the render — the absence invariant is asserted where it lives,
-  // not on the input — so a regression (a Mol\* bump, a loader leaking a symmetry provider) that
-  // drew a box for a cell-less file would fail the fidelity e2e instead of passing green.
-  target.dataset.unitcellDrawn = unitcellDrawn ? "true" : "false";
+
+  /**
+   * Whether the displayed frame declares a renderable cell — the same validity `cellFromLattice`
+   * enforces in the loader (a (3, 3) lattice with non-zero volume). This is the honest per-frame
+   * presence decision: Mol*'s per-frame model **inherits the topology model's symmetry** when its
+   * own frame declares no cell (the trajectory spread carries the static property), so the box
+   * presence must be decided from the frame the source actually declared — never a fabricated box.
+   */
+  function frameHasRenderableCell(absoluteIndex: number): boolean {
+    const localIndex = Math.max(0, absoluteIndex - frameIndexBase);
+    const cell = geometry.frames?.[localIndex]?.cell;
+    if (!cell || cell.length !== 3) return false;
+    for (const row of cell) {
+      if (row.length !== 3) return false;
+    }
+    const det =
+      cell[0][0] * (cell[1][1] * cell[2][2] - cell[1][2] * cell[2][1]) -
+      cell[0][1] * (cell[1][0] * cell[2][2] - cell[1][2] * cell[2][0]) +
+      cell[0][2] * (cell[1][0] * cell[2][1] - cell[1][1] * cell[2][0]);
+    return Math.abs(det) > 1e-6;
+  }
+
+  /**
+   * (Re)create the unit-cell wireframe for the displayed frame; returns whether a box was drawn.
+   * A frame that declares no cell draws **no box** (P3, decided from the frame's canonical cell);
+   * a celled frame's box is drawn by `tryCreateUnitcell` against the resolved model (whose sym
+   * for a celled frame is that frame's own lattice).
+   */
+  async function drawUnitcellForFrame(absoluteIndex: number): Promise<boolean> {
+    if (disposed) return false;
+    if (unitcellCell) {
+      await plugin.state.data.build().delete(unitcellCell.ref as never).commit();
+      unitcellCell = undefined;
+    }
+    if (!frameHasRenderableCell(absoluteIndex)) {
+      return false; // absence renders as absence — no box, ever (P3)
+    }
+    const modelCell = resolveModelCell();
+    if (!modelCell) return false;
+    const unitcell = await plugin.builders.structure.tryCreateUnitcell(
+      modelCell,
+      unitcellParamsFor(Boolean(options.suppliedCell)),
+      { isHidden: false }
+    );
+    unitcellCell = unitcell ?? undefined;
+    return Boolean(unitcell);
+  }
+
+  // The imperative frame set (M61-S1): within the mounted window, update `ModelFromTrajectory`'s
+  // `modelIndex` (re-applying the transform with the new index), then redraw that frame's unit
+  // cell. `immediateUpdate` on modelIndex keeps the update in place, so scrubbing inside a window
+  // is cheap.
+  async function setFrame(absoluteIndex: number): Promise<void> {
+    if (disposed) return;
+    const modelCell = resolveModelCell();
+    if (!modelCell) return;
+    const localIndex = Math.max(0, absoluteIndex - frameIndexBase);
+    await plugin.state.data
+      .build()
+      .to(modelCell)
+      .update({ modelIndex: localIndex })
+      .commit();
+    const drawn = await drawUnitcellForFrame(absoluteIndex);
+    // The render-level proof stays honest per displayed frame (deliverable 3).
+    target.dataset.unitcellDrawn = drawn ? "true" : "false";
+    target.dataset.currentFrame = String(absoluteIndex);
+  }
+
+  // Initial render: apply the starting frame + its cell wireframe, and expose the render proofs
+  // the e2e asserts against — mounted = the canvas is live, atoms = the declared atom count,
+  // current-frame/unitcell-drawn = what is actually displayed.
+  try {
+    target.dataset.unitcellDrawn = (await drawUnitcellForFrame(initial)) ? "true" : "false";
+  } catch {
+    // A failed unitcell draw must not fail the structure render; presence stays false.
+    target.dataset.unitcellDrawn = "false";
+  }
+  await setFrame(initial);
   PluginCommands.Camera.Reset(plugin);
 
-  return () => {
-    plugin.dispose();
+  return {
+    async setFrame(idx: number) {
+      await setFrame(idx);
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      plugin.dispose();
+    },
   };
 }

@@ -23,6 +23,7 @@ import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { StructureViewer, type SuppliedCell } from "@/components/StructureViewer";
 import { toErrorEnvelope } from "@/lib/api/useInspection";
 import type { GeometryState } from "@/lib/geometry/useGeometry";
+import type { GeometrySource } from "@/lib/geometry/useTrajectoryWindow";
 import type { ConversionReport } from "@/lib/report/types";
 
 const EXPIRED_FILE_COPY =
@@ -43,9 +44,20 @@ export interface StructureTabProps {
    * never renders violet.
    */
   conversionReport?: ConversionReport;
+  /**
+   * The read target the Structure tab already renders (M61-S1): the file's own frames, or a
+   * conversion's source/output. Passed through to the viewer so a multi-frame object (`frame_count
+   * > 1`) gains the scrubber and windows over the same M59 endpoint — additive, never re-derived.
+   */
+  trajectorySource?: GeometrySource;
 }
 
-export function StructureTab({ geometryState, label, conversionReport }: StructureTabProps) {
+export function StructureTab({
+  geometryState,
+  label,
+  conversionReport,
+  trajectorySource,
+}: StructureTabProps) {
   return (
     <section aria-label="Structure" className="space-y-2">
       <h2 className="text-lg font-semibold text-strong">Structure</h2>
@@ -53,12 +65,18 @@ export function StructureTab({ geometryState, label, conversionReport }: Structu
         geometryState={geometryState}
         label={label}
         conversionReport={conversionReport}
+        trajectorySource={trajectorySource}
       />
     </section>
   );
 }
 
-function StructureTabBody({ geometryState, label, conversionReport }: StructureTabProps) {
+function StructureTabBody({
+  geometryState,
+  label,
+  conversionReport,
+  trajectorySource,
+}: StructureTabProps) {
   if (geometryState.status === "loading") {
     return (
       <p role="status" className="text-sm text-muted">
@@ -111,6 +129,7 @@ function StructureTabBody({ geometryState, label, conversionReport }: StructureT
       geometry={geometry}
       label={label}
       suppliedCell={suppliedCellInfo}
+      trajectorySource={trajectorySource}
     />
   );
 }

@@ -187,6 +187,7 @@ export default function FilePage() {
           <StructureTab
             geometryState={fileGeometry}
             label={inspection.report.file.filename}
+            trajectorySource={{ kind: "file", fileId }}
           />
           <Inventory report={inspection.report} />
           {submitError ? <ErrorEnvelope envelope={submitError} /> : null}

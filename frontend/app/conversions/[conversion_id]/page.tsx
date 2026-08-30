@@ -226,7 +226,11 @@ export default function ConversionRecordPage() {
           renders in the ◆ violet with its Assumption one click away, report-sourced, never
           re-derived from the geometry. */}
       {refused ? null : (
-        <StructureTab geometryState={outputGeometry} conversionReport={report} />
+        <StructureTab
+          geometryState={outputGeometry}
+          conversionReport={report}
+          trajectorySource={{ kind: "conversion", conversionId, side: "output" }}
+        />
       )}
 
       {/* Re-validate: appends, never replaces (Part 6 §2), and works after the bytes are gone. The
