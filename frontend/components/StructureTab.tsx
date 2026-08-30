@@ -20,6 +20,7 @@
  *     the `RefusalPanel` is the substance); here the same rule holds: no geometry, no viewer.
  */
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
+import { LossTag } from "@/components/loss/icons";
 import { StructureViewer, type SuppliedCell } from "@/components/StructureViewer";
 import { toErrorEnvelope } from "@/lib/api/useInspection";
 import type { GeometryState } from "@/lib/geometry/useGeometry";
@@ -30,6 +31,33 @@ const EXPIRED_FILE_COPY =
   "This file's bytes have expired; the reports below remain the complete record.";
 const EXPIRED_OUTPUT_COPY =
   "The output bytes have expired; the reports below remain the complete record.";
+
+/**
+ * The report-sourced exported-frame annotation (v1.6 M61-S2, D237).
+ *
+ * When a conversion's output was produced by a `frame_selection` recovery, the tab names which
+ * **source frame** the output is — read **only** from the Assumption's `parameters.frame_index`
+ * (the engine resolves the absolute, 0-based source index for `first`/`last`/`index` alike —
+ * `src/xtalate/recovery/engine.py` `_frame_selection_assumption`), never client re-derived:
+ * no `last → frame_count - 1` arithmetic, no source/output position diffing (the no-scientific-
+ * logic-in-the-client boundary, v0.6 / D235). The Assumption itself is one click away.
+ *
+ * `split_all` is HTTP-refused (D113) so it should never reach a conversion record, and an absent /
+ * non-integer `frame_index` renders **no annotation** — never `NaN` (belt-and-braces guards, not
+ * the main path). Returns `undefined` on a discovery page (no `assumptions`) or a conversion with
+ * no `frame_selection` Assumption.
+ */
+function exportedFrameAnnotation(
+  conversionReport?: ConversionReport,
+): { index: number; assumptionId: string } | undefined {
+  const assumption = conversionReport?.assumptions.find(
+    (a) => a.scenario === "frame_selection",
+  );
+  if (!assumption) return undefined;
+  const raw = assumption.parameters?.frame_index;
+  if (typeof raw !== "number" || !Number.isInteger(raw)) return undefined;
+  return { index: raw, assumptionId: assumption.id };
+}
 
 export interface StructureTabProps {
   /** The geometry query state, fetched by the page through the M59 hook. */
@@ -106,6 +134,12 @@ function StructureTabBody({
   const geometry = geometryState.geometry;
   if (!geometry) return null;
 
+  // The report-sourced exported-frame annotation (S2, D237): on a conversion whose output was
+  // produced by a `frame_selection` recovery, name which source frame it is — read only from the
+  // Assumption's `parameters.frame_index`, Assumption one click away. Discovery pages (no
+  // `conversionReport`) and conversions without a `frame_selection` render nothing.
+  const exportedFrame = exportedFrameAnnotation(conversionReport);
+
   // The supplied-geometry correlation (D235): the fabricated-lattice case. The engine records the
   // fabrication on the `cell` canonical family's leaf paths (`cell.lattice_vectors`, `cell.pbc` —
   // the wire carries no bare `cell` entry), so the check matches the `cell.*` family and is
@@ -125,11 +159,29 @@ function StructureTabBody({
     : undefined;
 
   return (
-    <StructureViewer
-      geometry={geometry}
-      label={label}
-      suppliedCell={suppliedCellInfo}
-      trajectorySource={trajectorySource}
-    />
+    <>
+      {exportedFrame ? (
+        <div
+          data-testid="exported-frame"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-cb-assumption bg-cb-assumption-bg px-2 py-1.5"
+        >
+          <LossTag kind="assumption">
+            This output is source frame {exportedFrame.index}
+          </LossTag>
+          <a
+            href={`#assumption-${exportedFrame.assumptionId}`}
+            className="text-xs font-medium text-cb-assumption underline"
+          >
+            See Assumption {exportedFrame.assumptionId}
+          </a>
+        </div>
+      ) : null}
+      <StructureViewer
+        geometry={geometry}
+        label={label}
+        suppliedCell={suppliedCellInfo}
+        trajectorySource={trajectorySource}
+      />
+    </>
   );
 }

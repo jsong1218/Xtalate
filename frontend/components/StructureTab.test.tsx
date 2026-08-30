@@ -11,7 +11,7 @@ import type { CanonicalGeometry } from "@/lib/geometry/useGeometry";
 import { StructureTab } from "./StructureTab";
 import suppliedCellRecord from "./__fixtures__/conversion.record.supplied-cell.json";
 import plainRecord from "./__fixtures__/conversion.record.json";
-import type { ConversionReport } from "@/lib/report/types";
+import type { Assumption, ConversionReport } from "@/lib/report/types";
 
 vi.mock("./StructureViewerMolstar", () => ({
   default: ({
@@ -173,5 +173,121 @@ describe("StructureTab", () => {
     );
     expect(screen.getByText("NETWORK_ERROR")).toBeInTheDocument();
     expect(screen.queryByTestId("molstar-mount")).toBeNull();
+  });
+
+  // --- S2 (D237): the report-sourced exported-frame annotation -----------------------------
+
+  /** A conversion report carrying the given assumptions (only `supplied` + `assumptions` are read). */
+  function reportWith(assumptions: Assumption[]): ConversionReport {
+    return {
+      report_id: "r1",
+      stage: "final",
+      status: "completed",
+      mode: "permissive",
+      created_at: "2026-07-25T22:29:06Z",
+      source: { format_id: "extxyz", filename: "s.extxyz" },
+      target: { format_id: "xyz", filename: "output.xyz" },
+      preserved: [],
+      removed: [],
+      supplied: [],
+      assumptions,
+      warnings: [],
+      refusal: null,
+    };
+  }
+
+  const frameSelection = (
+    id: string,
+    choice: string,
+    frameIndex: number | undefined,
+  ): Assumption => ({
+    id,
+    scenario: "frame_selection",
+    choice,
+    parameters: frameIndex === undefined ? {} : { frame_index: frameIndex },
+    origin: "user",
+    description: "",
+  });
+
+  it("names the exported source frame from a frame_selection Assumption, one click away (D237)", async () => {
+    const report = reportWith([frameSelection("A3", "index", 812)]);
+    render(
+      <StructureTab
+        geometryState={{ status: "ready", geometry: fixture }}
+        conversionReport={report}
+      />,
+    );
+    await screen.findByTestId("molstar-mount");
+    const badge = screen.getByTestId("exported-frame");
+    // The frame number is the report's `parameters.frame_index` — 812, never client-derived.
+    expect(badge).toHaveTextContent("This output is source frame 812");
+    const link = screen.getByRole("link", { name: /See Assumption A3/ });
+    expect(link).toHaveAttribute("href", "#assumption-A3");
+  });
+
+  it("surfaces a 'last' exported frame from parameters.frame_index — no client arithmetic (D237)", async () => {
+    // The output is a single frame (frame_count 1), but the source index the report records is
+    // 999 — the tab must show exactly 999 from `frame_index`, never `last → frame_count-1`.
+    const report = reportWith([frameSelection("A9", "last", 999)]);
+    render(
+      <StructureTab
+        geometryState={{ status: "ready", geometry: fixture }}
+        conversionReport={report}
+      />,
+    );
+    await screen.findByTestId("molstar-mount");
+    expect(screen.getByTestId("exported-frame")).toHaveTextContent(
+      "This output is source frame 999",
+    );
+  });
+
+  it("renders no annotation for a conversion with no frame_selection Assumption", async () => {
+    const report = reportWith([
+      {
+        id: "A1",
+        scenario: "missing_lattice",
+        choice: "bounding_box",
+        parameters: {},
+        origin: "user",
+        description: "",
+      },
+    ]);
+    render(
+      <StructureTab
+        geometryState={{ status: "ready", geometry: fixture }}
+        conversionReport={report}
+      />,
+    );
+    await screen.findByTestId("molstar-mount");
+    expect(screen.queryByTestId("exported-frame")).toBeNull();
+  });
+
+  it("renders no annotation for a split_all or missing frame_index (never NaN)", async () => {
+    const split = reportWith([frameSelection("A4", "split_all", undefined)]);
+    const { unmount } = render(
+      <StructureTab
+        geometryState={{ status: "ready", geometry: fixture }}
+        conversionReport={split}
+      />,
+    );
+    await screen.findByTestId("molstar-mount");
+    expect(screen.queryByTestId("exported-frame")).toBeNull();
+    unmount();
+
+    const absent = reportWith([frameSelection("A5", "index", undefined)]);
+    render(
+      <StructureTab
+        geometryState={{ status: "ready", geometry: fixture }}
+        conversionReport={absent}
+      />,
+    );
+    await screen.findByTestId("molstar-mount");
+    expect(screen.queryByTestId("exported-frame")).toBeNull();
+  });
+
+  it("never renders the exported-frame annotation on the files page (no conversion report)", async () => {
+    render(<StructureTab geometryState={{ status: "ready", geometry: fixture }} />);
+    await screen.findByTestId("molstar-mount");
+    expect(screen.queryByTestId("exported-frame")).toBeNull();
   });
 });
