@@ -23,6 +23,7 @@ import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { LossTag } from "@/components/loss/icons";
 import { StructureViewer, type SuppliedCell } from "@/components/StructureViewer";
 import { toErrorEnvelope } from "@/lib/api/useInspection";
+import { exportedFrameAnnotation } from "@/lib/exportedFrame";
 import type { GeometryState } from "@/lib/geometry/useGeometry";
 import type { GeometrySource } from "@/lib/geometry/useTrajectoryWindow";
 import type { ConversionReport } from "@/lib/report/types";
@@ -31,33 +32,6 @@ const EXPIRED_FILE_COPY =
   "This file's bytes have expired; the reports below remain the complete record.";
 const EXPIRED_OUTPUT_COPY =
   "The output bytes have expired; the reports below remain the complete record.";
-
-/**
- * The report-sourced exported-frame annotation (v1.6 M61-S2, D237).
- *
- * When a conversion's output was produced by a `frame_selection` recovery, the tab names which
- * **source frame** the output is — read **only** from the Assumption's `parameters.frame_index`
- * (the engine resolves the absolute, 0-based source index for `first`/`last`/`index` alike —
- * `src/xtalate/recovery/engine.py` `_frame_selection_assumption`), never client re-derived:
- * no `last → frame_count - 1` arithmetic, no source/output position diffing (the no-scientific-
- * logic-in-the-client boundary, v0.6 / D235). The Assumption itself is one click away.
- *
- * `split_all` is HTTP-refused (D113) so it should never reach a conversion record, and an absent /
- * non-integer `frame_index` renders **no annotation** — never `NaN` (belt-and-braces guards, not
- * the main path). Returns `undefined` on a discovery page (no `assumptions`) or a conversion with
- * no `frame_selection` Assumption.
- */
-function exportedFrameAnnotation(
-  conversionReport?: ConversionReport,
-): { index: number; assumptionId: string } | undefined {
-  const assumption = conversionReport?.assumptions.find(
-    (a) => a.scenario === "frame_selection",
-  );
-  if (!assumption) return undefined;
-  const raw = assumption.parameters?.frame_index;
-  if (typeof raw !== "number" || !Number.isInteger(raw)) return undefined;
-  return { index: raw, assumptionId: assumption.id };
-}
 
 export interface StructureTabProps {
   /** The geometry query state, fetched by the page through the M59 hook. */
