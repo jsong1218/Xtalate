@@ -28,6 +28,17 @@ export interface TrajectoryScrubberProps {
   onScrub: (index: number) => void;
   /** True while a window fetch is in flight (a boundary scrub); surfaced, never a hidden stall. */
   isLoading?: boolean;
+  /**
+   * True when the whole trajectory is large (M61-S3) — shows the honest "scrubbing may be slower"
+   * affordance, never a hidden stall while a window re-streams.
+   */
+  isLarge?: boolean;
+  /**
+   * Playback step interval (M61-S3). The production default is {@link PLAY_INTERVAL_MS}; the dev
+   * spike harness passes a fast value so a playback heap-measurement journey crosses many windows
+   * quickly. Never a production branch — the default keeps the fixed rate everywhere else.
+   */
+  playIntervalMs?: number;
 }
 
 export function TrajectoryScrubber({
@@ -36,6 +47,8 @@ export function TrajectoryScrubber({
   frame,
   onScrub,
   isLoading = false,
+  isLarge = false,
+  playIntervalMs = PLAY_INTERVAL_MS,
 }: TrajectoryScrubberProps) {
   const max = frameIndexBase + frameCount - 1;
   const [playing, setPlaying] = useState(false);
@@ -47,9 +60,9 @@ export function TrajectoryScrubber({
       setPlaying(false);
       return;
     }
-    const timer = setTimeout(() => onScrub(frame + 1), PLAY_INTERVAL_MS);
+    const timer = setTimeout(() => onScrub(frame + 1), playIntervalMs);
     return () => clearTimeout(timer);
-  }, [playing, frame, max, onScrub]);
+  }, [playing, frame, max, playIntervalMs, onScrub]);
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
@@ -80,6 +93,15 @@ export function TrajectoryScrubber({
       {isLoading ? (
         <span className="text-xs text-muted" data-testid="trajectory-loading">
           loading…
+        </span>
+      ) : null}
+      {isLarge ? (
+        <span
+          data-testid="trajectory-large"
+          className="text-xs text-muted"
+          title="Each window of a large trajectory re-streams from the server (a window at a time, never the whole file)."
+        >
+          Large trajectory — scrubbing may be slower (windows re-stream from the server)
         </span>
       ) : null}
     </div>

@@ -69,11 +69,22 @@ function Harness({ source, frameCount }: { source?: GeometrySource; frameCount?:
       <div data-testid="frame">{tw.frame}</div>
       <div data-testid="base">{tw.currentWindow?.frame_index_base ?? "none"}</div>
       <div data-testid="displayed">{tw.displayedFrameIndex ?? "none"}</div>
+      <div data-testid="isLarge">{String(tw.isLarge)}</div>
       <button onClick={() => tw.ensureFrame(0)}>to0</button>
       <button onClick={() => tw.ensureFrame(1)}>to1</button>
+      <button onClick={() => tw.ensureFrame(7)}>to7</button>
       <button onClick={() => tw.ensureFrame(9)}>to9</button>
       <button onClick={() => tw.ensureFrame(19)}>to19</button>
     </div>
+  );
+}
+
+/** True if any file-geometry fetch asked for `frames` = `range`. */
+function fetched(range: string): boolean {
+  return getMock.mock.calls.some(
+    (c) =>
+      c[0] !== undefined &&
+      c[1]?.params?.query?.frames === range,
   );
 }
 
@@ -140,6 +151,53 @@ describe("useTrajectoryWindow", () => {
     render(<Harness frameCount={20} />, { wrapper: wrap(new QueryClient()) });
     expect(base()).toBe("none");
     expect(screen.getByTestId("frame").textContent).toBe("0");
+    expect(screen.getByTestId("isLarge").textContent).toBe("false");
     expect(getMock).not.toHaveBeenCalled();
+  });
+
+  it("prefetches the neighbour window at the window edge so playback does not stall (M61-S3)", async () => {
+    mockRangedFile(TOTAL);
+    render(<Harness source={FILE} frameCount={TOTAL} />, { wrapper: wrap(new QueryClient()) });
+    await waitFor(() => expect(base()).toBe("0"), { timeout: 3000 });
+    getMock.mockClear();
+
+    // Scrubbing to the last frame of [0,8) (frame 7) is the playback edge → the next window
+    // [8,16) is fetched into the bounded store, but is NOT adopted (base stays 0 — the window
+    // is prefetched, never rendered/held by the scrubber).
+    fireEvent.click(screen.getByText("to7"));
+    await waitFor(() => expect(fetched("8:16")).toBe(true), { timeout: 3000 });
+    expect(base()).toBe("0");
+  });
+
+  it("flags a large trajectory (isLarge) once its window loads (M61-S3 slower-scrub affordance)", async () => {
+    // A fake whose atom count makes the whole footprint cross the `frame_count × species` floor.
+    const ATOMS = 100;
+    const TOTAL = 10_001; // 100 × 10_001 ≥ 1_000_000 → large
+    getMock.mockImplementation(
+      async (_url: string, { params }: { params: { query: { frames: string } } }) => {
+        const [s, e] = params.query.frames.split(":").map(Number);
+        const frames = [];
+        for (let i = s; i < e; i++) {
+          frames.push({ index: i, positions: [[i, 0, 0]], cell: null });
+        }
+        return {
+          data: {
+            source: { format_id: "extxyz", filename: "wide.extxyz" },
+            species: Array(ATOMS).fill("C"),
+            cell: null,
+            frame_index_base: s,
+            frame_count: TOTAL,
+            frames,
+          },
+          error: undefined,
+        };
+      },
+    );
+    render(<Harness source={FILE} frameCount={TOTAL} />, { wrapper: wrap(new QueryClient()) });
+    // Not large before any window loads; large once the (100-atom) window arrives.
+    expect(screen.getByTestId("isLarge").textContent).toBe("false");
+    await waitFor(() => expect(screen.getByTestId("isLarge").textContent).toBe("true"), {
+      timeout: 3000,
+    });
   });
 });

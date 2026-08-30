@@ -469,6 +469,120 @@ def _bench_geometry_endpoint_1e4_frames(workdir: Path, scale: str) -> dict[str, 
             proc.wait()
 
 
+def _bench_geometry_endpoint_high_atoms(workdir: Path, scale: str) -> dict[str, float]:
+    """The M61-S3 honest-degradation latency figure (10⁴ × 100+ atoms): the same geometry
+    endpoint on a cache-**exceeding** seed that re-streams + re-parses per range.
+
+    The 10⁴×8 projection fits the endpoint's byte-bounded cache, so a cache-served scrub is ~ms
+    (the M59 small-fixture number); a 10⁴×100 seed exceeds that bound, so each ranged read
+    re-streams the whole file and re-parses — about a second per window (D232's byte-bounded
+    cache). ``scrub_median_seconds`` / ``scrub_max_seconds`` are that honest per-window latency:
+    what the browser-facing scrubber degrades to at high atom counts, the number S3 surfaces (a
+    warm/larger client window + prefetch of the next window + the explicit slower-scrub
+    affordance) rather than hiding behind the cache-served small-fixture figure. Boots its own
+    server at the default upload ceiling (not the 1 MiB e2e shared ceiling), so it is not
+    ceiling-bound. Measured-not-gated: a reported number for M63's comparison baseline, never a
+    non-zero exit.
+    """
+    import urllib.request
+
+    import httpx  # service/dev dependency, lazily imported like the ase case above
+
+    sz = _sized(scale, full=Scale(10_000, 100), micro=Scale(200, 8))
+    src = write_extxyz_trajectory(workdir / "wide.xyz", n_frames=sz.n_frames, n_atoms=sz.n_atoms)
+
+    # A free loopback port for the server under test.
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    base_url = f"http://127.0.0.1:{port}"
+    db_path = workdir / "spike.db"
+    objects_root = workdir / "objects"
+
+    # Migrate the temp SQLite database, then boot the real API against temp DB + object store.
+    # (``-x db_url=`` is the literal SQLAlchemy URL, dialect included — same value server reads.)
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_ini = Path(__file__).resolve().parents[1] / "alembic.ini"
+    cfg = Config(str(alembic_ini))
+    cfg.cmd_opts = type("_Opts", (), {"x": [f"db_url=sqlite+pysqlite:///{db_path}"]})()
+    command.upgrade(cfg, "head")
+    env = dict(os.environ)
+    env.update(
+        {
+            "XTALATE_DATABASE_URL": f"sqlite+pysqlite:///{db_path}",
+            "XTALATE_OBJECT_STORE_ROOT": str(objects_root),
+        }
+    )
+    driver = (
+        "import uvicorn; "
+        "from backend.app import create_app; "
+        f"uvicorn.run(create_app(), host='127.0.0.1', port={port}, log_level='warning')"
+    )
+    repo_root = Path(__file__).resolve().parents[1]
+    proc = subprocess.Popen([sys.executable, "-c", driver], env=env, cwd=str(repo_root))
+    try:
+        deadline = time.monotonic() + 60.0
+        while True:
+            try:
+                with urllib.request.urlopen(f"{base_url}/v1/health?ready=true", timeout=2) as resp:
+                    if resp.status == 200:
+                        break
+            except Exception:
+                pass
+            if time.monotonic() > deadline:
+                raise RuntimeError("geometry-endpoint benchmark: server did not become ready")
+            time.sleep(0.25)
+
+        with httpx.Client(timeout=300.0) as client:
+            with src.open("rb") as fh:
+                up = client.post(
+                    f"{base_url}/v1/upload",
+                    files={"file": (src.name, fh, "chemical/x-xyz")},
+                )
+            up.raise_for_status()
+            file_id = str(up.json()["file_id"])
+
+            # Warm-up read to establish (or miss) the projection cache, then the baseline RSS.
+            r = client.get(f"{base_url}/v1/files/{file_id}/geometry", params={"frames": "0:100"})
+            r.raise_for_status()
+            first_body = r.json()
+            rss_after_first = _process_rss_bytes(proc.pid)
+            first_read_seconds = float(r.elapsed.total_seconds())
+
+            # The sliding window: ten 100-frame windows spread across the 10⁴-frame trajectory;
+            # each is a re-stream on a cache-exceeding seed — the latency the scrubber feels.
+            latencies: list[float] = []
+            for start in range(0, sz.n_frames, max(sz.n_frames // 10, 1)):
+                end = min(start + 100, sz.n_frames)
+                t0 = time.perf_counter()
+                r = client.get(
+                    f"{base_url}/v1/files/{file_id}/geometry",
+                    params={"frames": f"{start}:{end}"},
+                )
+                r.raise_for_status()
+                latencies.append(time.perf_counter() - t0)
+            rss_after_last = _process_rss_bytes(proc.pid)
+
+        ordered = sorted(latencies)
+        return {
+            "frames": float(first_body["frame_count"]),
+            "atoms": float(sz.n_atoms),
+            "first_read_seconds": first_read_seconds,
+            "scrub_median_seconds": float(ordered[len(ordered) // 2]),
+            "scrub_max_seconds": float(ordered[-1]),
+            "server_rss_growth_bytes": float(rss_after_last - rss_after_first),
+        }
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+
 def _bench_batch_convert_100_files(workdir: Path, scale: str) -> dict[str, float]:
     """The v1.5 batch fan-out (M54/M58) at the 100-file scale: N ordinary files → one aggregate.
 
@@ -589,6 +703,14 @@ BENCHMARKS: tuple[Benchmark, ...] = (
         "geometry_endpoint_1e4_frames",
         _bench_geometry_endpoint_1e4_frames,
         (Budget("server_rss_growth_bytes", 64 * 1024 * 1024, "bytes"),),
+    ),
+    # The M61-S3 honest-degradation latency case: the same endpoint on a 10⁴×100 seed (cache-
+    # exceeding) — scrub_median/scrub_max_seconds are the real per-window re-stream latency the
+    # browser scrubber degrades to, not the small-fixture cache-served figure. Measured-not-gated.
+    Benchmark(
+        "geometry_endpoint_high_atoms",
+        _bench_geometry_endpoint_high_atoms,
+        (Budget("scrub_median_seconds", 10.0, "s"),),
     ),
     Benchmark(
         "preflight_latency",

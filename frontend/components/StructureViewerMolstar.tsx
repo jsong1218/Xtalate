@@ -114,7 +114,12 @@ export default function StructureViewerMolstar({
   return (
     <div
       ref={containerRef}
-      className="h-full w-full"
+      // `relative` is load-bearing: Mol* positions its WebGL canvas absolutely, and without a
+      // containing block here that canvas anchors to the nearest positioned ancestor (the outer
+      // viewport) and would cover the scrubber row above this mount — a mouse user could never
+      // reach the Play control (found by the M61-S3 playback journey). Contained here, the canvas
+      // fills this box below the scrubber and the controls stay clickable.
+      className="relative h-full w-full"
       data-atoms={geometry.species.length}
       // The unit-cell presence signal (M60-S2): `data-has-cell` mirrors the endpoint's *input*
       // answer (whether the canonical geometry carried a cell) — same pattern as `data-atoms`.

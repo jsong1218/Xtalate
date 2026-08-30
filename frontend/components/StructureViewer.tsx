@@ -85,6 +85,12 @@ export interface StructureViewerProps {
    * source/output). Single-frame objects ignore it.
    */
   trajectorySource?: GeometrySource;
+  /**
+   * Playback step interval (M61-S3): the production default is the fixed 600 ms; the dev spike
+   * surface passes a fast value so a playback heap-measurement journey is quick. Never threaded by
+   * a production caller.
+   */
+  playIntervalMs?: number;
 }
 
 /**
@@ -96,10 +102,12 @@ function TrajectoryViewer({
   geometry,
   suppliedCell,
   trajectorySource,
+  playIntervalMs,
 }: {
   geometry: CanonicalGeometry;
   suppliedCell?: boolean;
   trajectorySource: GeometrySource;
+  playIntervalMs?: number;
 }) {
   const trajectory = useTrajectoryWindow(trajectorySource, geometry.frame_count);
   // The window's geometry when loaded, else the static frame (first paint); always an absolute index.
@@ -117,6 +125,8 @@ function TrajectoryViewer({
         frame={trajectory.frame}
         onScrub={trajectory.ensureFrame}
         isLoading={trajectory.isLoading}
+        isLarge={trajectory.isLarge}
+        playIntervalMs={playIntervalMs}
       />
       <MolstarView geometry={mountGeometry} frameIndex={mountFrame} suppliedCell={suppliedCell} />
       {trajectory.error ? (
@@ -133,6 +143,7 @@ export function StructureViewer({
   label,
   suppliedCell,
   trajectorySource,
+  playIntervalMs,
 }: StructureViewerProps) {
   const [bondsEnabled, setBondsEnabled] = useState(false);
   const multiFrame =
@@ -169,6 +180,7 @@ export function StructureViewer({
             geometry={geometry}
             suppliedCell={Boolean(suppliedCell)}
             trajectorySource={trajectorySource}
+            playIntervalMs={playIntervalMs}
           />
         ) : (
           <MolstarView

@@ -40,6 +40,19 @@ export type GeometrySource =
 export const WINDOW_SIZE = 8;
 /** Keep at most this many decoded windows; the current window plus room for a prefetched neighbour. */
 export const MAX_WINDOWS = 2;
+/**
+ * Prefetch the neighbour window when the scrub target is within this many frames of the window's
+ * right edge (i.e. during playback, which advances one frame at a time into the next window), so a
+ * window boundary crossing does not stall — the next window is already warm in the bounded store.
+ */
+export const PREFETCH_EDGE = 1;
+/**
+ * A trajectory is "large" (S3's slower-scrub affordance) when its whole footprint
+ * `frame_count × species.length` is at or above this many frame·atoms — the size at which a window
+ * re-streams per range rather than serving from the endpoint's byte-bounded cache (the M59-S3
+ * latency caveat: ~seconds per window, honestly surfaced, never a hidden stall).
+ */
+export const LARGE_TRAJECTORY_FRAME_ATOMS = 1_000_000;
 
 /** The `frames=start:end` range string for a half-open window. */
 function rangeFor(start: number, end: number): string {
@@ -77,6 +90,11 @@ export interface TrajectoryWindow {
   error?: unknown;
   /** Request that the scrubber display `index` (absolute); window boundary crossings fetch/evict. */
   ensureFrame: (index: number) => void;
+  /**
+   * True when the whole object is large (`frame_count × atoms` over the S3 threshold) — the
+   * scrubber surfaces an honest "scrubbing may be slower" affordance, never a hidden stall.
+   */
+  isLarge: boolean;
 }
 
 /** A decoded window in the bounded store. */
@@ -105,6 +123,8 @@ export function useTrajectoryWindow(
   const storeRef = useRef<CachedWindow[]>([]);
   const currentKeyRef = useRef<string | null>(null);
   const requestedFrameRef = useRef(0);
+  // The windows whose neighbour-prefetch is already in flight (dedupe, never a fetch storm).
+  const inflightPrefetchRef = useRef<Set<string>>(new Set());
 
   const disabled = source === undefined || frameCount === undefined || frameCount < 1;
 
@@ -195,6 +215,41 @@ export function useTrajectoryWindow(
     return Math.max(base, Math.min(last, frame));
   }, [currentWindow, frame]);
 
+  // Prefetch the neighbour window when the target reaches the window's right edge (playback)
+  // S3: the next window is fetched into the **bounded** store ahead of the boundary crossing, so
+  // scrubbing/playback across an edge does not stall on a cold fetch. It is never adopted or
+  // rendered — UI/loading untouched, memory stays at MAX_WINDOWS (the prefetched window is the
+  // second slot, so nothing accumulates; a window the user never reaches is evicted by the next
+  // adopt).
+  useEffect(() => {
+    if (!windowRange || disabled) return;
+    if (frame < windowRange.end - 1 - PREFETCH_EDGE) return; // not yet on the forward edge
+    const nextStart = windowRange.end;
+    if (nextStart >= (frameCount as number)) return; // already at the trajectory's end
+    const nextEnd = Math.min(nextStart + WINDOW_SIZE, frameCount as number);
+    const nextKey = rangeFor(nextStart, nextEnd);
+    if (storeRef.current.some((w) => w.key === nextKey)) return; // already warm
+    if (inflightPrefetchRef.current.has(nextKey)) return; // already fetching
+    inflightPrefetchRef.current.add(nextKey);
+    fetchWindow(nextStart, nextEnd)
+      .then((geometry) => {
+        inflightPrefetchRef.current.delete(nextKey);
+        if (storeRef.current.some((w) => w.key === nextKey)) return;
+        storeRef.current.push({ key: nextKey, geometry });
+        while (storeRef.current.length > MAX_WINDOWS) storeRef.current.shift();
+      })
+      .catch(() => inflightPrefetchRef.current.delete(nextKey));
+  }, [windowRange, frame, frameCount, disabled, fetchWindow]);
+
+  // The "large trajectory — scrubbing may be slower" affordance signal (S3): the whole-object
+  // footprint `frame_count × species.length` over the threshold means each window re-streams per
+  // range (no cache), which the scrubber surfaces honestly rather than hiding.
+  const isLarge = useMemo(() => {
+    if (disabled || !frameCount) return false;
+    const atoms = currentWindow?.species?.length ?? 0;
+    return frameCount * atoms >= LARGE_TRAJECTORY_FRAME_ATOMS;
+  }, [disabled, frameCount, currentWindow]);
+
   return {
     frame: disabled ? 0 : frame,
     currentWindow,
@@ -202,5 +257,6 @@ export function useTrajectoryWindow(
     isLoading,
     error,
     ensureFrame,
+    isLarge,
   };
 }

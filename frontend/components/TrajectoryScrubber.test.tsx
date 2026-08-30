@@ -65,4 +65,37 @@ describe("TrajectoryScrubber", () => {
     );
     expect(screen.getByTestId("trajectory-loading")).toHaveTextContent("loading…");
   });
+
+  it("surfaces the honest large-trajectory affordance, never a hidden stall (M61-S3)", () => {
+    const { rerender } = render(
+      <TrajectoryScrubber
+        frameCount={6}
+        frameIndexBase={0}
+        frame={0}
+        onScrub={vi.fn()}
+        isLarge
+      />,
+    );
+    expect(screen.getByTestId("trajectory-large")).toHaveTextContent("scrubbing may be slower");
+    rerender(
+      <TrajectoryScrubber frameCount={6} frameIndexBase={0} frame={0} onScrub={vi.fn()} />,
+    );
+    expect(screen.queryByTestId("trajectory-large")).toBeNull();
+  });
+
+  it("honours the playback step interval (a fast dev-run rate, the production default otherwise)", async () => {
+    const onScrub = vi.fn();
+    render(
+      <TrajectoryScrubber
+        frameCount={6}
+        frameIndexBase={0}
+        frame={0}
+        onScrub={onScrub}
+        playIntervalMs={20}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    // A 20 ms interval advances far sooner than the fixed 600 ms default would.
+    await waitFor(() => expect(onScrub).toHaveBeenCalled(), { timeout: 1000 });
+  });
 });
