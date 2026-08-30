@@ -84,8 +84,13 @@ function frameFromGeometryFrame(frame: Schemas["GeometryFrame"], count: number):
 /**
  * The (3, 3) lattice → Mol\* `Cell`. `null`/absent/zero-volume stays absent — a degenerate
  * box is not renderable, and absence renders as absence (P3) rather than a NaN artifact.
+ *
+ * This is the **single source of truth** for "does this frame declare a renderable cell": the
+ * loader builds the model's cell from it, and the mount decides box-presence from it too
+ * ({@link latticeIsRenderable}), so the `data-unitcell-drawn` render proof can never disagree with
+ * the cell the loader actually put into the model.
  */
-function cellFromLattice(lattice: number[][] | null | undefined): Cell | undefined {
+export function cellFromLattice(lattice: number[][] | null | undefined): Cell | undefined {
   if (!lattice || lattice.length !== 3) return undefined;
   for (const row of lattice) {
     if (row.length !== 3) return undefined;
@@ -96,6 +101,15 @@ function cellFromLattice(lattice: number[][] | null | undefined): Cell | undefin
   const cell = Cell.fromBasis(x, y, z);
   const zero = cell.size[0] <= 0 || cell.size[1] <= 0 || cell.size[2] <= 0;
   return zero ? undefined : cell;
+}
+
+/**
+ * Whether a (3, 3) lattice yields a renderable Mol\* cell — exactly `cellFromLattice(lattice) !==
+ * undefined`, so box-presence in the mount is decided by the same predicate that builds the model's
+ * cell. The mount uses this for its per-frame unit-cell decision (M61-S1).
+ */
+export function latticeIsRenderable(lattice: number[][] | null | undefined): boolean {
+  return cellFromLattice(lattice) !== undefined;
 }
 
 /**

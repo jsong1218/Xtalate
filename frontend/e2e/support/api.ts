@@ -48,6 +48,10 @@ export const FIXTURES = {
   celledPoscar: { file: "celled.poscar", mimeType: "application/octet-stream" },
   /** A celled ZnO hexagonal P1 cell (golden corpus `cif/zno-hexagonal-p1`) — wireframe case. */
   celledCif: { file: "celled.cif", mimeType: "application/octet-stream" },
+  /** A small 6-frame celled extXYZ trajectory — the M61 scrubber case. */
+  multiFrame: { file: "multi-frame.extxyz", mimeType: "chemical/x-xyz" },
+  /** A 6-frame extXYZ with a cell in the first frames and none in the last — the M61 cell-flip case. */
+  variableCell: { file: "variable-cell.extxyz", mimeType: "chemical/x-xyz" },
 } as const;
 
 /** Absolute path to an `e2e/fixtures/` file, for `setInputFiles`. */

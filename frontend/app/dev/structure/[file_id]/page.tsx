@@ -83,6 +83,11 @@ export default function DevStructurePage() {
               } · ${geometry.species.length} atoms · ${
                 geometry.frames?.length ?? 0
               }/${geometry.frame_count} frames`}
+              // M61-S3: the spike surface mounts the viewer over the full trajectory read target so
+              // the frame-count scrubber + playback appear, and passes a fast play interval so a
+              // playback heap-measurement journey crosses many windows quickly in one JS context.
+              trajectorySource={{ kind: "file", fileId: file_id }}
+              playIntervalMs={80}
             />
             {/* The S3 scrub harness: client-side window links so the spike journey measures heap
                 across sequential mounts in one JS context (the M61 scrub story). */}
