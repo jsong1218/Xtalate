@@ -27,7 +27,10 @@
  *
  * This tab is a *presentation* of the two objects the validator already diffed — nothing it shows is
  * knowable only from this tab. Honest non-ready states (loading / expired bytes / service error) are
- * inherited from the M60 Structure tab; S3 hardens the partial-expiry cases. **Frontend-only**:
+ * inherited from the M60 Structure tab, hardened in S3 (Rev 1.84): a one-side-expired compare names
+ * the expired side and renders no viewer — never a silent one-sided "comparison" — and **no diff
+ * heat-map, no per-atom recomputation, no analysis overlay**: annotation comes from the reports
+ * only (per-atom difference visualization is v1.8's seam, not this tab's). **Frontend-only**:
  * `side=source` shipped in M59, and D239/Rev 1.82 record this slice.
  */
 import { useCallback, useRef, useState } from "react";
@@ -115,10 +118,12 @@ export interface CompareTabProps {
 }
 
 /**
- * The honest non-ready state for the whole tab (S3 hardens the partial-expiry case): if either side
- * is an error, render the service envelope (or the M60 expired copy when the bytes are gone — the
- * reports remain the substance); if either side is still loading, render the loading affordance.
- * Neither side carved into a half-rendered canvas.
+ * The honest non-ready states, factored per side (S3, Rev 1.84 — the M60 copy verbatim). A Compare
+ * needs **both** sides ready; if either is not, that side's honest state replaces the whole surface
+ * — never a broken half-rendered canvas, and never a silent one-sided "comparison" that looks
+ * whole. Each side's error is read independently so the expired case **names the expired side**: a
+ * source whose bytes are gone reads the M60 file copy, an output whose bytes are gone reads the
+ * M60 output copy, and both expired reads both copies — the reports below remain the substance.
  */
 function ComparePrecondition({
   source,
@@ -127,22 +132,39 @@ function ComparePrecondition({
   source: GeometryState;
   output: GeometryState;
 }) {
-  const errored = source.status === "error" ? source : output.status === "error" ? output : null;
-  if (errored) {
-    const envelope = toErrorEnvelope(
-      errored.error,
-      "GEOMETRY_LOAD_FAILED",
-      "Could not load this structure.",
+  const sourceEnvelope =
+    source.status === "error"
+      ? toErrorEnvelope(source.error, "GEOMETRY_LOAD_FAILED", "Could not load this structure.")
+      : null;
+  const outputEnvelope =
+    output.status === "error"
+      ? toErrorEnvelope(output.error, "GEOMETRY_LOAD_FAILED", "Could not load this structure.")
+      : null;
+
+  // Expired bytes (the endpoints 410 once the bytes are gone, D232): the M60 expired copy, naming
+  // which side. A refused conversion never reaches this tab — the page renders the RefusalPanel
+  // (no output bytes exist to compare), the same no-viewer rule as the M60 Structure tab.
+  const sourceExpired =
+    sourceEnvelope !== null &&
+    (sourceEnvelope.error.code === "FILE_EXPIRED" ||
+      sourceEnvelope.error.code === "OUTPUT_EXPIRED");
+  const outputExpired =
+    outputEnvelope !== null &&
+    (outputEnvelope.error.code === "FILE_EXPIRED" ||
+      outputEnvelope.error.code === "OUTPUT_EXPIRED");
+  if (sourceExpired || outputExpired) {
+    return (
+      <div className="space-y-2">
+        {sourceExpired ? <p className="text-sm text-body">{EXPIRED_FILE_COPY}</p> : null}
+        {outputExpired ? <p className="text-sm text-body">{EXPIRED_OUTPUT_COPY}</p> : null}
+      </div>
     );
-    if (envelope.error.code === "FILE_EXPIRED" || envelope.error.code === "OUTPUT_EXPIRED") {
-      return (
-        <p className="text-sm text-body">
-          {envelope.error.code === "OUTPUT_EXPIRED" ? EXPIRED_OUTPUT_COPY : EXPIRED_FILE_COPY}
-        </p>
-      );
-    }
-    return <ErrorEnvelope envelope={envelope} />;
   }
+
+  // Any other geometry failure renders the service error envelope, never a broken canvas.
+  if (sourceEnvelope) return <ErrorEnvelope envelope={sourceEnvelope} />;
+  if (outputEnvelope) return <ErrorEnvelope envelope={outputEnvelope} />;
+
   if (source.status !== "ready" || output.status !== "ready") {
     return (
       <p role="status" className="text-sm text-muted">

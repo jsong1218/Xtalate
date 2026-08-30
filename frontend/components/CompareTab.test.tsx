@@ -349,3 +349,91 @@ describe("CompareTab — report-sourced difference annotations (M62-S2, D240)", 
     expect(viewer("Output")!.suppliedCell).toBeUndefined();
   });
 });
+
+describe("CompareTab — honest non-ready states, no analysis surface (M62-S3, Rev 1.84)", () => {
+  /** An expired-side geometry error, shaped as the endpoint's 410 envelope (D232). */
+  function expiredError(side: "source" | "output") {
+    return {
+      status: "error" as const,
+      error: {
+        error: {
+          code: side === "source" ? "FILE_EXPIRED" : "OUTPUT_EXPIRED",
+          message: "The bytes are gone.",
+        },
+      },
+    };
+  }
+
+  function renderStates(source: unknown, output: unknown) {
+    geometryHook.mockImplementation((_id: string, side: "source" | "output") =>
+      side === "source" ? source : output,
+    );
+    return render(
+      <CompareTab conversionId="cnv-1" conversionReport={emptyReport()} validationReport={undefined} />,
+    );
+  }
+
+  it("an expired output renders the M60 honest expired state — no viewer, no half canvas", () => {
+    renderStates({ status: "ready", geometry: geometryFixture(1) }, expiredError("output"));
+    expect(
+      screen.getByText(/The output bytes have expired; the reports below remain the complete record\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("viewer-Source")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("viewer-Output")).not.toBeInTheDocument();
+  });
+
+  it("a one-side-expired compare names the expired side — never a silent one-sided comparison", () => {
+    // The source side persists, but the output's bytes are gone: the honest partial state names the
+    // output and renders NO viewer — the surviving source is never silently shown alone as whole.
+    renderStates({ status: "ready", geometry: geometryFixture(1) }, expiredError("output"));
+    expect(screen.getByText(/The output bytes have expired/)).toBeInTheDocument();
+    expect(screen.queryByTestId("viewer-Source")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("viewer-Output")).not.toBeInTheDocument();
+
+    // And the mirror: the source side expired while the output persists.
+    renderStates(expiredError("source"), { status: "ready", geometry: geometryFixture(1) });
+    expect(screen.getByText(/This file's bytes have expired; the reports below remain the complete record\./)).toBeInTheDocument();
+    expect(screen.queryByTestId("viewer-Source")).not.toBeInTheDocument();
+  });
+
+  it("when both sides' bytes are gone, both expired copies read", () => {
+    renderStates(expiredError("source"), expiredError("output"));
+    expect(screen.getByText(/This file's bytes have expired/)).toBeInTheDocument();
+    expect(screen.getByText(/The output bytes have expired/)).toBeInTheDocument();
+    expect(screen.queryByTestId("viewer-Output")).not.toBeInTheDocument();
+  });
+
+  it("a non-expiry geometry failure renders the service envelope, not a canvas", () => {
+    renderStates(
+      { status: "ready", geometry: geometryFixture(1) },
+      { status: "error", error: { error: { code: "SERVICE_DOWN", message: "backend unreachable" } } },
+    );
+    expect(screen.getByText("backend unreachable")).toBeInTheDocument();
+    expect(screen.getByText("SERVICE_DOWN")).toBeInTheDocument();
+    expect(screen.queryByTestId("viewer-Output")).not.toBeInTheDocument();
+  });
+
+  it("holds the loading affordance until BOTH sides are ready", () => {
+    renderStates({ status: "ready", geometry: geometryFixture(1) }, { status: "loading" });
+    expect(screen.getByRole("status")).toHaveTextContent("Loading structure…");
+    expect(screen.queryByTestId("viewer-Source")).not.toBeInTheDocument();
+  });
+
+  it("no analysis surface: the only numbers/artifacts on the tab come from the reports, never per-atom", () => {
+    // The no-heat-map / no-per-atom-recompute line (Rev 1.84): with empty reports and single-frame
+    // objects, the Compare section renders exactly the two viewers and nothing else — no computed
+    // difference overlay, no per-atom artifact, no analysis of its own.
+    renderReady(1, 1, emptyReport());
+    const section = screen.getByRole("region", { name: "Compare" });
+    const artifactIds = [
+      "rmsd-overlay",
+      "exported-frame-marker",
+      "removed-dynamics.velocities",
+    ];
+    for (const id of artifactIds) {
+      expect(section.querySelector(`[data-testid="${id}"]`)).toBeNull();
+    }
+    // The section's only rendered structure surfaces are the two side-by-side viewers.
+    expect(section.querySelectorAll("[data-testid^='viewer-']")).toHaveLength(2);
+  });
+});

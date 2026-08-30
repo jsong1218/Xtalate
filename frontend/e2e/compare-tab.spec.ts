@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import expiredRecord from "../components/__fixtures__/conversion.record.expired.json";
+import refusedRecord from "../components/__fixtures__/conversion.record.refused.json";
 import { API_URL, FIXTURES, fixtureBuffer, pollJob, uploadFixture } from "./support/api";
 
 /**
@@ -133,4 +135,55 @@ test("a frame_selection conversion's Compare source track carries the report's e
   const marker = compare.getByTestId("exported-frame-marker");
   await expect(marker).toBeVisible({ timeout: 30_000 });
   await expect(marker).toContainText("Exported frame 3");
+});
+
+test("an expired output's Compare tab reads the honest expired state — no viewer, reports intact (M62-S3)", async ({
+  page,
+}) => {
+  // The byte-expiry precondition cannot be produced live in a CI run (see output-expired.spec.ts),
+  // so this journey drives the real record page with the real captured service body, served via
+  // request interception — the one place the suite substitutes a recorded response for a live one.
+  const record = expiredRecord as { conversion_id: string };
+  await page.route("**/v1/conversions/*", (route) =>
+    route.fulfill({ status: 200, json: expiredRecord }),
+  );
+  // The geometry endpoints 410 once the bytes are gone (D232: OUTPUT_EXPIRED) — both sides.
+  await page.route("**/v1/conversions/*/geometry*", (route) =>
+    route.fulfill({
+      status: 410,
+      json: { error: { code: "OUTPUT_EXPIRED", message: "The output bytes have expired." } },
+    }),
+  );
+
+  await page.goto(`/conversions/${record.conversion_id}`);
+  await page.getByRole("tab", { name: "Compare" }).click();
+  const compare = page.locator('section[aria-label="Compare"]');
+  // The honest M60 copy: the bytes are gone, the reports below remain the complete record.
+  await expect(
+    compare.getByText(/The output bytes have expired; the reports below remain the complete record\./),
+  ).toBeVisible({ timeout: 30_000 });
+  // Never a broken half-rendered canvas: no Mol* mount on the Compare tab.
+  await expect(compare.locator("[data-mounted=true]")).toHaveCount(0);
+  // The reports remain the substance — both panels still render beside it.
+  await expect(page.getByRole("heading", { name: /conversion report/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /validation report/i })).toBeVisible();
+});
+
+test("a refused conversion's page is its refusal — no Structure/Compare viewer surface (M62-S3)", async ({
+  page,
+}) => {
+  const record = refusedRecord as { conversion_id: string };
+  await page.route("**/v1/conversions/*", (route) =>
+    route.fulfill({ status: 200, json: refusedRecord }),
+  );
+
+  await page.goto(`/conversions/${record.conversion_id}`);
+  // The refusal is the considered outcome with a record — the headline and the engine's own code.
+  await expect(page.getByRole("heading", { name: /refused — no file was written/i })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByText(refusedRecord.conversion_report.refusal!.code)).toBeVisible();
+  // A refusal has no output bytes, so no Structure/Compare tab control and no viewer mount.
+  await expect(page.getByRole("tablist")).toHaveCount(0);
+  await expect(page.locator("[data-mounted=true]")).toHaveCount(0);
 });

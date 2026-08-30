@@ -109,6 +109,11 @@ describe(
     expect(screen.getByText(/nothing was measured/i)).toBeInTheDocument();
     // No re-validate control for a conversion that has nothing to re-threshold.
     expect(screen.queryByRole("button", { name: /re-validate/i })).not.toBeInTheDocument();
+    // A refused conversion has no output bytes, so no Structure/Compare viewer surface mounts
+    // (M62-S3, Rev 1.84) — the RefusalPanel is the substance.
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^structure$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^compare$/i })).not.toBeInTheDocument();
   });
 
   it("still serves the record once the output bytes have expired", async () => {
@@ -117,6 +122,10 @@ describe(
     expect(await screen.findByTestId("provenance")).toBeInTheDocument();
     expect(screen.getByText(/the converted file has expired/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /re-validate/i })).toBeInTheDocument();
+    // The viewer tabs remain mounted for an expired record (M62-S3, Rev 1.84): reports outlive
+    // bytes, and the tabs' honest states say so — the record page is never a dead end.
+    expect(screen.getByRole("tab", { name: "Structure" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Compare" })).toBeInTheDocument();
   });
 
   it("offers a fresh upload when no file_id is known, rather than a link that would 404", async () => {
