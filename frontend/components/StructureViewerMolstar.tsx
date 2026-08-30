@@ -1,18 +1,24 @@
 "use client";
 
 /**
- * The Mol\\* mount (v1.6 M59-S2, extended M61-S1) — the `ssr: false` dynamic chunk behind
- * `StructureViewer`. This module pulls the WebGL plugin and must never be evaluated during server
- * rendering; it is only ever loaded through the viewer's dynamic import.
+ * The Mol\\* mount (v1.6 M59-S2, extended M61-S1, M61 review #2) — the `ssr: false` dynamic chunk
+ * behind `StructureViewer`. This module pulls the WebGL plugin and must never be evaluated during
+ * server rendering; it is only ever loaded through the viewer's dynamic import.
  *
- * M61-S1 drives the mount with two pieces: the **window geometry** (the bounded set of decoded
- * frames the scrubber hands over) and the **absolute** report index to display. A window *change*
- * re-mounts (fresh trajectory over the new frame set); a frame *change within* the window calls the
- * mount's cheap `setFrame` (the `ModelFromTrajectory` `modelIndex` update — no rebuild), which also
- * redraws that frame's unit-cell wireframe (variable-cell trajectories breathe; a cell-less frame
- * draws no box — `data-unitcell-drawn` stays honest per displayed frame).
+ * The mount is driven by two pieces: the **window geometry** (the bounded set of decoded frames the
+ * scrubber hands over) and the **absolute** report index to display. The plugin is mounted **once**
+ * (a `suppliedCell` change — the unit-cell color, fixed at mount — re-mounts, but that never changes
+ * during playback). From there:
+ *  - a frame *change within* the window calls the mount's cheap `setFrame` (the `ModelFromTrajectory`
+ *    `modelIndex` update — no rebuild);
+ *  - a *window change* calls `setWindow`, which rebuilds only the trajectory subtree **in place** —
+ *    the plugin, canvas, and camera survive, so continuous playback across window boundaries neither
+ *    flashes nor loses the viewer's rotation/zoom (review #2, replacing the per-window re-mount).
+ *
+ * Both paths redraw that frame's unit-cell wireframe (variable-cell trajectories breathe; a cell-less
+ * frame draws no box — `data-unitcell-drawn` stays honest per displayed frame).
  */
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   mountStructureViewer,
   type MountedStructureViewer,
@@ -32,24 +38,70 @@ export default function StructureViewerMolstar({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<MountedStructureViewer | null>(null);
-  // The window identity this handle was mounted for, and the frame the mount already shows.
+  // The window identity + frame the mount currently shows, and the window a swap is applying.
   const mountedGeoRef = useRef<string | null>(null);
   const mountedFrameRef = useRef<number | null>(null);
+  const windowInFlightRef = useRef<string | null>(null);
 
+  // Latest props mirrored into refs so the mount effect (which runs on `suppliedCell` only) and the
+  // async reconcilers always read the current window/frame, never a stale mount-time value.
   const geometryJson = JSON.stringify(geometry);
   const geometryJsonRef = useRef(geometryJson);
   geometryJsonRef.current = geometryJson;
+  const geometryRef = useRef(geometry);
+  geometryRef.current = geometry;
 
   const frame = frameIndex ?? geometry.frame_index_base ?? 0;
+  const frameRef = useRef(frame);
+  frameRef.current = frame;
 
-  // (Re)mount whenever the display geometry (window) changes — a window change is a trajectory
-  // rebuild over the new frame set. Within a window this effect does not re-run, so the second
-  // effect below handles frame-only changes cheaply.
+  // A frame-only change within the mounted window: cheap in-place frame set (no rebuild). Skips
+  // when the window is not yet the mounted one (the window swap below sets the frame on arrival).
+  const applyFrame = useCallback(async () => {
+    const handle = handleRef.current;
+    if (!handle) return;
+    if (mountedGeoRef.current !== geometryJsonRef.current) return;
+    const target = frameRef.current;
+    if (mountedFrameRef.current === target) return;
+    mountedFrameRef.current = target;
+    await handle.setFrame(target).catch((err) => {
+      console.error("Mol* setFrame failed:", err);
+    });
+  }, []);
+
+  // A window change: swap the frame set in place (plugin + camera preserved). Deduped against the
+  // window already shown and the one already applying; reconciles again if a newer window/frame
+  // arrived while applying, so the latest state always wins.
+  const applyWindow = useCallback(
+    async function applyWindow(): Promise<void> {
+      const handle = handleRef.current;
+      if (!handle) return;
+      const targetJson = geometryJsonRef.current;
+      if (mountedGeoRef.current === targetJson) return; // already shown
+      if (windowInFlightRef.current === targetJson) return; // already applying
+      windowInFlightRef.current = targetJson;
+      const targetGeometry = geometryRef.current;
+      const targetFrame = frameRef.current;
+      await handle.setWindow(targetGeometry, targetFrame).catch((err) => {
+        console.error("Mol* setWindow failed:", err);
+      });
+      mountedGeoRef.current = targetJson;
+      mountedFrameRef.current = targetFrame;
+      if (windowInFlightRef.current === targetJson) windowInFlightRef.current = null;
+      if (containerRef.current) containerRef.current.dataset.currentFrame = String(targetFrame);
+      // A newer window/frame may have arrived mid-swap — reconcile to it.
+      if (geometryJsonRef.current !== mountedGeoRef.current) void applyWindow();
+      else if (frameRef.current !== mountedFrameRef.current) void applyFrame();
+    },
+    [applyFrame],
+  );
+
+  // Mount the plugin once (a `suppliedCell` change re-mounts — the unit-cell color is fixed at
+  // mount and never changes during playback). Window/frame changes are handled in place below.
   useEffect(() => {
     const target = containerRef.current;
     if (!target) return;
     let cancelled = false;
-    // Tear down any prior window's mount (dispose is idempotent).
     if (handleRef.current) {
       try {
         handleRef.current.dispose();
@@ -58,12 +110,15 @@ export default function StructureViewerMolstar({
       }
     }
     mountedGeoRef.current = null;
+    windowInFlightRef.current = null;
     target.dataset.mounted = "false";
-    target.dataset.currentFrame = String(frame);
+    const mountGeometry = geometryRef.current;
+    const mountFrame = frameRef.current;
+    target.dataset.currentFrame = String(mountFrame);
 
-    void mountStructureViewer(target, geometry, {
+    void mountStructureViewer(target, mountGeometry, {
       suppliedCell: Boolean(suppliedCell),
-      initialFrameIndex: frame,
+      initialFrameIndex: mountFrame,
     })
       .then((handle) => {
         if (cancelled) {
@@ -71,9 +126,12 @@ export default function StructureViewerMolstar({
           return;
         }
         handleRef.current = handle;
-        mountedGeoRef.current = JSON.stringify(geometry);
-        mountedFrameRef.current = frame;
+        mountedGeoRef.current = JSON.stringify(mountGeometry);
+        mountedFrameRef.current = mountFrame;
         target.dataset.mounted = "true";
+        // A window/frame changed while the plugin was mounting → reconcile now.
+        if (geometryJsonRef.current !== mountedGeoRef.current) void applyWindow();
+        else if (frameRef.current !== mountedFrameRef.current) void applyFrame();
       })
       .catch((err) => {
         if (cancelled) return;
@@ -83,7 +141,6 @@ export default function StructureViewerMolstar({
       });
     return () => {
       cancelled = true;
-      // Unmount / next window-change: dispose the mounted handle (includes component unmount).
       if (handleRef.current) {
         try {
           handleRef.current.dispose();
@@ -92,24 +149,16 @@ export default function StructureViewerMolstar({
         }
       }
     };
-    // Re-mount only on a window change (geometry identity) or the bonds-scheme toggle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [geometry, suppliedCell]);
+  }, [suppliedCell]);
 
-  // A frame-only change within the mounted window: cheap in-place frame set (no rebuild).
+  // Reconcile the displayed window and frame to the current props (in place — no re-mount).
   useEffect(() => {
-    const handle = handleRef.current;
-    if (!handle) return;
-    // Only drive frames that live in the mounted window (a boundary scrub re-mounts via the effect
-    // above once the new window arrives; until then the previous window holds the edge frame).
-    if (mountedGeoRef.current === null || mountedGeoRef.current !== geometryJsonRef.current) return;
-    if (mountedFrameRef.current === frame) return;
-    mountedFrameRef.current = frame;
-    void handle.setFrame(frame).catch((err) => {
-      console.error("Mol* setFrame failed:", err);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frame]);
+    void applyWindow();
+  }, [geometryJson, applyWindow]);
+  useEffect(() => {
+    void applyFrame();
+  }, [frame, applyFrame]);
 
   return (
     <div

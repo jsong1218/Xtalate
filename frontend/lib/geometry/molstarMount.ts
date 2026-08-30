@@ -84,7 +84,11 @@ const SUPPLIED_CELL_COLOR = Color(0x6d28d9);
 
 /**
  * The imperative handle the mount returns — the viewer drives frames with it (M61-S1, D236). The
- * mount owns one bounded window's trajectory for its lifetime; callers re-mount on a window change.
+ * mount owns the current bounded window's trajectory; a scrub *within* the window is a cheap
+ * {@link MountedStructureViewer.setFrame}, and a *window change* is a
+ * {@link MountedStructureViewer.setWindow} that rebuilds only the trajectory subtree **in place** —
+ * the plugin, canvas, and camera survive, so continuous playback across window boundaries neither
+ * flashes nor loses the viewer's rotation/zoom (M61 review #2).
  */
 export interface MountedStructureViewer {
   /**
@@ -93,6 +97,13 @@ export interface MountedStructureViewer {
    * index from its `frame_index_base` and redraws that frame's unit-cell wireframe.
    */
   setFrame(absoluteIndex: number): Promise<void>;
+  /**
+   * Swap the displayed window to a new bounded frame set (the next sliding window), then show
+   * `absoluteIndex` within it. Deletes and rebuilds the trajectory subtree **without** disposing the
+   * plugin or resetting the camera — the user's view is preserved across the boundary. Calls
+   * serialize, so a burst of window changes applies in order and the last one wins.
+   */
+  setWindow(geometry: CanonicalGeometry, absoluteIndex: number): Promise<void>;
   /** Dispose the plugin instance. Idempotent. */
   dispose(): void;
 }
@@ -126,29 +137,42 @@ export async function mountStructureViewer(
   await plugin.init();
   await plugin.mountAsync(target, {});
 
-  // Restore the M59/M60 mount: build the trajectory (the window's frames), the default preset
-  // (model + structure + component), and the atoms-only representation.
-  const trajectory = await plugin.state.data
-    .build()
-    .to(plugin.state.data.root)
-    .apply(GeometryTrajectory, { json: JSON.stringify(geometry) })
-    .commit({ revertOnError: true });
-
-  await plugin.builders.structure.hierarchy.applyPreset(trajectory, "default", {
-    representationPreset: "empty",
-  });
-
-  const structure = plugin.managers.structure.hierarchy.current.structures[0];
-  if (structure) {
-    await plugin.builders.structure.representation.addRepresentation(
-      structure.cell,
-      ATOMS_ONLY_REPRESENTATION
-    );
-  }
-
-  const frameIndexBase = geometry.frame_index_base ?? 0;
   let disposed = false;
   let unitcellCell: { ref: unknown } | undefined;
+  // The window currently displayed and its absolute base — both mutable: `setWindow` swaps the
+  // frame set in place, so every closure below reads the *current* window, never the mount-time one.
+  let windowGeometry = geometry;
+  let frameIndexBase = windowGeometry.frame_index_base ?? 0;
+
+  /**
+   * Build the trajectory subtree for `geo` — the trajectory (the window's frames), the default
+   * preset (model + structure + component), and the atoms-only representation — and return the
+   * trajectory selector (so a window swap can delete exactly this subtree). No camera reset here;
+   * the caller decides whether the camera is fit (only the initial mount does).
+   */
+  async function buildStructure(geo: CanonicalGeometry) {
+    const trajectory = await plugin.state.data
+      .build()
+      .to(plugin.state.data.root)
+      .apply(GeometryTrajectory, { json: JSON.stringify(geo) })
+      .commit({ revertOnError: true });
+
+    await plugin.builders.structure.hierarchy.applyPreset(trajectory, "default", {
+      representationPreset: "empty",
+    });
+
+    const structure = plugin.managers.structure.hierarchy.current.structures[0];
+    if (structure) {
+      await plugin.builders.structure.representation.addRepresentation(
+        structure.cell,
+        ATOMS_ONLY_REPRESENTATION
+      );
+    }
+    return trajectory;
+  }
+
+  // The M59/M60 mount: build the initial window's structure. `setWindow` rebuilds this subtree.
+  let trajectorySelector = await buildStructure(windowGeometry);
 
   // The initial displayed frame (the geometry endpoint serves the object's whole `frame_count`,
   // so a multi-frame window carries them all; the preset shows frame base by default).
@@ -174,7 +198,7 @@ export async function mountStructureViewer(
    */
   function frameHasRenderableCell(absoluteIndex: number): boolean {
     const localIndex = Math.max(0, absoluteIndex - frameIndexBase);
-    return latticeIsRenderable(geometry.frames?.[localIndex]?.cell);
+    return latticeIsRenderable(windowGeometry.frames?.[localIndex]?.cell);
   }
 
   /**
@@ -223,6 +247,35 @@ export async function mountStructureViewer(
     target.dataset.currentFrame = String(absoluteIndex);
   }
 
+  // The imperative window swap (M61 review #2): replace the displayed frame set without disposing
+  // the plugin or resetting the camera. Delete the old trajectory subtree (its model/structure/
+  // representation/unit-cell cascade with it), rebuild over the new window, then show the target
+  // frame. Calls serialize on `windowChain` so a burst of boundary crossings applies in order.
+  let windowChain: Promise<void> = Promise.resolve();
+  async function doSetWindow(newGeometry: CanonicalGeometry, absoluteIndex: number): Promise<void> {
+    if (disposed) return;
+    // The unit-cell ref belongs to the subtree we are about to delete; drop it before the delete so
+    // `drawUnitcellForFrame` does not try to remove a stale ref after the rebuild.
+    unitcellCell = undefined;
+    if (trajectorySelector) {
+      await plugin.state.data.build().delete(trajectorySelector.ref).commit();
+    }
+    windowGeometry = newGeometry;
+    frameIndexBase = newGeometry.frame_index_base ?? 0;
+    trajectorySelector = await buildStructure(newGeometry);
+    // No Camera.Reset: the camera is deliberately preserved across a window boundary.
+    await setFrame(absoluteIndex);
+  }
+  function setWindow(newGeometry: CanonicalGeometry, absoluteIndex: number): Promise<void> {
+    windowChain = windowChain
+      .then(() => doSetWindow(newGeometry, absoluteIndex))
+      .catch((err) => {
+        // A failed swap must not wedge the chain; log and let the next window apply.
+        console.error("Mol* setWindow failed:", err);
+      });
+    return windowChain;
+  }
+
   // Initial render: apply the starting frame + its cell wireframe, and expose the render proofs
   // the e2e asserts against — mounted = the canvas is live, atoms = the declared atom count,
   // current-frame/unitcell-drawn = what is actually displayed. `setFrame` draws the frame's cell
@@ -235,11 +288,15 @@ export async function mountStructureViewer(
     // A failed initial frame/unitcell draw must not fail the structure render; presence stays false.
     target.dataset.unitcellDrawn = "false";
   }
+  // Fit the camera once, on the initial mount only — window swaps preserve the user's view.
   PluginCommands.Camera.Reset(plugin);
 
   return {
     async setFrame(idx: number) {
       await setFrame(idx);
+    },
+    async setWindow(newGeometry: CanonicalGeometry, idx: number) {
+      await setWindow(newGeometry, idx);
     },
     dispose() {
       if (disposed) return;
