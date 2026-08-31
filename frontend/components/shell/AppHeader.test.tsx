@@ -36,7 +36,8 @@ describe("AppHeader", () => {
     renderHeader();
     const nav = screen.getByRole("navigation", { name: "Primary" });
     const expected: [string, string][] = [
-      ["Convert", "/convert"],
+      // Upload lives on the landing (UI redesign S2); `/convert` redirects to `/`.
+      ["Convert", "/"],
       ["Formats", "/formats"],
       ["History", "/history"],
       ["Docs", "/docs"],

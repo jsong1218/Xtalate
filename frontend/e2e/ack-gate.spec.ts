@@ -23,10 +23,10 @@ test("a failed-validation output cannot be downloaded without passing the acknow
   page,
   request,
 }) => {
-  const conversionId = await seedFailedValidationConversion(request);
+  const { conversionId, fileId } = await seedFailedValidationConversion(request);
 
-  // Land on the durable record, exactly as a user following their conversion would.
-  await page.goto(`/conversions/${conversionId}`);
+  // Land on the durable record in its workspace, exactly as a user following their conversion would.
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 30_000 });
 
   const download = page.getByTestId("download-panel");

@@ -44,7 +44,7 @@ test("the Compare tab renders source + output side by side from canonical geomet
     if (req.url().includes("/v1/download")) exportRequests.push(req.url());
   });
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   // Switch from the default Structure tab to the Compare tab.
   await expect(page.getByRole("tab", { name: "Compare" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("tab", { name: "Compare" }).click();
@@ -78,7 +78,7 @@ test("the two Compare viewers are camera-locked: a drag on one moves the other t
   const done = await pollJob(request, jobId, ["completed"]);
   const conversionId = String((done.result as { conversion_id: string }).conversion_id);
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(page.getByRole("tab", { name: "Compare" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("tab", { name: "Compare" }).click();
   const compare = page.locator('section[aria-label="Compare"]');
@@ -125,7 +125,7 @@ test("a frame_selection conversion's Compare source track carries the report's e
   const done = await pollJob(request, jobId, ["completed"]);
   const conversionId = String((done.result as { conversion_id: string }).conversion_id);
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(page.getByRole("tab", { name: "Compare" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("tab", { name: "Compare" }).click();
   const compare = page.locator('section[aria-label="Compare"]');
@@ -256,7 +256,7 @@ test("the Compare flagship: RMSD from the Validation Report, verbatim removed re
   );
   expect(suppliedCell, "the fabricated lattice must be recorded in supplied").toBeDefined();
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(page.getByRole("tab", { name: "Compare" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("tab", { name: "Compare" }).click();
   const compare = page.locator('section[aria-label="Compare"]');

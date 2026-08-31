@@ -23,24 +23,28 @@ test("the primary path is reachable and operable by keyboard from the landing pa
   await page.keyboard.press("Tab");
   await expect(page.locator(":focus")).toHaveText(/Convert a file/);
   await page.keyboard.press("Enter");
-  await page.waitForURL("**/convert");
 
-  // The upload step opens with the consistent back link, then the file chooser — both reachable by
-  // keyboard, in that order (the back affordance is the first in-content control on every page, S2).
-  await page.keyboard.press("Tab");
-  await expect(page.locator(":focus")).toHaveText(/Home/);
+  // The CTA opens the landing's upload section (UI redesign S2: upload lives on `/` now, so the CTA
+  // is an in-page anchor, not a route). The next focusable control is the file chooser — reachable
+  // by keyboard, no mouse, no navigation.
   await page.keyboard.press("Tab");
   await expect(page.locator(":focus")).toHaveText(/Choose a file/);
 });
 
 test("the conversion can be chosen and started with the keyboard", async ({ page }) => {
   // Reach an inspected file (setting the file is the OS picker's job; everything after is keyboard).
-  await page.goto("/convert");
+  await page.goto("/");
   await page
     .getByLabel("Choose a file to convert")
     .setInputFiles(fixturePath(FIXTURES.workedExample.file));
-  await page.waitForURL("**/files/**");
+  await page.waitForURL("**/f/**");
   await expect(page.getByText(/Detected\s+Extended XYZ/i)).toBeVisible({ timeout: 30_000 });
+
+  // Advance the guided spine with the rail's CTA — focus it and press Enter (keyboard, no mouse).
+  const convertCta = page.getByRole("link", { name: "Convert →" });
+  await convertCta.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForURL("**/convert");
 
   // Select the target by focusing it and pressing Enter — the button reflects the choice via
   // aria-pressed, so a screen-reader user hears the selection, not just sees a color change.
@@ -51,14 +55,14 @@ test("the conversion can be chosen and started with the keyboard", async ({ page
 
   // Start the conversion from the keyboard. Since v1.1 M39-S4 (B2) the first Enter opens the
   // inline confirm step; the final Convert (Enter again) commits the POST /v1/convert and the
-  // wizard advances to the live job page.
+  // Convert tab advances to the live job.
   const convert = page.getByRole("button", { name: /^Convert to Plain XYZ$/ });
   await convert.focus();
   await page.keyboard.press("Enter");
   const finalConvert = page.getByRole("button", { name: /^Convert$/ });
   await expect(finalConvert).toBeFocused(); // focus lands on the confirm card's primary action
   await page.keyboard.press("Enter");
-  await page.waitForURL("**/convert/**");
+  await page.waitForURL(/\/f\/[^/]+\/convert/);
 });
 
 test("the frame scrubber and the bonds toggle are keyboard-operable (M63-S2)", async ({
@@ -66,7 +70,7 @@ test("the frame scrubber and the bonds toggle are keyboard-operable (M63-S2)", a
   request,
 }) => {
   const fileId = await uploadFixture(request, FIXTURES.multiFrame);
-  await page.goto(`/files/${fileId}`);
+  await page.goto(`/f/${fileId}/structure`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -85,7 +89,7 @@ test("the frame scrubber and the bonds toggle are keyboard-operable (M63-S2)", a
   await expect(mount).toHaveAttribute("data-current-frame", "3", { timeout: 30_000 });
   await page.keyboard.press("ArrowLeft");
   await expect(mount).toHaveAttribute("data-current-frame", "2", { timeout: 30_000 });
-  await expect(page.getByRole("status")).toContainText("2 / 6");
+  await expect(page.getByRole("status").filter({ hasText: "/" })).toContainText("2 / 6");
 
   // The bonds toggle is a real button: keyboard-Enter flips it, and the state is announced via
   // aria-pressed (never a color-only signal).
@@ -129,7 +133,7 @@ test("the Structure/Compare tab control switches tabs by keyboard (M63-S2)", asy
   const done = await pollJob(request, jobId, ["completed"]);
   const conversionId = String((done.result as { conversion_id: string }).conversion_id);
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   const structureTab = page.getByRole("tab", { name: "Structure" });
   const compareTab = page.getByRole("tab", { name: "Compare" });
   await expect(compareTab).toBeVisible({ timeout: 30_000 });

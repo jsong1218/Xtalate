@@ -25,10 +25,11 @@ test("the awaiting_recovery pause is rendered honestly, never as a silent defaul
   page,
   request,
 }) => {
-  const jobId = await seedAwaitingRecoveryJob(request);
+  const { jobId, fileId } = await seedAwaitingRecoveryJob(request);
   seededJobId = jobId;
 
-  await page.goto(`/convert/${jobId}`);
+  // The workspace's Convert tab hosts the paused job (UI redesign S2).
+  await page.goto(`/f/${fileId}/convert?job=${jobId}`);
 
   // Named, not hidden — the framing sentence with the machine state one glance away.
   await expect(

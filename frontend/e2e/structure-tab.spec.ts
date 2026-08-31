@@ -24,7 +24,8 @@ test("the file page's Structure tab renders the file's geometry from the endpoin
 }) => {
   const fileId = await uploadFixture(request, FIXTURES.workedExample);
 
-  await page.goto(`/files/${fileId}`);
+  // The file's structure lives on the workspace's Structure tab (UI redesign S2).
+  await page.goto(`/f/${fileId}/structure`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -37,13 +38,10 @@ test("the file page's Structure tab renders the file's geometry from the endpoin
   await expect(page.locator("canvas").first()).toBeVisible({ timeout: 30_000 });
 });
 
-test("the conversion page's Structure tab renders the output geometry", async ({
-  page,
-  request,
-}) => {
-  const { conversionId } = await seedCompletedConversion(request);
+test("the record's Structure tab renders the output geometry", async ({ page, request }) => {
+  const { conversionId, fileId } = await seedCompletedConversion(request);
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -59,9 +57,9 @@ test("a refused conversion shows no Structure tab — the refusal is the page", 
   page,
   request,
 }) => {
-  const { conversionId } = await seedRefusedConversion(request);
+  const { conversionId, fileId } = await seedRefusedConversion(request);
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(
     page.getByRole("heading", { name: /Refused — no file was written/ }),
   ).toBeVisible({ timeout: 30_000 });
@@ -75,7 +73,7 @@ test("an expired-output conversion shows the expired state while the reports sti
   page,
   request,
 }) => {
-  const { conversionId } = await seedCompletedConversion(request);
+  const { conversionId, fileId } = await seedCompletedConversion(request);
 
   // The one honest state that cannot be produced live without waiting out the byte lifecycle:
   // the record loads from persisted rows while its geometry answers `410 OUTPUT_EXPIRED` (D232).
@@ -95,7 +93,7 @@ test("an expired-output conversion shows the expired state while the reports sti
     }),
   );
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
 
   // Expired, not "not found": the tab says the bytes are gone…
   await expect(page.getByText(/The output bytes have expired/)).toBeVisible({ timeout: 30_000 });

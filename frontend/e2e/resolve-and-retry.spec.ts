@@ -31,10 +31,10 @@ test("a refused record resolves and retries through the cards to a completed con
   page,
   request,
 }) => {
-  // 1. Seed a refused conversion; open its record with the source file_id still in hand (threaded in
-  //    the URL exactly as the file/job pages do). The refusal is rendered as a considered outcome.
+  // 1. Seed a refused conversion; open its durable record in the workspace (the Report tab — the
+  //    refusal is rendered as a considered outcome, not an error).
   const { conversionId, fileId } = await seedRefusedConversion(request);
-  await page.goto(`/conversions/${conversionId}?file_id=${encodeURIComponent(fileId)}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(page.getByRole("heading", { name: /refused — no file was written/i })).toBeVisible({
     timeout: 30_000,
   });
@@ -45,8 +45,8 @@ test("a refused record resolves and retries through the cards to a completed con
   await page.getByRole("button", { name: /resolve and retry/i }).click();
 
   // 3. It routes to a new live job that pauses on the recovery step: one card per unresolved scenario.
-  await page.waitForURL("**/convert/**");
-  retryJobId = page.url().split("/convert/")[1]?.split("?")[0];
+  await page.waitForURL("**/convert?**");
+  retryJobId = new URL(page.url()).searchParams.get("job") ?? undefined;
   await expect(
     page.getByRole("heading", { name: /needs \d+ decisions? before it can proceed/i }),
   ).toBeVisible({ timeout: 30_000 });
@@ -66,7 +66,7 @@ test("a refused record resolves and retries through the cards to a completed con
 
   // 6. A completed record this time — a different conversion from the refused one (new history), with
   //    the fabrications recorded and a file to take.
-  await page.waitForURL("**/conversions/**");
+  await page.waitForURL("**/f/*/report/**");
   expect(page.url()).not.toContain(conversionId);
   await expect(page.getByText(/conversion artifact, not simulation data/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /^Download / })).toBeVisible();

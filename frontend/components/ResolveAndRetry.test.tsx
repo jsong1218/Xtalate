@@ -82,7 +82,7 @@ describe("ResolveAndRetry", () => {
     expect(armCompletionSignal).toHaveBeenCalledWith("job-new");
     // The new job carries the file_id forward so its record can offer this action again.
     await waitFor(() =>
-      expect(push).toHaveBeenCalledWith("/convert/job-new?file_id=file-123"),
+      expect(push).toHaveBeenCalledWith("/f/file-123/convert?job=job-new"),
     );
   });
 
@@ -112,7 +112,7 @@ describe("ResolveAndRetry", () => {
     // No re-submit is possible without the file, so no button that would 404.
     expect(screen.queryByRole("button", { name: /resolve and retry/i })).not.toBeInTheDocument();
     const link = screen.getByRole("link", { name: /upload the file again/i });
-    expect(link).toHaveAttribute("href", "/convert");
+    expect(link).toHaveAttribute("href", "/");
     expect(submitConvert).not.toHaveBeenCalled();
   });
 

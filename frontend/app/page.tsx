@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { apiClient } from "@/lib/api/client";
 import { LossTag } from "@/components/loss/icons";
 import { buttonClasses } from "@/components/ui/Button";
+import { LandingUpload } from "@/components/upload/LandingUpload";
 
 // The live figures (format count, size cap) must describe the *running* instance, never the build
 // machine: Part 9 §2 fixes only the API origin at build time — limits and capabilities are learned
@@ -50,14 +50,15 @@ export default async function LandingPage() {
           filled in by an explicit recovery choice. Nothing is changed silently.
         </p>
         {/*
-          The landing hero keeps only the one primary call to action; the secondary destinations
-          (Formats · History · Docs) now live in the app-shell header, on every page, so they need
-          not be repeated here (addendum S2).
+          The landing hero keeps only the one primary call to action — an anchor to the upload
+          section below (UI redesign S2: with `/convert` redirected to `/`, upload lives on the
+          landing, so the CTA opens the dropzone instead of a route). The secondary destinations
+          (Formats · History · Docs) live in the app-shell header, on every page.
         */}
         <div className="flex flex-wrap items-center gap-4 pt-1">
-          <Link href="/convert" className={buttonClasses("primary", "lg")}>
+          <a href="#upload" className={buttonClasses("primary", "lg")}>
             Convert a file
-          </Link>
+          </a>
         </div>
         {formatCount !== null ? (
           <p className="text-sm text-faint">
@@ -93,6 +94,18 @@ export default async function LandingPage() {
             <LossTag kind="warning">Warned</LossTag>
           </span>
         </Step>
+      </section>
+
+      {/* Upload — the front door's action (UI redesign S2): the dropzone the hero CTA opens. */}
+      <section id="upload" aria-label="Convert a file" className="scroll-mt-4 space-y-4">
+        <div className="space-y-2">
+          <h2 className="text-2xl font-semibold tracking-tight">Convert a file</h2>
+          <p className="max-w-2xl text-muted">
+            Upload a source file to inspect what it contains, then choose a target format. Every
+            conversion produces a report of exactly what was kept, dropped, or assumed.
+          </p>
+        </div>
+        <LandingUpload />
       </section>
     </main>
   );

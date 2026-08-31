@@ -142,7 +142,9 @@ export async function cancelJob(request: APIRequestContext, jobId: string): Prom
  * interactive recovery*, so the engine pauses on the frame-selection decision (a 3-frame trajectory
  * → a single-frame POSCAR) rather than refusing. Returns the paused job's id.
  */
-export async function seedAwaitingRecoveryJob(request: APIRequestContext): Promise<string> {
+export async function seedAwaitingRecoveryJob(
+  request: APIRequestContext,
+): Promise<{ jobId: string; fileId: string }> {
   const fileId = await uploadFixture(request, FIXTURES.relaxTraj);
   const resp = await request.post(`${API_URL}/v1/convert`, {
     data: {
@@ -157,12 +159,13 @@ export async function seedAwaitingRecoveryJob(request: APIRequestContext): Promi
   expect(paused.state, "expected the trajectory→POSCAR conversion to pause for a decision").toBe(
     "awaiting_recovery",
   );
-  return jobId;
+  return { jobId, fileId };
 }
 
 /**
- * Seed a **completed conversion whose validation failed**, and return its `conversion_id` so a spec
- * can drive the browser to `/conversions/{id}` and exercise the acknowledgment gate (slice M32-S1).
+ * Seed a **completed conversion whose validation failed**, and return its `conversion_id` plus the
+ * still-live source `file_id` so a spec can drive the browser to `/f/{file_id}/report/{id}` and
+ * exercise the acknowledgment gate (slice M32-S1; the workspace report tab, UI redesign S2).
  *
  * The failure is **real**, not mocked, and it is produced by a genuine representational limit of the
  * target format — no test hooks, no doctored bytes, no exotic tolerance. The source is a cubic cell
@@ -184,7 +187,9 @@ export async function seedAwaitingRecoveryJob(request: APIRequestContext): Promi
  * positions — so this is exactly the state the gate exists for: a real file the service could not
  * verify faithfully.
  */
-export async function seedFailedValidationConversion(request: APIRequestContext): Promise<string> {
+export async function seedFailedValidationConversion(
+  request: APIRequestContext,
+): Promise<{ conversionId: string; fileId: string }> {
   const fileId = await uploadFixture(request, FIXTURES.rotatedLattice);
   const resp = await request.post(`${API_URL}/v1/convert`, {
     data: {
@@ -202,7 +207,7 @@ export async function seedFailedValidationConversion(request: APIRequestContext)
     result.download.requires_ack,
     "expected CIF's loss of lattice orientation to fail validation (requires_ack)",
   ).toBe(true);
-  return result.conversion_id;
+  return { conversionId: result.conversion_id, fileId };
 }
 
 /**

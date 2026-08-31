@@ -30,7 +30,7 @@ test("an over-limit upload is refused client-side with the funnel and no network
   // A file one comfortable step past the ceiling.
   const oversized = Buffer.alloc(maxUploadBytes + 64 * 1024, 0x41);
 
-  await page.goto("/convert");
+  await page.goto("/");
   // A2's pre-check requires the live ceiling to be *known in the browser*: the drop zone renders
   // the limits line only once `max_upload_bytes` has been fetched, so waiting for it here makes
   // the journey deterministically exercise the client-side refusal it asserts — never the

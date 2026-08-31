@@ -22,7 +22,7 @@ test("a cell-less XYZ renders atoms in open space: no box, and the caption says 
 }) => {
   const fileId = await uploadFixture(request, FIXTURES.noCellXyz);
 
-  await page.goto(`/files/${fileId}`);
+  await page.goto(`/f/${fileId}/structure`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -49,7 +49,7 @@ test("a celled POSCAR renders the unit-cell wireframe and its element legend", a
 }) => {
   const fileId = await uploadFixture(request, FIXTURES.celledPoscar);
 
-  await page.goto(`/files/${fileId}`);
+  await page.goto(`/f/${fileId}/structure`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -70,7 +70,7 @@ test("a celled CIF renders the unit-cell wireframe and its element legend", asyn
 }) => {
   const fileId = await uploadFixture(request, FIXTURES.celledCif);
 
-  await page.goto(`/files/${fileId}`);
+  await page.goto(`/f/${fileId}/structure`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -87,7 +87,7 @@ test("bonds are a display heuristic: off by default, the persistent badge when e
   page,
   request,
 }) => {
-  const { conversionId } = await seedCompletedConversion(request);
+  const { conversionId, fileId } = await seedCompletedConversion(request);
 
   // The D234 guarantee at the data level first: neither report body mentions bonds at all — the
   // Canonical Model holds no bonds, so no report ever will (no-report-mentions-bonds, §5.6).
@@ -100,7 +100,7 @@ test("bonds are a display heuristic: off by default, the persistent badge when e
   expect(JSON.stringify(record.conversion_report)).not.toMatch(/bond/i);
   expect(JSON.stringify(record.validation_report)).not.toMatch(/bond/i);
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });

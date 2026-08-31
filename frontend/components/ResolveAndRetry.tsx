@@ -91,9 +91,10 @@ export function ResolveAndRetry({
     // resolves, retries, and switches tabs should still hear the finish. Armed before routing, on
     // the submit that actually started the job, and consumed on the job's first terminal transition.
     armCompletionSignal(result.envelope.job_id);
-    // The new job carries the file_id forward, exactly as the file page does, so its own record can
-    // offer this action again if it too refuses.
-    router.push(`/convert/${result.envelope.job_id}?file_id=${encodeURIComponent(fileId as string)}`);
+    // The new job lands on the source file's workspace Convert tab (UI redesign S2), exactly as
+    // the file's own Convert submit does, so its record can offer this action again if it too
+    // refuses — the file_id rides the workspace URL, not a query on a legacy route.
+    router.push(`/f/${fileId as string}/convert?job=${encodeURIComponent(result.envelope.job_id)}`);
   }
 
   return (
@@ -120,7 +121,7 @@ export function ResolveAndRetry({
       ) : (
         <p className="text-sm text-muted">
           The uploaded source is no longer in hand here, so it must be provided again.{" "}
-          <Link href="/convert" className="text-body underline">
+          <Link href="/" className="text-body underline">
             Upload the file again to resolve
           </Link>
           .

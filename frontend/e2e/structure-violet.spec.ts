@@ -84,7 +84,7 @@ test("the flagship bounding-box lattice renders violet with its Assumption one c
   expect(assumption!.description).toMatch(/axis-aligned bounding box/i);
 
   // 4. The browser: the record's Structure tab draws the fabricated lattice violet.
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -112,7 +112,7 @@ test("the files-page tab never renders violet (a discovery record has no supplie
   request,
 }) => {
   const fileId = await uploadFixture(request, FIXTURES.workedExample);
-  await page.goto(`/files/${fileId}`);
+  await page.goto(`/f/${fileId}/structure`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });

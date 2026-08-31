@@ -18,7 +18,10 @@ interface BatchEnvelope {
   job_id: string;
   state: string;
   children: { job_id: string; file_id: string; state: string }[];
-  result?: { tallies?: Record<string, unknown>; entries?: { child_job_id: string }[] };
+  result?: {
+    tallies?: Record<string, unknown>;
+    entries?: { child_job_id: string; file_id: string }[];
+  };
   [key: string]: unknown;
 }
 
@@ -66,14 +69,18 @@ test("the batch record shows parent tallies and links into each child conversion
   await expect(tallies).toContainText("1");
   await expect(tallies).toContainText("Refused");
 
-  // Per-file links resolve to the ordinary child records, in manifest order.
+  // Per-file links resolve to the ordinary child records, in manifest order — each on its own
+  // file's workspace Convert tab (UI redesign S2).
   const links = page.getByRole("link", { name: /view this file\u2019s conversion record/i });
   await expect(links).toHaveCount(2);
-  await expect(links.first()).toHaveAttribute("href", `/convert/${entries[0].child_job_id}`);
+  await expect(links.first()).toHaveAttribute(
+    "href",
+    `/f/${entries[0].file_id}/convert?job=${entries[0].child_job_id}`,
+  );
 
-  // Follow the converted child's link: the ordinary convert record renders on its own page.
+  // Follow the converted child's link: the ordinary conversion record renders in its workspace.
   await links.first().click();
-  await page.waitForURL(`**/convert/${entries[0].child_job_id}`);
+  await page.waitForURL(new RegExp(`/f/${entries[0].file_id}/convert\\?job=${entries[0].child_job_id}`));
   await expect(page.getByRole("heading", { name: "Conversion", exact: true })).toBeVisible();
   // The child's durable record — where the download lives — is one link away.
   await expect(
@@ -109,11 +116,11 @@ test("a paused child's awaiting_recovery is visible on its own record, reached f
   const card = page.getByRole("region", { name: "Waiting on a decision" });
   await expect(card).toContainText(/made no choice for any file/i);
   const answer = page.getByRole("link", { name: /answer on this conversion's record/i });
-  await expect(answer).toHaveAttribute("href", `/convert/${child.job_id}`);
+  await expect(answer).toHaveAttribute("href", `/f/${child.file_id}/convert?job=${child.job_id}`);
 
-  // The child's own ordinary record shows the interactive recovery step — the decision lives
-  // there, never on the batch.
+  // The child's own record shows the interactive recovery step — the decision lives there, never
+  // on the batch.
   await answer.click();
-  await page.waitForURL(`**/convert/${child.job_id}`);
+  await page.waitForURL(new RegExp(`/f/${child.file_id}/convert\\?job=${child.job_id}`));
   await expect(page.getByTestId("recovery-step")).toBeVisible();
 });

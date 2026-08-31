@@ -26,29 +26,34 @@ test("upload → inspect → convert → record → download, extXYZ to XYZ", as
   await expect(page.getByRole("heading", { name: "Convert a file" })).toBeVisible();
   await page.getByLabel("Choose a file to convert").setInputFiles(fixturePath(FIXTURES.workedExample.file));
 
-  // 3. Inspection: the app routes to the file resource and shows what the file actually contains.
-  await page.waitForURL("**/files/**");
+  // 3. Inspection: the app routes into the file's workspace (the Inspect tab) and shows what the
+  //    file actually contains (UI redesign S2: upload lands in the workspace, not a wizard step).
+  await page.waitForURL("**/f/**");
   await expect(page.getByText(/Detected\s+Extended XYZ/i)).toBeVisible({ timeout: 30_000 });
 
-  // 4. Choose plain XYZ as the target, then commit the conversion (permissive is the default).
+  // 4. Advance the guided spine with the rail's Convert CTA, then choose plain XYZ as the target and
+  //    commit the conversion (permissive is the default).
   //    Since v1.1 M39-S4 (B2) the first click opens an explicit confirm step (the pre-flight
   //    preview, with a final Convert and a Cancel) — the POST /v1/convert fires only on that final
   //    Convert, so an exploratory click never commits a record.
+  await page.getByRole("link", { name: "Convert →" }).click();
   await page.getByRole("button", { name: "Plain XYZ", exact: true }).click();
   await page.getByRole("button", { name: /^Convert to Plain XYZ$/ }).click();
   await expect(page.getByTestId("convert-confirm")).toBeVisible();
   await page.getByRole("button", { name: /^Convert$/ }).click();
 
-  // 5. The live job page. The worker runs the job off the queue, so this polls to completion; when
-  //    it lands, the durable record is one link away (the download deliberately lives only there).
-  await page.waitForURL("**/convert/**");
+  // 5. The live job on the workspace's Convert tab. The worker runs the job off the queue, so this
+  //    polls to completion; when it lands, the durable record is one link away (the download
+  //    deliberately lives only there).
+  await page.waitForURL(/\/f\/[^/]+\/convert/);
   const recordLink = page.getByRole("link", { name: /View the full record and download the file/i });
   await expect(recordLink).toBeVisible({ timeout: 30_000 });
   await recordLink.click();
 
-  // 6. The record page. The outcome header is quantitative and never celebratory: plain XYZ dropped
-  //    the lattice, forces, charge and energy, so the header names removed fields — not "Done!".
-  await page.waitForURL("**/conversions/**");
+  // 6. The record page (the workspace's Report tab). The outcome header is quantitative and never
+  //    celebratory: plain XYZ dropped the lattice, forces, charge and energy, so the header names
+  //    removed fields — not "Done!".
+  await page.waitForURL(/\/f\/[^/]+\/report\//);
   await expect(page.getByRole("heading", { name: /^Converted — .*removed/ })).toBeVisible();
 
   // 7. The layout law, asserted against real rendered geometry: the loss summary sits *above* the

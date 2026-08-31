@@ -73,7 +73,7 @@ export function HistoryRow({
           <Link
             href={
               item.file_id
-                ? `/conversions/${item.conversion_id}?file_id=${encodeURIComponent(item.file_id)}`
+                ? `/f/${item.file_id}/report/${item.conversion_id}`
                 : `/conversions/${item.conversion_id}`
             }
             className="text-sm text-body underline underline-offset-2 hover:text-strong"
@@ -83,7 +83,7 @@ export function HistoryRow({
           {item.file_id ? (
             <>
               <Link
-                href={`/files/${item.file_id}`}
+                href={`/f/${item.file_id}/convert`}
                 className="text-sm text-body underline underline-offset-2 hover:text-strong"
               >
                 Re-convert

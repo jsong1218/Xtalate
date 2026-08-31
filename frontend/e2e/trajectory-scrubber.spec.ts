@@ -20,7 +20,7 @@ test("a multi-frame file's Structure tab scrubs frames, and a single-frame file 
 }) => {
   const fileId = await uploadFixture(request, FIXTURES.multiFrame);
 
-  await page.goto(`/files/${fileId}`);
+  await page.goto(`/f/${fileId}/structure`);
   await expect(page.getByRole("heading", { name: "Structure", exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -28,7 +28,7 @@ test("a multi-frame file's Structure tab scrubs frames, and a single-frame file 
   // The scrubber appears for a multi-frame object: a frame-number readout and a range control.
   const slider = page.getByRole("slider", { name: "Trajectory frame" });
   await expect(slider).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("status")).toContainText("0 / 6");
+  await expect(page.getByRole("status").filter({ hasText: "/" })).toContainText("0 / 6");
 
   const mount = page.locator("[data-mounted=true]");
   await expect(mount).toBeVisible({ timeout: 60_000 });
@@ -38,11 +38,11 @@ test("a multi-frame file's Structure tab scrubs frames, and a single-frame file 
   // Scrub to frame 5: the displayed frame advances (the mount reports the absolute report index).
   await slider.fill("5");
   await expect(mount).toHaveAttribute("data-current-frame", "5", { timeout: 30_000 });
-  await expect(page.getByRole("status")).toContainText("5 / 6");
+  await expect(page.getByRole("status").filter({ hasText: "/" })).toContainText("5 / 6");
 
   // A single-frame file shows the M60 static render — no scrubber anywhere.
   const single = await uploadFixture(request, FIXTURES.workedExample);
-  await page.goto(`/files/${single}`);
+  await page.goto(`/f/${single}/structure`);
   await expect(page.locator("[data-mounted=true]")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole("slider", { name: "Trajectory frame" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Play|Pause/ })).toHaveCount(0);
@@ -54,7 +54,7 @@ test("a variable-cell trajectory draws the wireframe per displayed frame — a c
 }) => {
   const fileId = await uploadFixture(request, FIXTURES.variableCell);
 
-  await page.goto(`/files/${fileId}`);
+  await page.goto(`/f/${fileId}/structure`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -92,7 +92,7 @@ test("a conversion whose output is multi-frame scrubs on the output side", async
   expect(result.conversion_report?.status).toBe("completed");
   const conversionId = result.conversion_id;
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(page.getByRole("heading", { name: "Structure", exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -102,7 +102,7 @@ test("a conversion whose output is multi-frame scrubs on the output side", async
   await expect(slider).toBeVisible({ timeout: 30_000 });
   const mount = page.locator("[data-mounted=true]");
   await expect(mount).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByRole("status")).toContainText("0 / 6");
+  await expect(page.getByRole("status").filter({ hasText: "/" })).toContainText("0 / 6");
   await slider.fill("4");
   await expect(mount).toHaveAttribute("data-current-frame", "4", { timeout: 30_000 });
 });
@@ -125,7 +125,7 @@ test("an NpT XDATCAR's cell animates — the wireframe persists while the per-fr
   );
   expect(aLengths).toEqual([5.6, 5.8, 6.0]); // the cell breathes frame to frame
 
-  await page.goto(`/files/${fileId}`);
+  await page.goto(`/f/${fileId}/structure`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -143,7 +143,7 @@ test("an NpT XDATCAR's cell animates — the wireframe persists while the per-fr
   await slider.fill("2");
   await expect(mount).toHaveAttribute("data-current-frame", "2", { timeout: 30_000 });
   await expect(mount).toHaveAttribute("data-unitcell-drawn", "true");
-  await expect(page.getByRole("status")).toContainText("2 / 3");
+  await expect(page.getByRole("status").filter({ hasText: "/" })).toContainText("2 / 3");
 });
 
 test("a timestep-less XDATCAR scrubs by frame number with no invented time axis (§5.3)", async ({
@@ -152,7 +152,7 @@ test("a timestep-less XDATCAR scrubs by frame number with no invented time axis 
 }) => {
   const fileId = await uploadFixture(request, FIXTURES.mdXdatcar);
 
-  await page.goto(`/files/${fileId}`);
+  await page.goto(`/f/${fileId}/structure`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -165,10 +165,10 @@ test("a timestep-less XDATCAR scrubs by frame number with no invented time axis 
   // a frame number is the honest readout, never an invented time label.
   const slider = page.getByRole("slider", { name: "Trajectory frame" });
   await expect(slider).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("status")).toHaveText("0 / 3");
+  await expect(page.getByRole("status").filter({ hasText: "/" })).toHaveText("0 / 3");
   await slider.fill("2");
   await expect(mount).toHaveAttribute("data-current-frame", "2", { timeout: 30_000 });
-  await expect(page.getByRole("status")).toHaveText("2 / 3");
+  await expect(page.getByRole("status").filter({ hasText: "/" })).toHaveText("2 / 3");
 
   // No time axis anywhere in the viewer chrome: no unit label (ps/fs/picosecond/femtosecond) and
   // no timestep word — the frame-number readout is the whole time story.

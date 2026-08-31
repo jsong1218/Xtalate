@@ -29,10 +29,10 @@ test("cancelling a paused job shows that no report exists, not an empty one", as
   page,
   request,
 }) => {
-  const jobId = await seedAwaitingRecoveryJob(request);
+  const { jobId, fileId } = await seedAwaitingRecoveryJob(request);
   seededJobId = jobId;
 
-  await page.goto(`/convert/${jobId}`);
+  await page.goto(`/f/${fileId}/convert?job=${jobId}`);
 
   const cancelButton = page.getByRole("button", { name: /Cancel conversion/i });
   await expect(cancelButton).toBeVisible({ timeout: 30_000 });

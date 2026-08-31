@@ -27,7 +27,9 @@ import batchCompletedJob from "@/components/__fixtures__/job.batch_completed.jso
 vi.mock("next/navigation", () => ({
   useParams: () => ({ job_id: "job-under-test" }),
   // A shared job link carries no `file_id`; the page must cope with that, so the default is empty.
+  // (With a `file_id` the page redirects into the workspace — covered by the e2e redirect journey.)
   useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }));
 
 /**
@@ -141,12 +143,19 @@ describe("ConversionJobPage batch record (v1.5 M58-S2)", () => {
     expect(tallies).toHaveTextContent("Failed");
     expect(tallies).toHaveTextContent("energy ×0");
 
-    // Per-file links resolve to the ordinary child records (converted + refused in order).
+    // Per-file links resolve to the ordinary child records (converted + refused in order), each on
+    // its own file's workspace Convert tab (the child's live `file_id`, UI redesign S2).
     const [converted, refused] = batchCompletedJob.result.entries;
     const links = screen.getAllByRole("link", { name: /view this file\u2019s conversion record/i });
     expect(links).toHaveLength(2);
-    expect(links[0]).toHaveAttribute("href", `/convert/${converted.child_job_id}`);
-    expect(links[1]).toHaveAttribute("href", `/convert/${refused.child_job_id}`);
+    expect(links[0]).toHaveAttribute(
+      "href",
+      `/f/${converted.file_id}/convert?job=${converted.child_job_id}`,
+    );
+    expect(links[1]).toHaveAttribute(
+      "href",
+      `/f/${refused.file_id}/convert?job=${refused.child_job_id}`,
+    );
     // The batch itself offers no download — each file's download lives on its own record.
     expect(screen.queryByRole("button", { name: /download/i })).not.toBeInTheDocument();
   });
@@ -160,7 +169,10 @@ describe("ConversionJobPage batch record (v1.5 M58-S2)", () => {
     const child = batchAwaitingJob.children[0];
     expect(child.state).toBe("awaiting_recovery");
     const answer = screen.getByRole("link", { name: /answer on this conversion's record/i });
-    expect(answer).toHaveAttribute("href", `/convert/${child.job_id}`);
+    expect(answer).toHaveAttribute(
+      "href",
+      `/f/${child.file_id}/convert?job=${child.job_id}`,
+    );
     // The batch parent carries no recovery step of its own — nothing to decide here.
     expect(screen.queryByTestId("recovery-step")).not.toBeInTheDocument();
   });

@@ -51,14 +51,16 @@ test("no wizard page scrolls sideways on a phone, inventory table included", asy
   await page.goto("/");
   await assertNoHorizontalOverflow(page);
 
-  await page.goto("/convert");
+  await page.goto("/history");
   await assertNoHorizontalOverflow(page);
 
-  // The inventory table is the densest thing on a phone; inspect a real file and check it fits.
+  // The inventory table is the densest thing on a phone; back on the landing, upload a real file
+  // and check the resulting workspace fits.
+  await page.goto("/");
   await page
     .getByLabel("Choose a file to convert")
     .setInputFiles(fixturePath(FIXTURES.workedExample.file));
-  await page.waitForURL("**/files/**");
+  await page.waitForURL("**/f/**");
   await expect(page.getByText(/Detected\s+Extended XYZ/i)).toBeVisible({ timeout: 30_000 });
   await assertNoHorizontalOverflow(page);
 });

@@ -21,7 +21,9 @@ import { ThemeToggle } from "@/lib/theme/ThemeProvider";
  */
 
 const PRIMARY_NAV: { href: string; label: string }[] = [
-  { href: "/convert", label: "Convert" },
+  // Upload lives on the landing since the UI redesign (S2): `/convert` redirects to `/`, so the
+  // header points at the real surface (the hero CTA opens the same dropzone).
+  { href: "/", label: "Convert" },
   { href: "/formats", label: "Formats" },
   { href: "/history", label: "History" },
   { href: "/docs", label: "Docs" },

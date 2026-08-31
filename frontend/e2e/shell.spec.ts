@@ -71,7 +71,9 @@ test("the completion-signal mute toggle renders, defaults on, and persists", asy
  * every non-landing page, never raw browser-back, so the user is never trapped.
  */
 test("a sub-page offers a back link to its parent route", async ({ page }) => {
-  await page.goto("/convert");
+  // With `/convert` redirected to the landing (UI redesign S2), the history list is a stable
+  // sub-page carrying the consistent back affordance.
+  await page.goto("/history");
   await page.getByRole("link", { name: "Back to Home" }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { name: "Xtalate" })).toBeVisible();

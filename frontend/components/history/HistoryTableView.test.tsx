@@ -69,11 +69,11 @@ describe("HistoryTableView (Part 7 §2.6, generated from /v1/history)", () => {
     // upload prompt.
     expect(within(r).getByRole("link", { name: /open record/i })).toHaveAttribute(
       "href",
-      "/conversions/conv-completed-pass?file_id=file-1",
+      "/f/file-1/report/conv-completed-pass",
     );
     expect(within(r).getByRole("link", { name: /re-?convert/i })).toHaveAttribute(
       "href",
-      "/files/file-1",
+      "/f/file-1/convert",
     );
     expect(within(r).getByRole("button", { name: /delete file/i })).toBeInTheDocument();
   });

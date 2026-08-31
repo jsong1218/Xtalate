@@ -9,13 +9,13 @@ import { fixturePath, FIXTURES } from "./support/api";
  * with that machine code shown **verbatim**, not a guess and not a blank page.
  */
 test("an unrecognized file inspects to a verbatim UNKNOWN_FORMAT envelope", async ({ page }) => {
-  await page.goto("/convert");
+  await page.goto("/");
   await page
     .getByLabel("Choose a file to convert")
     .setInputFiles(fixturePath(FIXTURES.notAStructure.file));
 
-  // The transfer succeeds and the app routes to the file resource; inspection is what refuses.
-  await page.waitForURL("**/files/**");
+  // The transfer succeeds and the app routes to the file's workspace; inspection is what refuses.
+  await page.waitForURL("**/f/**");
 
   // The code is rendered as a verbatim badge (Part 6 §6) — a support thread and the screen match.
   await expect(page.getByText("UNKNOWN_FORMAT", { exact: true })).toBeVisible({ timeout: 30_000 });

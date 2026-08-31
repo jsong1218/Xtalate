@@ -1,51 +1,10 @@
-"use client";
-
-import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { limitsQuery } from "@/lib/api/queries";
-import { useUpload } from "@/lib/api/useUpload";
-import { BackLink } from "@/components/shell/BackLink";
-import { UploadDropzone } from "@/components/upload/UploadDropzone";
+import { redirect } from "next/navigation";
 
 /**
- * Upload (`/convert`) — the first wizard step (MASTER_SPEC Part 7 §2.2).
- *
- * A client route: it fetches the instance limits so the drop zone can show the size ceiling *before*
- * an upload fails (Part 6 §5), runs the transfer through {@link useUpload} with real progress, and on
- * a `201` routes to the file resource at `/files/[file_id]` — where M28-S2 submits `POST /v1/inspect`.
- * Failures render in place through the shared error envelope; the user stays on the page and retries.
+ * Legacy route (UI redesign S2, D244): upload lives on the landing (`/`) — the hero's "Convert a
+ * file" opens the dropzone there — so this route file stays only so bookmarked `/convert` URLs keep
+ * resolving. A server redirect, no 404s.
  */
-export default function ConvertPage() {
-  const router = useRouter();
-  const { data: limits } = useQuery(limitsQuery());
-  const { status, progress, error, result, upload } = useUpload();
-
-  async function onFile(file: File) {
-    const outcome = await upload(file);
-    if (outcome.ok) router.push(`/files/${outcome.data.file_id}`);
-  }
-
-  return (
-    <main className="space-y-6">
-      <BackLink href="/" label="Home" />
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Convert a file</h1>
-        <p className="max-w-2xl text-muted">
-          Upload a source file to inspect what it contains, then choose a target format. Every
-          conversion produces a report of exactly what was kept, dropped, or assumed.
-        </p>
-      </div>
-
-      <UploadDropzone
-        maxUploadBytes={limits?.max_upload_bytes ?? null}
-        uploadRetentionHours={limits?.upload_retention_hours ?? null}
-        outputRetentionHours={limits?.output_retention_hours ?? null}
-        status={status}
-        progress={progress}
-        error={error}
-        fileName={result?.filename ?? null}
-        onFile={onFile}
-      />
-    </main>
-  );
+export default function LegacyConvertPage() {
+  redirect("/");
 }

@@ -64,7 +64,7 @@ test("an expired conversion's geometry 410s while its durable record still rende
   page,
 }) => {
   // A real completed conversion on the running stack (worked example → plain XYZ).
-  const { conversionId } = await seedCompletedConversion(request);
+  const { conversionId, fileId } = await seedCompletedConversion(request);
 
   // The record page renders fully, interrogating none of the geometry surface — intercept the
   // geometry route to return the expired envelope (the elapsed-time precondition is not live) and
@@ -84,7 +84,7 @@ test("an expired conversion's geometry 410s while its durable record still rende
     }),
   );
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   // The record still renders ("Converted — …"), deliberately below, not blocked by, the geometry 410.
   await expect(page.getByRole("heading", { name: /^Converted/ })).toBeVisible({ timeout: 30_000 });
 });

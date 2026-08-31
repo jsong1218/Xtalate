@@ -77,7 +77,7 @@ test("a frame_selection conversion names its source frame from the report, one c
 
   // 4. The browser: the record's Structure tab carries the report-sourced annotation. A single
   //    frame_selection output is one frame → no output-side scrubber, just the annotation.
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -112,7 +112,7 @@ test("the file-page scrubber's frame numbering is the Discovery Report's (report
   const frameCount = report?.structure?.frame_count;
   expect(frameCount, "the Discovery Report must report a frame count").toBe(6);
 
-  await page.goto(`/files/${fileId}`);
+  await page.goto(`/f/${fileId}/structure`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -125,5 +125,5 @@ test("the file-page scrubber's frame numbering is the Discovery Report's (report
   await slider.fill(String(last));
   const mount = page.locator("[data-mounted=true]");
   await expect(mount).toHaveAttribute("data-current-frame", String(last), { timeout: 30_000 });
-  await expect(page.getByRole("status")).toContainText(`${last} / ${frameCount}`);
+  await expect(page.getByRole("status").filter({ hasText: "/" })).toContainText(`${last} / ${frameCount}`);
 });

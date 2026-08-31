@@ -23,7 +23,7 @@ const { urlSearchParams } = vi.hoisted(() => ({ urlSearchParams: new URLSearchPa
 vi.mock("next/navigation", () => ({
   useParams: () => ({ conversion_id: "cnv-under-test" }),
   useSearchParams: () => urlSearchParams,
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }));
 
 const apiGet = vi.fn();
@@ -144,14 +144,15 @@ describe(
     );
   });
 
-  it("back returns to the file page when a live file_id was handed forward", async () => {
+  it("back returns to the file's workspace when a live file_id was handed forward", async () => {
     urlSearchParams.set("file_id", "file-42");
     renderWithRecord(lossyRecord);
     await screen.findByRole("heading", { level: 1 });
-    // Arriving from a live upload, back should return to that file — not drop the file in hand.
+    // Arriving from a live upload, back should return to that file's workspace — not drop the
+    // file in hand (UI redesign S2: the legacy route resolves into `/f/[id]`).
     expect(screen.getByRole("link", { name: "Back to Inspection" })).toHaveAttribute(
       "href",
-      "/files/file-42",
+      "/f/file-42",
     );
   });
 
@@ -176,7 +177,7 @@ describe(
     expect(await screen.findByRole("region", { name: /resolve and retry/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /upload the file again/i })).toHaveAttribute(
       "href",
-      "/convert",
+      "/",
     );
   });
 

@@ -63,7 +63,7 @@ test("the Structure tab's viewer chrome has no serious accessibility violations 
   // frame scrubber (range + play/pause + readout), and the bonds toggle — the canvas itself is
   // not the accessible record (D241), so the scan judges the chrome around it.
   const fileId = await uploadFixture(request, FIXTURES.multiFrame);
-  await page.goto(`/files/${fileId}`);
+  await page.goto(`/f/${fileId}/structure`);
   await expect(
     page.getByRole("heading", { name: "Structure", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
@@ -105,7 +105,7 @@ test("the Compare tab's viewer chrome has no serious accessibility violations (M
   const done = await pollJob(request, jobId, ["completed"]);
   const conversionId = String((done.result as { conversion_id: string }).conversion_id);
 
-  await page.goto(`/conversions/${conversionId}`);
+  await page.goto(`/f/${fileId}/report/${conversionId}`);
   await expect(page.getByRole("tab", { name: "Compare" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("tab", { name: "Compare" }).click();
   const compare = page.locator('section[aria-label="Compare"]');

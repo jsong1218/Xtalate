@@ -31,7 +31,7 @@ test("deletes a source file from history and keeps its report readable", async (
   const openRecord = row.getByRole("link", { name: /open record/i });
   await expect(openRecord).toHaveAttribute(
     "href",
-    `/conversions/${conversionId}?file_id=${encodeURIComponent(fileId)}`,
+    `/f/${fileId}/report/${conversionId}`,
   );
   await expect(row.getByRole("link", { name: /re-?convert/i })).toBeVisible();
 

@@ -37,24 +37,25 @@ test("upload → convert → pause → decide → preview → record, the trajec
   await expect(page.getByRole("heading", { name: "Convert a file" })).toBeVisible();
   await page.getByLabel("Choose a file to convert").setInputFiles(fixturePath(FIXTURES.relaxTraj.file));
 
-  // 2. Inspection routes to the file resource and reports what it actually is.
-  await page.waitForURL("**/files/**");
+  // 2. Inspection routes into the file's workspace (the Inspect tab) and reports what it is.
+  await page.waitForURL("**/f/**");
   await expect(page.getByText(/Detected\s+ASE Trajectory/i)).toBeVisible({ timeout: 30_000 });
 
-  // 3. Choose POSCAR and convert. Permissive is the default; the difference from v0.6 is that this
-  //    now asks for interactive recovery, so the decision-needing conversion pauses rather than
-  //    refusing. Since v1.1 M39-S4 (B2) the conversion is committed on an explicit confirm step —
-  //    and this journey proves the recovery path is unaffected: confirm → POST → awaiting_recovery
-  //    → decision cards, exactly as before.
+  // 3. Advance the guided spine with the rail's Convert CTA, choose POSCAR and convert. Permissive
+  //    is the default; the difference from v0.6 is that this now asks for interactive recovery, so
+  //    the decision-needing conversion pauses rather than refusing. Since v1.1 M39-S4 (B2) the
+  //    conversion is committed on an explicit confirm step — and this journey proves the recovery
+  //    path is unaffected: confirm → POST → awaiting_recovery → decision cards, exactly as before.
+  await page.getByRole("link", { name: "Convert →" }).click();
   await page.getByRole("button", { name: "VASP POSCAR", exact: true }).click();
   await page.getByRole("button", { name: /^Convert to VASP POSCAR$/ }).click();
   await expect(page.getByTestId("convert-confirm")).toBeVisible();
   await page.getByRole("button", { name: /^Convert$/ }).click();
 
-  // 4. The live job page reaches the pause and renders it as the recovery step — named, with one
-  //    card per decision, never a silent default.
-  await page.waitForURL("**/convert/**");
-  pausedJobId = page.url().split("/convert/")[1]?.split("?")[0];
+  // 4. The live job on the workspace's Convert tab reaches the pause and renders it as the
+  //    recovery step — named, with one card per decision, never a silent default.
+  await page.waitForURL(/\/f\/[^/]+\/convert/);
+  pausedJobId = new URL(page.url()).searchParams.get("job") ?? undefined;
   await expect(
     page.getByRole("heading", { name: /needs \d+ decisions? before it can proceed/i }),
   ).toBeVisible({ timeout: 30_000 });
@@ -83,9 +84,10 @@ test("upload → convert → pause → decide → preview → record, the trajec
   pausedJobId = undefined; // The job is terminal now; nothing to clean up.
   await recordLink.click();
 
-  // 8. The record carries the very sentences previewed — byte-for-byte, because both are the engine's
-  //    own text. This is the audit trail the whole product exists to produce.
-  await page.waitForURL("**/conversions/**");
+  // 8. The record (the workspace's Report tab) carries the very sentences previewed — byte-for-byte,
+  //    because both are the engine's own text. This is the audit trail the whole product exists to
+  //    produce.
+  await page.waitForURL(/\/f\/[^/]+\/report\//);
   await expect(page.getByText(/selected for the single-structure target/i)).toBeVisible();
   await expect(page.getByText(/conversion artifact, not simulation data/i)).toBeVisible();
 

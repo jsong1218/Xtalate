@@ -28,12 +28,14 @@ test("Cancel leaves no history row; Confirm is what records the conversion", asy
   await page.goto("/");
   await page.getByRole("link", { name: "Convert a file" }).click();
   await page.getByLabel("Choose a file to convert").setInputFiles(fixturePath(FIXTURES.workedExample.file));
-  await page.waitForURL("**/files/**");
+  await page.waitForURL("**/f/**");
   await expect(page.getByText(/Detected\s+Extended XYZ/i)).toBeVisible({ timeout: 30_000 });
 
   const before = await historyCount(request);
 
-  // 2. Pick plain XYZ and open the confirm step, then CANCEL. The first click must not submit.
+  // 2. Advance to the Convert tab, pick plain XYZ and open the confirm step, then CANCEL. The first
+  //    click must not submit.
+  await page.getByRole("link", { name: "Convert →" }).click();
   await page.getByRole("button", { name: "Plain XYZ", exact: true }).click();
   await page.getByRole("button", { name: /^Convert to Plain XYZ$/ }).click();
   await expect(page.getByTestId("convert-confirm")).toBeVisible();
@@ -48,8 +50,8 @@ test("Cancel leaves no history row; Confirm is what records the conversion", asy
   await expect(page.getByTestId("convert-confirm")).toBeVisible();
   await page.getByRole("button", { name: /^Convert$/ }).click();
 
-  // The job completes and the record appears in history.
-  await page.waitForURL("**/convert/**");
+  // The job completes on the Convert tab and the record appears in history.
+  await page.waitForURL(/\/f\/[^/]+\/convert/);
   await expect(
     page.getByRole("link", { name: /View the full record and download the file/i }),
   ).toBeVisible({ timeout: 30_000 });
