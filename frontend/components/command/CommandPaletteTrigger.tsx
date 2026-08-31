@@ -12,8 +12,15 @@ import { CommandPalette } from "./CommandPalette";
  */
 export function CommandPaletteTrigger() {
   const [open, setOpen] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const openRef = useRef(false);
   openRef.current = open;
+
+  // Hydration/probe marker: true only after this component commits client-side, in the same commit
+  // that attaches the keydown listener below. The ⌘K e2e journey waits on `data-hydrated` before
+  // pressing the shortcut — the landing heading is SSR'd and visible long before the window
+  // listener exists, which otherwise hands the open-shortcut a hydration race under full-run load.
+  useEffect(() => setHydrated(true), []);
 
   // Global open shortcut — one listener, reads the live `open` from the ref so Escape closes is
   // always current. Deliberately suppressed while typing in an input/textarea/editable so ⌘K inside
@@ -45,6 +52,7 @@ export function CommandPaletteTrigger() {
         aria-expanded={open}
         onClick={() => setOpen(true)}
         data-testid="command-palette-trigger"
+        data-hydrated={hydrated ? "true" : "false"}
         className="inline-flex items-center gap-2 rounded-md border border-line px-2.5 py-1 text-sm text-body transition-colors hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <span aria-hidden="true">⌘</span>

@@ -18,6 +18,14 @@ test("⌘K opens the palette, keeps focus inside it, and Escape closes (S4)", as
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Xtalate" })).toBeVisible();
 
+  // The raw HTML heading is server-rendered long before the client hydrates — the global ⌘K
+  // listener only exists after the trigger commits client-side. Wait on its `data-hydrated` marker
+  // (set in the same commit that attaches the listener) so the shortcut press can never outrun
+  // hydration under full-run load.
+  await expect(
+    page.getByTestId("command-palette-trigger")
+  ).toHaveAttribute("data-hydrated", "true", { timeout: 30_000 });
+
   // Open with the global shortcut, exactly as a user would.
   await page.keyboard.press("Meta+K");
   const dialog = page.getByRole("dialog", { name: "Command palette" });

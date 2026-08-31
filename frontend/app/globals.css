@@ -175,4 +175,24 @@
     color: var(--text-strong);
     background-color: var(--surface);
   }
+
+  /*
+   * Motion is restrained and never essential (UI redesign S6, D247; design spec §4 "Motion"). The
+   * app's transitions are deliberately modest — tab/chip color shifts, an indeterminate progress
+   * pulse, a scrubber that is a native range — and there is no decorative animation. Honour
+   * `prefers-reduced-motion`: when a user asks for reduced motion, collapse every transition and
+   * animation to an instant, one-frame change (and drop smooth scrolling) so nothing on the page
+   * moves for them. Kept global (not per-component) so a future transition can never forget the
+   * guard — the same one-defines-it-once posture as the `:focus-visible` baseline above.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }

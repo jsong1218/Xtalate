@@ -73,6 +73,28 @@ test("the Structure tab's viewer chrome has no serious accessibility violations 
   expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
 });
 
+test("the workspace shell has no serious accessibility violations (UIR-S6)", async ({
+  page,
+  request,
+}) => {
+  // The file-centric workspace shell under the new IA: the source rail + tab bar (Inspect/…), a
+  // tab's real content, and the reserved "coming later" seams — the whole `/f/[id]` layout an axe
+  // sweep must judge as one surface (the S6 final a11y pass, serious+critical zero, matching the
+  // M63-S2 posture). A live upload feeds the rail its filename/counts.
+  const fileId = await uploadFixture(request, FIXTURES.workedExample);
+  await page.goto(`/f/${fileId}`);
+  await expect(page.locator('aside[aria-label="Source file"]')).toBeVisible({ timeout: 30_000 });
+  // The rail is the shell's readiness signal: once it shows the filename (not "Loading source…")
+  // and the seams are up, the whole layout under test has hydrated.
+  await expect(page.locator('aside[aria-label="Source file"]')).not.toContainText("Loading source…", {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("future-seams")).toBeVisible();
+
+  const violations = await seriousViolations(page);
+  expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
+});
+
 test("the Compare tab's viewer chrome has no serious accessibility violations (M63-S2)", async ({
   page,
   request,
