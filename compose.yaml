@@ -32,6 +32,15 @@ x-backend-env: &backend-env
   # The M30 e2e lane exports a small value here so the oversized-upload journey trips the real
   # `413 FILE_TOO_LARGE` gate with a kilobyte-scale file instead of a genuine 100 MB transfer.
   XTALATE_MAX_UPLOAD_BYTES: ${XTALATE_MAX_UPLOAD_BYTES:-104857600}
+  # Defaults to the application's own 120/min rate limit, so a plain `docker compose up` is
+  # unchanged (the limiter's production posture is the code default; see backend/config.py). The
+  # e2e lane exports a generous value here: the Playwright suite is a single serial caller that
+  # legitimately bursts past 120 requests in a minute on the geometry-heavy journeys (frame-chunked
+  # fetches + job polling), and a saturated bucket 429s *every* request from the browser for the
+  # rest of the wall-clock minute — including the next journey's upload — making the gate flaky
+  # on timing, not on product behaviour. The limiter stays mechanically on; unit tests
+  # (`tests/backend/test_limits_auth.py`) still assert the 429 posture itself.
+  XTALATE_RATE_LIMIT_PER_MINUTE: ${XTALATE_RATE_LIMIT_PER_MINUTE:-120}
 
 services:
   postgres:

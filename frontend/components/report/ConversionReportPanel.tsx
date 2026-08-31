@@ -1,50 +1,80 @@
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { labelForPath, labelForScenario } from "@/lib/mapping";
-import { groupByKey, shouldCollapse } from "@/lib/report/grouping";
+import {
+  buildReportRows,
+  canonicalCategory,
+  categoryLabel,
+  countByFilter,
+  filterRows,
+  groupByKey,
+  groupRowsByCategory,
+  loadGroupingMode,
+  OUTCOME_ORDER,
+  OUTCOME_LABELS,
+  saveGroupingMode,
+  shouldCollapse,
+  type GroupingMode,
+  type ReportFilter,
+  type ReportRow,
+} from "@/lib/report/grouping";
+import { reportToJson, reportToMarkdown } from "@/lib/report/exportReport";
 import type {
   Assumption,
   ConversionReport,
+  PreservedEntry,
   RemovedEntry,
   ReportWarning,
   SuppliedEntry,
 } from "@/lib/report/types";
 import { Row } from "./Row";
+import { ReportToolbar } from "./ReportToolbar";
 import { SummaryChips } from "./SummaryChips";
 
 /**
- * The Conversion Report panel — the five sections of Part 4 §2 rendered in the same order the
- * schema names them: **Preserved, Removed, Supplied + Assumptions, Warnings** (MASTER_SPEC
- * Part 7 §4.3). This is the design-critical surface of v0.6: the whole product promise ("tells you
- * exactly what it kept, what it lost, and why") is this panel being complete and honest.
+ * The Conversion Report panel — the design-critical surface (MASTER_SPEC Part 7 §4.3, redesigned
+ * outcome-first by UI redesign S3, D245; design spec §5).
  *
- * Invariants enforced here:
- *  - **Row completeness.** Each section is `report.<array>.map(...)` — one row per entry, no
- *    filtering, no truncation. A dropped row is a dropped loss, so the tests count rows against the
- *    fixture arrays. Grouping (below) re-parents rows into disclosures but never removes one.
- *  - **Reason verbatim.** A Removed row shows its `reason` string exactly as the engine wrote it,
- *    never a UI paraphrase (Part 7 §2.3).
- *  - **Supplied + Assumptions are adjacent, in the shared ◆ violet, at prominence equal to
- *    Removed** — fabricated data is "a third thing", neither preserved nor lost, and it is never
- *    demoted below the losses it sits beside (Part 7 §4.3). Each Assumption shows its decision
- *    sentence and lists the canonical fields it authorized.
- *  - **Plain language, code one step away.** Field paths and scenario codes resolve through
- *    `lib/mapping.ts`; the raw machine code is never the primary text (Part 7 §3.3).
+ * **Outcome-first by default (Assumed → Lost → Warned → Kept).** The old section order followed the
+ * schema (Preserved first); the S3 order leads with what a reader must see — what was fabricated,
+ * what was lost, what was warned — and ends with what was kept. A toggle switches to canonical
+ * **category** grouping (Atoms / Cell / Dynamics / … across outcomes), and the choice persists
+ * (localStorage, D-R6).
  *
- * **Readability at scale (addendum S4).** A summary band elevates the count chips to an at-a-glance
- * overview, and the two floodable sections — Warnings, and a lengthy Removed — collapse **same-typed
- * entries into expanded-by-default disclosures** (`lib/report/grouping`): Warnings by `code`, Removed
- * by canonical category. The disclosures start open, so nothing is ever a click away from being seen
- * (the never-buried promise); grouping only kicks in when a key actually repeats, so the ordinary
- * single-warning report stays a flat list. This complements the engine-side D108 frame-range collapse.
+ * **Filter chips** narrow the visible rows only (`All · Kept · Lost · Assumed · Warned`, live
+ * counts, `aria-pressed`); `/` focuses the filter. **Rows** show the source value in mono
+ * (never collapsed away) and the outcome tag; assumptions state what was supplied and that it was
+ * recorded as an assumption, verbatim from the report (P4). **Export** is Copy-as-JSON /
+ * Copy-as-Markdown (pure serializations of the report model) plus Copy-link to the permalink.
  *
- * An empty section is omitted here — the always-present {@link SummaryChips} carry the affirmative
- * zero accounting ("✓ 0 fields removed"), so omission is never a silent blank.
+ * Invariants that survive the redesign (and are asserted by the no-loss invariant test):
+ *  - **Row completeness.** Every section is a `report.<array>.map(...)` (or a view-model row per
+ *    entry) with no filtering, no truncation, no reordering of the report arrays; the S4
+ *    same-type disclosures re-parent rows but never remove one.
+ *  - **Reason verbatim.** A Removed row shows its `reason` exactly as the engine wrote it.
+ *  - **Supplied + Assumptions adjacent, in the shared ◆ violet** — fabricated data is \"a third
+ *    thing\", never demoted below the losses it sits beside.
+ *  - **Plain language, code one step away** — paths/scenarios resolve through `lib/mapping.ts`.
+ *  - **Empty sections are omitted, but the always-present {@link SummaryChips} carry the
+ *    affirmative zero accounting** (\"✓ 0 fields removed\"), so omission is never a silent blank.
+ *
+ * The redesign changes **which sections appear and in what order — never which rows or what they
+ * say** (design spec §5 invariant). A refusal still renders as a completed, honest report (status
+ * `refused`), not an error — the refusal content renders through the record page, not here.
  */
+
+/** The left accent bar per outcome section, bound to the `--cb-*` loss palette. */
+const OUTCOME_TINT: Record<(typeof OUTCOME_ORDER)[number], string> = {
+  assumed: "border-cb-assumption",
+  lost: "border-cb-removed",
+  warned: "border-cb-warning",
+  kept: "border-cb-preserve",
+};
 
 function Section({
   title,
   count,
   tint,
+  testId,
   wrapList = true,
   children,
 }: {
@@ -52,6 +82,8 @@ function Section({
   count: number;
   /** Left accent bar color class, bound to a `--cb-*` token. */
   tint: string;
+  /** Stable hook for the invariant test + the e2e journey (section order, counts). */
+  testId?: string;
   /** When true (default) the section wraps its rows in a divided `<ul>`; grouped sections manage
    *  their own list/disclosure structure and pass false. */
   wrapList?: boolean;
@@ -60,7 +92,11 @@ function Section({
   if (count === 0) return null;
   const headingId = `report-section-${title.toLowerCase().replace(/[^a-z]+/g, "-")}`;
   return (
-    <section aria-labelledby={headingId} className={`border-l-2 pl-3 ${tint}`}>
+    <section
+      aria-labelledby={headingId}
+      data-testid={testId}
+      className={`border-l-2 pl-3 ${tint}`}
+    >
       <h3 id={headingId} className="mb-1 text-sm font-semibold text-body">
         {title} <span className="font-normal text-faint">({count})</span>
       </h3>
@@ -94,26 +130,16 @@ function CollapsibleGroup({
   );
 }
 
-/** The top-level canonical category a path belongs to, e.g. `dynamics.forces` → `dynamics`. */
-function canonicalCategory(path: string): string {
-  const dot = path.indexOf(".");
-  return dot === -1 ? path : path.slice(0, dot);
-}
-
-/** A canonical category token as a plain heading, e.g. `user_metadata` → "User metadata". */
-function categoryLabel(category: string): string {
-  const words = category.split("_");
-  const [first, ...rest] = words;
-  const head = first.charAt(0).toUpperCase() + first.slice(1);
-  return [head, ...rest].join(" ");
-}
-
-/** A Removed row: field name, then the engine's `reason` verbatim, then any quantitative detail. */
+/** A Removed row: field name, the engine's `reason` verbatim, then the quantitative loss in mono. */
 function RemovedRow({ entry }: { entry: RemovedEntry }) {
   return (
-    <Row kind="removed" testId="removed-row" label={labelForPath(entry.path).label}>
+    <Row
+      kind="removed"
+      testId="removed-row"
+      label={labelForPath(entry.path).label}
+      detail={entry.detail}
+    >
       <p className="text-sm text-body">{entry.reason}</p>
-      {entry.detail ? <p className="text-sm text-muted">{entry.detail}</p> : null}
     </Row>
   );
 }
@@ -257,8 +283,12 @@ function AssumptionRow({
   );
 }
 
-export function ConversionReportPanel({ report }: { report: ConversionReport }) {
-  // Group supplied fields under the assumption that authorized each (Part 4 §2 one-to-many).
+/**
+ * The Assumed section body — every assumption plus the Supplied fields it authorized, with the
+ * orphan-proof join (a supplied entry whose `from_assumption` matches nothing must still render).
+ * This is the S3 outcome-first home of what the schema calls "Supplied & assumptions".
+ */
+function AssumptionsBody({ report }: { report: ConversionReport }) {
   const suppliedByAssumption = new Map<string, SuppliedEntry[]>();
   for (const entry of report.supplied) {
     const list = suppliedByAssumption.get(entry.from_assumption) ?? [];
@@ -266,11 +296,106 @@ export function ConversionReportPanel({ report }: { report: ConversionReport }) 
     suppliedByAssumption.set(entry.from_assumption, list);
   }
 
-  // Row completeness is a join-proof invariant: a supplied entry whose `from_assumption` matches
-  // no assumption in this report (an engine bug, a hand-edited fixture) must still render — a
-  // silently dropped row is a silently dropped loss record.
   const assumptionIds = new Set(report.assumptions.map((a) => a.id));
   const orphanedSupplied = report.supplied.filter((e) => !assumptionIds.has(e.from_assumption));
+
+  return (
+    <>
+      {report.assumptions.map((assumption) => (
+        <AssumptionRow
+          key={assumption.id}
+          assumption={assumption}
+          supplied={suppliedByAssumption.get(assumption.id) ?? []}
+        />
+      ))}
+      {orphanedSupplied.length > 0 ? (
+        <Row
+          kind="assumption"
+          testId="assumption-row"
+          label="Supplied fields"
+          detail="Recorded without a matching assumption entry in this report."
+        >
+          <ul className="mt-1 space-y-0.5">
+            {orphanedSupplied.map((entry) => (
+              <li key={entry.path} data-testid="supplied-row" className="text-sm text-muted">
+                <span className="text-cb-assumption">+ </span>
+                {labelForPath(entry.path).label}
+                {entry.detail ? <span className="text-faint"> — {entry.detail}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </Row>
+      ) : null}
+    </>
+  );
+}
+
+/** The Kept section body — one preserved row per entry. */
+function PreservedBody({ preserved }: { preserved: PreservedEntry[] }) {
+  return (
+    <>
+      {preserved.map((entry) => (
+        <Row
+          key={entry.path}
+          kind="preserved"
+          testId="preserved-row"
+          label={labelForPath(entry.path).label}
+          detail={entry.detail}
+        />
+      ))}
+    </>
+  );
+}
+
+/** One row in a category section — dispatched by kind to the same renderers the outcome view uses. */
+function CategoryRow({ row, report }: { row: ReportRow; report: ConversionReport }) {
+  switch (row.kind) {
+    case "preserved": {
+      const entry = row.entry as PreservedEntry;
+      return (
+        <Row
+          kind="preserved"
+          testId="preserved-row"
+          label={labelForPath(entry.path).label}
+          detail={entry.detail}
+        />
+      );
+    }
+    case "removed":
+      return <RemovedRow entry={row.entry as RemovedEntry} />;
+    case "assumed": {
+      const entry = row.entry as Assumption;
+      return (
+        <AssumptionRow
+          assumption={entry}
+          supplied={report.supplied.filter((s) => s.from_assumption === entry.id)}
+        />
+      );
+    }
+    case "warned":
+      return <WarningRow warning={row.entry as ReportWarning} showCode />;
+  }
+}
+
+export function ConversionReportPanel({
+  report,
+  permalink,
+}: {
+  report: ConversionReport;
+  /** The durable permalink for Copy-link; absent on surfaces without one (the live job view). */
+  permalink?: string;
+}) {
+  const [mode, setMode] = useState<GroupingMode>(() => loadGroupingMode());
+  const [filter, setFilter] = useState<ReportFilter>("all");
+
+  // The normalized view model — one row per model entry (the no-loss invariant's home).
+  const rows = useMemo(() => buildReportRows(report), [report]);
+  const counts = useMemo(() => countByFilter(rows), [rows]);
+
+  function changeMode(next: GroupingMode) {
+    setMode(next);
+    saveGroupingMode(next);
+  }
 
   const source = report.source;
   const target = report.target;
@@ -298,69 +423,129 @@ export function ConversionReportPanel({ report }: { report: ConversionReport }) 
         >
           <SummaryChips report={report} />
         </div>
+        {/* The S3 toolbar: grouping toggle, filter chips, export/share. */}
+        <ReportToolbar
+          mode={mode}
+          onModeChange={changeMode}
+          filter={filter}
+          onFilterChange={setFilter}
+          counts={counts}
+          onCopyJson={() => reportToJson(report)}
+          onCopyMarkdown={() => reportToMarkdown(report)}
+          permalink={permalink}
+        />
       </header>
 
-      <Section title="Preserved" count={report.preserved.length} tint="border-cb-preserve">
-        {report.preserved.map((entry) => (
-          <Row
-            key={entry.path}
-            kind="preserved"
-            testId="preserved-row"
-            label={labelForPath(entry.path).label}
-            detail={entry.detail}
-          />
-        ))}
-      </Section>
+      {mode === "outcome" ? (
+        <OutcomeSections report={report} filter={filter} counts={counts} />
+      ) : (
+        <CategorySections report={report} rows={rows} filter={filter} />
+      )}
+    </div>
+  );
+}
 
-      <Section
-        title="Removed"
-        count={report.removed.length}
-        tint="border-cb-removed"
-        wrapList={false}
-      >
-        <RemovedBody removed={report.removed} />
-      </Section>
+/**
+ * The outcome-first view (S3 default): sections in OUTCOME_ORDER, each rendering its rows through
+ * the shared bodies (S4 same-type disclosures included). A non-`all` filter shows only the matching
+ * section — narrowing the visible rows, never touching the model.
+ */
+function OutcomeSections({
+  report,
+  filter,
+  counts,
+}: {
+  report: ConversionReport;
+  filter: ReportFilter;
+  counts: Record<ReportFilter, number>;
+}) {
+  const sectionVisible = (outcome: (typeof OUTCOME_ORDER)[number]) =>
+    filter === "all" || filter === outcome;
 
-      <Section
-        title="Supplied & assumptions"
-        count={report.assumptions.length + orphanedSupplied.length}
-        tint="border-cb-assumption"
-      >
-        {report.assumptions.map((assumption) => (
-          <AssumptionRow
-            key={assumption.id}
-            assumption={assumption}
-            supplied={suppliedByAssumption.get(assumption.id) ?? []}
-          />
-        ))}
-        {orphanedSupplied.length > 0 ? (
-          <Row
-            kind="assumption"
-            testId="assumption-row"
-            label="Supplied fields"
-            detail="Recorded without a matching assumption entry in this report."
-          >
-            <ul className="mt-1 space-y-0.5">
-              {orphanedSupplied.map((entry) => (
-                <li key={entry.path} data-testid="supplied-row" className="text-sm text-muted">
-                  <span className="text-cb-assumption">+ </span>
-                  {labelForPath(entry.path).label}
-                  {entry.detail ? <span className="text-faint"> — {entry.detail}</span> : null}
-                </li>
-              ))}
-            </ul>
-          </Row>
-        ) : null}
-      </Section>
+  return (
+    <div className="space-y-4">
+      {sectionVisible("assumed") ? (
+        <Section
+          title={OUTCOME_LABELS.assumed}
+          count={counts.assumed}
+          tint={OUTCOME_TINT.assumed}
+          testId="report-section-assumed"
+        >
+          <AssumptionsBody report={report} />
+        </Section>
+      ) : null}
 
-      <Section
-        title="Warnings"
-        count={report.warnings.length}
-        tint="border-cb-warning"
-        wrapList={false}
-      >
-        <WarningsBody warnings={report.warnings} />
-      </Section>
+      {sectionVisible("lost") ? (
+        <Section
+          title={OUTCOME_LABELS.lost}
+          count={report.removed.length}
+          tint={OUTCOME_TINT.lost}
+          testId="report-section-lost"
+          wrapList={false}
+        >
+          <RemovedBody removed={report.removed} />
+        </Section>
+      ) : null}
+
+      {sectionVisible("warned") ? (
+        <Section
+          title={OUTCOME_LABELS.warned}
+          count={report.warnings.length}
+          tint={OUTCOME_TINT.warned}
+          testId="report-section-warned"
+          wrapList={false}
+        >
+          <WarningsBody warnings={report.warnings} />
+        </Section>
+      ) : null}
+
+      {sectionVisible("kept") ? (
+        <Section
+          title={OUTCOME_LABELS.kept}
+          count={report.preserved.length}
+          tint={OUTCOME_TINT.kept}
+          testId="report-section-kept"
+        >
+          <PreservedBody preserved={report.preserved} />
+        </Section>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The canonical-category view: every row bucketed by its canonical category (Atoms / Cell /
+ * Dynamics / …), outcomes mixed inside each category — the same rows, re-organized. The filter
+ * narrows rows first, so a category with nothing matching disappears; rows are never dropped.
+ */
+function CategorySections({
+  report,
+  rows,
+  filter,
+}: {
+  report: ConversionReport;
+  rows: ReportRow[];
+  filter: ReportFilter;
+}) {
+  const sections = groupRowsByCategory(filterRows(rows, filter));
+  return (
+    <div className="space-y-4">
+      {sections.map((section) => (
+        <Section
+          key={section.key}
+          title={section.label}
+          count={section.rows.length}
+          tint="border-line"
+          testId={`report-section-category-${section.key}`}
+          wrapList={false}
+        >
+          <ul className="divide-y divide-line-soft">
+            {section.rows.map((row) => (
+              <CategoryRow key={row.id} row={row} report={report} />
+            ))}
+          </ul>
+        </Section>
+      ))}
     </div>
   );
 }

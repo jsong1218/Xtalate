@@ -80,6 +80,11 @@ jobs:
       # A small upload ceiling so the FILE_TOO_LARGE journey trips the real gate with a ~1 MB file
       # rather than a genuine 100 MB transfer; compose interpolates it into the backend + worker env.
       XTALATE_MAX_UPLOAD_BYTES: "1048576"
+      # The serial suite legitimately bursts past the 120/min default on the geometry-heavy journeys
+      # (frame-chunked fetches + job polling), which 429s every browser request for the rest of that
+      # wall-clock minute — including the next journey's upload — a timing flake, not a product one.
+      # Raise the lane's window far above suite volume; the limiter stays on (unit-tested elsewhere).
+      XTALATE_RATE_LIMIT_PER_MINUTE: "100000"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 

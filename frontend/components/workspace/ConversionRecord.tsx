@@ -196,7 +196,14 @@ export function ConversionRecord({
 
       {/* 4. The two reports: side by side on a wide screen, stacked on a narrow one. */}
       <div data-testid="report-columns" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <ConversionReportPanel report={report} />
+        {/* The permalink for Copy-link (UI redesign S3, D245): the workspace URL when the source
+            file is known, else the durable legacy record URL — both resolve forever. */}
+        <ConversionReportPanel
+          report={report}
+          permalink={
+            fileId ? `/f/${fileId}/report/${conversionId}` : `/conversions/${conversionId}`
+          }
+        />
         {record.validation_report ? (
           <ValidationReportPanel report={record.validation_report} />
         ) : (

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { LossIcon, type LossKind } from "@/components/loss/icons";
+import { DataValue } from "@/components/ui/DataValue";
 
 /**
  * One presence/outcome row — the shared atom every report section is a list of (MASTER_SPEC
@@ -40,7 +41,14 @@ export function Row({
       <LossIcon kind={kind} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1 space-y-1">
         <div className="text-sm font-medium text-strong">{label}</div>
-        {detail ? <div className="text-sm text-muted">{detail}</div> : null}
+        {/* The source value, in mono — the S1 precision-instrument rule applied to every report
+            row (UI redesign S3, D245): a value is always visually a value, and it is never
+            collapsed away. */}
+        {detail ? (
+          <div className="text-sm">
+            <DataValue>{detail}</DataValue>
+          </div>
+        ) : null}
         {children}
       </div>
     </li>

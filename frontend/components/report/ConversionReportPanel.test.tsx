@@ -1,5 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { REPORT_GROUPING_STORAGE_KEY } from "@/lib/report/grouping";
 import type { ConversionReport } from "@/lib/report/types";
 import { ConversionReportPanel } from "./ConversionReportPanel";
 import completedReport from "./__fixtures__/conversion.completed.json";
@@ -11,6 +12,12 @@ import completedReport from "./__fixtures__/conversion.completed.json";
  * whole point of the panel (no silent loss, including in the loss report itself).
  */
 const report = completedReport as unknown as ConversionReport;
+
+afterEach(() => {
+  // The panel persists its grouping choice (S3) — clear it so a Category toggle in one test can
+  // never leak into another (the panel initializes its mode from localStorage).
+  window.localStorage.removeItem(REPORT_GROUPING_STORAGE_KEY);
+});
 
 describe("ConversionReportPanel (Part 4 §2 / Part 7 §4.3)", () => {
   it("renders one row per entry in every section — counts match the report arrays", () => {
@@ -126,6 +133,57 @@ describe("ConversionReportPanel (Part 4 §2 / Part 7 §4.3)", () => {
     }
     // The category heads its group in plain words, not a raw path.
     expect(within(groups[0]).getByText("Dynamics")).toBeInTheDocument();
+  });
+
+  it("the no-loss invariant: default-complete, filter-narrowable, forced-loss visible (S3)", () => {
+    render(<ConversionReportPanel report={report} />);
+
+    // Default, unfiltered: the rendered row set equals the report model's full row set — nothing
+    // filtered away by default, including the forced losses (the poscar target *cannot* store
+    // forces/energy, and the single-structure target *must* drop frames — the fixture is a
+    // forced-loss conversion, D245's guard case).
+    expect(screen.getAllByTestId("preserved-row")).toHaveLength(report.preserved.length);
+    expect(screen.getAllByTestId("removed-row")).toHaveLength(report.removed.length);
+    expect(screen.getAllByTestId("assumption-row")).toHaveLength(report.assumptions.length);
+    const forcedLossReason = "Target format stores a single structure (max_frames = 1).";
+    expect(screen.getByText(forcedLossReason)).toBeInTheDocument();
+
+    // Filter narrows the *visible* rows only…
+    fireEvent.click(screen.getByRole("button", { name: /^Kept/ }));
+    expect(screen.queryByTestId("removed-row")).not.toBeInTheDocument();
+    expect(screen.queryByText(forcedLossReason)).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("preserved-row")).toHaveLength(report.preserved.length);
+
+    // …and restoring All brings the full set back — the forced losses are visible again.
+    fireEvent.click(screen.getByRole("button", { name: /^All/ }));
+    expect(screen.getAllByTestId("removed-row")).toHaveLength(report.removed.length);
+    expect(screen.getAllByTestId("preserved-row")).toHaveLength(report.preserved.length);
+    expect(screen.getByText(forcedLossReason)).toBeInTheDocument();
+  });
+
+  it("category grouping shows the same rows, re-organized (no row dropped by the toggle)", () => {
+    render(<ConversionReportPanel report={report} />);
+    const outcomeCounts = {
+      preserved: screen.getAllByTestId("preserved-row").length,
+      removed: screen.getAllByTestId("removed-row").length,
+      assumption: screen.getAllByTestId("assumption-row").length,
+    };
+
+    fireEvent.click(screen.getByRole("button", { name: "Category" }));
+    expect(screen.getAllByTestId("preserved-row")).toHaveLength(outcomeCounts.preserved);
+    expect(screen.getAllByTestId("removed-row")).toHaveLength(outcomeCounts.removed);
+    expect(screen.getAllByTestId("assumption-row")).toHaveLength(outcomeCounts.assumption);
+    // Same rows, bucketed by canonical category — the Categories mix outcomes.
+    expect(screen.getByTestId("report-section-category-cell")).toBeInTheDocument();
+    expect(screen.getByTestId("report-section-category-dynamics")).toBeInTheDocument();
+  });
+
+  it("shows the quantitative loss in mono (a source value is always visually a value)", () => {
+    render(<ConversionReportPanel report={report} />);
+    const lost = screen.getByTestId("report-section-lost");
+    const frameDrop = within(lost).getByText("9 of 10 frames dropped; frame 9 retained per A1.");
+    // The S3 row law: the source value renders in the mono DataValue, never plain prose.
+    expect(frameDrop.className).toContain("font-mono");
   });
 
   it("omits empty loss sections but never the affirmative summary (empty-state)", () => {
