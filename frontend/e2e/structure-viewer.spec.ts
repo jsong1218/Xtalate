@@ -2,14 +2,16 @@ import { expect, test } from "@playwright/test";
 import { FIXTURES, uploadFixture } from "./support/api";
 
 /**
- * The M59-S2 render proof (D233/D234): a canonical object renders in embedded Mol\* fed **from the
- * geometry endpoint** with no intermediate format. Two load-bearing points, both proven over the
+ * The M59-S2 render proof (D233/D234), promoted under UI redesign S5 (Rev 1.91) onto its workspace
+ * tab: a canonical object renders in embedded Mol\* fed **from the geometry endpoint** with no
+ * intermediate format, at the viewer's promoted home `/f/{file_id}/structure` (the same
+ * `StructureViewer` the dev spike used to prove). Two load-bearing points, both proven over the
  * running stack:
  *
- *  1. The dev spike surface mounts the viewer against `/v1/files/{id}/geometry` — the canvas is
- *     live, the declared atom count reached the loader, and **no request to the only export/
- *     download route (`/v1/download`) ever fires** — the no-hidden-export rule is asserted
- *     behaviourally, not by inspection.
+ *  1. The workspace tab mounts the viewer against `/v1/files/{id}/geometry` — the canvas is live,
+ *     the declared atom count reached the loader, and **no request to the only export/download
+ *     route (`/v1/download`) ever fires** — the no-hidden-export rule is asserted behaviourally,
+ *     not by inspection.
  *  2. Bonds are off by default and the heuristic badge appears iff toggled on (D234) — on the
  *     real mount, not just in jsdom.
  */
@@ -28,7 +30,9 @@ test("a canonical object renders in embedded Mol* from the geometry endpoint, wi
     if (req.url().includes(`/v1/files/${fileId}/geometry`)) geometryRequests.push(req.url());
   });
 
-  await page.goto(`/dev/structure/${fileId}`);
+  // The promoted home of the viewer: the workspace's Structure tab (moved out of the dev spike by
+  // UI redesign S5). Same viewer, same render proof.
+  await page.goto(`/f/${fileId}/structure`);
 
   // The mount completes: Mol* initializes WebGL, builds the structure from the geometry JSON, and
   // only then marks the container `data-mounted`. The dev server compiles cold, so the timeout is

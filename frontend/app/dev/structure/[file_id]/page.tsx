@@ -5,9 +5,16 @@
  * against a chosen file's geometry endpoint. This is the minimal-mount evidence that a canonical
  * object renders from `/v1/files/{file_id}/geometry` with no intermediate format, plus the S3
  * scrub harness (the window links below drive client-side navigations so the S3 journey measures
- * heap across sequential mounts in one JS context). **Not** the Structure tab (that is M60) and
- * not a production surface: in a production build (`NODE_ENV === "production"`, as `next build`
- * bakes) the page renders a gate notice instead of the viewer.
+ * heap across sequential mounts in one JS context).
+ *
+ * **Retained under UI redesign S5 (D246-adjacent; Rev 1.91).** The `/f/[file_id]/structure`
+ * workspace tab (S2) is now the promoted home of the viewer, but this spike stays: the heap
+ * measurement journeys (`e2e/geometry-spike.spec.ts`, `e2e/trajectory-playback-memory.spec.ts`)
+ * are the committed benchmark harness, and they depend on this surface's client-side window-link
+ * scrub mechanism to measure browser heap across sequential mounts *in one JS context* — exactly
+ * what a scrub of the M61 playback budget needs. It is still **not** a production surface: in a
+ * production build (`NODE_ENV === "production"`, as `next build` bakes) the page renders a gate
+ * notice instead of the viewer.
  */
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
