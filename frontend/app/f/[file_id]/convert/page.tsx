@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
+import { PresetManager } from "@/components/presets/PresetManager";
 import { TargetPicker } from "@/components/TargetPicker";
 import { ConversionJob } from "@/components/workspace/ConversionJob";
 import { apiClient } from "@/lib/api/client";
@@ -34,6 +35,11 @@ export default function ConvertTabPage() {
   const jobId = useSearchParams().get("job");
 
   const [submitError, setSubmitError] = useState<ErrorEnvelopeModel | null>(null);
+  // The picker's live (target, mode) selection — reported upward for "save this as a preset" (S4).
+  const [selection, setSelection] = useState<{
+    target: string;
+    mode: "permissive" | "strict";
+  } | null>(null);
 
   const inspection = useInspection(fileId);
   const capabilities = useQuery(capabilitiesQuery());
@@ -109,8 +115,18 @@ export default function ConvertTabPage() {
               discovery={inspection.report}
               targets={targets}
               onConvert={handleConvert}
+              onSelection={setSelection}
             />
           ) : null}
+          {"" /* Saved presets (S4) — remembers a target + posture; re-converting pauses for any
+               file-specific recovery decisions (P4) instead of silently defaulting them. */}
+          <PresetManager
+            currentSelection={selection}
+            targetName={
+              selection ? targets.find((t) => t.format_id === selection.target)?.format_name ?? null : null
+            }
+            onConvert={handleConvert}
+          />
         </>
       )}
     </main>

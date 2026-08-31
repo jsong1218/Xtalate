@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { Inventory } from "@/components/Inventory";
 import { useInspection } from "@/lib/api/useInspection";
+import { pushRecent } from "@/lib/prefs/recents";
 import type { DiscoveryReport } from "@/lib/report/types";
 
 /**
@@ -101,6 +102,29 @@ export default function InspectTabPage() {
 
   const [override, setOverride] = useState<string | undefined>(undefined);
   const inspection = useInspection(fileId, override);
+  // A stable "ready" handle so the render's `.report` access is explicitly narrowed to the state
+  // that actually carries it (the status-union ternary narrows the error/loading branches cleanly;
+  // this makes the ready branch unambiguous).
+  const readyReport = inspection.status === "ready" ? inspection : null;
+
+  // Record this file as a recent (UI redesign S4, D246, D-R6): the recents strip + the command
+  // palette read the same localStorage list, so a file you opened seconds ago is one click away.
+  // Keyed by fileId so a re-render of the cached inspection never duplicates the entry.
+  const pushedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!readyReport || pushedFor.current === fileId) return;
+    pushedFor.current = fileId;
+    const report = readyReport.report;
+    pushRecent({
+      key: fileId,
+      href: `/f/${fileId}`,
+      filename: report.file.filename ?? fileId,
+      format_id: report.format.format_id,
+      last_seen_at: new Date().toISOString(),
+    });
+    // Depends on the narrowed `readyReport` (null until a successful inspection lands); never on
+    // `inspection.report` directly, which does not exist in the loading/error states.
+  }, [readyReport, fileId]);
 
   return (
     <main className="space-y-8">
@@ -115,13 +139,13 @@ export default function InspectTabPage() {
             Upload a different file
           </Link>
         </div>
-      ) : (
+      ) : readyReport ? (
         <>
-          <FileHeader report={inspection.report} override={override} onOverride={setOverride} />
-          <StructureSummary report={inspection.report} />
-          <Inventory report={inspection.report} />
+          <FileHeader report={readyReport.report} override={override} onOverride={setOverride} />
+          <StructureSummary report={readyReport.report} />
+          <Inventory report={readyReport.report} />
         </>
-      )}
+      ) : null}
     </main>
   );
 }

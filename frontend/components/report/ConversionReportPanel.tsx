@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { labelForPath, labelForScenario } from "@/lib/mapping";
 import {
   buildReportRows,
@@ -387,10 +387,31 @@ export function ConversionReportPanel({
 }) {
   const [mode, setMode] = useState<GroupingMode>(() => loadGroupingMode());
   const [filter, setFilter] = useState<ReportFilter>("all");
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // The normalized view model — one row per model entry (the no-loss invariant's home).
   const rows = useMemo(() => buildReportRows(report), [report]);
   const counts = useMemo(() => countByFilter(rows), [rows]);
+
+  // Report-row keyboard nav (S4, design spec §6): `j` / `k` move focus between rows when focus is
+  // already inside the panel (the same vocabulary as the / filter shortcut). Rows are reachable but
+  // not in the Tab order (Row.tsx renders tabIndex -1 + data-report-row).
+  function onRowNav(e: React.KeyboardEvent) {
+    if (e.key !== "j" && e.key !== "k") return;
+    if (!contentRef.current) return;
+    const rowsEl = Array.from(contentRef.current.querySelectorAll<HTMLElement>("[data-report-row]"));
+    if (rowsEl.length === 0) return;
+    e.preventDefault();
+    const current = document.activeElement as HTMLElement | null;
+    const idx = current && rowsEl.includes(current) ? rowsEl.indexOf(current) : -1;
+    const next = e.key === "j" ? (idx + 1) % rowsEl.length : (idx - 1 + rowsEl.length) % rowsEl.length;
+    if (e.key === "j" && idx === -1) {
+      // No active row yet: j drops onto the first row.
+      rowsEl[0].focus();
+    } else {
+      rowsEl[next].focus();
+    }
+  }
 
   function changeMode(next: GroupingMode) {
     setMode(next);
@@ -401,7 +422,11 @@ export function ConversionReportPanel({
   const target = report.target;
 
   return (
-    <div className="space-y-4 rounded-lg border border-line p-4">
+    <div
+      ref={contentRef}
+      onKeyDown={onRowNav}
+      className="space-y-4 rounded-lg border border-line p-4 focus-within:ring-1 focus-within:ring-accent"
+    >
       <header className="space-y-3">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold text-strong">Conversion report</h2>

@@ -186,6 +186,22 @@ describe("ConversionReportPanel (Part 4 §2 / Part 7 §4.3)", () => {
     expect(frameDrop.className).toContain("font-mono");
   });
 
+  it("j/k move focus between report rows (S4 row keyboard nav)", () => {
+    render(<ConversionReportPanel report={report} />);
+    const rows = screen.getAllByTestId("removed-row");
+    expect(rows.length).toBeGreaterThan(1);
+
+    // The rows are script-focusable but not in the Tab order.
+    expect(rows[0]).toHaveAttribute("tabindex", "-1");
+
+    // `j` from inside the panel drops focus onto the first row.
+    rows[1].focus();
+    fireEvent.keyDown(rows[1], { key: "k" });
+    expect(document.activeElement).toBe(rows[0]);
+    fireEvent.keyDown(rows[0], { key: "j" });
+    expect(document.activeElement).toBe(rows[1]);
+  });
+
   it("omits empty loss sections but never the affirmative summary (empty-state)", () => {
     // A clean conversion: everything preserved, nothing removed, assumed, or warned. The loss
     // sections are absent (a heading with zero rows would be noise), but the always-present summary

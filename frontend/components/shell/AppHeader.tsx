@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CommandPaletteTrigger } from "@/components/command/CommandPaletteTrigger";
 import { NotifyToggle } from "@/lib/notify/NotifyPreferenceProvider";
 import { ThemeToggle } from "@/lib/theme/ThemeProvider";
 
@@ -54,6 +55,8 @@ export function AppHeader() {
           ))}
         </nav>
         <div className="flex shrink-0 items-center gap-2">
+          {/* The ⌘K command palette (UI redesign S4): visible button + global ⌘K/Ctrl-K shortcut. */}
+          <CommandPaletteTrigger />
           <NotifyToggle />
           <ThemeToggle />
         </div>

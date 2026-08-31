@@ -1,8 +1,18 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppHeader } from "./AppHeader";
 import { NotifyPreferenceProvider } from "@/lib/notify/NotifyPreferenceProvider";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
+
+// The header mounts the ⌘K palette (S4), which uses the Next router for its navigation — a real
+// router context is a browser thing, so the standalone test provides a no-op push.
+const pushMock = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 /**
  * The app-shell header (pre-M36 frontend-redesign addendum, Slice S2): a home wordmark on the left,
@@ -12,12 +22,19 @@ import { ThemeProvider } from "@/lib/theme/ThemeProvider";
  * here (as it is in the real tree).
  */
 function renderHeader() {
+  // QueryClientProvider: the ⌘K palette (S4) reads `/v1/capabilities` via react-query. It stays
+  // disabled while closed, so the provider here is inert — present for the tree, like the app root.
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+  });
   return render(
-    <ThemeProvider>
-      <NotifyPreferenceProvider>
-        <AppHeader />
-      </NotifyPreferenceProvider>
-    </ThemeProvider>,
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <NotifyPreferenceProvider>
+          <AppHeader />
+        </NotifyPreferenceProvider>
+      </ThemeProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -54,6 +71,13 @@ describe("AppHeader", () => {
     expect(convert.className).toContain("accent-text");
     // No hard-coded slate/blue for the themed role.
     expect(convert.className).not.toMatch(/text-blue-|text-slate-/);
+  });
+
+  it("mounts the command-palette trigger (⌘K) with the dialog affordance (S4)", () => {
+    renderHeader();
+    const trigger = screen.getByRole("button", { name: /Search/i });
+    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
   });
 
   it("mounts the theme toggle", () => {

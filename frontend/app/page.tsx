@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api/client";
+import { RecentsStrip } from "@/components/history/RecentsStrip";
 import { LossTag } from "@/components/loss/icons";
 import { buttonClasses } from "@/components/ui/Button";
 import { LandingUpload } from "@/components/upload/LandingUpload";
@@ -107,6 +108,12 @@ export default async function LandingPage() {
         </div>
         <LandingUpload />
       </section>
+
+      {/* One click back to a file you were just working on (UI redesign S4, D246): the recent-files
+          strip merges this browser's recents with /v1/history; hidden entirely until there is one. */}
+      <div className="max-w-2xl">
+        <RecentsStrip />
+      </div>
     </main>
   );
 }

@@ -33,10 +33,15 @@ export function Row({
   id?: string;
 }) {
   return (
+    // tabIndex -1 (never in the tab order) but focusable on demand — the S4 report-row keyboard
+    // nav (j/k) moves focus between rows; it needs them reachable to focus, but they must not join
+    // the page's Tab sequence (the tooltip/section groupings already own the tab stops).
     <li
       id={id}
       data-testid={testId}
-      className="flex scroll-mt-24 gap-2.5 px-3 py-2"
+      data-report-row
+      tabIndex={-1}
+      className="flex scroll-mt-24 gap-2.5 px-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       <LossIcon kind={kind} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1 space-y-1">

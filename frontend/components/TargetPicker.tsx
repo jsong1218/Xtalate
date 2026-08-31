@@ -114,12 +114,15 @@ export function TargetPicker({
   discovery,
   targets,
   onConvert,
+  onSelection,
 }: {
   discovery: DiscoveryReport;
   /** Write-capable formats (see `writableTargets`). */
   targets: FormatCapabilities[];
   /** Initiate the conversion — the page POSTs `/v1/convert` and routes to the job (M29). */
   onConvert: (targetFormatId: string, mode: "permissive" | "strict") => void | Promise<void>;
+  /** Report the currently selected (target, mode) — lets the hosting page offer preset-save (S4). */
+  onSelection?: (selection: { target: string; mode: "permissive" | "strict" }) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<"permissive" | "strict">("permissive");
@@ -140,6 +143,11 @@ export function TargetPicker({
     () => (selectedTarget ? buildPreflightPreview(discovery, selectedTarget) : null),
     [discovery, selectedTarget],
   );
+
+  // Report the live selection upward so the hosting page can offer "save this as a preset" (S4).
+  useEffect(() => {
+    if (onSelection && selectedTarget) onSelection({ target: selectedTarget.format_id, mode });
+  }, [onSelection, selectedTarget, mode]);
 
   const confirmingMode = MODES.find((m) => m.value === confirming?.mode) ?? null;
   const confirmConvertRef = useRef<HTMLButtonElement>(null);
