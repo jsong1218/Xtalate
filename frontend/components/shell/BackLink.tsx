@@ -14,7 +14,7 @@ export function BackLink({ href, label }: { href: string; label: string }) {
     <Link
       href={href}
       aria-label={`Back to ${label}`}
-      className="inline-flex items-center gap-1.5 rounded-sm text-sm text-muted transition-colors hover:text-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+      className="inline-flex items-center gap-1.5 rounded-sm text-sm text-accent-text transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
     >
       <svg
         width="16"

@@ -131,6 +131,14 @@ function checkTheme(theme: string, block: () => string) {
       expect(contrast(t("accent-fg"), t("accent"))).toBeGreaterThanOrEqual(AA);
     });
 
+    // The forward-action accent is also rendered as *text* — links and the active-tab label — on
+    // the page surface (UI redesign S1, D243). Teal-as-text on the dark surface needs a lighter
+    // tone than the button-fill teal (which only reaches ~3.3:1 on slate-900), so the two are
+    // separate tokens: `--accent-text` vs `--accent`. Guard the pair in both themes.
+    it("accent text clears AA on the page surface (links, active tab)", () => {
+      expect(contrast(t("accent-text"), t("surface"))).toBeGreaterThanOrEqual(AA);
+    });
+
     // The viewer chrome pairs (v1.6 M63-S2, D241): the Structure/Compare tab chrome must meet the
     // WCAG AA bar of the v0.6 pass — the canvas is not the accessible record, but the chrome is.
     // The ◆ supplied-violet annotation and the exported-frame marker reuse the already-guarded §4

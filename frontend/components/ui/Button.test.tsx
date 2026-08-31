@@ -27,6 +27,12 @@ describe("Button", () => {
     expect(button.className).toContain("text-accent-fg");
   });
 
+  it("primary variant fills with the accent token, never a hard-coded colour", () => {
+    const cls = buttonClasses("primary");
+    expect(cls).toContain("bg-accent");
+    expect(cls).not.toMatch(/bg-blue-|bg-teal-|#/);
+  });
+
   it("defaults to the primary variant", () => {
     render(<Button>Convert</Button>);
     expect(screen.getByRole("button", { name: "Convert" }).className).toContain("bg-accent");

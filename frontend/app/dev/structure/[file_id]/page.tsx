@@ -38,10 +38,10 @@ export default function DevStructurePage() {
   if (process.env.NODE_ENV === "production") {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10">
-        <h1 className="text-lg font-semibold text-slate-800">
+        <h1 className="text-lg font-semibold text-strong">
           Dev-only spike surface
         </h1>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="mt-2 text-sm text-muted">
           This route is the M59-S2/S3 render proof and is not available in
           production builds. The Structure tab ships in M60.
         </p>
@@ -51,27 +51,27 @@ export default function DevStructurePage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
-      <h1 className="text-lg font-semibold text-slate-800">
+      <h1 className="text-lg font-semibold text-strong">
         Structure render proof{" "}
-        <span className="text-xs font-normal text-slate-400">
+        <span className="text-xs font-normal text-faint">
           (dev-only spike surface — M59-S2/S3)
         </span>
       </h1>
-      <p className="mt-1 text-xs text-slate-500">
-        Renders file <code className="rounded bg-slate-100 px-1">{file_id}</code>{" "}
+      <p className="mt-1 text-xs text-faint">
+        Renders file <code className="rounded bg-well px-1">{file_id}</code>{" "}
         from its canonical geometry endpoint — no intermediate format, no export.
         {frames ? (
           <>
             {" "}
-            <code className="rounded bg-slate-100 px-1">frames={frames}</code>
+            <code className="rounded bg-well px-1">frames={frames}</code>
           </>
         ) : null}
       </p>
       <div className="mt-4">
         {status === "loading" ? (
-          <p className="text-sm text-slate-500">Loading geometry…</p>
+          <p className="text-sm text-faint">Loading geometry…</p>
         ) : status === "error" ? (
-          <p className="text-sm text-rose-600">
+          <p className="text-sm text-cb-fail">
             Could not load geometry: {String(error)}
           </p>
         ) : geometry ? (
@@ -92,15 +92,15 @@ export default function DevStructurePage() {
             {/* The S3 scrub harness: client-side window links so the spike journey measures heap
                 across sequential mounts in one JS context (the M61 scrub story). */}
             <div className="mt-2 flex flex-wrap items-center gap-1">
-              <span className="text-xs text-slate-400">scrub windows:</span>
+              <span className="text-xs text-faint">scrub windows:</span>
               {SCRUB_WINDOWS.map((w) => (
                 <Link
                   key={w}
                   href={`/dev/structure/${file_id}?frames=${w}`}
-                  className={`rounded border px-1.5 py-0.5 text-xs hover:bg-slate-50 ${
+                  className={`rounded border px-1.5 py-0.5 text-xs hover:bg-raised ${
                     frames === w
-                      ? "border-slate-400 bg-slate-100 text-slate-700"
-                      : "border-slate-300 text-slate-500"
+                      ? "border-line-strong bg-well text-body"
+                      : "border-line text-faint"
                   }`}
                 >
                   {w}

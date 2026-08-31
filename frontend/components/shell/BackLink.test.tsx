@@ -26,4 +26,12 @@ describe("BackLink", () => {
     expect(svg).not.toBeNull();
     expect(svg).toHaveAttribute("aria-hidden", "true");
   });
+
+  it("renders the back action in the accent-text token, never a hard-coded colour", () => {
+    render(<BackLink href="/formats" label="All formats" />);
+    const link = screen.getByRole("link");
+    // The interactive emphasis is the themed accent-text token (flips correctly in dark mode).
+    expect(link.className).toContain("text-accent-text");
+    expect(link.className).not.toMatch(/text-blue-|text-slate-/);
+  });
 });

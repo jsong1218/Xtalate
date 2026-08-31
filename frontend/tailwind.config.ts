@@ -23,6 +23,19 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        // Monospace for every value, count, and identifier (UI redesign S1, D243). System stack
+        // only — no web font (keeps the self-host lean and the CSP simple). Components write
+        // `font-mono`; the DataValue primitive applies it to scientific readouts.
+        mono: [
+          "ui-monospace",
+          "SF Mono",
+          "SFMono-Regular",
+          "Menlo",
+          "Consolas",
+          "monospace",
+        ],
+      },
       colors: {
         // Semantic surface chrome — the neutral tokens every page is built from (globals.css).
         // Components write `bg-surface` / `text-body` / `border-line` instead of `bg-white` /
@@ -48,6 +61,10 @@ const config: Config = {
         accent: "var(--accent)", // bg-accent    ← forward-action accent (S3)
         "accent-fg": "var(--accent-fg)",
         "accent-hover": "var(--accent-hover)",
+        // The accent used as text — links, the active-tab label (UI redesign S1, D243). A separate
+        // token from the fill because teal-as-text on the dark surface needs a lighter tone
+        // (`--accent-text` in globals.css) than the button fill can give.
+        "accent-text": "var(--accent-text)", // text-accent-text ← links / active tab
         cb: {
           // Foreground / icon colors, one per §4 meaning.
           preserve: "var(--cb-preserve)",

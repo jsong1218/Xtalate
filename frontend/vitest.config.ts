@@ -18,7 +18,12 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
-    include: ["{app,components,lib}/**/*.{test,spec}.{ts,tsx}"],
+    include: [
+      "{app,components,lib}/**/*.{test,spec}.{ts,tsx}",
+      // The tailwind token test lives beside the config it pins (UI redesign S1) — outside the
+      // component dirs above, so it is matched explicitly or it would silently never run in CI.
+      "tailwind.config.test.ts",
+    ],
     exclude: ["e2e/**", "node_modules/**"],
   },
 });

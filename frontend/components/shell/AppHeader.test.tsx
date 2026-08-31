@@ -46,6 +46,15 @@ describe("AppHeader", () => {
     }
   });
 
+  it("uses the accent-text token for interactive nav emphasis, not a hard-coded colour", () => {
+    renderHeader();
+    const convert = screen.getByRole("link", { name: "Convert" });
+    // Hover/active emphasis is the themed accent-text token, so it flips correctly in dark mode.
+    expect(convert.className).toContain("accent-text");
+    // No hard-coded slate/blue for the themed role.
+    expect(convert.className).not.toMatch(/text-blue-|text-slate-/);
+  });
+
   it("mounts the theme toggle", () => {
     renderHeader();
     // Default is light, so the toggle offers to switch to dark.

@@ -48,10 +48,15 @@
   --inverse-fg: #ffffff; /* text on the inverse surface             */
   --inverse-hover: #334155; /* inverse hover (slate-700)               */
 
-  /* The forward-action accent (used by the S3 Button primitive; defined here so it flips too). */
-  --accent: #2563eb; /* blue-600                                */
+  /* The forward-action accent (used by the S3 Button primitive; defined here so it flips too).
+     Precision-instrument deep teal (UI redesign S1, D243): the fill + hover pair paint
+     buttons/active surfaces; `--accent-text` is the same accent used as *text* (links, the
+     active-tab label). The two are separate tokens because teal-as-text on the dark surface needs
+     a lighter tone than the fill can give (the dark block below). */
+  --accent: #0e7c86; /* teal fill; white-on-fill ~4.9:1 (was blue-600) */
   --accent-fg: #ffffff;
-  --accent-hover: #1d4ed8; /* blue-700                                */
+  --accent-hover: #0b646c; /* darker on hover (light-theme direction)     */
+  --accent-text: #0e7c86; /* accent as text on the white surface ~4.9:1  */
 
   /* Loss foregrounds, one per §4 meaning (on the light surface). */
   --cb-preserve: #15803d; /* green  — present / preserved / check passed        */
@@ -102,12 +107,14 @@
   --inverse-fg: #0f172a; /* dark text on it                         */
   --inverse-hover: #cbd5e1; /* slate-300                               */
 
-  /* Same blue-600 as light: white text on it clears AA (5.07:1 — blue-500 would be only 3.68:1,
-     failing white-on-fill), and it still reads as a saturated blue against the dark slate surface.
-     The hover lifts *brighter* here (the opposite direction from light), the dark-surface way. */
-  --accent: #2563eb; /* blue-600 */
+  /* Same teal as light: white text on it clears AA (~4.9:1), and it still reads as a saturated
+     teal against the dark slate surface. The hover lifts *brighter* here (the opposite direction
+     from light), the dark-surface way. The accent-as-*text* tone lightens further — the fill teal
+     only reaches ~3.3:1 on slate-900, so text uses its own `--accent-text` (#3fc9d6, ~9:1). */
+  --accent: #0e7c86; /* teal fill, kept dark enough for white-on-fill ~4.9:1 */
   --accent-fg: #ffffff;
-  --accent-hover: #3b82f6; /* blue-500 (brighter on hover, for the dark surface) */
+  --accent-hover: #14a0ad; /* brighter on hover (dark-theme direction)        */
+  --accent-text: #3fc9d6; /* lighter teal: accent-as-text >=4.5:1 on slate-900 */
 
   /* Loss foregrounds, lightened so each clears AA on the dark surface and its dark tint. */
   --cb-preserve: #4ade80; /* green-400  */
