@@ -278,12 +278,16 @@ describe("CompareTab — two synchronized viewers", () => {
   it("aligns the two viewers on a shared subgrid", () => {
     renderReady(1, 1);
     const grid = screen.getByTestId("compare-grid");
-    // The outer grid declares the explicit three-row template (`lg:grid-rows-[auto_auto_auto]`);
-    // each column wrapper is the actual subgrid participant, inheriting those rows via
-    // `lg:grid-rows-subgrid` so both viewers' annotation/canvas/control rows line up (M62-S5,
-    // D239). Checked against the grid's subtree (not `grid.className` alone) since the subgrid
-    // class lives on the column divs, not the outer container itself.
-    expect(grid.innerHTML).toMatch(/lg:grid-rows-subgrid|grid-rows-subgrid/);
+    // The outer grid itself declares the explicit three-row template that its columns inherit
+    // from (M62-S5, D239) …
+    expect(grid.className).toMatch(/lg:grid-rows-\[auto_auto_auto\]/);
+    // … and BOTH direct-child columns — not just one — must be wired as subgrid participants, or
+    // the two viewers' annotation/canvas/control rows would silently stop lining up.
+    const columns = Array.from(grid.children);
+    expect(columns).toHaveLength(2);
+    for (const col of columns) {
+      expect((col as HTMLElement).className).toMatch(/lg:grid-rows-subgrid/);
+    }
   });
 });
 
