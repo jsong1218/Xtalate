@@ -49,12 +49,55 @@ test("a canonical object renders in embedded Mol* from the geometry endpoint, wi
   // …and never through a hidden export.
   expect(exportRequests).toEqual([]);
 
-  // Bonds-off by default; the heuristic badge appears iff toggled on (D234).
+  // Bonds-off by default; the heuristic badge appears iff toggled on (D234). S7 (D248) makes the
+  // toggle actually *draw* the bonds, so the proof is now render-level: the mount sets
+  // `data-bonds-drawn` from whether Mol* added the ball-and-stick representation — false at rest,
+  // true only once the heuristic is on — not merely the badge copy.
   await expect(page.getByText(/display heuristic/)).toHaveCount(0);
+  await expect(mount).toHaveAttribute("data-bonds-drawn", "false");
   await page.getByRole("button", { name: /Show bonds heuristic/ }).click();
   await expect(
     page.getByText("Bonds are a display heuristic, not file content")
   ).toBeVisible();
+  await expect(mount).toHaveAttribute("data-bonds-drawn", "true");
   await page.getByRole("button", { name: /Hide bonds heuristic/ }).click();
   await expect(page.getByText(/display heuristic/)).toHaveCount(0);
+  await expect(mount).toHaveAttribute("data-bonds-drawn", "false");
+});
+
+/**
+ * S7 (D248) viewer controls on the promoted Structure tab: the reset-view control, the expand
+ * overlay (a real focus-trapped dialog that Escape closes), and the theme-aware Mol\* background.
+ * The WebGL background colour itself is not readable from Playwright, so dark mode is proven at the
+ * two observable seams — `<html data-theme="dark">` after the header toggle, and the canvas staying
+ * mounted (`data-mounted="true"`) across the theme flip rather than tearing down and re-mounting.
+ */
+test("the Structure tab's reset/expand controls work and the viewer survives a theme flip", async ({
+  page,
+  request,
+}) => {
+  const fileId = await uploadFixture(request, FIXTURES.workedExample);
+  await page.goto(`/f/${fileId}/structure`);
+
+  const mount = page.locator("[data-mounted=true]");
+  await expect(mount).toBeVisible({ timeout: 60_000 });
+
+  // Reset view is present and clickable; the mount survives the camera reset (no re-mount).
+  await page.getByRole("button", { name: /reset view/i }).click();
+  await expect(mount).toBeVisible();
+
+  // Expand opens the focus-trapped dialog; Escape closes it and no dialog remains.
+  await page.getByRole("button", { name: /expand/i }).click();
+  const dialog = page.getByRole("dialog", { name: /structure viewer/i });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // Dark mode: the header toggle flips `<html data-theme>`; the viewer re-themes its background in
+  // place — the canvas stays mounted across the flip (theme-aware, not a re-mount).
+  const html = page.locator("html");
+  await expect(html).toHaveAttribute("data-theme", "light");
+  await page.getByRole("button", { name: /switch to dark mode/i }).click();
+  await expect(html).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator("[data-mounted=true]")).toBeVisible();
 });

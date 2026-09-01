@@ -295,4 +295,20 @@ test("the Compare flagship: RMSD from the Validation Report, verbatim removed re
   await expect(
     compare.locator(`a[href="#assumption-${suppliedCell!.from_assumption}"]`),
   ).toBeVisible();
+
+  // 4. The two Mol* canvases line up (S7 F1, D248): the source column carries a supplied-lattice
+  //    badge and the output column does not, which used to push the right canvas lower than the
+  //    left. The CSS subgrid now shares one row track across both columns, so the two canvas boxes
+  //    start at the same vertical offset. (Playwright's Desktop Chrome viewport is 1280px wide, so
+  //    the `lg:` subgrid is active.)
+  const canvases = compare.getByTestId("viewer-canvas");
+  await expect(canvases).toHaveCount(2);
+  const left = await canvases.nth(0).boundingBox();
+  const right = await canvases.nth(1).boundingBox();
+  expect(left, "the source canvas must have a layout box").not.toBeNull();
+  expect(right, "the output canvas must have a layout box").not.toBeNull();
+  expect(
+    Math.abs(left!.y - right!.y),
+    "the two Mol* canvases must share a top offset (subgrid alignment)",
+  ).toBeLessThan(2);
 });
