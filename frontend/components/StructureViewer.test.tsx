@@ -115,6 +115,18 @@ describe("StructureViewer", () => {
     expect(screen.getByTestId("viewer-controls")).toBeInTheDocument();
   });
 
+  it("switches its root to the subgrid template only when `subgrid` is requested (M62-S5)", () => {
+    const { container, rerender } = render(<StructureViewer geometry={fixture} />);
+    // A lone viewer (no `subgrid`) keeps its own intrinsic three-row template.
+    expect(container.firstElementChild).toHaveClass("grid-rows-[auto_auto_auto]");
+    expect(container.firstElementChild?.className).not.toMatch(/grid-rows-subgrid/);
+
+    rerender(<StructureViewer geometry={fixture} subgrid />);
+    // Under a parent subgrid (the Compare tab), the root inherits the parent's rows instead.
+    expect(container.firstElementChild?.className).toMatch(/grid-rows-subgrid/);
+    expect(container.firstElementChild?.className).not.toMatch(/grid-rows-\[auto_auto_auto\]/);
+  });
+
   it("keeps the bonds heuristic badge and drives the render when toggled on", async () => {
     render(<StructureViewer geometry={fixture} />);
     const mount = await screen.findByTestId("molstar-mount");

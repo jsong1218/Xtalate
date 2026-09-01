@@ -113,6 +113,14 @@ export interface StructureViewerProps {
    * caller's decision).
    */
   frameControl?: { frame: number };
+  /**
+   * Subgrid participation (M62-S5): when true, the root's three rows (annotations / canvas /
+   * controls) inherit their heights from a parent CSS grid via `grid-rows-subgrid` instead of
+   * sizing themselves — only meaningful when the parent (the Compare tab) has already declared a
+   * matching three-row grid and placed this viewer as one of its subgrid participants. A lone
+   * viewer omits this prop and keeps its own intrinsic `grid-rows-[auto_auto_auto]` sizing.
+   */
+  subgrid?: boolean;
 }
 
 /**
@@ -194,6 +202,7 @@ export function StructureViewer({
   cameraControls,
   playIntervalMs,
   frameControl,
+  subgrid,
 }: StructureViewerProps) {
   const [bondsEnabled, setBondsEnabled] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -254,8 +263,19 @@ export function StructureViewer({
     </>
   );
 
+  // Subgrid participation (M62-S5): under CompareTab's parent grid, the three rows below inherit
+  // their heights from the parent's `lg:grid-rows-[auto_auto_auto]` template via
+  // `lg:grid-rows-subgrid` instead of sizing themselves — the parent's `lg:row-span-3` wrapper
+  // already reserves the three rows, this only opts the viewer's own grid into inheriting them.
+  // Below `lg` (and always for a lone, non-subgrid viewer) the rows keep their intrinsic auto
+  // sizing, which is the existing single-column mobile behavior.
+  const rootClassName =
+    subgrid === true
+      ? "grid gap-2 lg:row-span-3 lg:grid-rows-subgrid"
+      : "grid grid-rows-[auto_auto_auto] gap-2";
+
   return (
-    <div className="grid grid-rows-[auto_auto_auto] gap-2">
+    <div className={rootClassName}>
       <div data-testid="viewer-annotations" className="space-y-2">
         {label ? (
           <div className="text-xs font-medium text-muted">{label}</div>
