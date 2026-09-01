@@ -21,7 +21,13 @@
  * mounts for a multi-frame object, the single-frame render path stays react-query-free.
  */
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { CanonicalGeometry } from "@/lib/geometry/useGeometry";
 import {
   useTrajectoryWindow,
@@ -30,7 +36,7 @@ import {
 import { TrajectoryScrubber } from "./TrajectoryScrubber";
 import { LossTag } from "@/components/loss/icons";
 import { StructureLegend } from "./StructureLegend";
-import type { CameraControls } from "./StructureViewerMolstar";
+import type { CameraControls, ViewerControls } from "./StructureViewerMolstar";
 
 const MolstarView = dynamic(() => import("./StructureViewerMolstar"), {
   ssr: false,
@@ -119,6 +125,8 @@ function TrajectoryViewer({
   suppliedCell,
   trajectorySource,
   cameraControls,
+  bonds,
+  viewerControls,
   playIntervalMs,
   frameControl,
 }: {
@@ -126,6 +134,8 @@ function TrajectoryViewer({
   suppliedCell?: boolean;
   trajectorySource: GeometrySource;
   cameraControls?: CameraControls;
+  bonds?: boolean;
+  viewerControls?: ViewerControls;
   playIntervalMs?: number;
   frameControl?: { frame: number };
 }) {
@@ -163,6 +173,8 @@ function TrajectoryViewer({
         frameIndex={mountFrame}
         suppliedCell={suppliedCell}
         cameraControls={cameraControls}
+        bonds={bonds}
+        viewerControls={viewerControls}
       />
       {trajectory.error ? (
         <p role="status" className="text-xs text-muted" data-testid="trajectory-error">
@@ -183,69 +195,165 @@ export function StructureViewer({
   frameControl,
 }: StructureViewerProps) {
   const [bondsEnabled, setBondsEnabled] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const resetRef = useRef<(() => void) | null>(null);
+  const viewerControls = useMemo(
+    () => ({
+      onReady(controls: { resetCamera(): void }) {
+        resetRef.current = controls.resetCamera;
+        return () => {
+          resetRef.current = null;
+        };
+      },
+    }),
+    [],
+  );
   const multiFrame =
     geometry.frame_count > 1 && trajectorySource !== undefined;
 
-  return (
-    <div className="flex flex-col gap-2">
-      {label ? (
-        <div className="text-xs font-medium text-muted">{label}</div>
-      ) : null}
-      {suppliedCell ? (
+  const viewerBody = (
+    <>
+      {multiFrame && trajectorySource ? (
+        <TrajectoryViewer
+          geometry={geometry}
+          suppliedCell={Boolean(suppliedCell)}
+          trajectorySource={trajectorySource}
+          cameraControls={cameraControls}
+          bonds={bondsEnabled}
+          viewerControls={viewerControls}
+          playIntervalMs={playIntervalMs}
+          frameControl={frameControl}
+        />
+      ) : (
+        <MolstarView
+          geometry={geometry}
+          frameIndex={geometry.frame_index_base ?? 0}
+          suppliedCell={Boolean(suppliedCell)}
+          cameraControls={cameraControls}
+          bonds={bondsEnabled}
+          viewerControls={viewerControls}
+        />
+      )}
+      {bondsEnabled ? (
         <div
-          data-testid="supplied-lattice"
-          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-cb-assumption bg-cb-assumption-bg px-2 py-1.5"
+          role="status"
+          className="absolute bottom-2 left-2 rounded bg-bonds-bg px-2 py-1 text-xs text-bonds-fg"
         >
-          <LossTag kind="assumption">This lattice was supplied by recovery</LossTag>
-          <a
-            href={`#assumption-${suppliedCell.fromAssumption}`}
-            className="text-xs font-medium text-cb-assumption underline"
-          >
-            See Assumption {suppliedCell.fromAssumption}
-          </a>
+          {BONDS_HEURISTIC_BADGE}
         </div>
       ) : null}
-      <StructureLegend species={geometry.species} />
-      {geometry.cell == null ? (
-        <p data-testid="no-cell-caption" className="text-xs text-muted">
-          {NO_CELL_CAPTION}
-        </p>
-      ) : null}
-      <div className="relative h-96 w-full overflow-hidden rounded border border-line">
-        {multiFrame && trajectorySource ? (
-          <TrajectoryViewer
-            geometry={geometry}
-            suppliedCell={Boolean(suppliedCell)}
-            trajectorySource={trajectorySource}
-            cameraControls={cameraControls}
-            playIntervalMs={playIntervalMs}
-            frameControl={frameControl}
-          />
-        ) : (
-          <MolstarView
-            geometry={geometry}
-            frameIndex={geometry.frame_index_base ?? 0}
-            suppliedCell={Boolean(suppliedCell)}
-            cameraControls={cameraControls}
-          />
-        )}
-        {bondsEnabled ? (
+    </>
+  );
+
+  return (
+    <div className="grid grid-rows-[auto_auto_auto] gap-2">
+      <div data-testid="viewer-annotations" className="space-y-2">
+        {label ? (
+          <div className="text-xs font-medium text-muted">{label}</div>
+        ) : null}
+        {suppliedCell ? (
           <div
-            role="status"
-            className="absolute bottom-2 left-2 rounded bg-bonds-bg px-2 py-1 text-xs text-bonds-fg"
+            data-testid="supplied-lattice"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-cb-assumption bg-cb-assumption-bg px-2 py-1.5"
           >
-            {BONDS_HEURISTIC_BADGE}
+            <LossTag kind="assumption">This lattice was supplied by recovery</LossTag>
+            <a
+              href={`#assumption-${suppliedCell.fromAssumption}`}
+              className="text-xs font-medium text-cb-assumption underline"
+            >
+              See Assumption {suppliedCell.fromAssumption}
+            </a>
           </div>
         ) : null}
+        <StructureLegend species={geometry.species} />
+        {geometry.cell == null ? (
+          <p data-testid="no-cell-caption" className="text-xs text-muted">
+            {NO_CELL_CAPTION}
+          </p>
+        ) : null}
       </div>
-      <button
-        type="button"
-        aria-pressed={bondsEnabled}
-        onClick={() => setBondsEnabled((v) => !v)}
-        className="self-start rounded border border-line px-2 py-1 text-xs text-muted hover:bg-raised"
+      <div
+        data-testid="viewer-canvas"
+        className="relative h-96 w-full overflow-hidden rounded border border-line"
       >
-        {bondsEnabled ? "Hide bonds heuristic" : "Show bonds heuristic"}
-      </button>
+        {expanded ? (
+          <div className="h-full w-full" />
+        ) : (
+          viewerBody
+        )}
+      </div>
+      {expanded ? (
+        <FullscreenViewer onClose={() => setExpanded(false)}>{viewerBody}</FullscreenViewer>
+      ) : null}
+      <div data-testid="viewer-controls" className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          aria-pressed={bondsEnabled}
+          onClick={() => setBondsEnabled((v) => !v)}
+          className="rounded border border-line px-2 py-1 text-xs text-muted hover:bg-raised"
+        >
+          {bondsEnabled ? "Hide bonds heuristic" : "Show bonds heuristic"}
+        </button>
+        <button
+          type="button"
+          onClick={() => resetRef.current?.()}
+          className="rounded border border-line px-2 py-1 text-xs text-muted hover:bg-raised"
+        >
+          Reset view
+        </button>
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="rounded border border-line px-2 py-1 text-xs text-muted hover:bg-raised"
+        >
+          Expand
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The expand overlay (D-next): a fixed-inset dialog that hosts the same `viewerBody` full-screen.
+ * Focus moves onto the dialog on open and returns to the previously focused element on close, and
+ * Escape closes it — the axe-scanned pages this viewer mounts on hold serious+critical to zero, so
+ * the dialog carries an accessible name (`aria-label`) rather than relying on visible text alone.
+ */
+function FullscreenViewer({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    ref.current?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      prev?.focus();
+    };
+  }, [onClose]);
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Structure viewer"
+      tabIndex={-1}
+      className="fixed inset-0 z-50 flex flex-col bg-surface p-4 outline-none"
+    >
+      <div className="mb-2 flex justify-end">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded border border-line px-2 py-1 text-xs text-muted hover:bg-raised"
+        >
+          Close
+        </button>
+      </div>
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded border border-line">
+        {children}
+      </div>
     </div>
   );
 }

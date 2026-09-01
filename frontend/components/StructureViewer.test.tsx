@@ -5,6 +5,7 @@
  * by the e2e journey against the live stack.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { CanonicalGeometry } from "@/lib/geometry/useGeometry";
 import { StructureViewer } from "./StructureViewer";
@@ -102,5 +103,34 @@ describe("StructureViewer", () => {
     await waitFor(() =>
       expect(screen.queryByText(/display heuristic/)).toBeNull()
     );
+  });
+
+  it("lays the viewer out as annotations / canvas / controls rows", () => {
+    render(<StructureViewer geometry={fixture} />);
+    expect(screen.getByTestId("viewer-annotations")).toBeInTheDocument();
+    expect(screen.getByTestId("viewer-canvas")).toBeInTheDocument();
+    expect(screen.getByTestId("viewer-controls")).toBeInTheDocument();
+  });
+
+  it("keeps the bonds heuristic badge and drives the render when toggled on", async () => {
+    render(<StructureViewer geometry={fixture} />);
+    const toggle = screen.getByRole("button", { name: /show bonds heuristic/i });
+    await userEvent.click(toggle);
+    expect(screen.getByText(/display heuristic, not file content/i)).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("offers reset-view and expand controls", () => {
+    render(<StructureViewer geometry={fixture} />);
+    expect(screen.getByRole("button", { name: /reset view/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /expand/i })).toBeInTheDocument();
+  });
+
+  it("opens a fullscreen overlay on expand and closes on Escape", async () => {
+    render(<StructureViewer geometry={fixture} />);
+    await userEvent.click(screen.getByRole("button", { name: /expand/i }));
+    expect(screen.getByRole("dialog", { name: /structure viewer/i })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
