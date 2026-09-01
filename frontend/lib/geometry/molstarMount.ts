@@ -107,6 +107,18 @@ export interface MountedStructureViewer {
   setWindow(geometry: CanonicalGeometry, absoluteIndex: number): Promise<void>;
   /** Dispose the plugin instance. Idempotent. */
   dispose(): void;
+  /** Set the renderer background color (theme-aware; used e.g. on a dark-mode toggle). */
+  setBackground(color: number): void;
+  /**
+   * Toggle the heuristic `ball-and-stick` bond visual over the current structure (D-next). Bonds
+   * are a display-only heuristic — the model carries no bond data, so Mol* computes them by
+   * distance/element at display time. Calls serialize, so a rapid toggle applies in order; a
+   * window swap re-applies bonds (if on) since the bond representation belongs to the deleted
+   * subtree.
+   */
+  setBonds(enabled: boolean): Promise<void>;
+  /** Reset the camera to fit the current structure (undoes any user orbit/pan/zoom). */
+  resetCamera(): void;
   /**
    * The camera get/set/observe seam (M62-S1, D239): lets the Compare tab lock the two viewers'
    * cameras together. Reading and applying a snapshot is lossless over the plugin's own state — it
@@ -141,6 +153,8 @@ export interface MountStructureViewerOptions {
    * Only meaningful when the mounted geometry carries multiple frames.
    */
   initialFrameIndex?: number;
+  /** Renderer background color (theme-aware). Defaults to Mol*'s own default when omitted. */
+  backgroundColor?: number;
 }
 
 /** The unit-cell params: full defaults + the ordinary/supplied color (D235). */
@@ -161,9 +175,15 @@ export async function mountStructureViewer(
   const plugin = new PluginContext(DefaultPluginSpec());
   await plugin.init();
   await plugin.mountAsync(target, {});
+  if (options.backgroundColor !== undefined) {
+    plugin.canvas3d?.setProps({ renderer: { backgroundColor: Color(options.backgroundColor) } });
+  }
 
   let disposed = false;
   let unitcellCell: { ref: unknown } | undefined;
+  let bondsCell: { ref: unknown } | undefined;
+  let bondsOn = false;
+  let bondsChain: Promise<void> = Promise.resolve();
   // The window currently displayed and its absolute base — both mutable: `setWindow` swaps the
   // frame set in place, so every closure below reads the *current* window, never the mount-time one.
   let windowGeometry = geometry;
@@ -252,6 +272,26 @@ export async function mountStructureViewer(
     return Boolean(unitcell);
   }
 
+  /** Add/remove the heuristic bond representation for the current structure (D-next). */
+  async function doSetBonds(enabled: boolean): Promise<void> {
+    if (disposed) return;
+    const structure = plugin.managers.structure.hierarchy.current.structures[0];
+    if (enabled) {
+      if (bondsCell || !structure) return;
+      bondsCell =
+        (await plugin.builders.structure.representation.addRepresentation(structure.cell, {
+          type: "ball-and-stick",
+          typeParams: { visuals: ["intra-bond", "inter-bond"] },
+          colorTheme: { name: "element-symbol" },
+        })) ?? undefined;
+    } else {
+      if (!bondsCell) return;
+      await plugin.state.data.build().delete(bondsCell.ref as never).commit();
+      bondsCell = undefined;
+    }
+    target.dataset.bondsDrawn = enabled && bondsCell ? "true" : "false";
+  }
+
   // The imperative frame set (M61-S1): within the mounted window, update `ModelFromTrajectory`'s
   // `modelIndex` (re-applying the transform with the new index), then redraw that frame's unit
   // cell. This is an in-place update of the existing transform, not a trajectory rebuild, so
@@ -288,6 +328,8 @@ export async function mountStructureViewer(
     windowGeometry = newGeometry;
     frameIndexBase = newGeometry.frame_index_base ?? 0;
     trajectorySelector = await buildStructure(newGeometry);
+    bondsCell = undefined; // belonged to the deleted subtree
+    if (bondsOn) await doSetBonds(true);
     // No Camera.Reset: the camera is deliberately preserved across a window boundary.
     await setFrame(absoluteIndex);
   }
@@ -307,6 +349,7 @@ export async function mountStructureViewer(
   // and sets `unitcellDrawn`, so it is the sole owner of that proof (no separate init draw); the
   // default below keeps the proof present-and-honest if `setFrame` bails before drawing.
   target.dataset.unitcellDrawn = "false";
+  target.dataset.bondsDrawn = "false";
   try {
     await setFrame(initial);
   } catch {
@@ -350,6 +393,19 @@ export async function mountStructureViewer(
       if (disposed) return;
       disposed = true;
       plugin.dispose();
+    },
+    setBackground(color: number) {
+      plugin.canvas3d?.setProps({ renderer: { backgroundColor: Color(color) } });
+    },
+    async setBonds(enabled: boolean) {
+      bondsOn = enabled;
+      bondsChain = bondsChain.then(() => doSetBonds(enabled)).catch((err) => {
+        console.error("Mol* setBonds failed:", err);
+      });
+      await bondsChain;
+    },
+    resetCamera() {
+      if (!disposed) PluginCommands.Camera.Reset(plugin);
     },
     camera: cameraSeam,
   };
