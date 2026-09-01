@@ -13,12 +13,16 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { Schemas } from "@/lib/api/client";
 import StructureViewerMolstar from "./StructureViewerMolstar";
 
-const { mountMock, setFrame, setWindow, dispose } = vi.hoisted(() => ({
-  mountMock: vi.fn(),
-  setFrame: vi.fn(async () => {}),
-  setWindow: vi.fn(async () => {}),
-  dispose: vi.fn(),
-}));
+const { mountMock, setFrame, setWindow, dispose, setBackground, setBonds, resetCamera } =
+  vi.hoisted(() => ({
+    mountMock: vi.fn(),
+    setFrame: vi.fn(async () => {}),
+    setWindow: vi.fn(async () => {}),
+    dispose: vi.fn(),
+    setBackground: vi.fn(),
+    setBonds: vi.fn(async () => {}),
+    resetCamera: vi.fn(),
+  }));
 
 vi.mock("@/lib/geometry/molstarMount", () => ({
   mountStructureViewer: mountMock,
@@ -56,7 +60,10 @@ beforeEach(() => {
   setFrame.mockClear();
   setWindow.mockClear();
   dispose.mockClear();
-  mountMock.mockResolvedValue({ setFrame, setWindow, dispose });
+  setBackground.mockClear();
+  setBonds.mockClear();
+  resetCamera.mockClear();
+  mountMock.mockResolvedValue({ setFrame, setWindow, dispose, setBackground, setBonds, resetCamera });
 });
 
 describe("StructureViewerMolstar lifecycle", () => {
@@ -104,5 +111,40 @@ describe("StructureViewerMolstar lifecycle", () => {
     // The unit-cell color is fixed at mount, so a suppliedCell change re-mounts (disposes first).
     expect(dispose).toHaveBeenCalled();
     expect(mountMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("passes a theme-aware background to the mount and updates it when theme changes", async () => {
+    document.documentElement.setAttribute("data-theme", "dark");
+    const win = windowFixture(0, 8);
+    render(<StructureViewerMolstar geometry={win} frameIndex={0} />);
+    await settle();
+    expect(mountMock).toHaveBeenCalledWith(
+      expect.anything(),
+      win,
+      expect.objectContaining({ backgroundColor: 0x0f172a }),
+    );
+    document.documentElement.removeAttribute("data-theme");
+  });
+
+  it("calls setBonds when the bonds prop flips", async () => {
+    const win = windowFixture(0, 8);
+    const { rerender } = render(
+      <StructureViewerMolstar geometry={win} frameIndex={0} bonds={false} />,
+    );
+    await settle();
+    setBonds.mockClear();
+    rerender(<StructureViewerMolstar geometry={win} frameIndex={0} bonds={true} />);
+    await settle();
+    expect(setBonds).toHaveBeenCalledWith(true);
+  });
+
+  it("hands resetCamera upward through the viewerControls seam", async () => {
+    const win = windowFixture(0, 8);
+    const onReady = vi.fn(() => () => {});
+    render(<StructureViewerMolstar geometry={win} frameIndex={0} viewerControls={{ onReady }} />);
+    await settle();
+    expect(onReady).toHaveBeenCalledWith(
+      expect.objectContaining({ resetCamera: expect.any(Function) }),
+    );
   });
 });
