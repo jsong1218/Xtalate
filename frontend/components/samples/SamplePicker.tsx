@@ -33,16 +33,23 @@ export const SAMPLES: Sample[] = [
 
 export function SamplePicker({ onPick }: { onPick: (file: File) => void | Promise<void> }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function pick(sample: Sample) {
     if (busy) return;
     setBusy(sample.file);
+    setError(null);
     try {
       const res = await fetch(`/samples/${sample.file}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        setError(`Could not load the ${sample.label} sample (HTTP ${res.status}).`);
+        return;
+      }
       const blob = await res.blob();
       const file = new File([blob], sample.file, { type: sample.mimeType });
       await onPick(file);
+    } catch {
+      setError(`Could not load the ${sample.label} sample.`);
     } finally {
       setBusy(null);
     }
@@ -75,6 +82,11 @@ export function SamplePicker({ onPick }: { onPick: (file: File) => void | Promis
           </li>
         ))}
       </ul>
+      {error ? (
+        <p role="alert" className="text-xs text-cb-fail">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
