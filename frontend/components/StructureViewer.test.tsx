@@ -14,15 +14,18 @@ vi.mock("./StructureViewerMolstar", () => ({
   default: ({
     geometry,
     suppliedCell,
+    bonds,
   }: {
     geometry: CanonicalGeometry;
     suppliedCell?: boolean;
+    bonds?: boolean;
   }) => (
     <div
       data-testid="molstar-mount"
       data-atoms={geometry.species.length}
       data-has-cell={geometry.cell ? "true" : "false"}
       data-cell-supplied={suppliedCell ? "true" : "false"}
+      data-bonds={String(Boolean(bonds))}
     />
   ),
 }));
@@ -114,10 +117,14 @@ describe("StructureViewer", () => {
 
   it("keeps the bonds heuristic badge and drives the render when toggled on", async () => {
     render(<StructureViewer geometry={fixture} />);
+    const mount = await screen.findByTestId("molstar-mount");
+    expect(mount).toHaveAttribute("data-bonds", "false");
     const toggle = screen.getByRole("button", { name: /show bonds heuristic/i });
     await userEvent.click(toggle);
     expect(screen.getByText(/display heuristic, not file content/i)).toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-pressed", "true");
+    // The prop genuinely reaches the mount — not just the badge, which the previous test covers.
+    expect(mount).toHaveAttribute("data-bonds", "true");
   });
 
   it("offers reset-view and expand controls", () => {
@@ -132,5 +139,34 @@ describe("StructureViewer", () => {
     expect(screen.getByRole("dialog", { name: /structure viewer/i })).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("traps Tab focus inside the expand overlay, away from the background controls", async () => {
+    render(<StructureViewer geometry={fixture} />);
+    // A background control that must stay unreachable by keyboard while the overlay is open.
+    const resetButton = screen.getByRole("button", { name: /reset view/i });
+    await userEvent.click(screen.getByRole("button", { name: /expand/i }));
+    const closeButton = screen.getByRole("button", { name: /close/i });
+    closeButton.focus();
+    // The Close button is the dialog's only focusable element in this fixture (the mocked mount
+    // renders no interactive content); Tab must cycle back to it, never escape to `resetButton`.
+    await userEvent.tab();
+    expect(document.activeElement).toBe(closeButton);
+    expect(document.activeElement).not.toBe(resetButton);
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(closeButton);
+  });
+
+  it("does not re-run the overlay's mount effect (and re-steal focus) on an unrelated re-render", async () => {
+    const { rerender } = render(<StructureViewer geometry={fixture} />);
+    await userEvent.click(screen.getByRole("button", { name: /expand/i }));
+    const closeButton = screen.getByRole("button", { name: /close/i });
+    closeButton.focus();
+    expect(document.activeElement).toBe(closeButton);
+    // Re-rendering the parent (as a bonds toggle or a Compare-tab frame tick would) must not hand
+    // focus back to the dialog container — that would mean `onClose` was unstable and the mount
+    // effect re-ran, corrupting the eventual focus-restore-on-close target.
+    rerender(<StructureViewer geometry={fixture} />);
+    expect(document.activeElement).toBe(closeButton);
   });
 });

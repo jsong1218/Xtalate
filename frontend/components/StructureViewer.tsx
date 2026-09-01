@@ -22,6 +22,7 @@
  */
 import dynamic from "next/dynamic";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -196,6 +197,14 @@ export function StructureViewer({
 }: StructureViewerProps) {
   const [bondsEnabled, setBondsEnabled] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // Stable across re-renders (fix round 1, finding 2): `FullscreenViewer`'s mount effect depends
+  // on `onClose` to capture/restore focus and wire the Escape listener exactly once per open. An
+  // inline `() => setExpanded(false)` is a fresh closure every render, so any re-render of this
+  // component while expanded (a bonds toggle, a trajectory frame tick during Compare playback)
+  // would tear down and re-run that effect — re-stealing focus and corrupting the "restore to the
+  // true opener" guarantee. `setExpanded` from `useState` is itself stable, so wrapping it with an
+  // empty dependency array is sufficient.
+  const closeOverlay = useCallback(() => setExpanded(false), []);
   const resetRef = useRef<(() => void) | null>(null);
   const viewerControls = useMemo(
     () => ({
@@ -283,7 +292,7 @@ export function StructureViewer({
         )}
       </div>
       {expanded ? (
-        <FullscreenViewer onClose={() => setExpanded(false)}>{viewerBody}</FullscreenViewer>
+        <FullscreenViewer onClose={closeOverlay}>{viewerBody}</FullscreenViewer>
       ) : null}
       <div data-testid="viewer-controls" className="flex flex-wrap items-center gap-2">
         <button
@@ -314,10 +323,31 @@ export function StructureViewer({
 }
 
 /**
+ * Standard focusable selector for the trap below — mirrors what `CommandPalette`'s trap ultimately
+ * targets (its own `input` + `[data-result-row]` buttons are a subset of this), generalized because
+ * `FullscreenViewer`'s children are arbitrary (the Close button, plus whatever `viewerBody` renders
+ * — e.g. a trajectory scrubber's play/seek controls).
+ */
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
  * The expand overlay (D-next): a fixed-inset dialog that hosts the same `viewerBody` full-screen.
  * Focus moves onto the dialog on open and returns to the previously focused element on close, and
  * Escape closes it — the axe-scanned pages this viewer mounts on hold serious+critical to zero, so
  * the dialog carries an accessible name (`aria-label`) rather than relying on visible text alone.
+ *
+ * Fix round 1 (findings 1 + 2): the dialog now implements a **real** focus trap, not just an
+ * initial focus call — Tab/Shift+Tab cycle only among the dialog's own focusable elements (the
+ * same event-capture pattern `CommandPalette`'s `trapTab` uses: intercept Tab, `preventDefault`,
+ * and move focus manually — reused here for consistency rather than introducing a second trap
+ * convention). Because every Tab press inside the dialog is caught and redirected, the sibling
+ * `viewer-controls` row mounted behind the `z-50` overlay is never reachable by keyboard, with no
+ * need for `inert`/`aria-hidden` on the background (the codebase has no such convention either —
+ * the palette doesn't use it, so neither does this). `onClose` must be a **stable** callback (the
+ * caller now wraps it in `useCallback`) so this mount effect — which captures the pre-open focus
+ * target and wires the Escape/close-on-unmount handling — runs exactly once per open rather than
+ * re-running (and re-stealing focus) on every incidental re-render of the parent while expanded.
  */
 function FullscreenViewer({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -333,6 +363,28 @@ function FullscreenViewer({ children, onClose }: { children: ReactNode; onClose:
       prev?.focus();
     };
   }, [onClose]);
+
+  function trapTab(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Tab") return;
+    const container = ref.current;
+    if (!container) return;
+    const focusables = Array.from(
+      container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+    );
+    if (focusables.length === 0) {
+      e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+    const idx = focusables.indexOf(document.activeElement as HTMLElement);
+    const nextIdx = e.shiftKey
+      ? idx <= 0
+        ? focusables.length - 1
+        : idx - 1
+      : (idx + 1) % focusables.length;
+    focusables[nextIdx].focus();
+  }
+
   return (
     <div
       ref={ref}
@@ -340,6 +392,7 @@ function FullscreenViewer({ children, onClose }: { children: ReactNode; onClose:
       aria-modal="true"
       aria-label="Structure viewer"
       tabIndex={-1}
+      onKeyDown={trapTab}
       className="fixed inset-0 z-50 flex flex-col bg-surface p-4 outline-none"
     >
       <div className="mb-2 flex justify-end">
