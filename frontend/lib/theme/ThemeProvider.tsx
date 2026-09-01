@@ -90,7 +90,7 @@ export function useTheme(): ThemeContextValue {
 /**
  * A non-throwing theme read for leaf widgets that may render outside a ThemeProvider (e.g. the
  * Mol* mount under a bare `render()` in unit tests). Returns the context theme when a provider is
- * present — so it re-renders on toggle in the real app, where Providers always wraps the tree —
+ * present — so it re-renders on toggle in the real app, where Providers always wrap the tree —
  * otherwise falls back to the `data-theme` attribute the no-FOUC script sets, defaulting to light.
  */
 export function useOptionalTheme(): Theme {

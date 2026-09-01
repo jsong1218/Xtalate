@@ -82,14 +82,16 @@ describe("useOptionalTheme", () => {
   });
 
   it("prefers the provider's theme when wrapped", () => {
-    document.documentElement.setAttribute("data-theme", "light");
+    // Set the attribute to "dark", but the provider will initialize to "light" (default, no localStorage).
+    // If the hook reads the attribute, it returns "dark"; if it reads context, it returns "light".
+    // This discriminates the two implementations.
+    document.documentElement.setAttribute("data-theme", "dark");
     const { getByTestId } = render(
       <ThemeProvider>
         <ThemeProbe />
       </ThemeProvider>,
     );
-    // ThemeProvider mounts to the persisted/attribute value; default light here.
-    expect(["light", "dark"]).toContain(getByTestId("probe").textContent);
+    expect(getByTestId("probe").textContent).toBe("light");
     document.documentElement.removeAttribute("data-theme");
   });
 });
