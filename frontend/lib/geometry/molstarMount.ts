@@ -440,6 +440,10 @@ export async function mountStructureViewer(
       plugin.dispose();
     },
     setBackground(color: number) {
+      // Guard against a post-dispose call the same way `resetCamera`/`doSetBonds` do: after
+      // `dispose()` the plugin's `canvas3d` is null and the non-null assertion below would throw.
+      // Unreachable today (unmount nulls the handle before disposing), but kept consistent.
+      if (disposed) return;
       plugin.canvas3d!.setProps({ renderer: { backgroundColor: Color(color) } });
     },
     async setBonds(enabled: boolean) {

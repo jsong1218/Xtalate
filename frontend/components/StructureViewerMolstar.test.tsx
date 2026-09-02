@@ -113,16 +113,26 @@ describe("StructureViewerMolstar lifecycle", () => {
     expect(mountMock).toHaveBeenCalledTimes(2);
   });
 
-  it("passes a theme-aware background to the mount and updates it when theme changes", async () => {
-    document.documentElement.setAttribute("data-theme", "dark");
+  it("passes a theme-aware background to the mount and reconciles it on a live theme change", async () => {
+    // Mount under light (no data-theme): the mount receives the light background directly.
+    document.documentElement.removeAttribute("data-theme");
     const win = windowFixture(0, 8);
-    render(<StructureViewerMolstar geometry={win} frameIndex={0} />);
+    const { rerender } = render(<StructureViewerMolstar geometry={win} frameIndex={0} />);
     await settle();
     expect(mountMock).toHaveBeenCalledWith(
       expect.anything(),
       win,
-      expect.objectContaining({ backgroundColor: 0x0f172a }),
+      expect.objectContaining({ backgroundColor: 0xffffff }),
     );
+
+    // A live flip to dark drives the mount handle's `setBackground` — the F3 fix path
+    // (`useEffect([theme]) → setBackground`), reconciled in place, not by re-mounting.
+    setBackground.mockClear();
+    document.documentElement.setAttribute("data-theme", "dark");
+    rerender(<StructureViewerMolstar geometry={win} frameIndex={0} />);
+    await settle();
+    expect(setBackground).toHaveBeenCalledWith(0x0f172a);
+    expect(mountMock).toHaveBeenCalledTimes(1);
     document.documentElement.removeAttribute("data-theme");
   });
 
