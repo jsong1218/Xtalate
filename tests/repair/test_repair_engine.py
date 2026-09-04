@@ -69,13 +69,14 @@ def test_the_block_lattice_constant_stays_in_lockstep_with_the_registered_scenar
 
 
 def test_operations_declare_the_closed_names() -> None:
-    # M64-S1 ships exactly the reference operation; the registry resolves by name and an unknown
-    # name raises a RepairError naming the closed set (M64-S2 registers wrap-into-cell).
+    # The registry resolves by name and an unknown name raises a RepairError naming the closed
+    # set. M64-S2 registers wrap-into-cell alongside the reference operation.
     assert get_operation("identity").operation == "identity"
+    assert get_operation("wrap_into_cell").operation == "wrap_into_cell"
     try:
-        get_operation("wrap_into_cell")
+        get_operation("not_an_operation")
     except RepairError as exc:
-        assert "identity" in str(exc)
+        assert "identity" in str(exc) and "wrap_into_cell" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("an unregistered operation must raise RepairError")
 
