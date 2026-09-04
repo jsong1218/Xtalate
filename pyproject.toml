@@ -264,7 +264,7 @@ layers = [
     "xtalate.cli",
     "xtalate.registry",
     "xtalate.conversion",
-    "xtalate.recovery | xtalate.validation",
+    "xtalate.repair | xtalate.recovery | xtalate.validation",
     "xtalate.discovery",
     "xtalate.capabilities | xtalate.parsers | xtalate.exporters | xtalate.adapters",
     "xtalate.sdk",
