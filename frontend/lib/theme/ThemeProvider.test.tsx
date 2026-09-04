@@ -1,7 +1,7 @@
 import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { ThemeProvider, ThemeToggle, THEME_STORAGE_KEY, useTheme } from "./ThemeProvider";
+import { ThemeProvider, ThemeToggle, THEME_STORAGE_KEY, useOptionalTheme, useTheme } from "./ThemeProvider";
 
 /**
  * The theme system (pre-M36 addendum, Slice S1). A persisted light/dark toggle that flips
@@ -60,5 +60,38 @@ describe("ThemeToggle", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     // aria-pressed reflects the active state for assistive tech.
     expect(button).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+function ThemeProbe() {
+  return <span data-testid="probe">{useOptionalTheme()}</span>;
+}
+
+describe("useOptionalTheme", () => {
+  it("returns light with no provider and no data-theme attribute", () => {
+    document.documentElement.removeAttribute("data-theme");
+    const { getByTestId } = render(<ThemeProbe />);
+    expect(getByTestId("probe").textContent).toBe("light");
+  });
+
+  it("reads the data-theme attribute when there is no provider", () => {
+    document.documentElement.setAttribute("data-theme", "dark");
+    const { getByTestId } = render(<ThemeProbe />);
+    expect(getByTestId("probe").textContent).toBe("dark");
+    document.documentElement.removeAttribute("data-theme");
+  });
+
+  it("prefers the provider's theme when wrapped", () => {
+    // Set the attribute to "dark", but the provider will initialize to "light" (default, no localStorage).
+    // If the hook reads the attribute, it returns "dark"; if it reads context, it returns "light".
+    // This discriminates the two implementations.
+    document.documentElement.setAttribute("data-theme", "dark");
+    const { getByTestId } = render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>,
+    );
+    expect(getByTestId("probe").textContent).toBe("light");
+    document.documentElement.removeAttribute("data-theme");
   });
 });

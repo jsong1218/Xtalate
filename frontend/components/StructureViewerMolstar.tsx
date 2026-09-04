@@ -25,6 +25,15 @@ import {
   type StructureViewerCamera,
 } from "@/lib/geometry/molstarMount";
 import type { CanonicalGeometry } from "@/lib/geometry/useGeometry";
+import { useOptionalTheme, type Theme } from "@/lib/theme/ThemeProvider";
+
+/**
+ * The renderer background per theme (D-next): keeps the WebGL canvas in step with the app's
+ * light/dark palette instead of Mol*'s own default background. Read once at mount time (via a
+ * ref, since the mount effect depends only on `suppliedCell`) and reconciled afterward through
+ * `handle.setBackground` on every theme change.
+ */
+const THEME_BG: Record<Theme, number> = { light: 0xffffff, dark: 0x0f172a };
 
 /**
  * The additive camera-lock seam (M62-S1, D239): when present, the parent hands the mount's camera
@@ -37,11 +46,23 @@ export interface CameraControls {
   onReady(camera: StructureViewerCamera): () => void;
 }
 
+/**
+ * The additive reset-control seam (D-next): mirrors {@link CameraControls} but hands up only the
+ * `resetCamera` action, so a parent that just wants a "reset view" button need not thread the
+ * full camera get/set/observe surface. A lone viewer passes nothing.
+ */
+export interface ViewerControls {
+  /** Called with `{ resetCamera }` once the plugin mount resolves; returns an unsubscribe. */
+  onReady(controls: { resetCamera(): void }): () => void;
+}
+
 export default function StructureViewerMolstar({
   geometry,
   frameIndex,
   suppliedCell,
   cameraControls,
+  bonds,
+  viewerControls,
 }: {
   geometry: CanonicalGeometry;
   /** The absolute report index to display (defaults to the geometry's frame_index_base). */
@@ -50,6 +71,10 @@ export default function StructureViewerMolstar({
   suppliedCell?: boolean;
   /** Additive camera-lock seam (M62-S1): surfaced to its parent on mount, if supplied. */
   cameraControls?: CameraControls;
+  /** Toggle the heuristic ball-and-stick bond visual (D234/D-next). */
+  bonds?: boolean;
+  /** Additive reset-control seam: surfaced to its parent on mount, if supplied. */
+  viewerControls?: ViewerControls;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<MountedStructureViewer | null>(null);
@@ -70,12 +95,30 @@ export default function StructureViewerMolstar({
   const frameRef = useRef(frame);
   frameRef.current = frame;
 
+  // The theme-aware background (D-next): read via `useOptionalTheme` (non-throwing — this mount
+  // renders under a bare `render()` in unit tests, with no ThemeProvider above it) and mirrored
+  // into a ref so the mount effect (which runs on `suppliedCell` only) reads the current value
+  // at mount time without becoming a dependency that would re-mount the plugin on every toggle.
+  const theme = useOptionalTheme();
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
+
+  // Mirror the bonds prop into a ref for the same reason (applied at mount, reconciled below).
+  const bondsRef = useRef(bonds);
+  bondsRef.current = bonds;
+
   // Mirror the camera-controls prop into a ref so the mount effect (which runs on `suppliedCell`
   // only) always reads the latest seam without becoming a dependency that re-mounts the plugin.
   const cameraControlsRef = useRef(cameraControls);
   cameraControlsRef.current = cameraControls;
   // The unsubscribe the camera seam returned from `onReady`; called on unmount/re-mount.
   const cameraWriteupRef = useRef<(() => void) | null>(null);
+
+  // Mirror the viewer-controls (reset seam) prop the same way as cameraControls.
+  const viewerControlsRef = useRef(viewerControls);
+  viewerControlsRef.current = viewerControls;
+  // The unsubscribe the viewer-controls seam returned from `onReady`; called on unmount/re-mount.
+  const viewerWriteupRef = useRef<(() => void) | null>(null);
   // A frame-only change within the mounted window: cheap in-place frame set (no rebuild). Skips
   // when the window is not yet the mounted one (the window swap below sets the frame on arrival).
   const applyFrame = useCallback(async () => {
@@ -140,6 +183,7 @@ export default function StructureViewerMolstar({
     void mountStructureViewer(target, mountGeometry, {
       suppliedCell: Boolean(suppliedCell),
       initialFrameIndex: mountFrame,
+      backgroundColor: THEME_BG[themeRef.current],
     })
       .then((handle) => {
         if (cancelled) {
@@ -156,6 +200,11 @@ export default function StructureViewerMolstar({
         cameraWriteupRef.current?.();
         cameraWriteupRef.current =
           cameraControlsRef.current?.onReady(handle.camera) ?? null;
+        // The additive reset-control seam: hand `resetCamera` upward the same way.
+        viewerWriteupRef.current?.();
+        viewerWriteupRef.current =
+          viewerControlsRef.current?.onReady({ resetCamera: () => handle.resetCamera() }) ?? null;
+        if (bondsRef.current) void handle.setBonds(true);
         // A window/frame changed while the plugin was mounting → reconcile now.
         if (geometryJsonRef.current !== mountedGeoRef.current) void applyWindow();
         else if (frameRef.current !== mountedFrameRef.current) void applyFrame();
@@ -170,6 +219,8 @@ export default function StructureViewerMolstar({
       cancelled = true;
       cameraWriteupRef.current?.();
       cameraWriteupRef.current = null;
+      viewerWriteupRef.current?.();
+      viewerWriteupRef.current = null;
       if (handleRef.current) {
         try {
           handleRef.current.dispose();
@@ -188,6 +239,16 @@ export default function StructureViewerMolstar({
   useEffect(() => {
     void applyFrame();
   }, [frame, applyFrame]);
+
+  // Reconcile the renderer background on a theme change (no re-mount: `setBackground` is a cheap
+  // imperative call on the live plugin).
+  useEffect(() => {
+    handleRef.current?.setBackground(THEME_BG[theme]);
+  }, [theme]);
+  // Reconcile the bond visual on a `bonds` prop flip.
+  useEffect(() => {
+    void handleRef.current?.setBonds(Boolean(bonds));
+  }, [bonds]);
 
   return (
     <div
@@ -208,6 +269,10 @@ export default function StructureViewerMolstar({
       // The supplied-violet signal (M60-S3, D235): the fabricated cell's wireframe is drawn in
       // the ◆ assumption violet — set from the report-sourced flag, never re-derived here.
       data-cell-supplied={suppliedCell ? "true" : "false"}
+      // The bonds-prop signal (a cheap prop-level proof, mirroring `data-has-cell`/`data-cell-
+      // supplied` above): NOT the render proof — the mount separately sets `data-bonds-drawn`
+      // from whether Mol* actually added the ball-and-stick representation.
+      data-bonds={bonds ? "true" : "false"}
     />
   );
 }

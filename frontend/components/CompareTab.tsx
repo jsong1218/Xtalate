@@ -276,37 +276,21 @@ export function CompareTab({
           markerFrame={exportedFrame?.index}
         />
       ) : null}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="space-y-2">
+      <div
+        data-testid="compare-grid"
+        className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto]"
+      >
+        <div className="lg:row-span-3 lg:grid lg:grid-rows-subgrid lg:gap-2">
           <StructureViewer
             geometry={sourceGeo}
             label="Source"
             trajectorySource={{ kind: "conversion", conversionId, side: "source" }}
             cameraControls={{ onReady: onSourceReady }}
             frameControl={sourceFrameControl}
+            subgrid
           />
-          {removedEntries.length > 0 ? (
-            <div className="space-y-1 rounded border border-line px-3 py-2">
-              <p className="text-xs font-semibold text-strong">
-                Fields the target could not hold
-              </p>
-              <ul className="space-y-1">
-                {removedEntries.map((entry) => (
-                  <li
-                    key={entry.path}
-                    data-testid={`removed-${entry.path}`}
-                    className="flex flex-wrap items-baseline gap-x-2 text-xs"
-                  >
-                    <code className="font-mono text-muted">{entry.path}</code>
-                    {/* The report's own words, never a paraphrase (D240). */}
-                    <span className="text-body">{entry.reason}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
         </div>
-        <div className="space-y-2">
+        <div className="lg:row-span-3 lg:grid lg:grid-rows-subgrid lg:gap-2">
           <StructureViewer
             geometry={outputGeo}
             label="Output"
@@ -314,9 +298,30 @@ export function CompareTab({
             cameraControls={{ onReady: onOutputReady }}
             frameControl={outputFrameControl}
             suppliedCell={outputSuppliedCell}
+            subgrid
           />
         </div>
       </div>
+      {removedEntries.length > 0 ? (
+        <div className="mt-2 space-y-1 rounded border border-line px-3 py-2 lg:w-[calc(50%-0.5rem)]">
+          <p className="text-xs font-semibold text-strong">
+            Fields the target could not hold
+          </p>
+          <ul className="space-y-1">
+            {removedEntries.map((entry) => (
+              <li
+                key={entry.path}
+                data-testid={`removed-${entry.path}`}
+                className="flex flex-wrap items-baseline gap-x-2 text-xs"
+              >
+                <code className="font-mono text-muted">{entry.path}</code>
+                {/* The report's own words, never a paraphrase (D240). */}
+                <span className="text-body">{entry.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -76,9 +76,12 @@ COPY alembic.ini ./
 
 # The standalone Next server: `.next/standalone` contents at the app root (server.js plus its
 # traced node_modules) with `.next/static` alongside, exactly where the standalone server expects
-# them. (The frontend has no `public/` dir today; if one is ever added, copy it here too.)
+# them. `output: "standalone"` does NOT copy `public/`, so the vendored samples under
+# `frontend/public/samples/` (S4, D246) must be copied explicitly or `/samples/*` 404s on the
+# hosted demo (S7 fix).
 COPY --from=frontend-build /repo/frontend/.next/standalone/ ./
 COPY --from=frontend-build /repo/frontend/.next/static ./.next/static
+COPY --from=frontend-build /repo/frontend/public ./public
 
 # The launcher: migrations → backend (background) → readiness wait → frontend (foreground).
 COPY deploy/demo/start.sh ./start.sh

@@ -274,6 +274,21 @@ describe("CompareTab — two synchronized viewers", () => {
     expect(screen.getByTestId("viewer-Source")).toHaveAttribute("data-frame", "0");
     expect(screen.getByTestId("viewer-Output")).toHaveAttribute("data-frame", "0");
   });
+
+  it("aligns the two viewers on a shared subgrid", () => {
+    renderReady(1, 1);
+    const grid = screen.getByTestId("compare-grid");
+    // The outer grid itself declares the explicit three-row template that its columns inherit
+    // from (M62-S5, D239) …
+    expect(grid.className).toMatch(/lg:grid-rows-\[auto_auto_auto\]/);
+    // … and BOTH direct-child columns — not just one — must be wired as subgrid participants, or
+    // the two viewers' annotation/canvas/control rows would silently stop lining up.
+    const columns = Array.from(grid.children);
+    expect(columns).toHaveLength(2);
+    for (const col of columns) {
+      expect((col as HTMLElement).className).toMatch(/lg:grid-rows-subgrid/);
+    }
+  });
 });
 
 describe("CompareTab — report-sourced difference annotations (M62-S2, D240)", () => {

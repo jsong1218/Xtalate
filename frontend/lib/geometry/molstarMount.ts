@@ -107,6 +107,18 @@ export interface MountedStructureViewer {
   setWindow(geometry: CanonicalGeometry, absoluteIndex: number): Promise<void>;
   /** Dispose the plugin instance. Idempotent. */
   dispose(): void;
+  /** Set the renderer background color (theme-aware; used e.g. on a dark-mode toggle). */
+  setBackground(color: number): void;
+  /**
+   * Toggle the heuristic `ball-and-stick` bond visual over the current structure (D-next). Bonds
+   * are a display-only heuristic — the model carries no bond data, so Mol* computes them by
+   * distance/element at display time. Calls serialize, so a rapid toggle applies in order; a
+   * window swap re-applies bonds (if on) since the bond representation belongs to the deleted
+   * subtree.
+   */
+  setBonds(enabled: boolean): Promise<void>;
+  /** Reset the camera to fit the current structure (undoes any user orbit/pan/zoom). */
+  resetCamera(): void;
   /**
    * The camera get/set/observe seam (M62-S1, D239): lets the Compare tab lock the two viewers'
    * cameras together. Reading and applying a snapshot is lossless over the plugin's own state — it
@@ -141,6 +153,8 @@ export interface MountStructureViewerOptions {
    * Only meaningful when the mounted geometry carries multiple frames.
    */
   initialFrameIndex?: number;
+  /** Renderer background color (theme-aware). Defaults to Mol*'s own default when omitted. */
+  backgroundColor?: number;
 }
 
 /** The unit-cell params: full defaults + the ordinary/supplied color (D235). */
@@ -161,9 +175,17 @@ export async function mountStructureViewer(
   const plugin = new PluginContext(DefaultPluginSpec());
   await plugin.init();
   await plugin.mountAsync(target, {});
+  // `canvas3d` is guaranteed non-null after `mountAsync` (see the `plugin.canvas3d!.camera` read
+  // further below) — asserted here too, for consistency with the rest of the file.
+  if (options.backgroundColor !== undefined) {
+    plugin.canvas3d!.setProps({ renderer: { backgroundColor: Color(options.backgroundColor) } });
+  }
 
   let disposed = false;
   let unitcellCell: { ref: unknown } | undefined;
+  let bondsCell: { ref: unknown } | undefined;
+  let bondsOn = false;
+  let bondsChain: Promise<void> = Promise.resolve();
   // The window currently displayed and its absolute base — both mutable: `setWindow` swaps the
   // frame set in place, so every closure below reads the *current* window, never the mount-time one.
   let windowGeometry = geometry;
@@ -252,6 +274,62 @@ export async function mountStructureViewer(
     return Boolean(unitcell);
   }
 
+  /**
+   * Add/remove the heuristic bond representation for the current structure (D-next). Every exit
+   * path — including a failed add or a failed remove — reconciles `bondsCell` and
+   * `target.dataset.bondsDrawn` to reality before returning, so a thrown error (e.g. the remove
+   * path racing a concurrent subtree delete and finding its ref already gone) can never leave the
+   * dataset proof stale relative to the actual state cell. Callers must only ever invoke this
+   * through {@link enqueueBonds} — never directly — so this function and the window-swap re-apply
+   * can never interleave over the shared `bondsCell`.
+   */
+  async function doSetBonds(enabled: boolean): Promise<void> {
+    if (disposed) return;
+    if (enabled) {
+      if (bondsCell) return; // already on; no-op, proof already "true"
+      const structure = plugin.managers.structure.hierarchy.current.structures[0];
+      if (!structure) return; // nothing to add to yet; proof stays "false"
+      try {
+        bondsCell =
+          (await plugin.builders.structure.representation.addRepresentation(structure.cell, {
+            type: "ball-and-stick",
+            typeParams: { visuals: ["intra-bond", "inter-bond"] },
+            colorTheme: { name: "element-symbol" },
+          })) ?? undefined;
+      } catch (err) {
+        console.error("Mol* setBonds (add) failed:", err);
+        bondsCell = undefined;
+      }
+      target.dataset.bondsDrawn = bondsCell ? "true" : "false";
+    } else {
+      if (!bondsCell) return; // already off; no-op, proof already "false"
+      try {
+        await plugin.state.data.build().delete(bondsCell.ref as never).commit();
+      } catch (err) {
+        // The ref may already be gone — e.g. its subtree was removed by a concurrent window swap
+        // before this delete ran. Either way, the representation is no longer present, so state
+        // and proof are reconciled below regardless of whether the delete itself succeeded.
+        console.error("Mol* setBonds (remove) failed:", err);
+      }
+      bondsCell = undefined;
+      target.dataset.bondsDrawn = "false";
+    }
+  }
+
+  /**
+   * The single serialization point for every `bondsCell` mutation (M62 review fix round 1): both
+   * the public `setBonds` handle and the window-swap re-apply enqueue their work here, so the two
+   * call sites can never race over `bondsCell` — whichever was enqueued first always completes
+   * before the next one starts. A failed op is caught and logged (never rethrown), so one failure
+   * can never wedge the chain for the next caller.
+   */
+  function enqueueBonds(op: () => Promise<void>): Promise<void> {
+    bondsChain = bondsChain.then(op).catch((err) => {
+      console.error("Mol* setBonds failed:", err);
+    });
+    return bondsChain;
+  }
+
   // The imperative frame set (M61-S1): within the mounted window, update `ModelFromTrajectory`'s
   // `modelIndex` (re-applying the transform with the new index), then redraw that frame's unit
   // cell. This is an in-place update of the existing transform, not a trajectory rebuild, so
@@ -290,6 +368,15 @@ export async function mountStructureViewer(
     trajectorySelector = await buildStructure(newGeometry);
     // No Camera.Reset: the camera is deliberately preserved across a window boundary.
     await setFrame(absoluteIndex);
+    // The bond representation (if any) belonged to the subtree just deleted above; re-apply it,
+    // if wanted, only after the correct frame is already showing (per the brief's ordering) — a
+    // bonds failure must never prevent or roll back the frame swap, which is why this is enqueued
+    // through the same serialized chain `setBonds` uses (never mutating `bondsCell` directly here)
+    // and `enqueueBonds` itself swallows and logs rather than rethrowing.
+    await enqueueBonds(async () => {
+      bondsCell = undefined; // belonged to the deleted subtree; reconciled here, in-chain
+      if (bondsOn) await doSetBonds(true);
+    });
   }
   function setWindow(newGeometry: CanonicalGeometry, absoluteIndex: number): Promise<void> {
     windowChain = windowChain
@@ -307,6 +394,7 @@ export async function mountStructureViewer(
   // and sets `unitcellDrawn`, so it is the sole owner of that proof (no separate init draw); the
   // default below keeps the proof present-and-honest if `setFrame` bails before drawing.
   target.dataset.unitcellDrawn = "false";
+  target.dataset.bondsDrawn = "false";
   try {
     await setFrame(initial);
   } catch {
@@ -350,6 +438,20 @@ export async function mountStructureViewer(
       if (disposed) return;
       disposed = true;
       plugin.dispose();
+    },
+    setBackground(color: number) {
+      // Guard against a post-dispose call the same way `resetCamera`/`doSetBonds` do: after
+      // `dispose()` the plugin's `canvas3d` is null and the non-null assertion below would throw.
+      // Unreachable today (unmount nulls the handle before disposing), but kept consistent.
+      if (disposed) return;
+      plugin.canvas3d!.setProps({ renderer: { backgroundColor: Color(color) } });
+    },
+    async setBonds(enabled: boolean) {
+      bondsOn = enabled;
+      await enqueueBonds(() => doSetBonds(enabled));
+    },
+    resetCamera() {
+      if (!disposed) PluginCommands.Camera.Reset(plugin);
     },
     camera: cameraSeam,
   };

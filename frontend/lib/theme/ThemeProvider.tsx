@@ -88,6 +88,22 @@ export function useTheme(): ThemeContextValue {
 }
 
 /**
+ * A non-throwing theme read for leaf widgets that may render outside a ThemeProvider (e.g. the
+ * Mol* mount under a bare `render()` in unit tests). Returns the context theme when a provider is
+ * present — so it re-renders on toggle in the real app, where Providers always wrap the tree —
+ * otherwise falls back to the `data-theme` attribute the no-FOUC script sets, defaulting to light.
+ */
+export function useOptionalTheme(): Theme {
+  const ctx = useContext(ThemeContext);
+  if (ctx) return ctx.theme;
+  if (typeof document !== "undefined") {
+    const attr = document.documentElement.getAttribute("data-theme");
+    if (attr === "dark" || attr === "light") return attr;
+  }
+  return "light";
+}
+
+/**
  * The theme toggle control. Mounted into the app-shell header in Slice S2; a self-contained button
  * here so the whole mechanism is testable now. Shows a sun in dark mode (tap to lighten) and a moon
  * in light mode (tap to darken); the accessible name states the action and `aria-pressed` reports
