@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from xtalate.repair._reindex import reindex_per_atom
 from xtalate.repair.contract import (
@@ -259,7 +260,165 @@ class SpeciesReorder(RepairOperation):
         )
 
 
+#: The center hazard statement (D253). Centering translates the whole structure — the
+#: original absolute frame of reference is unrecoverable from the centered file, though all
+#: relative geometry is preserved. This is the mild end of the transformative class (D251):
+#: values change in place, but only by a rigid translation, so the warning says exactly that.
+CENTER_DISCARDS_ABSOLUTE_POSITION = RepairHazard(
+    code="CENTER_DISCARDS_ABSOLUTE_POSITION",
+    message=(
+        "centering translates the whole structure — the original position relative to the "
+        "source's coordinate origin is not recoverable from the centered file (all relative "
+        "geometry is preserved)"
+    ),
+)
+
+#: The two ways to name the point to move, and the two named places it can go (M65-S2; D253).
+#: An explicit ``[x, y, z]`` Å coordinate is also a legal target. Both parameters are required
+#: with **no default** (P4: which point and where it lands are scientific judgments).
+_CENTER_REFERENCES = ("centroid", "cell_center")
+_CENTER_NAMED_TARGETS = ("origin", "cell_center")
+
+
+def _center_reference(parameters: dict[str, Any]) -> str:
+    reference = parameters.get("reference")
+    if not isinstance(reference, str) or reference not in _CENTER_REFERENCES:
+        raise RepairError(
+            f"center requires a reference of {_CENTER_REFERENCES} (the point of the "
+            f"structure to move), got {reference!r} — no default (P4)"
+        )
+    return reference
+
+
+def _center_target(parameters: dict[str, Any]) -> tuple[str, np.ndarray | None]:
+    """Validate the target: ``("origin", None)``, ``("cell_center", None)``, or
+    ``("explicit", [x, y, z])`` in Å. Raises ``RepairError`` naming the choice when absent or
+    incoherent (P4: no default)."""
+    target = parameters.get("target")
+    if target in _CENTER_NAMED_TARGETS:
+        return target, None
+    if isinstance(target, (list, tuple)) and len(target) == 3:
+        try:
+            vec = np.asarray(target, dtype=float)
+        except (TypeError, ValueError):
+            vec = np.array([np.nan, np.nan, np.nan])
+        if not np.all(np.isfinite(vec)):
+            raise RepairError(
+                f"center target [x, y, z] must be three finite Å coordinates, got {target!r}"
+            )
+        return "explicit", vec
+    raise RepairError(
+        f"center requires a target of {_CENTER_NAMED_TARGETS} or an explicit [x, y, z] Å "
+        f"coordinate (where the reference point should land), got {target!r} — no default (P4)"
+    )
+
+
+def _centroid(positions: NDArray[np.float64]) -> NDArray[np.float64]:
+    """The unweighted geometric mean of positions — M65 ships no mass-weighted center-of-mass
+    mode (D253): mass-weighting would need masses that may be ``None``, and fabricating IUPAC
+    weights purely to center would violate P4."""
+    return positions.mean(axis=0)
+
+
+def _cell_center(lattice: NDArray[np.float64]) -> NDArray[np.float64]:
+    """The cell's geometric center, ½(a+b+c) from the frame's own lattice (row-vector
+    convention: rows are a, b, c)."""
+    return np.asarray(0.5 * (lattice[0] + lattice[1] + lattice[2]))
+
+
+class Center(RepairOperation):
+    """Translate a stated reference point of the structure to a stated target, **per frame**
+    (M65-S2; D253).
+
+    ``reference`` ∈ {``"centroid"`` (the unweighted geometric mean of that frame's
+    positions), ``"cell_center"`` (½(a+b+c) of that frame's lattice)}; ``target`` ∈
+    {``"origin"``, ``"cell_center"``, an explicit ``[x, y, z]`` Å coordinate}. **Both are
+    required, no default** (P4). Per frame, the reference point is computed from **that
+    frame's own** positions/cell and the constant shift ``target − reference`` is added to
+    every position — deterministic, no randomness, ``model_copy``. **Positions only:**
+    velocities/forces/charges are translation-invariant and are **not** touched.
+
+    Transformative hazard (D251): centering discards the original absolute frame of
+    reference — the ``CENTER_DISCARDS_ABSOLUTE_POSITION`` warning names exactly that (the
+    mild end of the class: relative geometry is preserved). A ``cell_center`` reference or
+    target on a frame with no usable cell **blocks** through the existing
+    ``missing_lattice`` recovery (the wrap precedent): center invents no box (D43).
+    """
+
+    operation = "center"
+    hazard_class = TRANSFORMATIVE_HAZARD
+    hazards = (CENTER_DISCARDS_ABSOLUTE_POSITION,)
+
+    def block(self, obj: CanonicalObject, parameters: dict[str, Any]) -> RepairBlock | None:
+        reference = _center_reference(parameters)
+        target, _ = _center_target(parameters)
+        if reference != "cell_center" and target != "cell_center":
+            return None  # Centroid/origin need no cell.
+        for frame in obj.frames:
+            if _frame_lattice(frame) is None:
+                if frame.cell is None:
+                    detail = (
+                        f"frame {frame.index} declares no simulation cell — a cell_center "
+                        "reference or target needs a lattice; supply one through recovery "
+                        "(missing_lattice) or convert without this repair"
+                    )
+                else:
+                    detail = (
+                        f"frame {frame.index} declares a singular/zero-volume cell whose "
+                        "center is not well-defined; supply a usable lattice through recovery "
+                        "(missing_lattice) or convert without this repair"
+                    )
+                return RepairBlock(
+                    operation=self.operation,
+                    reason=REPAIR_BLOCK_MISSING_LATTICE,
+                    path="cell.lattice_vectors",
+                    detail=detail,
+                )
+        return None
+
+    def apply(self, obj: CanonicalObject, parameters: dict[str, Any]) -> CanonicalObject:
+        reference = _center_reference(parameters)
+        target, explicit_target = _center_target(parameters)
+        frames: list[Frame] = []
+        for frame in obj.frames:
+            positions = np.asarray(frame.atoms.positions, dtype=float)
+            ref = _centroid(positions) if reference == "centroid" else _frame_lattice(frame)
+            assert ref is not None  # block() refused a cell-less frame already.
+            if reference == "cell_center":
+                ref = _cell_center(ref)
+            if explicit_target is not None:
+                target_point = explicit_target
+            elif target == "cell_center":
+                lattice = _frame_lattice(frame)
+                assert lattice is not None  # block() refused a cell-less frame already.
+                target_point = _cell_center(lattice)
+            else:  # target == "origin"
+                target_point = np.zeros(3)
+            shift = target_point - ref
+            frames.append(
+                frame.model_copy(
+                    update={
+                        "atoms": frame.atoms.model_copy(update={"positions": positions + shift})
+                    }
+                )
+            )
+        return obj.model_copy(update={"frames": frames})
+
+    def describe(self, obj: CanonicalObject, parameters: dict[str, Any]) -> str:
+        reference = _center_reference(parameters)
+        target, explicit = _center_target(parameters)
+        if explicit is not None:
+            target_desc = f"[{explicit[0]:g}, {explicit[1]:g}, {explicit[2]:g}] Å"
+        else:
+            target_desc = str(target)
+        return (
+            f"Centered the structure per frame: translated the {reference} to {target_desc} — "
+            "positions only (velocities/forces/charges are translation-invariant); the "
+            "original absolute origin is not recoverable from the centered file."
+        )
+
+
 def builtin_repair_operations() -> list[RepairOperation]:
     """The explicit first-party repair-operation list (M64). Third-party repairs are declined
-    for v1.7 (impl-plan §4 rule 4); center/dedupe register here later in M65, reorder now."""
-    return [IdentityRepair(), WrapIntoCell(), SpeciesReorder()]
+    for v1.7 (impl-plan §4 rule 4); reorder landed at M65-S1, center now, dedupe in S3."""
+    return [IdentityRepair(), WrapIntoCell(), SpeciesReorder(), Center()]

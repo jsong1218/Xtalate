@@ -1585,8 +1585,9 @@ def _repair_block_scenarios(
 ) -> list[UnresolvedScenario]:
     """Map blocked repairs onto the recovery scenarios they resolve through (D249/D250).
 
-    M64's closed operation set knows exactly one block: a cell-less ``wrap_into_cell``, which
-    composes with the existing ``missing_lattice`` recovery — the scenario, canonical path, and
+    M64/M65's closed operation set knows two blocks, both cell-less: ``wrap_into_cell`` and a
+    ``center`` whose ``cell_center`` reference/target names a frame without one — both compose
+    with the existing ``missing_lattice`` recovery — the scenario, canonical path, and
     pair-specific option list (computed for the concrete target, never static) come from the
     existing machinery, so the repair refuses exactly the way a target-required lattice would
     (nothing new is invented). A block whose reason maps to no recovery scenario raises: the
