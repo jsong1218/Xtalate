@@ -326,6 +326,58 @@ def test_deduplicate_uses_minimum_image_under_pbc_and_plain_cartesian_otherwise(
     assert "plain Cartesian" in cartesian_record.description
 
 
+def test_deduplicate_honours_pbc_false_and_does_not_claim_periodicity() -> None:
+    # A cluster in a bounding box: a cell is present but pbc is all False (P3 — a cell's
+    # presence is not periodicity). The two atoms are one lattice vector apart (3.8 Å vs
+    # 0.2 Å in a 4 Å box): under a (wrong) minimum-image reading they would be 0.4 Å apart
+    # and one would be removed; honouring pbc=False they are 3.6 Å apart and BOTH survive.
+    # The record must state plain Cartesian and must NOT claim periodic boundary conditions.
+    symbols = ["O", "O"]
+    positions = np.array([[3.8, 0.0, 0.0], [0.2, 0.0, 0.0]], dtype=float)
+    non_periodic = CanonicalObject(
+        frames=[
+            Frame(
+                index=0,
+                atoms=AtomsBlock(symbols=symbols, positions=positions),
+                cell=Cell(lattice_vectors=4.0 * np.eye(3), pbc=(False, False, False)),
+            )
+        ],
+        provenance=_provenance("cluster.xyz"),
+    )
+    repaired, record = _apply(non_periodic, {"distance_threshold": 0.5})
+    assert repaired.frames[0].atoms.symbols == ["O", "O"]  # nothing removed — no false wrap
+    assert record.parameters["removed_atoms"] == []
+    assert "plain Cartesian" in record.parameters["metric"]
+    assert "minimum-image" not in record.parameters["metric"]
+    assert "periodic boundary conditions" not in record.parameters["metric"]
+    assert "plain Cartesian" in record.description
+
+
+def test_deduplicate_applies_minimum_image_only_along_periodic_axes() -> None:
+    # A slab: periodic in a/b, non-periodic in c (pbc = T T F). Two atoms are one lattice
+    # vector apart along the NON-periodic c axis (3.8 vs 0.2 in a 4 Å box) — they must NOT be
+    # wrapped together (both survive), and the metric names c as excluded. A companion pair
+    # one lattice vector apart along the periodic a axis WOULD wrap; here we pin the c case.
+    symbols = ["O", "O"]
+    positions = np.array([[0.0, 0.0, 3.8], [0.0, 0.0, 0.2]], dtype=float)
+    slab = CanonicalObject(
+        frames=[
+            Frame(
+                index=0,
+                atoms=AtomsBlock(symbols=symbols, positions=positions),
+                cell=Cell(lattice_vectors=4.0 * np.eye(3), pbc=(True, True, False)),
+            )
+        ],
+        provenance=_provenance("slab.vasp"),
+    )
+    repaired, record = _apply(slab, {"distance_threshold": 0.5})
+    assert repaired.frames[0].atoms.symbols == ["O", "O"]  # c is non-periodic → not wrapped
+    assert record.parameters["removed_atoms"] == []
+    assert "minimum-image" in record.parameters["metric"]  # a, b are periodic
+    assert "a, b" in record.parameters["metric"]
+    assert "non-periodic" in record.parameters["metric"]
+
+
 # --- the recorded no-op --------------------------------------------------------------------
 
 

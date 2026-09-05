@@ -401,6 +401,22 @@ def test_species_reorder_rejects_a_non_permutation_record() -> None:
         raise AssertionError("a truncated permutation must be refused, not silently applied")
 
 
+def test_species_reorder_supplied_arbitrary_permutation_is_not_called_element_regroup() -> None:
+    # A caller-supplied permutation is validated only to be a permutation of range(N) — NOT
+    # that it groups by element. A non-element-grouped map (here reverse order) must not be
+    # described as "Regrouped atoms by element", which would be a false report entry (P1).
+    arbitrary = [5, 4, 3, 2, 1, 0]  # a valid permutation of range(6), not the element grouping
+    assert arbitrary != PERM and arbitrary != list(range(N))
+    outcome = apply_repairs(
+        _rich_object(), [RepairRequest("species_reorder", {"permutation": arbitrary})]
+    )
+    assert outcome.canonical is not None
+    (record,) = outcome.applied
+    assert record.parameters == {"permutation": arbitrary}
+    assert "Regrouped atoms by element" not in record.description
+    assert "supplied permutation map" in record.description
+
+
 # --- the exporter lockstep: the repaired object is what an element-grouping exporter expects --
 
 

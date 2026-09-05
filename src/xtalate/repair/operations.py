@@ -35,6 +35,10 @@ from xtalate.repair.contract import (
 from xtalate.schema import CanonicalObject, Frame
 from xtalate.schema.cell import to_cartesian, to_fractional
 
+#: The deduplicate plan: (survivor indices ascending, removed indices ascending, metric,
+#: threshold) — the deterministic function of threshold + source positions the report replays.
+_DedupePlan = tuple[list[int], list[int], str, float]
+
 
 class IdentityRepair(RepairOperation):
     """The contract's reference operation (M64-S1): applies no scientific change.
@@ -216,7 +220,24 @@ class SpeciesReorder(RepairOperation):
     hazard_class = None  # Non-destructive: a recorded permutation fully recovers the order.
     hazards = (ATOM_ORDER_CHANGED,)
 
+    #: Single-entry compute cache for one application. The engine calls ``apply``,
+    #: ``recorded_parameters``, ``hazards_for`` and ``describe`` back-to-back on the *same*
+    #: ``(obj, parameters)`` (engine.py); this memo derives the permutation once and reuses it,
+    #: keyed by object **identity** (``is``) so it is always the datum computed for exactly this
+    #: call — never a stale hit. Instances are built fresh per ``apply_repairs``
+    #: (``builtin_repair_operations``), so the cache lives only for one request and preserves the
+    #: contract's purity/determinism (same inputs → same output).
+    _perm_cache: tuple[CanonicalObject, dict[str, Any], list[int]] | None = None
+
     def _permutation(self, obj: CanonicalObject, parameters: dict[str, Any]) -> list[int]:
+        cached = self._perm_cache
+        if cached is not None and cached[0] is obj and cached[1] is parameters:
+            return cached[2]
+        perm = self._compute_permutation(obj, parameters)
+        self._perm_cache = (obj, parameters, perm)
+        return perm
+
+    def _compute_permutation(self, obj: CanonicalObject, parameters: dict[str, Any]) -> list[int]:
         n = obj.frames[0].atoms.positions.shape[0]
         supplied = parameters.get("permutation")
         if supplied is not None:
@@ -248,11 +269,25 @@ class SpeciesReorder(RepairOperation):
     def describe(self, obj: CanonicalObject, parameters: dict[str, Any]) -> str:
         perm = self._permutation(obj, parameters)
         n = obj.frames[0].atoms.positions.shape[0]
+        # Only the computed path is element-grouping; a caller-supplied permutation is an
+        # arbitrary rearrangement (validated only to be a permutation of range(n), not that
+        # it groups by element), so the report must not claim an element regroup it did not do.
+        supplied = parameters.get("permutation") is not None
         if perm == list(range(n)):
+            if supplied:
+                return (
+                    "Reordered atoms by the supplied permutation map: it is the identity "
+                    "permutation, so no atom order changed."
+                )
             return (
                 "Regrouped atoms by element (first-appearance order, stable within each "
                 "element): the source was already element-grouped, so the identity "
                 "permutation was applied — no order changed."
+            )
+        if supplied:
+            return (
+                "Reordered atoms by the supplied permutation map across every frame; the "
+                "recorded permutation map recovers the original order exactly."
             )
         return (
             "Regrouped atoms by element (first-appearance order, stable within each "
@@ -460,21 +495,41 @@ def _pairwise_distances(
 ) -> tuple[np.ndarray, str]:
     """The ``(n, n)`` pairwise distance matrix and the metric used to compute it.
 
-    Minimum-image under the cell's periodic boundary conditions when the frame has a usable
-    lattice (fractional differences wrapped to ``[-0.5, 0.5)`` via ``d - round(d)``, the
-    standard minimum-image convention), plain Cartesian distance otherwise. The metric is
-    returned so the recorded parameters and the report state **which** was used (D254)."""
+    Minimum-image wrapping is applied **only along the axes the frame declares periodic**
+    (``cell.pbc``): the fractional difference is wrapped to ``[-0.5, 0.5)`` via ``d - round(d)``
+    on those axes and left unwrapped on the rest. A frame with no usable lattice — **or one
+    whose ``pbc`` is all False** (a cluster in a bounding box, a gas-phase molecule that still
+    carries a box) — uses plain Cartesian distance: a cell's *presence* is not periodicity
+    (P3 — ``pbc`` is the information), so no report may claim periodic boundary conditions for a
+    structure that declares none, and no atom may be wrapped across a boundary that does not
+    physically exist. The metric string states exactly which convention was used (D254), naming
+    the periodic axes when they are a strict subset."""
     positions = np.asarray(frame.atoms.positions, dtype=float)
     lattice = _frame_lattice(frame)
-    if lattice is not None:
+    pbc = tuple(frame.cell.pbc) if frame.cell is not None else (False, False, False)
+    if lattice is not None and any(pbc):
         frac = to_fractional(positions, lattice)
         dfrac = frac[:, None, :] - frac[None, :, :]
-        dfrac = dfrac - np.round(dfrac)  # minimum image in fractional coordinates
+        # Minimum image in fractional coordinates, but only along declared-periodic axes;
+        # a non-periodic axis keeps its raw (unwrapped) difference.
+        periodic = np.array(pbc, dtype=bool)
+        dfrac = np.where(periodic, dfrac - np.round(dfrac), dfrac)
         cart = dfrac @ lattice
-        metric = "minimum-image under the simulation cell's periodic boundary conditions"
+        if all(pbc):
+            metric = "minimum-image under the simulation cell's periodic boundary conditions"
+        else:
+            axes = ", ".join(name for name, on in zip("abc", pbc, strict=True) if on)
+            metric = (
+                f"minimum-image along the periodic lattice direction(s) {axes} "
+                "(the cell's other directions are non-periodic)"
+            )
     else:
         cart = positions[:, None, :] - positions[None, :, :]
-        metric = "plain Cartesian distance (no simulation cell)"
+        metric = (
+            "plain Cartesian distance (the cell declares no periodic directions)"
+            if lattice is not None
+            else "plain Cartesian distance (no simulation cell)"
+        )
     return np.sqrt(np.sum(cart * cart, axis=-1)), metric
 
 
@@ -483,12 +538,17 @@ class Deduplicate(RepairOperation):
     (M65-S3; D254).
 
     ``distance_threshold`` (Å) is required with **no default** (P4: a tolerance is a
-    scientific judgment about the data). Within each cluster of mutually-within-threshold
-    atoms the **lowest original index survives**; the rest are removed — the survivor keeps
-    its own values **verbatim** (no merging/averaging: an averaged pseudo-atom would
-    fabricate positions/charges the source never held). Distances are minimum-image under
-    PBC when the single frame has a usable cell, plain Cartesian otherwise — and the
-    recorded parameters and description state **which** was used. The removal is applied
+    scientific judgment about the data). Removal is a **greedy single sweep in ascending
+    original index**: an atom is removed when it lies within the threshold of an
+    already-surviving atom, so the **lowest original index survives** each such group (this
+    is a greedy survivor sweep, not a mutual/transitive clustering — a chain A–B–C where the
+    ends are not themselves within threshold keeps both ends). The survivor keeps its own
+    values **verbatim** (no merging/averaging: an averaged pseudo-atom would fabricate
+    positions/charges the source never held). Distances are minimum-image **only along the
+    axes the cell declares periodic** (``cell.pbc``), and plain Cartesian when the frame has
+    no usable cell *or* declares no periodic directions (a cell's presence is not
+    periodicity, P3) — the recorded parameters and description state **which** was used. The
+    removal is applied
     through the shared reindex spine on the survivor indices, so every per-atom category
     follows the same selection and a removed atom referenced by a constraint refuses
     (``RepairError`` — never a silently dropped reference). The Assumption parameters
@@ -509,9 +569,21 @@ class Deduplicate(RepairOperation):
     hazard_class = SELECTIVE_REDUCTIVE_HAZARD
     hazards = (DEDUPE_REMOVED_ATOMS,)
 
-    def _plan(
-        self, obj: CanonicalObject, parameters: dict[str, Any]
-    ) -> tuple[list[int], list[int], str, float]:
+    #: Single-entry compute cache for one application (see ``SpeciesReorder._perm_cache``): the
+    #: engine calls ``apply``/``recorded_parameters``/``hazards_for``/``describe`` back-to-back
+    #: on the same ``(obj, parameters)``, and the O(n²) pairwise-distance plan is derived once
+    #: and reused, keyed by object **identity**. Fresh instance per request → per-request memo.
+    _plan_cache: tuple[CanonicalObject, dict[str, Any], _DedupePlan] | None = None
+
+    def _plan(self, obj: CanonicalObject, parameters: dict[str, Any]) -> _DedupePlan:
+        cached = self._plan_cache
+        if cached is not None and cached[0] is obj and cached[1] is parameters:
+            return cached[2]
+        plan = self._compute_plan(obj, parameters)
+        self._plan_cache = (obj, parameters, plan)
+        return plan
+
+    def _compute_plan(self, obj: CanonicalObject, parameters: dict[str, Any]) -> _DedupePlan:
         """(survivor indices ascending, removed indices ascending, metric, threshold). The
         removal set is a deterministic function of threshold + source positions, so the
         recorded parameters replay it exactly."""
