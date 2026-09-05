@@ -34,6 +34,15 @@ REPAIR_BLOCK_MISSING_LATTICE = "missing_lattice"
 #: scenarios); an operation declares ``hazard_class``.
 TRANSFORMATIVE_HAZARD = "transformative"
 
+#: The **selective-reductive** hazard class — recovery's own vocabulary, reused by repair
+#: (D254): deduplicate removes real atoms (a reductive loss), so it draws the same class
+#: recovery's ``frame_selection`` uses, with ``transformative`` (D251) the single
+#: repair-side addition. Restated here rather than imported from ``recovery.scenarios``
+#: because ``repair`` depends on ``schema`` + ``sdk`` only (D249's layering); a test
+#: asserts this stays in lockstep with ``HazardClass.SELECTIVE_REDUCTIVE`` so the shared
+#: vocabulary can never drift.
+SELECTIVE_REDUCTIVE_HAZARD = "selective_reductive"
+
 
 class RepairError(ValueError):
     """A repair *request* that is incoherent — a caller error, not a conversion refusal.

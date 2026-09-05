@@ -25,6 +25,7 @@ from numpy.typing import NDArray
 from xtalate.repair._reindex import reindex_per_atom
 from xtalate.repair.contract import (
     REPAIR_BLOCK_MISSING_LATTICE,
+    SELECTIVE_REDUCTIVE_HAZARD,
     TRANSFORMATIVE_HAZARD,
     RepairBlock,
     RepairError,
@@ -418,7 +419,181 @@ class Center(RepairOperation):
         )
 
 
+#: The dedupe loss-statement code (D254). The full warning is built per application — it
+#: names the count removed, which only the application knows — so ``hazards_for`` returns a
+#: fresh ``RepairHazard`` with this stable code, or nothing when no atom was removed (a
+#: no-op repair must not claim a loss).
+DEDUPE_REMOVED_ATOMS = RepairHazard(
+    code="DEDUPE_REMOVED_ATOMS",
+    message=(  # base text; the per-application row adds the count
+        "deduplicate removed atoms closer than the requested threshold — the Assumption "
+        "enumerates exactly which (index + species) were removed, and they are not "
+        "recoverable from the output"
+    ),
+)
+
+
+def _dedupe_threshold(parameters: dict[str, Any]) -> float:
+    """The required positive ``distance_threshold`` (Å) — no default (P4): a tolerance is a
+    scientific judgment about the data."""
+    threshold = parameters.get("distance_threshold")
+    if threshold is None:
+        raise RepairError(
+            "deduplicate requires a positive distance_threshold (Å); a tolerance is a "
+            "scientific judgment about the data, so there is no default"
+        )
+    try:
+        value = float(threshold)
+    except (TypeError, ValueError):
+        value = np.nan
+    if not np.isfinite(value) or value <= 0.0:
+        raise RepairError(
+            "deduplicate requires a positive distance_threshold (Å), got "
+            f"{threshold!r}; a tolerance is a scientific judgment about the data, so "
+            "there is no default"
+        )
+    return value
+
+
+def _pairwise_distances(
+    frame: Frame,
+) -> tuple[np.ndarray, str]:
+    """The ``(n, n)`` pairwise distance matrix and the metric used to compute it.
+
+    Minimum-image under the cell's periodic boundary conditions when the frame has a usable
+    lattice (fractional differences wrapped to ``[-0.5, 0.5)`` via ``d - round(d)``, the
+    standard minimum-image convention), plain Cartesian distance otherwise. The metric is
+    returned so the recorded parameters and the report state **which** was used (D254)."""
+    positions = np.asarray(frame.atoms.positions, dtype=float)
+    lattice = _frame_lattice(frame)
+    if lattice is not None:
+        frac = to_fractional(positions, lattice)
+        dfrac = frac[:, None, :] - frac[None, :, :]
+        dfrac = dfrac - np.round(dfrac)  # minimum image in fractional coordinates
+        cart = dfrac @ lattice
+        metric = "minimum-image under the simulation cell's periodic boundary conditions"
+    else:
+        cart = positions[:, None, :] - positions[None, :, :]
+        metric = "plain Cartesian distance (no simulation cell)"
+    return np.sqrt(np.sum(cart * cart, axis=-1)), metric
+
+
+class Deduplicate(RepairOperation):
+    """Remove atoms closer than a **user-supplied threshold**, single-structure only
+    (M65-S3; D254).
+
+    ``distance_threshold`` (Å) is required with **no default** (P4: a tolerance is a
+    scientific judgment about the data). Within each cluster of mutually-within-threshold
+    atoms the **lowest original index survives**; the rest are removed — the survivor keeps
+    its own values **verbatim** (no merging/averaging: an averaged pseudo-atom would
+    fabricate positions/charges the source never held). Distances are minimum-image under
+    PBC when the single frame has a usable cell, plain Cartesian otherwise — and the
+    recorded parameters and description state **which** was used. The removal is applied
+    through the shared reindex spine on the survivor indices, so every per-atom category
+    follows the same selection and a removed atom referenced by a constraint refuses
+    (``RepairError`` — never a silently dropped reference). The Assumption parameters
+    enumerate the removed atoms by ``{index, symbol}`` (the report answers *which* atoms,
+    exactly, not just how many).
+
+    **Selective-reductive** (``HazardClass``'s vocabulary, D254): dedupe removes real
+    atoms — a reductive loss, not a transformative one — and the report warns with
+    ``DEDUPE_REMOVED_ATOMS`` (the count removed) on every application that removed
+    something. A trajectory **refuses** (``RepairError``): inter-atom distances change
+    frame to frame, a per-frame removal set would violate the trajectory-wide
+    constant-atom-count invariant and the object-level ``custom_per_atom``, and atoms
+    transiently within a threshold is physics, not a defect — "duplicate atoms" is a
+    structure-cleanup concern.
+    """
+
+    operation = "deduplicate"
+    hazard_class = SELECTIVE_REDUCTIVE_HAZARD
+    hazards = (DEDUPE_REMOVED_ATOMS,)
+
+    def _plan(
+        self, obj: CanonicalObject, parameters: dict[str, Any]
+    ) -> tuple[list[int], list[int], str, float]:
+        """(survivor indices ascending, removed indices ascending, metric, threshold). The
+        removal set is a deterministic function of threshold + source positions, so the
+        recorded parameters replay it exactly."""
+        threshold = _dedupe_threshold(parameters)
+        if obj.frame_count > 1:
+            raise RepairError(
+                "deduplicate operates on a single structure only — this object has "
+                f"{obj.frame_count} frames; inter-atom distances change frame to frame, "
+                "and a per-frame removal set would violate the trajectory-wide "
+                "constant-atom-count invariant (and the object-level custom_per_atom), "
+                "so a trajectory cannot be deduplicated"
+            )
+        frame = obj.frames[0]
+        n = frame.atoms.positions.shape[0]
+        dist, metric = _pairwise_distances(frame)
+        removed: set[int] = set()
+        for i in range(n):
+            if i in removed:
+                continue
+            for j in range(i + 1, n):
+                if j not in removed and dist[i, j] < threshold:
+                    removed.add(j)
+        survivors = [i for i in range(n) if i not in removed]
+        return survivors, sorted(removed), metric, threshold
+
+    def apply(self, obj: CanonicalObject, parameters: dict[str, Any]) -> CanonicalObject:
+        survivors, _, _, _ = self._plan(obj, parameters)
+        return reindex_per_atom(obj, survivors, operation=self.operation)
+
+    def recorded_parameters(
+        self, obj: CanonicalObject, parameters: dict[str, Any]
+    ) -> dict[str, Any]:
+        # The complete record: the threshold that was applied, the metric used, and the
+        # exact removed set by {index, symbol} — the reproducibility harness replays the
+        # threshold and re-derives the same removal set deterministically.
+        _, removed, metric, threshold = self._plan(obj, parameters)
+        symbols = obj.frames[0].atoms.symbols
+        return {
+            "distance_threshold": threshold,
+            "metric": metric,
+            "removed_atoms": [{"index": i, "symbol": symbols[i]} for i in removed],
+        }
+
+    def hazards_for(self, obj: CanonicalObject, parameters: dict[str, Any]) -> list[RepairHazard]:
+        _, removed, _, _ = self._plan(obj, parameters)
+        if not removed:
+            return []  # Nothing removed — no loss; a no-op repair must not claim one.
+        return [
+            RepairHazard(
+                code=DEDUPE_REMOVED_ATOMS.code,
+                message=(
+                    f"deduplicate removed {len(removed)} atom(s) closer than the "
+                    "requested threshold — the Assumption enumerates exactly which "
+                    "(index + species) were removed, and they are not recoverable from "
+                    "the output"
+                ),
+            )
+        ]
+
+    def describe(self, obj: CanonicalObject, parameters: dict[str, Any]) -> str:
+        _, removed, metric, threshold = self._plan(obj, parameters)
+        if not removed:
+            return (
+                f"Deduplicated the structure: no atoms were closer than {threshold:g} Å "
+                f"({metric}) — nothing removed (a recorded no-op repair)."
+            )
+        return (
+            f"Deduplicated the structure: removed {len(removed)} atom(s) closer than "
+            f"{threshold:g} Å ({metric}); the survivor of each cluster keeps its own "
+            "values verbatim and the Assumption enumerates exactly which atoms were "
+            "removed."
+        )
+
+
 def builtin_repair_operations() -> list[RepairOperation]:
-    """The explicit first-party repair-operation list (M64). Third-party repairs are declined
-    for v1.7 (impl-plan §4 rule 4); reorder landed at M65-S1, center now, dedupe in S3."""
-    return [IdentityRepair(), WrapIntoCell(), SpeciesReorder(), Center()]
+    """The explicit first-party repair-operation list — the **closed set of four** (+ the
+    ``identity`` reference op), complete at M65-S3 (D254). Third-party repairs are declined
+    for v1.7 (impl-plan §4 rule 4)."""
+    return [
+        IdentityRepair(),
+        WrapIntoCell(),
+        SpeciesReorder(),
+        Center(),
+        Deduplicate(),
+    ]

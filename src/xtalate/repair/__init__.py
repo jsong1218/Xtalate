@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from xtalate.repair.contract import (
     REPAIR_BLOCK_MISSING_LATTICE,
+    SELECTIVE_REDUCTIVE_HAZARD,
     TRANSFORMATIVE_HAZARD,
     AppliedRepair,
     RepairBlock,
@@ -40,6 +41,7 @@ from xtalate.repair.operations import builtin_repair_operations
 
 __all__ = [
     "REPAIR_BLOCK_MISSING_LATTICE",
+    "SELECTIVE_REDUCTIVE_HAZARD",
     "TRANSFORMATIVE_HAZARD",
     "AppliedRepair",
     "RepairBlock",
