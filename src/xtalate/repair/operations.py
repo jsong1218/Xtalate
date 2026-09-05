@@ -353,7 +353,10 @@ def _centroid(positions: NDArray[np.float64]) -> NDArray[np.float64]:
     """The unweighted geometric mean of positions — M65 ships no mass-weighted center-of-mass
     mode (D253): mass-weighting would need masses that may be ``None``, and fabricating IUPAC
     weights purely to center would violate P4."""
-    return positions.mean(axis=0)
+    # np.asarray pins the return to NDArray[np.float64]: ndarray.mean is typed Any under the
+    # numpy stubs on the 3.11 floor (green on 3.13), which trips mypy's no-any-return — the same
+    # wrap _cell_center uses just below.
+    return np.asarray(positions.mean(axis=0))
 
 
 def _cell_center(lattice: NDArray[np.float64]) -> NDArray[np.float64]:
