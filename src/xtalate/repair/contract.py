@@ -34,6 +34,15 @@ REPAIR_BLOCK_MISSING_LATTICE = "missing_lattice"
 #: scenarios); an operation declares ``hazard_class``.
 TRANSFORMATIVE_HAZARD = "transformative"
 
+#: The **selective-reductive** hazard class — recovery's own vocabulary, reused by repair
+#: (D254): deduplicate removes real atoms (a reductive loss), so it draws the same class
+#: recovery's ``frame_selection`` uses, with ``transformative`` (D251) the single
+#: repair-side addition. Restated here rather than imported from ``recovery.scenarios``
+#: because ``repair`` depends on ``schema`` + ``sdk`` only (D249's layering); a test
+#: asserts this stays in lockstep with ``HazardClass.SELECTIVE_REDUCTIVE`` so the shared
+#: vocabulary can never drift.
+SELECTIVE_REDUCTIVE_HAZARD = "selective_reductive"
+
 
 class RepairError(ValueError):
     """A repair *request* that is incoherent — a caller error, not a conversion refusal.
@@ -120,7 +129,10 @@ class RepairOperation(ABC):
     closed set) and implement ``apply`` (the pure transform), ``block`` (an honest refusal when
     the transform cannot run against the given object — default: never blocks), and
     ``describe`` (the plain-language "what changed" statement for the report). ``hazards``
-    carries the transformative-loss statements (D251) that accompany every application.
+    carries the transformative-loss statements (D251) that accompany every application;
+    ``recorded_parameters`` (the complete parameters of a specific application, for
+    reproducibility, D252) and ``hazards_for`` (per-application hazards) default to the
+    verbatim request parameters and the class ``hazards`` tuple respectively.
     """
 
     operation: ClassVar[str] = ""
@@ -146,6 +158,30 @@ class RepairOperation(ABC):
         ``model_copy``), must not read config/global state, and must not draw randomness.
         ``parameters`` are the recorded parameters of this application.
         """
+
+    def recorded_parameters(
+        self, obj: CanonicalObject, parameters: dict[str, Any]
+    ) -> dict[str, Any]:
+        """The complete parameters of *this application*, as recorded in the report.
+
+        Default: the request's parameters verbatim — an operation that consumes exactly
+        what was requested records exactly that (M64's identity/wrap records are
+        unchanged). An operation that *computes* a deterministic parameter from the
+        object (M65-S1: ``species_reorder``'s permutation map) returns the record that
+        re-derivation must replay: the reproducibility contract is that ``apply`` is a
+        pure function of ``(obj, recorded_parameters)``.
+        """
+        return parameters
+
+    def hazards_for(self, obj: CanonicalObject, parameters: dict[str, Any]) -> list[RepairHazard]:
+        """The hazard statements of *this application*, in application order.
+
+        Default: the class-level ``hazards`` tuple verbatim — a transformative operation
+        states its loss on every application (D251). An operation whose statement is
+        conditional (M65-S1: ``species_reorder``'s order-changed advisory, which would
+        lie if fired when the permutation is the identity) overrides this.
+        """
+        return list(self.hazards)
 
     @abstractmethod
     def describe(self, obj: CanonicalObject, parameters: dict[str, Any]) -> str:
