@@ -116,9 +116,15 @@ def apply_repairs(
             AppliedRepair(
                 id="",  # Assigned by the Conversion Engine when it numbers all applied records.
                 operation=op.operation,
-                parameters=parameters,
+                # The complete parameters of this application — verbatim request parameters,
+                # or the deterministic record an operation computes from the object (D252:
+                # species_reorder's permutation map) — the reproducibility harness replays
+                # exactly these.
+                parameters=op.recorded_parameters(working, parameters),
                 description=op.describe(working, parameters),
-                hazards=list(op.hazards),
+                # Per-application hazards (D252): an advisory like ATOM_ORDER_CHANGED must
+                # not fire when the application changed nothing.
+                hazards=op.hazards_for(working, parameters),
             )
         )
         working = result

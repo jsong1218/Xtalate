@@ -21,10 +21,12 @@ from typing import Any
 
 import numpy as np
 
+from xtalate.repair._reindex import reindex_per_atom
 from xtalate.repair.contract import (
     REPAIR_BLOCK_MISSING_LATTICE,
     TRANSFORMATIVE_HAZARD,
     RepairBlock,
+    RepairError,
     RepairHazard,
     RepairOperation,
 )
@@ -152,7 +154,112 @@ class WrapIntoCell(RepairOperation):
         )
 
 
+#: The order-changed advisory (D252). Reordering is fully recoverable — the recorded
+#: permutation map reconstructs the original order exactly — so this is an **advisory**
+#: for downstream tools that key on atom order (Part 5 §2's ``ATOM_ORDER_CHANGED``),
+#: not a transformative-loss statement: nothing is lost, so ``species_reorder`` declares
+#: no hazard class, and the row is suppressed when the permutation is the identity (an
+#: application that changed nothing must not claim an order change).
+ATOM_ORDER_CHANGED = RepairHazard(
+    code="ATOM_ORDER_CHANGED",
+    message=(
+        "atom order changed — atoms are regrouped by element; the original order is fully "
+        "recoverable from the recorded permutation map, but downstream tools that key on "
+        "atom order may need re-association"
+    ),
+)
+
+
+def _element_grouping_permutation(symbols: list[str]) -> list[int]:
+    """The species-reorder permutation: atoms grouped by element in first-appearance order.
+
+    Mirrors the exporters' grouping rule (``exporters._common.group_by_element`` — the
+    same first-occurrence element order, stable within an element so atoms of one
+    element keep their relative order), reimplemented here because ``repair`` may not
+    import ``exporters`` (layering, Part 1 §5.1). A lockstep test pins the two to each
+    other, so the repaired object is exactly the object an element-grouping exporter
+    (POSCAR) expects — the exporter's own ``atom_permutation`` then applies on top as
+    usual (D20), with no double-counting.
+    """
+    order: list[str] = []
+    groups: dict[str, list[int]] = {}
+    for i, sym in enumerate(symbols):
+        if sym not in groups:
+            groups[sym] = []
+            order.append(sym)
+        groups[sym].append(i)
+    return [i for sym in order for i in groups[sym]]
+
+
+class SpeciesReorder(RepairOperation):
+    """Regroup atoms by element (first-appearance order, stable within each element), via one
+    frame-invariant permutation applied to **every** frame (M65-S1; D252).
+
+    Non-destructive: a permutation is fully reversible from its map, so the operation
+    declares **no hazard class** — nothing is lost, no value is changed. It records the
+    computed permutation map as its parameters (the D23 ``atom_permutation`` seam, now
+    user-invokable — and the exact datum the reproducibility harness re-derives from),
+    and emits the ``ATOM_ORDER_CHANGED`` advisory as a ``source="repair"`` warning for
+    downstream tools that key on atom order — **suppressed when the source is already
+    element-grouped**, because the identity permutation changes nothing and the advisory
+    would be a lie. The permutation is computed **once** from frame 0's symbols and
+    applied identically to every frame (atom identity is frame-invariant, so element
+    grouping is too — the property that makes reorder safe on trajectories while dedupe
+    is not). Every per-atom array and constraint reference follows the same map through
+    the shared reindex spine (``repair._reindex``, D252) — a half-reindexed object is
+    impossible by construction.
+    """
+
+    operation = "species_reorder"
+    hazard_class = None  # Non-destructive: a recorded permutation fully recovers the order.
+    hazards = (ATOM_ORDER_CHANGED,)
+
+    def _permutation(self, obj: CanonicalObject, parameters: dict[str, Any]) -> list[int]:
+        n = obj.frames[0].atoms.positions.shape[0]
+        supplied = parameters.get("permutation")
+        if supplied is not None:
+            perm = [int(i) for i in supplied]
+            if sorted(perm) != list(range(n)):
+                raise RepairError(
+                    f"species_reorder: the recorded permutation must rearrange "
+                    f"range({n}) exactly once, got {supplied!r}"
+                )
+            return perm
+        return _element_grouping_permutation(obj.frames[0].atoms.symbols)
+
+    def apply(self, obj: CanonicalObject, parameters: dict[str, Any]) -> CanonicalObject:
+        return reindex_per_atom(obj, self._permutation(obj, parameters), operation=self.operation)
+
+    def recorded_parameters(
+        self, obj: CanonicalObject, parameters: dict[str, Any]
+    ) -> dict[str, Any]:
+        # The permutation actually applied — the completeness half of the reproducibility
+        # contract: apply(source, recorded_parameters) re-derives byte-identically.
+        return {"permutation": self._permutation(obj, parameters)}
+
+    def hazards_for(self, obj: CanonicalObject, parameters: dict[str, Any]) -> list[RepairHazard]:
+        n = obj.frames[0].atoms.positions.shape[0]
+        if self._permutation(obj, parameters) == list(range(n)):
+            return []  # Identity application: nothing changed, the advisory would be a lie.
+        return list(self.hazards)
+
+    def describe(self, obj: CanonicalObject, parameters: dict[str, Any]) -> str:
+        perm = self._permutation(obj, parameters)
+        n = obj.frames[0].atoms.positions.shape[0]
+        if perm == list(range(n)):
+            return (
+                "Regrouped atoms by element (first-appearance order, stable within each "
+                "element): the source was already element-grouped, so the identity "
+                "permutation was applied — no order changed."
+            )
+        return (
+            "Regrouped atoms by element (first-appearance order, stable within each "
+            "element) across every frame; the recorded permutation map recovers the "
+            "original order exactly."
+        )
+
+
 def builtin_repair_operations() -> list[RepairOperation]:
     """The explicit first-party repair-operation list (M64). Third-party repairs are declined
-    for v1.7 (impl-plan §4 rule 4); center/dedupe/reorder register here in M65."""
-    return [IdentityRepair(), WrapIntoCell()]
+    for v1.7 (impl-plan §4 rule 4); center/dedupe register here later in M65, reorder now."""
+    return [IdentityRepair(), WrapIntoCell(), SpeciesReorder()]
