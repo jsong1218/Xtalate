@@ -222,6 +222,7 @@ def _failure_body(exc: Exception, settings: Settings, request_id: str | None) ->
     """
     from backend.jobs.revalidate import RevalidateError
     from xtalate.recovery import RecoveryError
+    from xtalate.repair import RepairError
     from xtalate.sdk import FrameLimitExceeded, ParseError
 
     if isinstance(exc, RevalidateError):
@@ -249,6 +250,12 @@ def _failure_body(exc: Exception, settings: Settings, request_id: str | None) ->
         return _error_body(settings, code, message, details, request_id)
     if isinstance(exc, RecoveryError):
         return _error_body(settings, "INVALID_RECOVERY_CHOICE", str(exc), {}, request_id)
+    if isinstance(exc, RepairError):
+        # A malformed repair request (unknown operation, missing/incoherent parameter) is a
+        # caller error, not a server fault: reuse the binding malformed-request code — no new
+        # error code (Part 6 §6; D256). A *blocked* repair is never raised — it is a refusal
+        # report (RECOVERY_REQUIRED) routed through the pause/refuse machinery below.
+        return _error_body(settings, "MALFORMED_REQUEST", str(exc), {}, request_id)
     return _error_body(
         settings,
         "INTERNAL_ERROR",
@@ -339,6 +346,7 @@ def _run_convert(
     from backend.db.models import Conversion, Report
     from backend.jobs.recovery import build_awaiting_block, resolve_reference_choices
     from xtalate.conversion import ConversionEngine, parse_with_recovery
+    from xtalate.repair import RepairRequest
 
     request = job.request
     target_format_id = request["target_format_id"]
@@ -355,6 +363,13 @@ def _run_convert(
         # Reference files are uploads too — the frame cap applies to any parse this job drives.
         max_frames=settings.max_frames,
     )
+    # User-requested repairs (v1.7 M66-S2; D256): an additive, **ordered** list applied between
+    # parse and pre-flight (D250's placement). Order is the caller's and is preserved verbatim;
+    # an absent/empty list is the pre-v1.7 pipeline byte-for-byte. A malformed repair (unknown
+    # operation, missing/incoherent parameter) raises the engine's ``RepairError``, mapped to
+    # ``MALFORMED_REQUEST`` by :func:`_failure_body`; a *blocked* repair (a cell-less wrap) is
+    # not an error — it refuses/pauses through the existing ``missing_lattice`` machinery below.
+    repairs = [RepairRequest(**r) for r in options.get("repairs") or []]
     allow_recovery = bool(options.get("allow_recovery", False))
     # Resume merges the user's answers into the request and marks them (M23 slice 2); the flag is
     # absent on the initial submit, so preset choices stay ``origin: "preset"``.
@@ -387,6 +402,7 @@ def _run_convert(
         recovery_choices=recovery_choices,
         recovery_origin=recovery_origin,
         parse_recovery=parsed,
+        repairs=repairs,
         acknowledge_loss=options.get("acknowledge_loss", False),
         acknowledge_parse_warnings=options.get("acknowledge_parse_warnings", False),
         # Resolved, not passed through: the engine takes a named profile *or* a built
