@@ -72,6 +72,12 @@
   --cb-fail: #d42020; /* red    — validation fail / refusal, as TEXT + border   */
   --cb-fail-solid: #d42020; /* red    — filled ✕ badge / destructive button (white text on it) */
   --cb-skipped: #6b7280; /* gray with label — validation skipped                */
+  /* Blue — a value *transformed on the user's explicit request* (the ⟳ "Modified on request"
+     mark, v1.7 M66-S3, D257). A wrapped/centered coordinate is not fabricated (so not violet ◆)
+     and not removed — it is transformed in place, earning its own calm hue: the one strong color
+     the §4 palette did not already use. #1d4ed8 (blue-700) clears AA on white (~6.7:1) and on
+     the blue-50 tint (~6.1:1). */
+  --cb-repair: #1d4ed8;
 
   /* Subtle row tints for the report panels (M27), AA-legible with the foregrounds above. */
   --cb-preserve-bg: #f0fdf4;
@@ -79,6 +85,7 @@
   --cb-assumption-bg: #f5f3ff;
   --cb-warning-bg: #fffbeb;
   --cb-fail-bg: #fef2f2;
+  --cb-repair-bg: #eff6ff; /* blue-50 — the repair-row tint (⟳ "Modified on request") */
 
   /* The bonds-heuristic badge (v1.6 M63-S2, D241): a display-inference notice, distinct from the
      §4 loss palette — amber on amber, AA-guarded in both themes (8.15:1 light / 9.51:1 dark). */
@@ -126,6 +133,9 @@
   --cb-fail: #f87171; /* red-400 — legible as TEXT on the dark surface + tint */
   --cb-fail-solid: #dc2626; /* red-600 — filled badge, dark enough for white text  */
   --cb-skipped: #9ca3af; /* gray-400   */
+  /* Blue-400 — the ⟳ "Modified on request" foreground on the dark surface (~7.0:1 on slate-900,
+     ~6.8:1 on the dark blue tint below). */
+  --cb-repair: #60a5fa;
 
   /* Dark tints — low-luminance, AA-legible with both the dark foregrounds and the dark body text. */
   --cb-preserve-bg: #0d2a1c;
@@ -133,6 +143,7 @@
   --cb-assumption-bg: #1d1a33;
   --cb-warning-bg: #2a2008;
   --cb-fail-bg: #2b1417;
+  --cb-repair-bg: #0c1a33; /* a low-luminance blue — the repair-row tint on the dark surface */
 
   /* Dark bonds-badge: a low-luminance amber tint with a light amber foreground (the dark-tint
      convention of the cb-* tints), AA-guarded (9.51:1). */
