@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { PresetManager } from "@/components/presets/PresetManager";
+import { RepairPicker, type RepairDraft } from "@/components/repair/RepairPicker";
 import { TargetPicker } from "@/components/TargetPicker";
 import { ConversionJob } from "@/components/workspace/ConversionJob";
 import { apiClient } from "@/lib/api/client";
@@ -40,6 +41,9 @@ export default function ConvertTabPage() {
     target: string;
     mode: "permissive" | "strict";
   } | null>(null);
+  // User-requested repairs (v1.7 M66-S3, D257): the ordered list assembled by the RepairPicker,
+  // sent as `options.repairs` — the S2 field. An empty list is the pre-v1.7 pipeline byte-identical.
+  const [repairs, setRepairs] = useState<RepairDraft[]>([]);
 
   const inspection = useInspection(fileId);
   const capabilities = useQuery(capabilitiesQuery());
@@ -65,6 +69,11 @@ export default function ConvertTabPage() {
           acknowledge_parse_warnings: false,
           allow_recovery: true,
           tolerance_profile: "default",
+          // Additive (Part 6 §7): absent when no repair was requested, so a no-repair submit is
+          // byte-identical to pre-v1.7. A cell-less wrap pauses to the recovery wizard the page
+          // already has (allow_recovery is true); a malformed repair fails as a clean request
+          // error.
+          ...(repairs.length ? { repairs } : {}),
         },
       },
     });
@@ -110,6 +119,9 @@ export default function ConvertTabPage() {
       ) : (
         <>
           {submitError ? <ErrorEnvelope envelope={submitError} /> : null}
+          {/* The pre-conversion repair step (M66-S3, D257): user-requested transforms applied to
+              the source before pre-flight, in the order added — never demanded by pre-flight. */}
+          <RepairPicker repairs={repairs} onChange={setRepairs} />
           {targets.length > 0 ? (
             <TargetPicker
               discovery={inspection.report}

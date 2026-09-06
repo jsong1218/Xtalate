@@ -242,7 +242,11 @@ function WarningsBody({ warnings }: { warnings: ReportWarning[] }) {
   );
 }
 
-/** An Assumption and the Supplied fields it authorized, rendered together (the ◆ "third thing"). */
+/** An Assumption and the Supplied fields it authorized, rendered together (the ◆ "third thing").
+ *  A *repair* record (`assumption.scenario === "repair"`, v1.7 M66) is none of those — the value
+ *  was transformed on the user's explicit request, so the row carries the ⟳ "Modified on request"
+ *  mark (D257) instead of ◆ violet: a transformed coordinate is not a fabricated one, and the
+ *  vocabulary's sharpest distinction must survive in the pixels. */
 function AssumptionRow({
   assumption,
   supplied,
@@ -250,18 +254,23 @@ function AssumptionRow({
   assumption: Assumption;
   supplied: SuppliedEntry[];
 }) {
+  const isRepair = assumption.scenario === "repair";
   const scenario = labelForScenario(assumption.scenario);
   return (
     <Row
-      kind="assumption"
-      testId="assumption-row"
+      kind={isRepair ? "repair" : "assumption"}
+      testId={isRepair ? "repair-row" : "assumption-row"}
       // The stable fragment anchor the Structure tab's supplied-geometry link lands on — the
       // Assumption one click away from the violet cell (v1.6 M60-S3, D235).
       id={`assumption-${assumption.id}`}
       label={
         <span>
-          {scenario.label}{" "}
-          <code className="rounded bg-cb-assumption-bg px-1 py-0.5 text-xs text-cb-assumption">
+          {isRepair ? "Modified on request" : scenario.label}{" "}
+          <code
+            className={`rounded px-1 py-0.5 text-xs ${
+              isRepair ? "bg-cb-repair-bg text-cb-repair" : "bg-cb-assumption-bg text-cb-assumption"
+            }`}
+          >
             {assumption.choice}
           </code>
         </span>

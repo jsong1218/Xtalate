@@ -76,12 +76,14 @@ const config: Config = {
           fail: "var(--cb-fail)",
           "fail-solid": "var(--cb-fail-solid)",
           skipped: "var(--cb-skipped)",
+          repair: "var(--cb-repair)", // ⟳ "Modified on request" (v1.7 M66-S3, D257)
           // Tinted backgrounds for the panel rows (kept AA against the foregrounds above).
           "preserve-bg": "var(--cb-preserve-bg)",
           "removed-bg": "var(--cb-removed-bg)",
           "assumption-bg": "var(--cb-assumption-bg)",
           "warning-bg": "var(--cb-warning-bg)",
           "fail-bg": "var(--cb-fail-bg)",
+          "repair-bg": "var(--cb-repair-bg)",
           // The viewer's bonds-heuristic badge (M63-S2, D241): amber notice, distinct from the §4
           // palette; both values are AA-guarded tokens in globals.css (never a hard-coded hue).
           "bonds-bg": "var(--bonds-bg)",

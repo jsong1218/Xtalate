@@ -6,6 +6,11 @@ renders the report schemas of Parts 3–5 as a terminal inventory or emits them 
 is the CLI form of ``recovery_choices`` — and a conversion needing a choice the caller did not
 supply *refuses* (exit 2), never prompts: interactive recovery belongs to the job-driven UI, and a
 second consent flow in a TTY would be a second thing to keep honest (Appendix A, rejected note).
+Repair is user-initiated and **order-dependent** — the repeatable ``--repair``
+``OPERATION[,param=value…]`` flag builds the ordered ``list[RepairRequest]`` (v1.7 M66; D255)
+applied by the engine between parse and pre-flight; a bad request exits 1, and a blocked repair
+(a cell-less wrap) refuses through the ordinary refusal path (exit 2) like any recovery the CLI
+cannot resolve.
 
 Exit codes (§A.2) make the CLI CI-native without parsing stdout:
 ``0`` ok · ``2`` refused · ``3`` validation failed · ``4`` parse error ·
@@ -39,10 +44,11 @@ from xtalate.conversion import (
     parse_with_recovery,
     run_batch,
 )
-from xtalate.conversion.batch import RecoveryPresetError
+from xtalate.conversion.batch import RecoveryPresetError, _coerce
 from xtalate.discovery import DiscoveryEngine
 from xtalate.recovery import RecoveryError
 from xtalate.registry import PluginLoadError, default_registry
+from xtalate.repair import RepairError, RepairRequest
 from xtalate.sdk import ParseError
 from xtalate.validation import (
     ToleranceProfile,
@@ -116,6 +122,13 @@ def main(argv: list[str] | None = None) -> int:
         # a refusal: surface it as a clean usage message, never a traceback (per the engine docs).
         print(f"error: invalid --recover preset: {exc}", file=sys.stderr)
         return EXIT_USAGE
+    except RepairError as exc:
+        # An invalid --repair (an unknown operation, a malformed spec, or a parameter the
+        # operation rejects) is the same caller mistake: clean usage message (exit 1), never a
+        # traceback. A *blocked* repair (e.g. a cell-less wrap) is not an error — it refuses
+        # through the ordinary refusal path (exit 2) like any recovery the CLI cannot resolve.
+        print(f"error: invalid --repair: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     except RecoveryPresetError as exc:
         # A malformed preset string (from the CLI or a batch manifest) is the same caller mistake.
         print(f"error: invalid recovery preset: {exc}", file=sys.stderr)
@@ -181,6 +194,9 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
         tolerance = _resolve_tolerance(args.tolerance_profile)
         recovery_choices = _parse_recover(args.recover)
         _inject_references(registry, recovery_choices)
+        # User-requested repairs (v1.7 M66; D255): the ordered list is parsed once, up front,
+        # and applied by the engine between parse and pre-flight — see the engine-call below.
+        repairs = _parse_repair(args.repair)
         # parse-time recovery (missing_species / truncate_corrupt_tail) is applied here, before the
         # engine, if a matching preset was supplied; otherwise the recoverable parse error stands.
         parsed = parse_with_recovery(
@@ -201,6 +217,7 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
             mode=args.mode,
             recovery_choices=recovery_choices,
             parse_recovery=parsed,
+            repairs=repairs,
             acknowledge_loss=args.acknowledge_loss,
             acknowledge_parse_warnings=args.acknowledge_parse_warnings,
             tolerance_profile=tolerance,
@@ -300,6 +317,11 @@ def _BATCH_CONFLICTS(args: argparse.Namespace) -> list[str]:
         conflicts.append("--mode")
     if args.recover:
         conflicts.append("--recover")
+    if args.repair:
+        # Per-file repairs are a v1.8+ batch question (impl-plan §4.4); M66 wires
+        # single-file repair only, so --repair is refused in batch mode like any
+        # shared setting the manifest does not carry.
+        conflicts.append("--repair")
     if args.tolerance_profile is not None:
         conflicts.append("--tolerance-profile")
     if args.acknowledge_loss:
@@ -372,6 +394,11 @@ def _convert_streamed(args: argparse.Namespace, registry: Registry) -> Any | Non
     the output only after the whole conversion succeeded.
     """
     if not args.output or args.mode == "strict":
+        return None
+    if args.repair:
+        # Repairs run on the materialized path only: the streaming engines predate v1.7
+        # repairs and are frozen for M66 (the one permitted engine-call change is the
+        # `repairs=` argument on the materialized `convert`). Routing here is CLI logic.
         return None
     recovery_choices = _parse_recover(args.recover)
     frame_selection: dict[str, Any] | None = None
@@ -604,6 +631,37 @@ def _parse_recover(specs: list[str] | None) -> dict[str, dict[str, Any]]:
         raise _UsageError(f"--recover {exc}") from exc
 
 
+def _parse_repair(specs: list[str] | None) -> list[RepairRequest]:
+    """Parse repeated ``--repair OPERATION[,param=value…]`` into an ordered ``list[RepairRequest]``.
+
+    ``--repair`` is **order-dependent** on purpose (D255): repeated flags build the request list
+    in argument order and the same operation may appear twice — wrap-then-center and
+    center-then-wrap are different structures, and the report records which happened. This is
+    deliberately **not** the ``--recover`` dict grammar (``parse_recovery_presets``): a
+    scenario-keyed dict discards order and forbids the duplicate operations a repair stack
+    legitimately needs. Parameter values are coerced with the same scalar coercion ``--recover``
+    uses (``distance_threshold=0.05`` is a float, ``target=origin`` a string). The explicit
+    ``[x, y, z]`` center target is **not** reachable from the CLI in v1.7 (the coercion is
+    scalar-only; bracketed lists are a follow-up) — stated in ``--help``. A malformed spec raises
+    ``RepairError``, so the whole class of bad ``--repair`` usage exits 1 through the same
+    handler as a parameter the engine rejects; an unknown operation or an incoherent parameter
+    surfaces the engine's own ``RepairError`` when ``convert`` applies the list."""
+    requests: list[RepairRequest] = []
+    for spec in specs or []:
+        parts = spec.split(",")
+        operation = parts[0].strip()
+        if not operation:
+            raise RepairError(f"repair {spec!r} must name an operation (OPERATION[,param=value…])")
+        parameters: dict[str, Any] = {}
+        for param in parts[1:]:
+            if "=" not in param:
+                raise RepairError(f"--repair parameter {param!r} must be name=value")
+            name, value = param.split("=", 1)
+            parameters[name] = _coerce(value)
+        requests.append(RepairRequest(operation=operation, parameters=parameters))
+    return requests
+
+
 def _inject_references(registry: Registry, recovery_choices: dict[str, dict[str, Any]]) -> None:
     """Resolve any ``file=PATH`` recovery parameter (``upload_reference``) into a parsed reference
     ``CanonicalObject`` under ``parameters['reference']`` (Part 4 §3.3). The CLI does the
@@ -823,6 +881,16 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         metavar="SCENARIO=CHOICE[,param=value…]",
         help="Preset recovery choice (repeatable).",
+    )
+    p_convert.add_argument(
+        "--repair",
+        action="append",
+        metavar="OPERATION[,param=value…]",
+        help="Apply a repair operation before export (repeatable; applied in the given "
+        "order). Operations: wrap_into_cell (no parameters); center "
+        "(reference=centroid|cell_center, target=origin|cell_center); deduplicate "
+        "(distance_threshold=ANGSTROM); species_reorder (optional permutation=…). "
+        "An explicit-coordinate [x, y, z] center target is not supported on the CLI yet.",
     )
     p_convert.add_argument("--acknowledge-loss", action="store_true")
     p_convert.add_argument("--acknowledge-parse-warnings", action="store_true")

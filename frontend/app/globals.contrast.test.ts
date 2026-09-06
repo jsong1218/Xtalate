@@ -80,6 +80,9 @@ const FOREGROUNDS = [
   "cb-warning",
   "cb-fail",
   "cb-skipped",
+  // ⟳ "Modified on request" (v1.7 M66-S3, D257): the repair foreground must clear the same AA bar
+  // as every other §4 token — #1d4ed8 on white ≈ 6.7:1 light, #60a5fa on slate-900 ≈ 7.0:1 dark.
+  "cb-repair",
 ];
 /** Foreground token → the tint it is rendered as text upon (report-row badges/links). */
 const FG_ON_TINT: [string, string][] = [
@@ -88,8 +91,16 @@ const FG_ON_TINT: [string, string][] = [
   ["cb-assumption", "cb-assumption-bg"],
   ["cb-warning", "cb-warning-bg"],
   ["cb-fail", "cb-fail-bg"],
+  ["cb-repair", "cb-repair-bg"],
 ];
-const TINTS = ["cb-preserve-bg", "cb-removed-bg", "cb-assumption-bg", "cb-warning-bg", "cb-fail-bg"];
+const TINTS = [
+  "cb-preserve-bg",
+  "cb-removed-bg",
+  "cb-assumption-bg",
+  "cb-warning-bg",
+  "cb-fail-bg",
+  "cb-repair-bg",
+];
 
 /** Run the whole battery against one theme block. */
 function checkTheme(theme: string, block: () => string) {

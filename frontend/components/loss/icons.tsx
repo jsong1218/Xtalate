@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 /**
- * The loss-communication icon set — MASTER_SPEC Part 7 §4, the one place the ✓/✗/○/◆/⚠/✕/–
+ * The loss-communication icon set — MASTER_SPEC Part 7 §4, the one place the ✓/✗/○/◆/⚠/✕/–/⟳
  * vocabulary is defined. Every meaning is a fixed pairing of glyph + color token + text label, and
  * **color is never the sole carrier**: {@link LossTag} always renders a text label beside the
  * glyph, and the bare {@link LossIcon} carries an `aria-label` so assistive tech and
@@ -26,7 +26,11 @@ export type LossKind =
   // Validation `fail`, refusals.
   | "fail"
   // Validation `skipped` + `skip_reason`.
-  | "skipped";
+  | "skipped"
+  // Report `repairs` — a value *transformed on the user's explicit request* (⟳, v1.7 M66-S3,
+  // D257). Not fabricated (so not ◆ violet — the vocabulary's sharpest distinction) and not
+  // removed: transformed in place, by request.
+  | "repair";
 
 interface LossGlyph {
   /** The §4 glyph. */
@@ -52,6 +56,7 @@ export const LOSS_GLYPHS: Record<LossKind, LossGlyph> = {
   warning: { glyph: "⚠", label: "Warning", color: "text-cb-warning" },
   fail: { glyph: "✕", label: "Failed", color: "text-cb-fail", filled: true },
   skipped: { glyph: "–", label: "Skipped", color: "text-cb-skipped" },
+  repair: { glyph: "⟳", label: "Modified on request", color: "text-cb-repair" },
 };
 
 /**

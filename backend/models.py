@@ -68,6 +68,25 @@ class InspectRequest(BaseModel):
     format_override: str | None = None
 
 
+class RepairSpec(BaseModel):
+    """One user-requested repair on the wire — the ordered-list analogue of a recovery choice
+    (v1.7 M66-S2; D256).
+
+    ``operation`` names one of the closed set (``wrap_into_cell``, ``center``,
+    ``deduplicate``, ``species_reorder``); ``parameters`` are the operation's complete
+    parameters. **Order is significant and preserved**: the list is applied in the order given
+    (wrap-then-center ≠ center-then-wrap) and the report records the applied order. Repair
+    parameters are **required up front** — the user initiates a repair and therefore already
+    knows what they are asking for, so a missing/incoherent parameter is a malformed request
+    (the engine's ``RepairError`` → ``MALFORMED_REQUEST``), never an ``awaiting_recovery``
+    pause. The engine validates the operation name and parameters; this model only carries
+    them.
+    """
+
+    operation: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
 class ConvertOptions(BaseModel):
     """``POST /v1/convert`` ``options`` (Part 6 §2.1) — names match ``04_Conversion_Engine.md``."""
 
@@ -88,6 +107,14 @@ class ConvertOptions(BaseModel):
     #: Named profile (``default``/``strict``/``loose``) or a custom tolerance table (Part 5 §4.4).
     tolerance_profile: str | dict[str, Any] = "default"
     output_filename: str | None = None
+    #: User-requested repairs (v1.7 M66-S2; D256), applied by the engine in list order between
+    #: parse and pre-flight (D250's placement). **Additive** (Part 6 §7): an absent/empty list
+    #: runs exactly the pre-v1.7 pipeline byte-for-byte. Repair parameters are required up front —
+    #: a malformed repair (unknown operation, missing/incoherent parameter) is a request error
+    #: (the engine's ``RepairError`` → ``MALFORMED_REQUEST``); the **only** interactive pause a
+    #: repair can cause is the genuine cell-less ``missing_lattice`` block, which pauses to
+    #: ``awaiting_recovery`` iff ``allow_recovery`` and otherwise refuses at HTTP 200.
+    repairs: list[RepairSpec] = Field(default_factory=list)
 
     #: An unknown profile name or a malformed custom table is a request error, caught here so it
     #: renders as ``400 MALFORMED_REQUEST`` (Part 6 §6) with the library's own actionable message —

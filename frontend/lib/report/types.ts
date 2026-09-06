@@ -120,7 +120,8 @@ export interface ReportWarning {
   /** Stable machine code, e.g. "COORDINATE_REPRESENTATION_CHANGED". */
   code: string;
   message: string;
-  source: "parse" | "capability" | "export";
+  /** "repair" (v1.7 M66, D251): the transformative-loss statements a requested repair records. */
+  source: "parse" | "capability" | "export" | "repair";
 }
 
 /**
