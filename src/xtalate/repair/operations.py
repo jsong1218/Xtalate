@@ -144,6 +144,40 @@ class WrapIntoCell(RepairOperation):
     hazard_class = TRANSFORMATIVE_HAZARD
     hazards = (WRAP_DISCARDS_UNWRAPPED_PATHS,)
 
+    #: Single-entry compute cache for one application (see ``SpeciesReorder._perm_cache``): the
+    #: engine calls ``apply`` then ``hazards_for`` on the *same* ``(obj, parameters)``
+    #: back-to-back (engine.py), so the per-frame minimum-image wrap — the operation's dominant
+    #: cost on a trajectory — is computed **once** and reused, rather than run twice (the M67
+    #: review find). Keyed by object **identity** (``is``) so a hit is always exactly this call's
+    #: datum, never a stale one. Instances are built fresh per ``apply_repairs``
+    #: (``builtin_repair_operations``), so the cache lives only for one request and preserves the
+    #: contract's purity/determinism (same inputs → same output).
+    _wrapped_cache: tuple[CanonicalObject, dict[str, Any], list[np.ndarray]] | None = None
+
+    def _wrapped_positions(
+        self, obj: CanonicalObject, parameters: dict[str, Any]
+    ) -> list[np.ndarray]:
+        cached = self._wrapped_cache
+        if cached is not None and cached[0] is obj and cached[1] is parameters:
+            return cached[2]
+        wrapped = self._compute_wrapped_positions(obj)
+        self._wrapped_cache = (obj, parameters, wrapped)
+        return wrapped
+
+    def _compute_wrapped_positions(self, obj: CanonicalObject) -> list[np.ndarray]:
+        # One minimum-image wrap per frame against that frame's own lattice. The engine calls
+        # this (via ``apply``/``hazards_for``) only after ``block`` passed, so every frame
+        # carries a usable lattice.
+        wrapped: list[np.ndarray] = []
+        for frame in obj.frames:
+            lattice = _frame_lattice(frame)
+            assert lattice is not None  # block() refused a cell-less/degenerate frame already.
+            positions = np.asarray(frame.atoms.positions, dtype=float)
+            wrapped.append(
+                to_cartesian(_fold_fractional(to_fractional(positions, lattice)), lattice)
+            )
+        return wrapped
+
     def block(self, obj: CanonicalObject, parameters: dict[str, Any]) -> RepairBlock | None:
         for frame in obj.frames:
             if _frame_lattice(frame) is None:
@@ -168,17 +202,11 @@ class WrapIntoCell(RepairOperation):
         return None
 
     def apply(self, obj: CanonicalObject, parameters: dict[str, Any]) -> CanonicalObject:
-        frames: list[Frame] = []
-        for frame in obj.frames:
-            lattice = _frame_lattice(frame)
-            assert lattice is not None  # block() refused a cell-less/degenerate frame already.
-            positions = np.asarray(frame.atoms.positions, dtype=float)
-            wrapped = to_cartesian(_fold_fractional(to_fractional(positions, lattice)), lattice)
-            frames.append(
-                frame.model_copy(
-                    update={"atoms": frame.atoms.model_copy(update={"positions": wrapped})}
-                )
-            )
+        wrapped = self._wrapped_positions(obj, parameters)
+        frames = [
+            frame.model_copy(update={"atoms": frame.atoms.model_copy(update={"positions": w})})
+            for frame, w in zip(obj.frames, wrapped, strict=True)
+        ]
         return obj.model_copy(update={"frames": frames})
 
     def hazards_for(self, obj: CanonicalObject, parameters: dict[str, Any]) -> list[RepairHazard]:
@@ -186,14 +214,12 @@ class WrapIntoCell(RepairOperation):
         # information. An application that moved no position beyond float noise (an already
         # in-cell structure) discards nothing, so the warning would be a lie — the
         # deduplicate/identity-permutation precedent (D252/D254): a no-op repair must not
-        # claim a loss. The engine calls this only after ``apply`` succeeded, so every frame
-        # carries a usable lattice.
-        for frame in obj.frames:
-            lattice = _frame_lattice(frame)
-            assert lattice is not None  # block() refused a cell-less/degenerate frame already.
+        # claim a loss. Reuses the wrap ``apply`` already computed for this call (``_wrapped_
+        # positions`` cache), so the trajectory is wrapped once, not once per method.
+        wrapped = self._wrapped_positions(obj, parameters)
+        for frame, w in zip(obj.frames, wrapped, strict=True):
             positions = np.asarray(frame.atoms.positions, dtype=float)
-            wrapped = to_cartesian(_fold_fractional(to_fractional(positions, lattice)), lattice)
-            if not np.allclose(positions, wrapped, rtol=0.0, atol=_WRAP_NOOP_ATOL):
+            if not np.allclose(positions, w, rtol=0.0, atol=_WRAP_NOOP_ATOL):
                 return list(self.hazards)
         return []
 
