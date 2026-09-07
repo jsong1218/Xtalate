@@ -761,6 +761,38 @@ heuristic** (D234): off by default, the enabled view carries the persistent badg
 mentions them. The a11y posture (D241): the reports are the accessible record; the viewer is an
 additional presentation — viewer chrome, not the canvas, meets the WCAG AA bar.
 
+## 7.6 The repair seam: explicit, recorded modification (v1.7 M64–M67)
+
+File Repair is the second realized §3.2 consumer and the first *modifying* one. The engine lives in
+`src/xtalate/repair/` and depends on `schema` + `sdk` only (the import-linter layer M64 added); the
+Conversion Engine applies a user-supplied **ordered** list of `RepairRequest`s between parse and
+pre-flight (D250) — order is scientific meaning, and the report's repair rows record the applied
+order. The operation set is **closed at four** — `wrap_into_cell`, `center`, `deduplicate`,
+`species_reorder` — each a pure, deterministic Canonical Object → Canonical Object transform that
+records the D249 triple: an Assumption carrying the operation and its complete parameters, a
+plain-language statement of what changed, and a `ConversionRecord(operation="repair")` in
+Provenance. Every application is reproducible from its report alone — the property suite
+(`tests/property/test_repair_properties.py`, M67-S1) proves that contract at scale over generated
+objects. Adding a repair operation to the closed set is an engine change (D254):
+third-party/plugin-provided repair operations are a future SDK surface, deliberately **not** built
+in v1.7.
+
+The hazard contract: a *transformative* operation (wrap, center) — one that changes values in
+place and loses the originals — states its loss in a `ReportWarning(source="repair")` on every
+application (D251); a no-op application claims no loss (dedupe/species_reorder suppress their
+warning when nothing changed). Repairs never fabricate: a blocked repair (a cell-less wrap, or a
+`cell_center` reference/target on a cell-less frame) refuses through the existing `missing_lattice`
+recovery — the engine's fabricative bright line (D43), and nothing is ever silently "fixed": the
+report says what changed, to which atoms, by whose request. **Over HTTP (option A, D259):** a
+cell-less `wrap_into_cell` **refuses and is not resolvable in place in v1.7** — supply a cell in
+the source, or omit the wrap. Making a resumed repair complete (applying a pre-supplied recovery
+before retrying a blocked repair on resume) is an engine enhancement deferred to **v1.7.1**, pinned
+by the renamed API test
+(`tests/backend/test_repair_api.py::test_cell_less_wrap_over_http_refuses_and_is_not_resolvable_in_v1_7`).
+The CLI grammar is `--repair OPERATION[,param=value…]` (repeatable, ordered — see `docs/API.md`
+§1.2); the wire shape is `options.repairs: [{operation, parameters}]` (`docs/API.md` §5.6 and
+`docs/openapi.json`).
+
 ## 8. Where to go next
 
 - [Architecture Overview](ARCHITECTURE.md) — the design and the principles.

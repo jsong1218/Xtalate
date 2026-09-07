@@ -198,17 +198,19 @@ def test_cell_less_wrap_with_allow_recovery_pauses_with_missing_lattice(
     assert {"manual_input", "bounding_box", "upload_reference"} <= codes
 
 
-def test_resumed_blocked_repair_repauses_pending_engine_decision(client: TestClient) -> None:
-    """The pause is offered and answerable through the existing recovery path, but a blocked
-    repair re-pauses on resume: the engine's repair stage runs before recovery and blocks
+def test_cell_less_wrap_over_http_refuses_and_is_not_resolvable_in_v1_7(
+    client: TestClient,
+) -> None:
+    """A cell-less ``wrap_into_cell`` over HTTP is not resolvable in place in v1.7 (option A,
+    D259): the pause is offered and answerable through the existing recovery path, but a blocked
+    repair re-pauses on resume — the engine's repair stage runs before recovery and blocks
     unconditionally (M64 design; D250 "between parse and pre-flight"), so a pre-supplied
     ``missing_lattice`` choice cannot un-block the wrap in the same pipeline pass.
 
-    **Flagged for review (M66-S2):** the slice plan's "resolvable via the existing
-    ``POST /v1/jobs/{id}/recovery`` path" overstates the engine here — making a resumed
-    repair complete needs an engine change (apply a pre-supplied recovery before retrying a
-    blocked repair), which is frozen for M66 and must be decided by the maintainer/Claude.
-    This test pins the *current* honest behavior so the gap is visible in the suite.
+    Deferred to v1.7.1: making a resumed repair complete (apply a pre-supplied recovery before
+    retrying a blocked repair) is an engine enhancement outside the M67 release close — this
+    test pins the current honest behavior (refuse → pause → resume accepted → re-pause with the
+    same block, the request's repairs preserved) so the limitation is visible, not hidden.
     """
     file_id = _upload(client, CELL_LESS_XYZ, "mol.xyz")
     env = _convert(

@@ -36,12 +36,16 @@ Xtalate stores and translates data computed elsewhere. It is deliberately **not*
 
 Visualization, File Repair, Analysis, and an AI assistant are **deferred secondary goals**, not
 core work. Each is a *consumer* of the Canonical Object and the reports, and attaches later at a
-defined extensibility seam (§8) — none is built into the conversion core. The first such consumer
-is present as of v1.6: the **viewer** is a read-only presentation layer over the geometry endpoints
-and the reports (it renders the Canonical Object the engine already parsed — never a hidden export,
-never a new canonical artifact), and it stays read-only: measurement, selection, and rendering
-export are named omissions (a viewer, never an editor), and the empty seams the viewer does not
-cross — analysis overlays, repair — belong to future versions.
+defined extensibility seam (§8) — none is built into the conversion core. Two are present. The
+**viewer** (v1.6) is a read-only presentation layer over the geometry endpoints and the reports (it
+renders the Canonical Object the engine already parsed — never a hidden export, never a new
+canonical artifact) and stays read-only: measurement, selection, and rendering export are named
+omissions (a viewer, never an editor). **File Repair** (v1.7) is the first *modifying* consumer —
+an explicit, user-initiated, fully recorded Canonical Object → Canonical Object transform between
+parse and pre-flight (§8), held to the "not a molecular editor" boundary by enumeration: the
+operation set is closed at four, so byte-level repair remains the recovery engine's parse-time job
+(a file that cannot become a Canonical Object cannot be repaired, only recovered). The empty seam
+that remains — analysis overlays — belongs to future versions.
 
 Every augmentation Xtalate makes — a filled mass, an inferred symbol, a fabricated lattice,
 generated velocities — is recorded as an Assumption and rendered in plain language in the
@@ -166,6 +170,7 @@ src/xtalate/
   discovery/      Information Discovery Engine + Format Sniffer + Discovery Report
   conversion/     Conversion Engine — orchestrates the pipeline + Conversion Report
   recovery/       Recovery Engine + workflows
+  repair/         Repair Engine (v1.7): explicit, recorded Canonical Object → Canonical Object operations
   validation/     Validation Engine + Validation Report
   cli/            thin argparse presenter: inspect / convert / validate / capabilities
   registry.py     composition root: default_registry() = built-ins + entry-point discovery
@@ -188,7 +193,7 @@ each is a *consumer* of an existing seam, never a modifier of it (P6):
 |---|---|
 | **New file formats** | A `ParserPlugin` and/or `ExporterPlugin` via the Plugin SDK plus the corresponding Capability Matrix declaration. A parser-only source deliberately supplies only the parser side — as `vasprun` and `outcar` do — while read+write formats supply both. Third-party formats are discovered through Python **entry points** (`xtalate.parsers` / `xtalate.exporters`) with no fork or edit to Xtalate. |
 | **Visualization** | **Present (v1.6, M59–M63, D232–D241):** the read-only viewer — the Structure tab (M60), trajectory scrubber (M61), and Compare tab (M62) — consumes the M59 read-only geometry endpoints and the reports; it renders the Canonical Object the engine already parsed and never re-derives a fact (measurement/selection/export are documented omissions; the reports are the accessible record, D241). |
-| **File Repair** | Operates Canonical Object → Canonical Object between parse and export, each repair recorded in Provenance and the Conversion Report. |
+| **File Repair** | **Present (v1.7, M64–M67, D249–D259):** the Repair Engine (`repair/`) operates Canonical Object → Canonical Object **between parse and pre-flight** (D250), depends on `schema` + `sdk` only, and is orchestrated by `conversion` (the import-linter layer M64 added); each repair is recorded in Provenance and the Conversion Report (the D249 triple) — one pipeline, one report schema, repairs ride ordinary Conversion Reports — and the closed set of four (`wrap_into_cell`, `center`, `deduplicate`, `species_reorder`) sits beside the **transformative** fourth hazard class (Part 4 §3.1, D251). Deliberately **not** built in v1.7: third-party/plugin-provided repair operations — a future SDK surface (impl-plan §4 rule 4); the first-party set is enumerated explicitly. |
 | **Analysis** | Plugins that read a Canonical Object and emit results into namespaced `user_metadata`; they never touch parsers or exporters. |
 | **AI assistant** | A reader of the already-machine-readable Discovery/Conversion/Validation reports. |
 
@@ -232,11 +237,23 @@ The v1.6 line is **API-additive + frontend**: two read-only geometry endpoints (
 /v1/files/{file_id}/geometry`, `GET /v1/conversions/{conversion_id}/geometry?side=source|output`,
 ranged by a half-open `?frames=start:end` window, byte-expiring with the underlying bytes) feed a
 Mol\* Structure viewer — the Structure tab (species legend, per-frame unit cells, the supplied-violet
-rule), the trajectory scrubber + playback (client-side sliding window, frame-number readout, no
-invented time axis), and the Compare tab (source vs re-parsed output, camera-locked, annotations
+rule), the trajectory scrubber + playback (client-side sliding window, frame-number readout,no invented time axis), and the Compare tab (source vs re-parsed output, camera-locked, annotations
 read from the reports only). The viewer is a read-only presentation of the Canonical Object and the
 reports, never an information channel of record (the reports are the accessible record, D241); the
 schema stays `1.0.0` and no library/CLI surface changed.
+
+The v1.7 line is **File Repair** — explicit, chosen, recorded modification, never silent fixing.
+The Repair Engine (`src/xtalate/repair/`) adds the `RepairOperation` contract and the **closed set
+of four** (`wrap_into_cell`, `center`, `deduplicate`, `species_reorder`), applied by the Conversion
+Engine between parse and pre-flight and recorded with the D249 triple (an Assumption carrying the
+operation and its complete parameters, a plain-language statement of what changed, and a
+`ConversionRecord(operation="repair")` in Provenance), plus the **transformative** fourth hazard
+class (D251). The set is reachable from every surface — the CLI's ordered `--repair` flag (M66-S1),
+the additive `/v1/convert` `repairs` field (M66-S2), and the Web UI's repair card with the ⟳
+"Modified on request" mark (M66-S3) — and the version's reproducibility contract (every repair
+reproducible from its report alone) is proven at property scale (M67-S1). The schema stays `1.0.0`
+(`operation="repair"` was reserved vocabulary in the 1.x schema; activating it changes no shape),
+and the package reaches `1.7.0`.
 
 CIF is the one format whose reader is a **package rather than a module**
 (`src/xtalate/parsers/cif/`), split into four stages with a one-way data flow: tokens (`_lexer`) →

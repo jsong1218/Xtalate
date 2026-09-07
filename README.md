@@ -1,7 +1,7 @@
 # Xtalate
 
 [![CI](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml/badge.svg)](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.7.0-blue.svg)](CHANGELOG.md)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -119,6 +119,22 @@ A refusal comes back as a completed HTTP-200 job, not an error; reports outlive 
 **Web UI** — a Next.js front end over `/v1` that walks upload → inspect → convert → recover → download, rendering the engine's reports verbatim (no scientific logic of its own). Self-hosting is the primary deployment; see the [self-hosting guide](docs/self-hosting.md).
 
 **Seeing what the report says (v1.6).** The Web UI also *shows* the structures the reports describe, from the same canonical data — a **Structure** tab renders the file or a conversion's output in 3D (species legend, the unit-cell wireframe only when a cell is present, a fabricated lattice drawn in the ◆ assumption violet with its Assumption one click away), a **frame scrubber** plays multi-frame trajectories frame by frame with no invented time axis, and the **Compare** tab on a conversion record puts the source and the re-parsed output side by side: the Validation Report's own RMSD, the dropped fields' reasons verbatim, and the supplied-violet marker on the output the source lacks — *see what the report says was fabricated*. Bonds are a **display heuristic**, off by default, in no report ever. The viewer is a **viewer, not an editor**: measurement, selection, and rendering export are deliberate omissions, and accessibility is honest — the reports are the accessible record, the viewer is an additional presentation.
+
+**Repairing on request (v1.7).** v1.7 is **File Repair** — *explicit, chosen, recorded
+modification, never silent fixing*. Four operations — **wrap-into-cell**, **center**,
+**deduplicate**, and **species reorder** — modify a Canonical Object between parse and pre-flight,
+each applied in the order you ask, each recorded as an Assumption with its complete parameters, so
+every repaired conversion is reproducible from its report alone. Repair is never automatic, and no
+report ever says "fixed": the report says what changed, to which atoms, by whose request — a
+repaired conversion's rows carry the ⟳ **"Modified on request"** mark, a blue mark deliberately
+distinct from the ◆ violet of fabricated data, because a transformed coordinate is not a fabricated
+one. The flagship: an unwrapped MD trajectory wrapped into its cell on request carries the R5
+warning that *wrapping discards unwrapped diffusion paths* — see what the report says was changed,
+then reproduce it byte-for-byte from the report's own recorded parameters. The operation set is
+**closed at four**, and the boundary is honest: byte-level repair stays with parse-time recovery —
+a file that cannot become a Canonical Object cannot be repaired, only recovered. Xtalate remains
+**not a molecular editor**: modification is a bounded, recorded, user-initiated act, never a tool
+the pipeline applies on its own.
 
 **Batch** — `xtalate convert --batch manifest.yaml -o out/` (and `POST /v1/batch/convert`) converts a whole directory into one record: each file's reports embedded verbatim, tallies on top, one file's failure never aborting the rest. Selection, splitting, and deduplication are deliberately out of scope — curation is a scientific judgment, conversion is a translation.
 
