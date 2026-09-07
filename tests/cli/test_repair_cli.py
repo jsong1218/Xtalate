@@ -4,8 +4,11 @@ Drives ``main(argv)`` end to end and pins the ordered-list grammar: repeated
 ``--repair OPERATION[,param=value…]`` builds a ``list[RepairRequest]`` applied in argument
 order (order is scientific meaning — wrap-then-center ≠ center-then-wrap, and the report
 records which happened), a bad request is a clean usage error (exit 1), a blocked repair (a
-cell-less wrap) refuses through the ordinary refusal path (exit 2) fabricating nothing, and a
-no-``--repair`` run is byte-identical to a pre-v1.7 one (the opt-in invariant).
+cell-less wrap) refuses through the ordinary refusal path (exit 2) fabricating nothing — or,
+when the caller pre-supplied the matching ``--recover missing_lattice=…`` preset (v1.7.1,
+D260), resolves in place: the choice is applied to the object before the repair is retried,
+so the conversion completes. A no-``--repair`` run is byte-identical to a pre-v1.7 one (the
+opt-in invariant).
 """
 
 from __future__ import annotations
@@ -22,6 +25,18 @@ GOLDEN = Path(__file__).parent.parent / "golden"
 WATER = str(GOLDEN / "xyz" / "water-traj" / "water_traj.xyz")
 CO_IN_CELL = str(GOLDEN / "extxyz" / "co-in-cell" / "sample.extxyz")
 NACL_CIF = str(GOLDEN / "cif" / "nacl-fm3m" / "nacl_fm3m.cif")
+
+# An unwrapped variant of CO_IN_CELL: the C atom pushed one lattice vector (6 Å) outside the
+# box, so a wrap genuinely folds atoms. (CO_IN_CELL itself is already in-cell, so wrapping it
+# is a no-op that v1.7.1 correctly leaves unwarned — the R5 fixtures write this to disk.)
+UNWRAPPED_EXTXYZ = (
+    "2\n"
+    'Lattice="6.0 0.0 0.0 0.0 6.0 0.0 0.0 0.0 6.0" '
+    "Properties=species:S:1:pos:R:3:masses:R:1:forces:R:3:charge:R:1 "
+    'pbc="T T T" energy=-14.25 config_type=diatomic\n'
+    "C 7.0 1.0 1.0 12.011 0.5 0.0 0.0 0.3\n"
+    "O 2.125 1.0 1.0 15.999 -0.5 0.0 0.0 -0.3\n"
+)
 
 
 def _json_payload(capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
@@ -43,16 +58,20 @@ def _repair_warnings(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def test_repair_wrap_converts_and_records(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # The unwrapped variant: a wrap that genuinely folds atoms carries the R5 warning (a
+    # no-op wrap of an already-in-cell structure correctly carries none since v1.7.1).
+    source = tmp_path / "unwrapped.extxyz"
+    source.write_text(UNWRAPPED_EXTXYZ)
     out = tmp_path / "wrapped.extxyz"
     code = main(
-        ["convert", CO_IN_CELL, "--to", "extxyz", "-o", str(out), "--repair", "wrap_into_cell"]
+        ["convert", str(source), "--to", "extxyz", "-o", str(out), "--repair", "wrap_into_cell"]
     )
     assert code == EXIT_OK
     assert out.exists() and out.read_bytes()
     capsys.readouterr()  # discard the human rendering; the --json run below is the assertion.
 
     # Under --json the report carries the wrap Assumption + the R5 warning.
-    code = main(["convert", CO_IN_CELL, "--to", "extxyz", "--repair", "wrap_into_cell", "--json"])
+    code = main(["convert", str(source), "--to", "extxyz", "--repair", "wrap_into_cell", "--json"])
     assert code == EXIT_OK
     payload = _json_payload(capsys)
     assert payload["conversion_report"]["status"] == "completed"
@@ -160,6 +179,44 @@ def test_repair_cell_less_wrap_refuses_via_missing_lattice(
     assert "missing_lattice" in json.dumps(report)
     assert report["supplied"] == []
     assert _repair_rows(payload) == []
+
+
+def test_repair_cell_less_wrap_resolves_in_place_with_a_preset(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # v1.7.1 (D260): the blocked repair resolves through the pre-supplied recovery — the
+    # --recover preset is applied to the object before the repair is retried, so the
+    # conversion completes instead of refusing (the refusal test above pins the no-preset
+    # behaviour).
+    out = tmp_path / "wrapped.xyz"
+    code = main(
+        [
+            "convert",
+            WATER,
+            "--to",
+            "xyz",
+            "-o",
+            str(out),
+            "--repair",
+            "wrap_into_cell",
+            "--recover",
+            "missing_lattice=bounding_box,padding_ang=5.0",
+            "--json",
+        ]
+    )
+    assert code == EXIT_OK
+    assert out.exists() and out.read_bytes()
+    payload = _json_payload(capsys)
+    report = payload["conversion_report"]
+    assert report["status"] == "completed"
+    # Application order: the recovery that un-blocked the wrap precedes the repair row.
+    assert [(a["scenario"], a["choice"]) for a in report["assumptions"]] == [
+        ("missing_lattice", "bounding_box"),
+        ("repair", "wrap_into_cell"),
+    ]
+    assert [r["choice"] for r in _repair_rows(payload)] == ["wrap_into_cell"]
+    # The fabricated cell is accounted as supplied — never silently invented.
+    assert any(s["path"] == "cell.lattice_vectors" for s in report["supplied"])
 
 
 # --- the opt-in invariant: no --repair is byte-identical -------------------------------------

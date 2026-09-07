@@ -19,6 +19,121 @@ Schema version: 1.0.0
 
 _The next release accrues here._
 
+## [1.7.1] — 2026-09-06
+
+Schema version: 1.0.0
+
+v1.7.1 is the **in-place repair recovery** close — the shipped line (v1.7.0 was staged as the
+M67 release close but superseded before publication; v1.7.1 contains all of M64–M67 plus the
+items below). It resolves the one honest limitation the v1.7 release notes named: a **resumed
+blocked repair now completes**. A cell-less `wrap_into_cell` (or a `cell_center` center) pauses
+for the existing `missing_lattice` recovery as before, but the resume — and the CLI's
+`--recover missing_lattice=…` preset — applies the pre-supplied choice to the object **before**
+the blocked repair is retried, so the job finishes instead of re-pausing with the same block.
+The recovery is recorded as an ordinary Assumption, ahead of the repair row it enabled (the
+report's row order stays the application order), and a lattice fabricated only for a target that
+cannot store it (a wrap on plain XYZ) is audited in `supplied` without entering the write plan.
+
+Two wrap hardenings the M67 property suite flagged ride along: the minimum-image fold now clamps
+into `[0, 1)` at **every precision** — a coordinate within float-underflow of a cell face
+previously folded onto the face and flipped to `0.0` on the next wrap, so the fold is now
+idempotent everywhere (D258's boundary-residue find) — and the R5
+`WRAP_DISCARDS_UNWRAPPED_PATHS` warning is **suppressed when the wrap changed nothing**: a no-op
+wrap discards no trajectory information, so the statement would be a lie (the dedupe/reorder
+precedent). Schema stays `1.0.0`.
+
+### Changed — a resumed blocked repair resolves in place (D260)
+
+The repair stage still runs between parse and pre-flight (D250), but a repair that blocks now
+resolves through a pre-supplied recovery choice instead of refusing unconditionally: the engine
+applies the block scenario's choice to the object first (recording it as a recovery Assumption
+with the caller's origin — `preset` or `user`), then retries the repair against the recovered
+object. All-or-nothing is preserved — a repair that still blocks after a supplied recovery (e.g.
+a `manual_input` lattice that is itself singular) refuses with the pre-repair Assumptions
+carried. Nothing is ever fabricated beyond what the caller's own recovery choice fabricates, and
+a field the target cannot store stays out of the write plan (D47).
+
+### Changed — wrap fold clamped to `[0, 1)` and the R5 warning made conditional (D258→D260)
+
+`wrap_into_cell`'s fold is `np.mod(frac, 1.0)` with a `1.0 → 0.0` clamp (`_fold_fractional`), so
+a coordinate within float-underflow of a cell face (below the ULP of 1.0, ~1.1e-16) still lands
+inside the half-open interval — the fold is deterministic and idempotent at every precision (the
+M67-S1 property now asserts the full domain). The R5 warning fires only when the application
+actually moved positions (within the 1e-9 Å position tolerance); an already-in-cell structure
+carries no warning, matching deduplicate and species reorder's no-op discipline.
+
+## [1.7.0] — 2026-09-06
+
+Schema version: 1.0.0
+
+v1.7 is **File Repair**: *explicit, chosen, recorded modification* — never silent fixing. A
+Canonical Object can now be modified on request, between parse and pre-flight, through a
+**closed set of four** operations (`wrap_into_cell`, `center`, `deduplicate`, `species_reorder`),
+each applied in the order asked, each recorded as an Assumption with its complete parameters, so a
+repaired conversion is reproducible from its report alone. The milestone is **API-additive + CLI +
+UI**: it adds **zero schema fields** — the schema stays `1.0.0`, because `operation="repair"` was
+reserved vocabulary in the 1.x schema all along, and activating a documented reserved value changes
+no shape — and repair is never automatic: nothing is modified unless the user asks, and no report
+ever says "fixed". The closed set is the "not a molecular editor" boundary: byte-level repair stays
+with parse-time recovery, and a file that cannot become a Canonical Object cannot be repaired, only
+recovered.
+
+### Added — the repair engine (v1.7 M64; D249–D251)
+
+The `RepairOperation` contract (`src/xtalate/repair/`): a pure, deterministic,
+Canonical Object → Canonical Object transform applied by the Conversion Engine **between parse and
+pre-flight**, recorded with the D249 triple — an Assumption carrying the operation and its complete
+parameters, a plain-language statement of what changed, and a `ConversionRecord(operation="repair")`
+in Provenance. Repairs are all-or-nothing (one blocked operation refuses the whole set with nothing
+applied) and ride the **ordinary Conversion Report** — one pipeline, one report schema. The hazard
+taxonomy gains the **transformative** fourth class (Part 4 §3.1): a repair that changes values in
+place and loses the originals carries the same consent discipline as reductive loss — explicit
+request **plus** a `ReportWarning(source="repair")` naming exactly what is unrecoverable. The
+flagship operation lands first: **wrap-into-cell** (`wrap_into_cell`), the minimum-image fold into
+the simulation cell with deterministic boundary handling, carrying the R5 warning
+(`WRAP_DISCARDS_UNWRAPPED_PATHS`) that wrapping discards unwrapped diffusion paths; a cell-less
+object **refuses** through the existing `missing_lattice` recovery — wrap invents no box.
+
+### Added — center, deduplicate, species reorder — the set closes at four (v1.7 M65; D252–D254)
+
+The remaining three operations complete the closed set on the same engine, over the shared
+**per-atom reindex spine** (`repair._reindex`): **species reorder** (`species_reorder`) regroups
+atoms by element in first-appearance order via one frame-invariant permutation applied to every
+frame (non-destructive — the recorded map recovers the original order exactly, and the
+`ATOM_ORDER_CHANGED` advisory is suppressed when nothing changed); **center** (`center`) translates
+a stated reference (`centroid` or `cell_center`) to a stated target (`origin`, `cell_center`, or an
+explicit `[x, y, z]` Å coordinate) — both required, no default (P4) — positions only, with the
+`CENTER_DISCARDS_ABSOLUTE_POSITION` transformative warning; **deduplicate** (`deduplicate`) removes
+atoms closer than a user-supplied `distance_threshold` (no default), single-structure only, with
+the lowest original index surviving each cluster, survivor values kept verbatim (never an averaged
+pseudo-atom), minimum-image only along the axes the cell declares periodic (a cell's presence is
+not periodicity, P3), and the Assumption enumerating the removed atoms exactly by {index, species}.
+The composition proof: an ordered stack (wrap → dedupe → reorder) converts, validates, and
+re-derives byte-identically from the report's ordered Assumption chain alone.
+
+### Added — the CLI, API, and UI surfaces (v1.7 M66; D255–D257)
+
+The same closed set is reachable from every surface: the CLI's repeatable `--repair
+OPERATION[,param=value…]` flag (an ordered list applied in argument order — order is scientific
+meaning — carried inside the ordinary ConversionReport under `--json`); the additive `repairs`
+field on `POST /v1/convert`'s options (an ordered list of `{operation, parameters}`, parameters
+required up front — a malformed repair is a clean `MALFORMED_REQUEST`, and the only interactive
+pause a repair can cause is the genuine cell-less `missing_lattice` block); and the Web UI's
+**repair card** in the pre-conversion step (add, parameterize, remove, order — the list *is* the
+applied order), with repair rows marked **⟳ "Modified on request"** — a blue mark deliberately
+distinct from the ◆ violet assumption mark, because a transformed coordinate is not a fabricated
+one — and the Compare tab rendering the wrapped before/after from canonical geometry. The `⟳` mark
+is the one new vocabulary artifact of the whole milestone; the schema stays `1.0.0`.
+
+### Added — the property suite and the release (v1.7 M67; D258–D259)
+
+The version's contract — *every repair is reproducible from its report alone* — is proven at
+property scale (`tests/property/test_repair_properties.py`): wrap idempotence, dedupe
+removal-exactness, species-reorder permutation validity, and report reconstruction (a fresh
+conversion re-derived from the recorded Assumption parameters alone yields byte-identical output),
+under the registered `pr`/`nightly` hypothesis profiles. The package reaches **1.7.0** on schema
+**1.0.0**; the git tag and publish are the maintainer's manual, nightly-green-gated step.
+
 ## [1.6.0] — 2026-08-30
 
 Schema version: 1.0.0

@@ -241,7 +241,10 @@ class ConversionEngine:
         ``repairs`` (v1.7 M64; D249/D250) is an ordered list of user-requested repair operations
         applied to the parsed object between parse and pre-flight — see the repair stage below. A
         ``None``/empty list runs exactly the pre-v1.7 pipeline (no repairs, byte-identical
-        reports)."""
+        reports). A blocked repair whose recovery scenario the caller pre-supplied is resolved
+        **in place** (v1.7.1, D260): the choice is applied to the object before the repair is
+        retried, recorded as a recovery Assumption ahead of the repair rows (the report's row
+        order stays the application order)."""
         recovery_choices = recovery_choices or {}
         parse_issues = list(parse_issues or [])
         if parse_recovery is not None:
@@ -268,64 +271,125 @@ class ConversionEngine:
         # caller's `source` object is never mutated.
         repaired = source
         repair_applied: list[AppliedRepair] = []
+        # Pre-repair recovery (v1.7.1; D260): a *blocked* repair resolves in place when the
+        # caller pre-supplied the choice its block scenario offers. The repair stage runs before
+        # pre-flight recovery (M64's placement, D250), so a cell-less wrap once re-blocked on
+        # every resume even with a pre-supplied missing_lattice choice — the v1.7 limitation.
+        # v1.7.1 applies the pre-supplied recovery to the object *first*, then retries the
+        # repair: the fabricated paths are recorded as a recovery Assumption (ahead of the
+        # repair rows, in application order) and accounted exactly like parse-time recovery's.
+        # All-or-nothing is preserved — a repair that still blocks (e.g. a manual_input lattice
+        # that is itself singular) refuses with the pre-repair Assumptions carried.
+        pre_repair_recovery_applied: list[AppliedAssumption] = []
+        fabricated_at_pre_repair: set[str] = set()
         if repairs is not None:
             repair_outcome = apply_repairs(source, repairs)
             if repair_outcome.canonical is None:
                 assert repair_outcome.blocked, "a refused repair outcome always names its blocker"
                 blocked = repair_outcome.blocked[0]
-                diff = build_preflight(
-                    source,
-                    matrix,
-                    target_format_id,
-                    output_multifile=output_multifile,
-                    source_format_id=source_format_id,
-                )
-                # A repair-refused conversion still carries any parse-time recovery's
-                # Assumptions/supplied so the refused report is complete (Part 4 §2, §3.3).
-                for n, applied in enumerate(parse_applied, 1):
-                    applied.id = f"A{n}"
-                r_assumptions, r_supplied, r_preserved, r_removed, _ = _map_assumptions(
-                    parse_applied
-                )
-                preflight_preserved = [
-                    e for e in diff.preserved if e.path not in fabricated_at_parse
-                ]
                 blocked_scenarios = _repair_block_scenarios(
                     repair_outcome.blocked, matrix, target_format_id, output_multifile
                 )
-                return self._refuse(
-                    source=source,
-                    source_format_id=source_format_id,
-                    source_filename=source_filename,
-                    source_sha256=source_sha256,
-                    target_format_id=target_format_id,
-                    target_filename=target_filename,
-                    mode=mode,
-                    diff=diff,
-                    preserved=[*preflight_preserved, *diff.pending, *r_preserved],
-                    removed=[*diff.removed, *r_removed],
-                    supplied=r_supplied,
-                    assumptions=r_assumptions,
-                    fabricated_at_parse=fabricated_at_parse,
-                    refusal={
-                        "code": "RECOVERY_REQUIRED",
-                        "message": (
-                            f"the requested repair {blocked.operation!r} cannot run: "
-                            f"{blocked.detail}"
-                        ),
-                        "unresolved_scenarios": [
-                            {
-                                "scenario": s.scenario,
-                                "path": s.path,
-                                "detail": s.detail,
-                                "options": s.options,
-                            }
-                            for s in blocked_scenarios
-                        ],
-                    },
-                )
+                # Resolve only the scenarios the block needs, and only with the choices the
+                # caller actually supplied — other pre-supplied choices stay for the ordinary
+                # pre-flight recovery stage (no scenario is applied twice).
+                supplied_choices = {
+                    k: v
+                    for k, v in recovery_choices.items()
+                    if k in {s.scenario for s in blocked_scenarios}
+                }
+                if supplied_choices:
+                    pre_outcome = self._recovery.resolve(
+                        source, blocked_scenarios, supplied_choices, origin=recovery_origin
+                    )
+                    if pre_outcome.canonical is not None:
+                        # The recovery satisfied the block (a lattice now exists): retry the
+                        # repairs against the recovered object — the in-place resolution.
+                        repaired = pre_outcome.canonical
+                        pre_repair_recovery_applied = pre_outcome.assumptions
+                        fabricated_at_pre_repair = {
+                            sup.path for a in pre_repair_recovery_applied for sup in a.supplied
+                        }
+                        repair_outcome = apply_repairs(repaired, repairs)
+                if repair_outcome.canonical is None:
+                    assert repair_outcome.blocked, (
+                        "a refused repair outcome always names its blocker"
+                    )
+                    blocked = repair_outcome.blocked[0]
+                    diff = build_preflight(
+                        repaired,
+                        matrix,
+                        target_format_id,
+                        output_multifile=output_multifile,
+                        source_format_id=source_format_id,
+                    )
+                    # A repair-refused conversion still carries any parse-time and pre-repair
+                    # recovery Assumptions/supplied so the refused report is complete (Part 4
+                    # §2, §3.3) — including a recovery that *satisfied* the block when a later
+                    # retry re-blocked (e.g. a supplied lattice that is itself degenerate).
+                    for n, applied in enumerate(parse_applied, 1):
+                        applied.id = f"A{n}"
+                    for n, applied in enumerate(
+                        pre_repair_recovery_applied, len(parse_applied) + 1
+                    ):
+                        applied.id = f"A{n}"
+                    r_assumptions, r_supplied, r_preserved, r_removed, _ = _map_assumptions(
+                        [*parse_applied, *pre_repair_recovery_applied]
+                    )
+                    preflight_preserved = [
+                        e
+                        for e in diff.preserved
+                        if e.path not in fabricated_at_parse
+                        and e.path not in fabricated_at_pre_repair
+                    ]
+                    blocked_scenarios = _repair_block_scenarios(
+                        repair_outcome.blocked, matrix, target_format_id, output_multifile
+                    )
+                    return self._refuse(
+                        # Completeness is asserted against the object the report describes: the
+                        # `diff`, `preserved` and `supplied` above are built against `repaired`
+                        # (post-pre-repair-recovery), so the invariant sweeps `repaired`'s
+                        # presence with the fabricated union excluded — identical to the
+                        # pre-flight-recovery refusal below, and never the pre-recovery `source`.
+                        source=repaired,
+                        source_format_id=source_format_id,
+                        source_filename=source_filename,
+                        source_sha256=source_sha256,
+                        target_format_id=target_format_id,
+                        target_filename=target_filename,
+                        mode=mode,
+                        diff=diff,
+                        preserved=[*preflight_preserved, *diff.pending, *r_preserved],
+                        removed=[*diff.removed, *r_removed],
+                        supplied=r_supplied,
+                        assumptions=r_assumptions,
+                        fabricated_at_parse=fabricated_at_parse | fabricated_at_pre_repair,
+                        refusal={
+                            "code": "RECOVERY_REQUIRED",
+                            "message": (
+                                f"the requested repair {blocked.operation!r} cannot run: "
+                                f"{blocked.detail}"
+                            ),
+                            "unresolved_scenarios": [
+                                {
+                                    "scenario": s.scenario,
+                                    "path": s.path,
+                                    "detail": s.detail,
+                                    "options": s.options,
+                                }
+                                for s in blocked_scenarios
+                            ],
+                        },
+                    )
             repaired = repair_outcome.canonical
             repair_applied = repair_outcome.applied
+
+        # Paths fabricated ahead of the source object (parse-time or pre-repair recovery): they
+        # are present in the objects downstream stages see yet absent from the original file, so
+        # the completeness invariant must treat them as absent-at-source (they belong in
+        # `supplied`, never `preserved`) — the `fabricated_at_parse` precedent, extended to the
+        # v1.7.1 pre-repair recovery (D260).
+        fabricated = fabricated_at_parse | fabricated_at_pre_repair
 
         diff = build_preflight(
             repaired,
@@ -350,18 +414,24 @@ class ConversionEngine:
                 repaired, all_scenarios, recovery_choices, origin=recovery_origin
             )
             if outcome.canonical is None:
-                # Refusal after a successful parse-time recovery *and/or* repair still carries
-                # those applied records' Assumptions so the refused report is complete (Part 4
-                # §2, §3.3).
+                # Refusal after a successful parse-time recovery, pre-repair recovery *and/or*
+                # repair still carries those applied records' Assumptions so the refused report
+                # is complete (Part 4 §2, §3.3).
                 for n, applied in enumerate(parse_applied, 1):
                     applied.id = f"A{n}"
-                for k, repair in enumerate(repair_applied, 1):
-                    repair.id = f"A{len(parse_applied) + k}"
+                n_pre = len(parse_applied)
+                for n, applied in enumerate(pre_repair_recovery_applied, n_pre + 1):
+                    applied.id = f"A{n}"
+                n_pre_end = n_pre + len(pre_repair_recovery_applied)
+                for k, repair in enumerate(repair_applied, n_pre_end + 1):
+                    repair.id = f"A{k}"
                 r_assumptions, r_supplied, r_preserved, r_removed, _ = _map_assumptions(
-                    parse_applied
+                    [*parse_applied, *pre_repair_recovery_applied]
                 )
                 preflight_preserved = [
-                    e for e in diff.preserved if e.path not in fabricated_at_parse
+                    e
+                    for e in diff.preserved
+                    if e.path not in fabricated_at_parse and e.path not in fabricated_at_pre_repair
                 ]
                 return self._refuse(
                     source=repaired,
@@ -380,7 +450,7 @@ class ConversionEngine:
                     supplied=r_supplied,
                     assumptions=[*r_assumptions, *_repair_rows(repair_applied)],
                     warnings=[*_repair_warnings(repair_applied), *diff.warnings],
-                    fabricated_at_parse=fabricated_at_parse,
+                    fabricated_at_parse=fabricated,
                     refusal={
                         "code": "RECOVERY_REQUIRED",
                         "message": "conversion needs recovery decisions that were not supplied; "
@@ -406,27 +476,44 @@ class ConversionEngine:
         # repairs' rows stay in the report's `assumptions` (scenario="repair"), so the report's
         # numbering *is* the recorded order (D250); their provenance records reference the same
         # ids.
+        n_parse = len(parse_applied)
+        n_pre_repair = n_parse + len(pre_repair_recovery_applied)
+        n_pre_repair_end = n_pre_repair + len(repair_applied)
         for n, applied in enumerate(parse_applied, 1):
             applied.id = f"A{n}"
-        for k, repair in enumerate(repair_applied, 1):
-            repair.id = f"A{len(parse_applied) + k}"
-        for n, applied in enumerate(recovery_applied, len(parse_applied) + len(repair_applied) + 1):
+        for n, applied in enumerate(pre_repair_recovery_applied, n_parse + 1):
             applied.id = f"A{n}"
-        all_applied = [*parse_applied, *recovery_applied]
+        for k, repair in enumerate(repair_applied, n_pre_repair + 1):
+            repair.id = f"A{k}"
+        for n, applied in enumerate(recovery_applied, n_pre_repair_end + 1):
+            applied.id = f"A{n}"
+        all_applied = [*parse_applied, *pre_repair_recovery_applied, *recovery_applied]
         assumptions, supplied, recovery_preserved, recovery_removed, plan_additions = (
             _map_assumptions(all_applied)
         )
         # The report's assumptions list reads in application order: the parse-time rows (A1..),
-        # then the repair rows (their own user-requested section — `ConversionReport.repairs`),
-        # then the pre-flight recovery rows.
-        n_parse = len(parse_applied)
+        # then any pre-repair recovery rows (v1.7.1 — the recovery that un-blocked a repair
+        # precedes the repair rows it enabled), then the repair rows (their own user-requested
+        # section — `ConversionReport.repairs`), then the pre-flight recovery rows.
         assumptions = [
             *assumptions[:n_parse],
+            *assumptions[n_parse:n_pre_repair],
             *_repair_rows(repair_applied),
-            *assumptions[n_parse:],
+            *assumptions[n_pre_repair:],
         ]
         repair_warnings = _repair_warnings(repair_applied)
-        write_plan = set(diff.write_plan) | plan_additions
+        # A fabricated field enters the write_plan so it is exported and validated — *unless* the
+        # target cannot store it (the D47 precedent: chained `missing_masses` masses on POSCAR are
+        # audited in `supplied` but kept out of the plan so validation doesn't expect them). The
+        # v1.7.1 pre-repair recovery can fabricate a lattice a repair needs that the *target* does
+        # not (a cell-less `wrap_into_cell` on a plain-XYZ target): the cell is honestly reported
+        # in `supplied` — the wrap ran, the lattice was invented — but a target that cannot write
+        # a cell must not plan one, or validation would expect bytes it cannot hold.
+        write_plan = set(diff.write_plan) | {
+            p
+            for p in plan_additions
+            if matrix.field_capability(target_format_id, "write", p).level != CapabilityLevel.NONE
+        }
 
         preflight_preserved = [e for e in diff.preserved if e.path not in fabricated_at_parse]
         # A path the pre-flight optimistically predicted `preserved` but that recovery then
@@ -471,6 +558,7 @@ class ConversionEngine:
                     supplied=supplied,
                     assumptions=assumptions,
                     warnings=[*repair_warnings, *diff.warnings],
+                    fabricated_at_parse=fabricated,
                     refusal={
                         "code": "UNACKNOWLEDGED_LOSS",
                         "message": "strict mode: reductive loss must be acknowledged "
@@ -494,6 +582,7 @@ class ConversionEngine:
                     supplied=supplied,
                     assumptions=assumptions,
                     warnings=[*repair_warnings, *diff.warnings],
+                    fabricated_at_parse=fabricated,
                     refusal={
                         "code": "UNACKNOWLEDGED_PARSE_WARNINGS",
                         "message": "strict mode: parse warnings must be acknowledged "
@@ -547,7 +636,7 @@ class ConversionEngine:
                 supplied=supplied,
                 assumptions=assumptions,
                 warnings=[*repair_warnings, *diff.warnings],
-                fabricated_at_parse=fabricated_at_parse,
+                fabricated_at_parse=fabricated,
                 refusal={
                     "code": "UNREPRESENTABLE_VALUE",
                     "message": unrepresentable,
@@ -593,8 +682,10 @@ class ConversionEngine:
         # Completeness is asserted over the object whose presence the diff accounted: the
         # *repaired* object (repair precedes pre-flight), never the pre-repair parse result — a
         # repair may change which paths pre-flight preserves/removes, and the invariant must
-        # judge the report against what it actually describes (D250).
-        _assert_completeness(report, repaired, fabricated_at_parse)
+        # judge the report against what it actually describes (D250). Paths fabricated by
+        # pre-repair recovery are present in that object but absent at source, so they join the
+        # parse-fabricated exclusion (`fabricated`).
+        _assert_completeness(report, repaired, fabricated)
 
         # A caller may pass a named profile string (the common case) or a fully-built
         # ToleranceProfile — e.g. a custom table loaded from a file by the CLI (Part 5 §4.4).

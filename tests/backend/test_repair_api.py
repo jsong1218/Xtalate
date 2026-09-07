@@ -8,7 +8,9 @@ records that order. A malformed repair (unknown operation, missing required para
 clean ``MALFORMED_REQUEST`` failed job, never a 500 (the engine's ``RepairError`` mapped in the
 worker's failure funnel, reusing the binding code — D256). A *blocked* repair (a cell-less
 wrap) pauses to ``awaiting_recovery`` with the existing ``missing_lattice`` block iff
-``allow_recovery``, else refuses at HTTP 200.
+``allow_recovery``, else refuses at HTTP 200 — and since v1.7.1 a *resumed* blocked repair
+completes in place: the pre-supplied choice is applied to the object before the repair is
+retried (D260), so the resume answers the pause instead of re-pausing.
 """
 
 from __future__ import annotations
@@ -29,6 +31,18 @@ O  0.000  0.000  0.000
 H  0.757  0.586  0.000
 H -0.757  0.586  0.000
 """
+
+# An unwrapped variant of CO_IN_CELL: the C atom pushed one lattice vector (6 Å) outside the
+# box, so a wrap genuinely folds atoms. (CO_IN_CELL itself is already in-cell, so wrapping it
+# is a no-op that v1.7.1 correctly leaves unwarned — the R5 fixtures use this variant.)
+UNWRAPPED_CO_IN_CELL = (
+    b"2\n"
+    b'Lattice="6.0 0.0 0.0 0.0 6.0 0.0 0.0 0.0 6.0" '
+    b"Properties=species:S:1:pos:R:3:masses:R:1:forces:R:3:charge:R:1 "
+    b'pbc="T T T" energy=-14.25 config_type=diatomic\n'
+    b"C 7.0 1.0 1.0 12.011 0.5 0.0 0.0 0.3\n"
+    b"O 2.125 1.0 1.0 15.999 -0.5 0.0 0.0 -0.3\n"
+)
 
 
 def _upload(client: TestClient, content: bytes, filename: str) -> str:
@@ -74,7 +88,9 @@ def _strip_volatile(node: object) -> object:
 
 
 def test_repair_wrap_applies_and_records(client: TestClient) -> None:
-    file_id = _upload(client, CO_IN_CELL, "sample.extxyz")
+    # The unwrapped variant: a wrap that genuinely folds atoms carries the R5 warning (a
+    # no-op wrap of an already-in-cell structure correctly carries none since v1.7.1).
+    file_id = _upload(client, UNWRAPPED_CO_IN_CELL, "sample.extxyz")
     env = _convert(client, file_id, "extxyz", {"repairs": [{"operation": "wrap_into_cell"}]})
     assert env["state"] == "completed"
     report = env["result"]["conversion_report"]
@@ -198,17 +214,15 @@ def test_cell_less_wrap_with_allow_recovery_pauses_with_missing_lattice(
     assert {"manual_input", "bounding_box", "upload_reference"} <= codes
 
 
-def test_resumed_blocked_repair_repauses_pending_engine_decision(client: TestClient) -> None:
-    """The pause is offered and answerable through the existing recovery path, but a blocked
-    repair re-pauses on resume: the engine's repair stage runs before recovery and blocks
-    unconditionally (M64 design; D250 "between parse and pre-flight"), so a pre-supplied
-    ``missing_lattice`` choice cannot un-block the wrap in the same pipeline pass.
-
-    **Flagged for review (M66-S2):** the slice plan's "resolvable via the existing
-    ``POST /v1/jobs/{id}/recovery`` path" overstates the engine here — making a resumed
-    repair complete needs an engine change (apply a pre-supplied recovery before retrying a
-    blocked repair), which is frozen for M66 and must be decided by the maintainer/Claude.
-    This test pins the *current* honest behavior so the gap is visible in the suite.
+def test_cell_less_wrap_over_http_completes_on_resume_with_presupplied_recovery(
+    client: TestClient,
+) -> None:
+    """A cell-less ``wrap_into_cell`` over HTTP is resolvable in place since v1.7.1 (D260): the
+    resume applies the pre-supplied ``missing_lattice`` choice to the object *before* the
+    blocked repair is retried, so the job completes instead of re-pausing with the same block
+    (the v1.7 limitation pinned by the test this replaces, D259's option A). The choice is
+    recorded as a recovery Assumption ahead of the repair row — the report's row order stays
+    the application order.
     """
     file_id = _upload(client, CELL_LESS_XYZ, "mol.xyz")
     env = _convert(
@@ -225,19 +239,16 @@ def test_resumed_blocked_repair_repauses_pending_engine_decision(client: TestCli
     # offered options — no 422), then re-runs the job with the same repairs.
     resumed = client.post(f"/v1/jobs/{job_id}/recovery", json={"choices": choice})
     assert resumed.status_code == 200, resumed.text
-    # The engine re-blocks (the repair stage precedes recovery), so the job pauses again with
-    # the same missing_lattice block — nothing fabricated, nothing applied, no silent drop of
-    # the requested repair. Completion needs the engine decision flagged above.
     env = resumed.json()
-    assert env["state"] == "awaiting_recovery"
-    scenarios = {s["scenario"] for s in env["awaiting_recovery"]["unresolved_scenarios"]}
-    assert scenarios == {"missing_lattice"}
-    # The re-run recorded nothing — the request's repairs are preserved for the eventual fix.
-    from backend.db import Repository
-
-    repository = cast(Repository, client.app.state.repository)  # type: ignore[attr-defined]
-    job = repository.get_job(job_id)
-    # The persisted request carries the normalized wire shape (``parameters`` defaulted to {}).
-    assert job is not None and job.request["options"]["repairs"] == [
-        {"operation": "wrap_into_cell", "parameters": {}}
+    # The resumed repair completes in place — no re-pause, nothing silently dropped.
+    assert env["state"] == "completed"
+    assert env["awaiting_recovery"] is None
+    report = env["result"]["conversion_report"]
+    assert report["status"] == "completed"
+    # Application order: the recovery that un-blocked the wrap precedes the repair row.
+    assert [(a["scenario"], a["choice"]) for a in report["assumptions"]] == [
+        ("missing_lattice", "bounding_box"),
+        ("repair", "wrap_into_cell"),
     ]
+    # The fabricated cell is accounted as supplied — never silently invented.
+    assert any(s["path"] == "cell.lattice_vectors" for s in report["supplied"])

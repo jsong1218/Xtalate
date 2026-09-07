@@ -43,6 +43,7 @@ xtalate convert FILE --to FORMAT_ID [-o PATH]
                      [--format FORMAT_ID]
                      [--mode permissive|strict]
                      [--recover SCENARIO=CHOICE[,param=value…]]   (repeatable)
+                     [--repair OPERATION[,param=value…]]           (repeatable, v1.7)
                      [--acknowledge-loss] [--acknowledge-parse-warnings]
                      [--tolerance-profile NAME|FILE]
                      [--report PATH] [--validation-report PATH]
@@ -58,6 +59,24 @@ mode). Key options:
   `--recover missing_lattice=bounding_box,padding_ang=5.0`,
   `--recover missing_velocities=maxwell_boltzmann`, `--recover missing_masses=standard_masses`.
   With no preset for a decision the target requires, the conversion **refuses** rather than guessing.
+- **`--repair OPERATION[,param=value…]`** — request a repair (**v1.7 M66-S1**; repeatable). The
+  operations are the closed set of four: `wrap_into_cell` (no parameters), `center` (requires
+  `reference=centroid|cell_center` and `target=origin|cell_center` — the explicit `[x, y, z]`
+  target is not reachable from the CLI in v1.7), `deduplicate` (requires
+  `distance_threshold=<Å>`), and `species_reorder` (no parameters). Flags are applied **in argument
+  order** — order is scientific meaning (wrap-then-center ≠ center-then-wrap), and the report's
+  repair rows record the applied order. Repairs run between parse and pre-flight; a repair-only run
+  is a same-format `convert`. A bad request (an unknown operation, a malformed spec, a missing or
+  incoherent parameter) is the engine's `RepairError` surfaced as a clean usage error (exit 1); a
+  **blocked** repair (a cell-less `wrap_into_cell`, or a `cell_center` reference/target on a
+  cell-less frame) refuses through the existing `missing_lattice` recovery path (exit 2) — or,
+  when the caller pre-supplied the matching `--recover missing_lattice=…` preset (v1.7.1, D260),
+  resolves in place: the choice is applied to the object before the repair is retried, recorded as
+  a recovery Assumption ahead of the repair row. Nothing is ever fabricated to un-block a repair
+  beyond what the caller's own recovery choice fabricates. `--json`/`--report` carry the repairs inside the
+  ordinary ConversionReport; a no-`--repair` run is byte-identical to pre-v1.7. `convert --batch`
+  does not take `--repair` in v1.7 (per-file repairs are a v1.8+ surface question; the flag is
+  refused like any manifest-carried setting).
 - **`--mode strict`** — reductive loss and parse warnings must be acknowledged
   (`--acknowledge-loss` / `--acknowledge-parse-warnings`) or the conversion refuses.
 - **`--tolerance-profile`** — one of the named profiles `default` / `strict` / `loose`, or a path to
@@ -136,6 +155,26 @@ print(result.report.model_dump_json(indent=2))   # the ConversionReport
 print(result.validation.status)                   # "passed" | "passed_with_warnings" | "failed"
 with open("POSCAR", "wb") as fh:
     fh.write(result.output)                        # None iff the conversion refused
+```
+
+Repairs (v1.7) are an ordered list of `RepairRequest` objects applied between parse and
+pre-flight and recorded in the report — every application is reproducible from its recorded
+parameters alone:
+
+```python
+from xtalate.repair import RepairRequest
+
+result = ConversionEngine(registry).convert(
+    source,
+    source_format_id="extxyz",
+    target_format_id="poscar",
+    repairs=[
+        RepairRequest("wrap_into_cell"),
+        RepairRequest("deduplicate", {"distance_threshold": 0.5}),
+    ],
+)
+print([row.choice for row in result.report.repairs])   # ["wrap_into_cell", "deduplicate"]
+```
 ```
 
 `ConversionEngine.convert(...)` returns a `ConversionResult` with:
@@ -425,3 +464,30 @@ and its reports remain readable (reports outlive bytes). A malformed or reversed
 `400 INVALID_FRAME_RANGE`. **No bonds**: the Canonical Model holds no bonds, so the projection
 carries none — a coordination bond is a display heuristic (D234), never file content and never served
 here. This surface changes **no** library/CLI surface; it is the Web UI viewer's read path only.
+
+### 5.6 Repairing on request (`POST /v1/convert` `options.repairs`, v1.7 M66-S2)
+
+`POST /v1/convert`'s `options` object accepts an additive **`repairs`** field: an ordered list of
+`{operation, parameters}` objects drawn from the closed set of four — `wrap_into_cell`, `center`,
+`deduplicate`, `species_reorder` — applied in list order between parse and pre-flight (the report's
+repair rows record the applied order). `parameters` are required up front: a malformed repair (an
+unknown operation, a missing or incoherent parameter) is a clean `MALFORMED_REQUEST` failed job —
+never a 500 and never an `awaiting_recovery` pause — while a *shape* malformation is the ordinary
+submit-time 422. The field is **additive** (Part 6 §7): an absent or empty list runs the pre-v1.7
+pipeline byte-for-byte, and a job without repairs serializes no `repairs`/`repair_warnings` keys at
+all.
+
+The only interactive pause a repair can cause is the genuine cell-less **`missing_lattice`** block:
+with `allow_recovery: true` a cell-less `wrap_into_cell` pauses with the standard block and its
+computed option list; without it, the job completes as a refused HTTP-200. **Resolved in place
+since v1.7.1 (D260):** a *resumed* blocked repair completes — the worker applies the pre-supplied
+recovery choice to the object **before** retrying the blocked repair, so the `missing_lattice`
+answer (bounding_box / manual_input / upload_reference) finishes the job instead of re-pausing
+with the same block. The choice is recorded as a recovery Assumption **ahead of the repair row**,
+in application order, and a lattice fabricated only for a target that cannot store it (a cell-less
+wrap on plain XYZ) is audited in `supplied` without entering the write plan (D47). The completing
+resume is pinned by
+`tests/backend/test_repair_api.py::test_cell_less_wrap_over_http_completes_on_resume_with_presupplied_recovery`
+(the v1.7 re-pause behaviour it replaced was pinned by D259's renamed test); without
+`allow_recovery` the cell-less wrap still completes as a refused HTTP-200, and without a
+pre-supplied choice the pause is still offered.
