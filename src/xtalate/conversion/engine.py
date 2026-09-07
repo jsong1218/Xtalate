@@ -346,7 +346,12 @@ class ConversionEngine:
                         repair_outcome.blocked, matrix, target_format_id, output_multifile
                     )
                     return self._refuse(
-                        source=source,
+                        # Completeness is asserted against the object the report describes: the
+                        # `diff`, `preserved` and `supplied` above are built against `repaired`
+                        # (post-pre-repair-recovery), so the invariant sweeps `repaired`'s
+                        # presence with the fabricated union excluded — identical to the
+                        # pre-flight-recovery refusal below, and never the pre-recovery `source`.
+                        source=repaired,
                         source_format_id=source_format_id,
                         source_filename=source_filename,
                         source_sha256=source_sha256,
@@ -358,7 +363,7 @@ class ConversionEngine:
                         removed=[*diff.removed, *r_removed],
                         supplied=r_supplied,
                         assumptions=r_assumptions,
-                        fabricated_at_parse=fabricated_at_parse,
+                        fabricated_at_parse=fabricated_at_parse | fabricated_at_pre_repair,
                         refusal={
                             "code": "RECOVERY_REQUIRED",
                             "message": (
