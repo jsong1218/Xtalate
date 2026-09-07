@@ -26,16 +26,11 @@ strategies compose the existing stage-2 generator (``_strategies.canonical_objec
 with filters — no ``_strategies.py`` edit was needed. **No engine behaviour is
 changed; tests only** (the engine freeze, M64–M67).
 
-**Recorded deviation from the slice plan (for Claude's review, not patched here):**
-family 1's plan wording — "its Assumption/warning reflects a no-op" — is not
-literally satisfiable on the frozen engine: ``WrapIntoCell`` does not override
-``hazards_for``, so the unconditional ``WRAP_DISCARDS_UNWRAPPED_PATHS`` statement
-rides every application, including an idempotent one (unlike ``Deduplicate`` and
-``SpeciesReorder``, which suppress their warning when nothing changed). The property
-therefore asserts the no-op on the **object** (positions unchanged within tolerance,
-both applications fully recorded with complete verbatim parameters) and leaves the
-warning count of the second application unasserted, so a future engine fix (a
-conditional ``hazards_for`` on wrap) tightens rather than breaks the property.
+**v1.7.1 note (D260):** both engine findings the suite recorded are **fixed** — the wrap fold
+now clamps into ``[0, 1)`` at every precision (``_fold_fractional``), so family 1 asserts
+idempotence over the **full** domain (the residue filter is gone), and ``WrapIntoCell`` now
+overrides ``hazards_for``, so the second (no-op) application's hazard list is asserted empty
+— the tightening the frozen-engine property deliberately left unasserted.
 """
 
 from __future__ import annotations
@@ -51,7 +46,6 @@ from xtalate.conversion import ConversionEngine
 from xtalate.registry import default_registry
 from xtalate.repair import RepairRequest, apply_repairs
 from xtalate.schema import CanonicalObject
-from xtalate.schema.cell import to_fractional
 
 #: The project's position tolerance for repaired coordinates (Å) — the atol the M64
 #: flagship uses for the wrap's inverse-solve float noise (tests/repair/test_wrap_into_cell.py).
@@ -60,36 +54,14 @@ _POSITION_ATOL = 1e-9
 _ENGINE = ConversionEngine(default_registry())
 
 
-def _fractional_residues_clear(obj: CanonicalObject) -> bool:
-    """Every position of every frame has a fractional coordinate at least ``1e-12``
-    away from an integer cell face — the wrap-idempotence domain.
-
-    Wrap folds with ``np.mod(frac, 1.0)``, and ``1 - epsilon`` for an epsilon below
-    the double ULP of 1.0 (~1.1e-16) is **not representable**: it rounds to exactly
-    ``1.0``, so a coordinate within float-underflow of a face folds onto the face on
-    the first wrap and to ``0.0`` on the next — deterministic (the documented fold
-    rule) but not idempotent. Coordinates that close to a face are subnormal-physics
-    (below ~1e-15 Å); the property asserts idempotence for representable residues
-    (recorded in the progress doc for Claude's review, not patched here — the engine
-    is frozen).
-    """
-    for frame in obj.frames:
-        if frame.cell is None:
-            continue
-        lattice = np.asarray(frame.cell.lattice_vectors, dtype=float)
-        fractional = to_fractional(np.asarray(frame.atoms.positions, dtype=float), lattice)
-        if not np.all(np.abs(fractional - np.rint(fractional)) > 1e-12):
-            return False
-    return True
-
-
 #: Family 1's domain: any object whose **every** frame carries a usable cell — the
 #: domain on which wrap never blocks and idempotence is well-defined. The generator's
 #: lattices are diagonal-dominant (hence non-singular), so presence is the only cell
-#: gate; the fractional-residue filter excludes the underflow-boundary coordinates
-#: above (hypothesis's float strategy draws subnormals).
+#: gate. The fold clamps into ``[0, 1)`` at every precision (v1.7.1, D260), so the
+#: domain needs no boundary-residue filter — hypothesis's subnormal-drawing floats
+#: are in scope, and idempotence holds for them too.
 _WRAP_DOMAIN = _strategies.canonical_objects().filter(
-    lambda o: all(f.cell is not None for f in o.frames) and _fractional_residues_clear(o)
+    lambda o: all(f.cell is not None for f in o.frames)
 )
 
 #: Family 4's domain: a single structure with a cell and no constraints — the domain
@@ -209,6 +181,10 @@ def test_wrap_into_cell_is_idempotent_within_tolerance(source: CanonicalObject) 
     (second,) = twice.applied
     assert first.operation == second.operation == "wrap_into_cell"
     assert first.parameters == second.parameters == {}
+    # The second application is a no-op (nothing moved beyond float noise), so it discards
+    # no trajectory information and carries no R5 hazard (v1.7.1 D260 — the conditional
+    # hazards_for the frozen-engine suite deliberately left unasserted).
+    assert second.hazards == []
 
     replay = apply_repairs(source, [RepairRequest("wrap_into_cell", dict(first.parameters))])
     assert replay.canonical is not None

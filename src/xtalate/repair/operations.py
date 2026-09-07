@@ -11,8 +11,11 @@ are a future SDK seam explicitly declined for v1.7 (impl-plan §4 rule 4).
 Wrap-into-cell (M64-S2) is the version's flagship: the one operation with a physics-losing
 failure mode (R5 — unwrapped diffusion paths are destroyed), carried as the D251
 *transformative* hazard class: explicit request **plus** a report warning naming exactly what
-is unrecoverable. It composes with recovery — a cell-less object refuses via the existing
-``missing_lattice`` scenario rather than fabricating a box (D43).
+is unrecoverable (suppressed when the wrap changed nothing — a no-op discards nothing,
+v1.7.1 D260). It composes with recovery — a cell-less object refuses via the existing
+``missing_lattice`` scenario rather than fabricating a box (D43), and since v1.7.1 a
+pre-supplied recovery choice resolves the block in place (the choice is applied to the object
+before the repair is retried).
 """
 
 from __future__ import annotations
@@ -76,6 +79,29 @@ WRAP_DISCARDS_UNWRAPPED_PATHS = RepairHazard(
 #: (a singular lattice cannot be inverted into fractional coordinates honestly).
 _MIN_CELL_VOLUME = 1e-12
 
+#: A wrap is a no-op when no position moved beyond this — the project's position tolerance for
+#: repaired coordinates (Å, the atol the M64 flagship uses for the wrap's inverse-solve float
+#: noise). Used by ``WrapIntoCell.hazards_for`` to decide whether the application discarded
+#: anything (v1.7.1, D260).
+_WRAP_NOOP_ATOL = 1e-9
+
+
+def _fold_fractional(frac: np.ndarray) -> np.ndarray:
+    """Fold fractional coordinates into ``[0, 1)`` — the wrap's deterministic boundary rule.
+
+    ``np.mod(frac, 1.0)`` maps every integer fractional coordinate to exactly ``0.0`` and
+    everything else into ``[0, 1)`` — except coordinates within float-underflow of a cell
+    face: for a residue ``ε`` below the double ULP of 1.0 (~1.1e-16), ``1 − ε`` is **not
+    representable** and rounds to exactly ``1.0``. A folded ``1.0`` sits outside the half-open
+    interval, and the *next* wrap flips it to ``0.0`` — the fold would not be idempotent at
+    that precision (the M67-S1 property find, D258). The clamp forces ``1.0`` to ``0.0`` —
+    the minimum-image value of a coordinate on a face — so the fold stays inside ``[0, 1)``
+    at every precision, and every value in ``[0, 1)`` passes through unchanged (idempotent
+    by construction, v1.7.1, D260).
+    """
+    folded = np.mod(frac, 1.0)
+    return np.where(folded >= 1.0, 0.0, folded)
+
 
 def _frame_lattice(frame: Frame) -> np.ndarray | None:
     """The frame's usable lattice, or ``None`` when the frame has no cell / a degenerate one."""
@@ -97,13 +123,19 @@ class WrapIntoCell(RepairOperation):
     lattice, folded into ``[0, 1)``, and converted back to Cartesian Å — the standard minimum-
     image convention (``cart = frac @ lattice``, the same relationship the parsers/exporters
     use, ``xtalate.schema.cell``). **Deterministic boundary handling:** folding is
-    ``np.mod(frac, 1.0)``, so a coordinate exactly on a cell face lands the same way on every
-    run — every integer fractional coordinate (``1.0``, ``2.0``, ``-1.0``, …) maps to exactly
-    ``0.0``, ``0.5`` stays ``0.5``, and every other value folds into ``[0, 1)``.
+    ``np.mod(frac, 1.0)`` with the ``1.0`` clamp of ``_fold_fractional``, so a coordinate
+    exactly on a cell face lands the same way on every run — every integer fractional
+    coordinate (``1.0``, ``2.0``, ``-1.0``, …) maps to exactly ``0.0``, ``0.5`` stays
+    ``0.5``, every other value folds into ``[0, 1)``, and even a coordinate within
+    float-underflow of a face folds inside the half-open interval (v1.7.1, D260) — the fold
+    is idempotent at every precision.
 
     Transformative hazard (D251): wrapping discards the unwrapped trajectory information —
     diffusion paths across periodic boundaries are unrecoverable from the wrapped file — stated
-    as the ``WRAP_DISCARDS_UNWRAPPED_PATHS`` report warning on every application. A frame with
+    as the ``WRAP_DISCARDS_UNWRAPPED_PATHS`` report warning on every application that actually
+    moved positions. An application that changed nothing (an already-in-cell structure) discards
+    no trajectory information, so the statement is suppressed — the dedupe/identity-permutation
+    precedent: a no-op repair must not claim a loss (D252/D254; v1.7.1, D260). A frame with
     no cell (or a degenerate/zero-volume one) **blocks** through the existing
     ``missing_lattice`` recovery scenario: wrap invents no box (D43).
     """
@@ -141,14 +173,29 @@ class WrapIntoCell(RepairOperation):
             lattice = _frame_lattice(frame)
             assert lattice is not None  # block() refused a cell-less/degenerate frame already.
             positions = np.asarray(frame.atoms.positions, dtype=float)
-            frac = to_fractional(positions, lattice)
-            wrapped = to_cartesian(np.mod(frac, 1.0), lattice)
+            wrapped = to_cartesian(_fold_fractional(to_fractional(positions, lattice)), lattice)
             frames.append(
                 frame.model_copy(
                     update={"atoms": frame.atoms.model_copy(update={"positions": wrapped})}
                 )
             )
         return obj.model_copy(update={"frames": frames})
+
+    def hazards_for(self, obj: CanonicalObject, parameters: dict[str, Any]) -> list[RepairHazard]:
+        # The R5 statement names what the application discards — unwrapped trajectory
+        # information. An application that moved no position beyond float noise (an already
+        # in-cell structure) discards nothing, so the warning would be a lie — the
+        # deduplicate/identity-permutation precedent (D252/D254): a no-op repair must not
+        # claim a loss. The engine calls this only after ``apply`` succeeded, so every frame
+        # carries a usable lattice.
+        for frame in obj.frames:
+            lattice = _frame_lattice(frame)
+            assert lattice is not None  # block() refused a cell-less/degenerate frame already.
+            positions = np.asarray(frame.atoms.positions, dtype=float)
+            wrapped = to_cartesian(_fold_fractional(to_fractional(positions, lattice)), lattice)
+            if not np.allclose(positions, wrapped, rtol=0.0, atol=_WRAP_NOOP_ATOL):
+                return list(self.hazards)
+        return []
 
     def describe(self, obj: CanonicalObject, parameters: dict[str, Any]) -> str:
         n_frames = len(obj.frames)

@@ -69,8 +69,11 @@ mode). Key options:
   is a same-format `convert`. A bad request (an unknown operation, a malformed spec, a missing or
   incoherent parameter) is the engine's `RepairError` surfaced as a clean usage error (exit 1); a
   **blocked** repair (a cell-less `wrap_into_cell`, or a `cell_center` reference/target on a
-  cell-less frame) refuses through the existing `missing_lattice` recovery path (exit 2) — nothing
-  is ever fabricated to un-block a repair. `--json`/`--report` carry the repairs inside the
+  cell-less frame) refuses through the existing `missing_lattice` recovery path (exit 2) — or,
+  when the caller pre-supplied the matching `--recover missing_lattice=…` preset (v1.7.1, D260),
+  resolves in place: the choice is applied to the object before the repair is retried, recorded as
+  a recovery Assumption ahead of the repair row. Nothing is ever fabricated to un-block a repair
+  beyond what the caller's own recovery choice fabricates. `--json`/`--report` carry the repairs inside the
   ordinary ConversionReport; a no-`--repair` run is byte-identical to pre-v1.7. `convert --batch`
   does not take `--repair` in v1.7 (per-file repairs are a v1.8+ surface question; the flag is
   refused like any manifest-carried setting).
@@ -476,10 +479,15 @@ all.
 
 The only interactive pause a repair can cause is the genuine cell-less **`missing_lattice`** block:
 with `allow_recovery: true` a cell-less `wrap_into_cell` pauses with the standard block and its
-computed option list; without it, the job completes as a refused HTTP-200. **Honest limitation
-(v1.7, D259):** a *resumed* blocked repair re-pauses — the repair stage runs before pre-flight
-recovery and blocks unconditionally (M64 design) — so a cell-less `wrap_into_cell` **refuses over
-HTTP and is not resolvable in place in v1.7**: supply a cell in the source, or omit the wrap.
-Making a resumed repair complete (applying a pre-supplied recovery before retrying the blocked
-repair) is an engine enhancement deferred to **v1.7.1**; the current behaviour is pinned by
-`tests/backend/test_repair_api.py::test_cell_less_wrap_over_http_refuses_and_is_not_resolvable_in_v1_7`.
+computed option list; without it, the job completes as a refused HTTP-200. **Resolved in place
+since v1.7.1 (D260):** a *resumed* blocked repair completes — the worker applies the pre-supplied
+recovery choice to the object **before** retrying the blocked repair, so the `missing_lattice`
+answer (bounding_box / manual_input / upload_reference) finishes the job instead of re-pausing
+with the same block. The choice is recorded as a recovery Assumption **ahead of the repair row**,
+in application order, and a lattice fabricated only for a target that cannot store it (a cell-less
+wrap on plain XYZ) is audited in `supplied` without entering the write plan (D47). The completing
+resume is pinned by
+`tests/backend/test_repair_api.py::test_cell_less_wrap_over_http_completes_on_resume_with_presupplied_recovery`
+(the v1.7 re-pause behaviour it replaced was pinned by D259's renamed test); without
+`allow_recovery` the cell-less wrap still completes as a refused HTTP-200, and without a
+pre-supplied choice the pause is still offered.

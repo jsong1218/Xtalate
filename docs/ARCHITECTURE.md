@@ -251,9 +251,13 @@ operation and its complete parameters, a plain-language statement of what change
 class (D251). The set is reachable from every surface — the CLI's ordered `--repair` flag (M66-S1),
 the additive `/v1/convert` `repairs` field (M66-S2), and the Web UI's repair card with the ⟳
 "Modified on request" mark (M66-S3) — and the version's reproducibility contract (every repair
-reproducible from its report alone) is proven at property scale (M67-S1). The schema stays `1.0.0`
-(`operation="repair"` was reserved vocabulary in the 1.x schema; activating it changes no shape),
-and the package reaches `1.7.0`.
+reproducible from its report alone) is proven at property scale (M67-S1). A blocked repair
+resolves in place since v1.7.1 (D260): a pre-supplied recovery choice is applied to the object
+before the repair is retried — recorded as a recovery Assumption ahead of the repair row, in
+application order — so the resume and the CLI preset complete the conversion instead of re-pausing;
+and the wrap fold is idempotent at every precision with the R5 warning suppressed on a no-op
+application. The schema stays `1.0.0` (`operation="repair"` was reserved vocabulary in the 1.x
+schema; activating it changes no shape), and the package reaches `1.7.1`.
 
 CIF is the one format whose reader is a **package rather than a module**
 (`src/xtalate/parsers/cif/`), split into four stages with a one-way data flow: tokens (`_lexer`) →

@@ -779,16 +779,19 @@ in v1.7.
 
 The hazard contract: a *transformative* operation (wrap, center) — one that changes values in
 place and loses the originals — states its loss in a `ReportWarning(source="repair")` on every
-application (D251); a no-op application claims no loss (dedupe/species_reorder suppress their
-warning when nothing changed). Repairs never fabricate: a blocked repair (a cell-less wrap, or a
-`cell_center` reference/target on a cell-less frame) refuses through the existing `missing_lattice`
-recovery — the engine's fabricative bright line (D43), and nothing is ever silently "fixed": the
-report says what changed, to which atoms, by whose request. **Over HTTP (option A, D259):** a
-cell-less `wrap_into_cell` **refuses and is not resolvable in place in v1.7** — supply a cell in
-the source, or omit the wrap. Making a resumed repair complete (applying a pre-supplied recovery
-before retrying a blocked repair on resume) is an engine enhancement deferred to **v1.7.1**, pinned
-by the renamed API test
-(`tests/backend/test_repair_api.py::test_cell_less_wrap_over_http_refuses_and_is_not_resolvable_in_v1_7`).
+application that changed positions (D251); a no-op application claims no loss (wrap since v1.7.1,
+dedupe/species_reorder all along — they suppress their warning when nothing changed). Repairs
+never fabricate: a blocked repair (a cell-less wrap, or a `cell_center` reference/target on a
+cell-less frame) refuses through the existing `missing_lattice` recovery — the engine's
+fabricative bright line (D43), and nothing is ever silently "fixed": the report says what changed,
+to which atoms, by whose request. **In place since v1.7.1 (D260):** a pre-supplied recovery choice
+un-blocks the repair — the engine applies the choice to the object before retrying the blocked
+repair, so the resume (over HTTP) and the CLI's `--recover missing_lattice=…` preset complete the
+conversion instead of re-pausing with the same block; the choice is recorded as a recovery
+Assumption ahead of the repair row (application order), and a lattice fabricated only for a target
+that cannot store it stays out of the write plan (D47). The completing resume is pinned by
+`tests/backend/test_repair_api.py::test_cell_less_wrap_over_http_completes_on_resume_with_presupplied_recovery`
+(the v1.7 re-pause limitation it replaced was pinned by D259's renamed test).
 The CLI grammar is `--repair OPERATION[,param=value…]` (repeatable, ordered — see `docs/API.md`
 §1.2); the wire shape is `options.repairs: [{operation, parameters}]` (`docs/API.md` §5.6 and
 `docs/openapi.json`).

@@ -19,6 +19,49 @@ Schema version: 1.0.0
 
 _The next release accrues here._
 
+## [1.7.1] — 2026-09-06
+
+Schema version: 1.0.0
+
+v1.7.1 is the **in-place repair recovery** close — the shipped line (v1.7.0 was staged as the
+M67 release close but superseded before publication; v1.7.1 contains all of M64–M67 plus the
+items below). It resolves the one honest limitation the v1.7 release notes named: a **resumed
+blocked repair now completes**. A cell-less `wrap_into_cell` (or a `cell_center` center) pauses
+for the existing `missing_lattice` recovery as before, but the resume — and the CLI's
+`--recover missing_lattice=…` preset — applies the pre-supplied choice to the object **before**
+the blocked repair is retried, so the job finishes instead of re-pausing with the same block.
+The recovery is recorded as an ordinary Assumption, ahead of the repair row it enabled (the
+report's row order stays the application order), and a lattice fabricated only for a target that
+cannot store it (a wrap on plain XYZ) is audited in `supplied` without entering the write plan.
+
+Two wrap hardenings the M67 property suite flagged ride along: the minimum-image fold now clamps
+into `[0, 1)` at **every precision** — a coordinate within float-underflow of a cell face
+previously folded onto the face and flipped to `0.0` on the next wrap, so the fold is now
+idempotent everywhere (D258's boundary-residue find) — and the R5
+`WRAP_DISCARDS_UNWRAPPED_PATHS` warning is **suppressed when the wrap changed nothing**: a no-op
+wrap discards no trajectory information, so the statement would be a lie (the dedupe/reorder
+precedent). Schema stays `1.0.0`.
+
+### Changed — a resumed blocked repair resolves in place (D260)
+
+The repair stage still runs between parse and pre-flight (D250), but a repair that blocks now
+resolves through a pre-supplied recovery choice instead of refusing unconditionally: the engine
+applies the block scenario's choice to the object first (recording it as a recovery Assumption
+with the caller's origin — `preset` or `user`), then retries the repair against the recovered
+object. All-or-nothing is preserved — a repair that still blocks after a supplied recovery (e.g.
+a `manual_input` lattice that is itself singular) refuses with the pre-repair Assumptions
+carried. Nothing is ever fabricated beyond what the caller's own recovery choice fabricates, and
+a field the target cannot store stays out of the write plan (D47).
+
+### Changed — wrap fold clamped to `[0, 1)` and the R5 warning made conditional (D258→D260)
+
+`wrap_into_cell`'s fold is `np.mod(frac, 1.0)` with a `1.0 → 0.0` clamp (`_fold_fractional`), so
+a coordinate within float-underflow of a cell face (below the ULP of 1.0, ~1.1e-16) still lands
+inside the half-open interval — the fold is deterministic and idempotent at every precision (the
+M67-S1 property now asserts the full domain). The R5 warning fires only when the application
+actually moved positions (within the 1e-9 Å position tolerance); an already-in-cell structure
+carries no warning, matching deduplicate and species reorder's no-op discipline.
+
 ## [1.7.0] — 2026-09-06
 
 Schema version: 1.0.0
