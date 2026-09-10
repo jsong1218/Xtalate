@@ -85,6 +85,11 @@ _MIN_CELL_VOLUME = 1e-12
 #: anything (v1.7.1, D260).
 _WRAP_NOOP_ATOL = 1e-9
 
+#: A center is a no-op when every per-frame shift is within this of zero (Å) — the same position
+#: tolerance the wrap uses for repaired coordinates (v1.7.1 arch review; a no-op must not claim a
+#: loss, D252/D254/D260).
+_CENTER_NOOP_ATOL = 1e-9
+
 
 def _fold_fractional(frac: np.ndarray) -> np.ndarray:
     """Fold fractional coordinates into ``[0, 1)`` — the wrap's deterministic boundary rule.
@@ -237,6 +242,21 @@ class WrapIntoCell(RepairOperation):
     def describe(self, obj: CanonicalObject, parameters: dict[str, Any]) -> str:
         n_frames = len(obj.frames)
         n_atoms = obj.frames[0].atoms.positions.shape[0]
+        wrapped = self._wrapped_positions(obj, parameters)
+        moved = any(
+            not np.allclose(
+                np.asarray(frame.atoms.positions, dtype=float), w, rtol=0.0, atol=_WRAP_NOOP_ATOL
+            )
+            for frame, w in zip(obj.frames, wrapped, strict=True)
+        )
+        if not moved:
+            # A no-op repair must not claim a loss (D252/D254/D260) — every atom was already inside
+            # its cell (on every periodic axis), so nothing was discarded.
+            return (
+                f"Wrap-into-cell requested across {n_frames} frame(s), {n_atoms} atoms per frame — "
+                "every atom was already inside its cell, so nothing moved and no trajectory "
+                "information was discarded."
+            )
         return (
             f"Wrapped all atom positions into the simulation cell (minimum-image convention) "
             f"across {n_frames} frame(s), {n_atoms} atoms per frame — the unwrapped trajectory "
@@ -472,6 +492,35 @@ class Center(RepairOperation):
     hazard_class = TRANSFORMATIVE_HAZARD
     hazards = (CENTER_DISCARDS_ABSOLUTE_POSITION,)
 
+    #: Single-entry per-call shift cache (see ``WrapIntoCell._wrapped_cache``): ``apply``,
+    #: ``hazards_for`` and ``describe`` all need the per-frame shift for one ``(obj, parameters)``.
+    _shift_cache: tuple[CanonicalObject, dict[str, Any], list[np.ndarray]] | None = None
+
+    def _shifts(self, obj: CanonicalObject, parameters: dict[str, Any]) -> list[np.ndarray]:
+        cached = self._shift_cache
+        if cached is not None and cached[0] is obj and cached[1] is parameters:
+            return cached[2]
+        reference = _center_reference(parameters)
+        target, explicit_target = _center_target(parameters)
+        shifts: list[np.ndarray] = []
+        for frame in obj.frames:
+            positions = np.asarray(frame.atoms.positions, dtype=float)
+            ref = _centroid(positions) if reference == "centroid" else _frame_lattice(frame)
+            assert ref is not None  # block() refused a cell-less frame already.
+            if reference == "cell_center":
+                ref = _cell_center(ref)
+            if explicit_target is not None:
+                target_point = explicit_target
+            elif target == "cell_center":
+                lattice = _frame_lattice(frame)
+                assert lattice is not None  # block() refused a cell-less frame already.
+                target_point = _cell_center(lattice)
+            else:  # target == "origin"
+                target_point = np.zeros(3)
+            shifts.append(target_point - ref)
+        self._shift_cache = (obj, parameters, shifts)
+        return shifts
+
     def block(self, obj: CanonicalObject, parameters: dict[str, Any]) -> RepairBlock | None:
         reference = _center_reference(parameters)
         target, _ = _center_target(parameters)
@@ -500,32 +549,27 @@ class Center(RepairOperation):
         return None
 
     def apply(self, obj: CanonicalObject, parameters: dict[str, Any]) -> CanonicalObject:
-        reference = _center_reference(parameters)
-        target, explicit_target = _center_target(parameters)
-        frames: list[Frame] = []
-        for frame in obj.frames:
-            positions = np.asarray(frame.atoms.positions, dtype=float)
-            ref = _centroid(positions) if reference == "centroid" else _frame_lattice(frame)
-            assert ref is not None  # block() refused a cell-less frame already.
-            if reference == "cell_center":
-                ref = _cell_center(ref)
-            if explicit_target is not None:
-                target_point = explicit_target
-            elif target == "cell_center":
-                lattice = _frame_lattice(frame)
-                assert lattice is not None  # block() refused a cell-less frame already.
-                target_point = _cell_center(lattice)
-            else:  # target == "origin"
-                target_point = np.zeros(3)
-            shift = target_point - ref
-            frames.append(
-                frame.model_copy(
-                    update={
-                        "atoms": frame.atoms.model_copy(update={"positions": positions + shift})
-                    }
-                )
+        shifts = self._shifts(obj, parameters)
+        frames = [
+            frame.model_copy(
+                update={
+                    "atoms": frame.atoms.model_copy(
+                        update={"positions": np.asarray(frame.atoms.positions, dtype=float) + shift}
+                    )
+                }
             )
+            for frame, shift in zip(obj.frames, shifts, strict=True)
+        ]
         return obj.model_copy(update={"frames": frames})
+
+    def hazards_for(self, obj: CanonicalObject, parameters: dict[str, Any]) -> list[RepairHazard]:
+        # A no-op center (every per-frame shift is zero — e.g. cell_center -> cell_center, or a
+        # centroid already at the target) discards no absolute-position information, so it must not
+        # claim a loss (D252/D254/D260), exactly as WrapIntoCell/Deduplicate/SpeciesReorder do.
+        shifts = self._shifts(obj, parameters)
+        if all(np.allclose(shift, 0.0, atol=_CENTER_NOOP_ATOL) for shift in shifts):
+            return []
+        return list(self.hazards)
 
     def describe(self, obj: CanonicalObject, parameters: dict[str, Any]) -> str:
         reference = _center_reference(parameters)
@@ -534,6 +578,13 @@ class Center(RepairOperation):
             target_desc = f"[{explicit[0]:g}, {explicit[1]:g}, {explicit[2]:g}] Å"
         else:
             target_desc = str(target)
+        shifts = self._shifts(obj, parameters)
+        if all(np.allclose(shift, 0.0, atol=_CENTER_NOOP_ATOL) for shift in shifts):
+            return (
+                f"Center requested ({reference} to {target_desc}) — the structure was already "
+                "centered there, so nothing moved and no absolute-position information was "
+                "discarded."
+            )
         return (
             f"Centered the structure per frame: translated the {reference} to {target_desc} — "
             "positions only (velocities/forces/charges are translation-invariant); the "

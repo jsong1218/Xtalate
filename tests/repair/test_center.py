@@ -334,3 +334,10 @@ def test_center_flagship_converts_validates_and_reproduces() -> None:
     rederived = _convert(source, reg=reg, repairs=[RepairRequest(row.choice, dict(row.parameters))])
     assert rederived.output is not None and rederived.output == result.output
     assert rederived.validation is not None and rederived.validation.status == "passed"
+
+
+def test_center_cell_center_to_cell_center_is_a_no_op_with_no_loss_claim() -> None:
+    # A cubic cell whose atoms are arbitrary; cell_center -> cell_center is always a zero shift.
+    _, applied = _apply(_single(), {"reference": "cell_center", "target": "cell_center"})
+    assert applied.hazards == []  # no fabricated CENTER_DISCARDS_ABSOLUTE_POSITION
+    assert "not recoverable" not in applied.description

@@ -517,3 +517,13 @@ def test_wrap_on_a_fully_non_periodic_cell_is_a_no_op() -> None:
     out = np.asarray(WrapIntoCell().apply(obj, {}).frames[0].atoms.positions, dtype=float)
     np.testing.assert_allclose(out, positions)
     assert WrapIntoCell().hazards_for(obj, {}) == []
+
+
+def test_wrap_describe_does_not_claim_loss_on_a_no_op() -> None:
+    positions = np.array([[0.0, 0.0, 0.0], [2.0, 2.0, 2.0]], dtype=float)  # both in-cell
+    obj = _one_frame(positions, pbc=(True, True, True))
+    op = WrapIntoCell()
+    assert op.hazards_for(obj, {}) == []  # already suppressed (D260)
+    text = op.describe(obj, {})
+    assert "not recoverable" not in text  # the description must not claim a loss either
+    assert "already" in text.lower() or "no atom" in text.lower()
