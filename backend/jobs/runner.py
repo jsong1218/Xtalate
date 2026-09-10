@@ -441,6 +441,9 @@ def _run_convert(
             # Same single-file sink as the trial convert above, so the pause offers exactly the
             # option set the resume will honour (no `split_all`).
             output_multifile=False,
+            # The pause draft must describe the *repaired* bytes the resume converts (D250's repair
+            # placement; REPAIR-H3) — the same ordered repair list the trial convert above applied.
+            repairs=repairs,
         )
         raise RecoveryPause(
             build_awaiting_block(

@@ -18,7 +18,7 @@ import numpy as np
 
 from tests.conversion.test_engine import _parse, _registry
 from xtalate.capabilities import Registry
-from xtalate.conversion import ConversionEngine, ConversionResult
+from xtalate.conversion import ConversionEngine, ConversionReport, ConversionResult
 from xtalate.conversion.report import REPAIR_SCENARIO
 from xtalate.recovery.scenarios import SCENARIO_HAZARD
 from xtalate.repair import (
@@ -31,7 +31,7 @@ from xtalate.repair import (
     get_operation,
 )
 from xtalate.repair.operations import IdentityRepair
-from xtalate.schema import CanonicalObject
+from xtalate.schema import AtomsBlock, CanonicalObject, Cell, Frame, Provenance
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 
@@ -287,3 +287,104 @@ def test_reproducibility_from_report_alone() -> None:
         repairs=[RepairRequest(row.choice, dict(row.parameters))],
     )
     assert rederived.output is not None and rederived.output == first
+
+
+# --- the recovery-preview seams are repair-aware (v1.7.1 arch review R3; REPAIR-H3) ----------
+
+
+def _out_of_cell_object() -> CanonicalObject:
+    """A single frame in a 4 Å cubic cell with one atom at fractional 1.5 on x (out of cell)."""
+    return CanonicalObject(
+        frames=[
+            Frame(
+                index=0,
+                atoms=AtomsBlock(
+                    symbols=["Ar", "Ar"],
+                    positions=np.array([[1.0, 1.0, 1.0], [6.0, 1.0, 1.0]], dtype=float),
+                ),
+                cell=Cell(lattice_vectors=4.0 * np.eye(3), pbc=(True, True, True)),
+            )
+        ],
+        provenance=Provenance(
+            source_filename="out-of-cell.poscar",
+            source_format="poscar",
+            original_coordinate_system="cartesian",
+        ),
+    )
+
+
+def _cell_less_object() -> CanonicalObject:
+    """A single frame with no cell — a wrap repair on it blocks via ``missing_lattice``."""
+    return _out_of_cell_object().model_copy(
+        update={
+            "frames": [f.model_copy(update={"cell": None}) for f in _out_of_cell_object().frames]
+        }
+    )
+
+
+def _preflight_body(report: ConversionReport) -> dict[str, object]:
+    """A preflight draft minus its per-call identity (report_id/created_at), for comparison."""
+    dumped = report.model_dump(mode="json")
+    for volatile in ("report_id", "created_at"):
+        dumped.pop(volatile, None)
+    return dumped
+
+
+def test_preflight_reflects_a_clean_repair() -> None:
+    # An out-of-cell atom: preflight WITHOUT repairs sees the raw geometry; WITH a wrap repair it
+    # sees the wrapped geometry (the pause draft must describe the bytes the resume converts).
+    engine = ConversionEngine(_registry())
+    source = _out_of_cell_object()
+    plain = engine.preflight(source, source_format_id="poscar", target_format_id="xyz")
+    wrapped = engine.preflight(
+        source,
+        source_format_id="poscar",
+        target_format_id="xyz",
+        repairs=[RepairRequest("wrap_into_cell")],
+    )
+    # Both are structurally valid drafts.
+    assert plain.status == "completed"
+    assert wrapped.status == "completed"
+    # The repaired draft is exactly the draft of the already-repaired object: the seam applies
+    # the repairs before building the diff (nothing is dropped or re-ordered).
+    repaired = apply_repairs(source, [RepairRequest("wrap_into_cell")]).canonical
+    assert repaired is not None
+    prewrapped = engine.preflight(repaired, source_format_id="poscar", target_format_id="xyz")
+    assert _preflight_body(wrapped) == _preflight_body(prewrapped)
+
+
+def test_preflight_repairs_none_is_byte_identical_to_no_repairs() -> None:
+    engine = ConversionEngine(_registry())
+    source = _out_of_cell_object()
+    a = engine.preflight(source, source_format_id="poscar", target_format_id="xyz")
+    b = engine.preflight(source, source_format_id="poscar", target_format_id="xyz", repairs=None)
+    assert _preflight_body(a) == _preflight_body(b)
+
+
+def test_preview_recovery_reflects_a_clean_repair() -> None:
+    engine = ConversionEngine(_registry())
+    source = _out_of_cell_object()
+    preview = engine.preview_recovery(
+        source,
+        source_format_id="poscar",
+        target_format_id="xyz",
+        repairs=[RepairRequest("wrap_into_cell")],
+    )
+    assert preview is not None  # a preview never refuses; it previews the repaired object
+    assert preview.assumptions == []
+    assert preview.unresolved == []
+
+
+def test_preview_recovery_falls_back_when_a_repair_blocks() -> None:
+    # A cell-less object + a wrap that would block on missing_lattice: the PREVIEW must not raise —
+    # it falls back to the un-repaired object (the pause is already asking for the lattice).
+    engine = ConversionEngine(_registry())
+    source = _cell_less_object()
+    preview = engine.preview_recovery(
+        source,
+        source_format_id="xyz",
+        target_format_id="poscar",
+        repairs=[RepairRequest("wrap_into_cell")],
+    )
+    assert preview is not None  # did not raise
+    assert any(u.scenario == "missing_lattice" for u in preview.unresolved)

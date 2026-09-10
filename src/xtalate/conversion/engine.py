@@ -156,6 +156,21 @@ class ConversionEngine:
         self._recovery = RecoveryEngine()
         self._validation = ValidationEngine(registry)
 
+    def _repaired_or_source(
+        self, source: CanonicalObject, repairs: list[RepairRequest] | None
+    ) -> CanonicalObject:
+        # Best-effort repair for the *preview* seams (preflight / preview_recovery): a preview must
+        # never refuse (its whole purpose is to show the draft while a pause waits), so a repair
+        # that blocks — a cell-less wrap awaiting `missing_lattice` — falls back to the un-repaired
+        # object, which is exactly the object the pause is already asking the user about. A clean
+        # repair is reflected so the preview describes the bytes the resume will convert (P4: the
+        # preview is honest about which document it describes). ``convert`` keeps the strict,
+        # all-or-nothing, refusing path — this helper is preview-only.
+        if not repairs:
+            return source
+        outcome = apply_repairs(source, repairs)
+        return outcome.canonical if outcome.canonical is not None else source
+
     def preflight(
         self,
         source: CanonicalObject,
@@ -167,12 +182,19 @@ class ConversionEngine:
         target_filename: str | None = None,
         mode: str = "permissive",
         output_multifile: bool = True,
+        repairs: list[RepairRequest] | None = None,
     ) -> ConversionReport:
         """The draft Conversion Report shown before conversion runs (Part 3 §4.3).
 
         ``output_multifile`` gates the ``split_all`` option the draft advertises (Part 4 §3.3):
         ``True`` for a directory-writing caller (CLI), ``False`` for the single-download HTTP
-        service, so the pause the service shows never offers a choice it cannot fulfil."""
+        service, so the pause the service shows never offers a choice it cannot fulfil.
+
+        ``repairs`` (v1.7.1 arch review; REPAIR-H3) is applied best-effort so the draft describes
+        the repaired document a ``convert`` with the same ``repairs`` would produce — falling back
+        to the raw object when a repair would block (the pause resolves that block). A draft and
+        the final report must describe one document (the runner's pause → resume invariant)."""
+        source = self._repaired_or_source(source, repairs)
         matrix = self._registry.capability_matrix()
         diff = build_preflight(
             source,
@@ -767,6 +789,7 @@ class ConversionEngine:
         recovery_origin: str = "user",
         parse_recovery: ParseRecovery | None = None,
         output_multifile: bool = True,
+        repairs: list[RepairRequest] | None = None,
     ) -> RecoveryPreview:
         """Preview the Assumptions a :meth:`convert` with ``recovery_choices`` would record, without
         exporting or validating (Part 6 §3.2; slice M31-S1).
@@ -774,6 +797,10 @@ class ConversionEngine:
         ``output_multifile`` must match the eventual :meth:`convert` call (the HTTP service passes
         ``False``) so the preview offers exactly the ``split_all``-gated option set the conversion
         will honour — a preview that advertised a choice the conversion then refused would mislead.
+
+        ``repairs`` (v1.7.1 arch review; REPAIR-H3) is applied best-effort, exactly as in
+        :meth:`preflight`: the preview describes the repaired document a resume would convert,
+        falling back to the raw object when a repair would block (the pause resolves that block).
 
         This reproduces exactly the recovery *prefix* of :meth:`convert` — merge parse-time
         recovery, build the pre-flight diff, add on-demand fabricative scenarios, then run the
@@ -789,6 +816,9 @@ class ConversionEngine:
         ``RecoveryError`` unchanged — the caller maps it to ``INVALID_RECOVERY_CHOICE`` exactly as
         the resume path does (Part 6 §6)."""
         recovery_choices = recovery_choices or {}
+        # The recovery prefix reproduces ``convert``'s, which runs on the *repaired* object — so
+        # this preview must describe the same document (REPAIR-H3).
+        source = self._repaired_or_source(source, repairs)
         matrix = self._registry.capability_matrix()
         diff = build_preflight(
             source,

@@ -7,7 +7,7 @@ default), so these are genuine HTTP round-trips through the real error envelope 
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -155,6 +155,70 @@ def test_convert_without_allow_recovery_still_refuses(client: TestClient) -> Non
     assert env["state"] == "completed"
     assert env["result"]["conversion_report"]["status"] == "refused"
     assert env["awaiting_recovery"] is None
+
+
+def test_repair_pause_draft_is_the_preflight_of_the_repaired_document(
+    client: TestClient,
+) -> None:
+    # REPAIR-H3: a repair job that pauses (XYZ → POSCAR needs a lattice the source lacks; the
+    # wrap repair is *blocked* by the missing cell) must build its pause draft from the
+    # *repaired* document the resume converts — best-effort: a blocked repair falls back, so the
+    # draft is the pre-flight of the document the pause is actually asking about, and the lattice
+    # question still fires. A draft and the final report must describe one document (the runner's
+    # pause → resume invariant).
+    import hashlib
+
+    from xtalate.conversion import ConversionEngine, parse_with_recovery
+    from xtalate.repair import RepairRequest
+
+    file_id = _upload(client, XYZ_SAMPLE, "mol.xyz")
+    env = client.post(
+        "/v1/convert",
+        json={
+            "file_id": file_id,
+            "target_format_id": "poscar",
+            "options": {
+                "allow_recovery": True,
+                "repairs": [{"operation": "wrap_into_cell"}],
+            },
+        },
+    ).json()
+    assert env["state"] == "awaiting_recovery"
+    block = env["awaiting_recovery"]
+    assert block is not None
+    draft = block["draft_report"]
+    assert draft["stage"] == "preflight"
+    assert draft["status"] == "awaiting_recovery"
+    assert "missing_lattice" in {s["scenario"] for s in block["unresolved_scenarios"]}
+
+    # Re-derive the draft the engine builds from the *repaired* document and compare bodies
+    # (minus the per-call identity): the pause draft must equal the pre-flight of that one
+    # document — never of a different one.
+    state = client.app.state  # type: ignore[attr-defined]
+    registry = state.registry
+    parsed = parse_with_recovery(registry, XYZ_SAMPLE, filename="mol.xyz", recovery_choices={})
+    expected = (
+        ConversionEngine(registry)
+        .preflight(
+            parsed.canonical,
+            source_format_id=parsed.format_id,
+            target_format_id="poscar",
+            source_filename="mol.xyz",
+            source_sha256=hashlib.sha256(XYZ_SAMPLE).hexdigest(),
+            target_filename=None,
+            mode="permissive",
+            output_multifile=False,
+            repairs=[RepairRequest("wrap_into_cell")],
+        )
+        .model_dump(mode="json")
+    )
+
+    def body(report: dict[str, Any]) -> dict[str, Any]:
+        for volatile in ("report_id", "created_at"):
+            report.pop(volatile, None)
+        return report
+
+    assert body(dict(draft)) == body(expected)
 
 
 def test_convert_allow_recovery_pauses_to_awaiting_recovery(client: TestClient) -> None:
