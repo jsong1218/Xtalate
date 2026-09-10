@@ -54,7 +54,7 @@ test.afterEach(async ({ request }) => {
 test("flagship: a wrap_into_cell card converts and the record shows the ⟳ mark, the R5 warning, and Compare before/after", async ({
   page,
 }) => {
-  await uploadToConvertTab(page, FIXTURES.celledPoscar.file);
+  await uploadToConvertTab(page, FIXTURES.unwrappedPoscar.file);
   await addWrapCard(page);
 
   // The only new pre-conversion surface is the repair card — the target picker is unchanged.
