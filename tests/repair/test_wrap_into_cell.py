@@ -464,3 +464,56 @@ def test_transformative_hazard_class_is_registered_and_exercised() -> None:
     assert warning.source == "repair"
     assert warning.code == WRAP_DISCARDS_UNWRAPPED_PATHS.code
     assert warning.message == WRAP_DISCARDS_UNWRAPPED_PATHS.message
+
+
+# --- pbc-aware wrap (v1.7.1 arch review, REPAIR-C1) ---------------------------------------
+
+
+def _one_frame(positions: np.ndarray, pbc: tuple[bool, bool, bool]) -> CanonicalObject:
+    """A single-frame object, 4 Å cubic cell, with the given per-axis periodicity."""
+    return CanonicalObject(
+        frames=[
+            Frame(
+                index=0,
+                atoms=AtomsBlock(symbols=["Ar", "Ar"], positions=positions),
+                cell=Cell(lattice_vectors=4.0 * np.eye(3), pbc=pbc),
+            )
+        ],
+        provenance=Provenance(
+            source_filename="slab.xyz",
+            source_format="extxyz",
+            original_coordinate_system="cartesian",
+        ),
+    )
+
+
+def test_wrap_leaves_a_non_periodic_axis_untouched() -> None:
+    # Atom 1 sits 6 Å up z (1.5 cells) above a slab; z is non-periodic (vacuum gap).
+    positions = np.array([[1.0, 1.0, 1.0], [1.0, 1.0, 6.0]], dtype=float)
+    obj = _one_frame(positions, pbc=(True, True, False))
+    wrapped = WrapIntoCell().apply(obj, {})
+    out = np.asarray(wrapped.frames[0].atoms.positions, dtype=float)
+    # z is NOT folded — the adsorbate stays 6 Å up, not translated through the vacuum to 2 Å.
+    assert out[1, 2] == 6.0
+    # An in-cell x/y stays put too (already inside).
+    np.testing.assert_allclose(out[:, :2], positions[:, :2])
+
+
+def test_wrap_folds_only_the_periodic_axes() -> None:
+    # x is 5 Å (1.25 cells) — periodic, folds to 1.0; z is 6 Å — non-periodic, stays.
+    positions = np.array([[0.0, 0.0, 0.0], [5.0, 1.0, 6.0]], dtype=float)
+    obj = _one_frame(positions, pbc=(True, True, False))
+    out = np.asarray(WrapIntoCell().apply(obj, {}).frames[0].atoms.positions, dtype=float)
+    np.testing.assert_allclose(out[1], [1.0, 1.0, 6.0])
+    # A real move on a periodic axis still arms the R5 warning.
+    assert WrapIntoCell().hazards_for(obj, {}) == [WRAP_DISCARDS_UNWRAPPED_PATHS]
+
+
+def test_wrap_on_a_fully_non_periodic_cell_is_a_no_op() -> None:
+    # A cluster in a bounding box declares no periodic direction — nothing is wrapped, and
+    # (a no-op repair must not claim a loss, D260) the R5 warning is suppressed.
+    positions = np.array([[0.0, 0.0, 0.0], [5.0, 6.0, 7.0]], dtype=float)
+    obj = _one_frame(positions, pbc=(False, False, False))
+    out = np.asarray(WrapIntoCell().apply(obj, {}).frames[0].atoms.positions, dtype=float)
+    np.testing.assert_allclose(out, positions)
+    assert WrapIntoCell().hazards_for(obj, {}) == []

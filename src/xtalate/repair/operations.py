@@ -165,17 +165,28 @@ class WrapIntoCell(RepairOperation):
         return wrapped
 
     def _compute_wrapped_positions(self, obj: CanonicalObject) -> list[np.ndarray]:
-        # One minimum-image wrap per frame against that frame's own lattice. The engine calls
-        # this (via ``apply``/``hazards_for``) only after ``block`` passed, so every frame
-        # carries a usable lattice.
+        # One minimum-image wrap per frame against that frame's own lattice, folding **only the
+        # axes the frame declares periodic** (``cell.pbc``) — a cell's presence is not periodicity
+        # (P3: ``pbc`` is the information), so a non-periodic axis (a slab's vacuum gap, a
+        # cluster's bounding box) keeps its raw coordinate rather than being folded through the
+        # gap. Mirrors ``Deduplicate._pairwise_distances`` (the sibling pbc-aware fix). The
+        # engine calls this (via ``apply``/``hazards_for``) only after ``block`` passed, so every
+        # frame carries a usable lattice.
         wrapped: list[np.ndarray] = []
         for frame in obj.frames:
             lattice = _frame_lattice(frame)
             assert lattice is not None  # block() refused a cell-less/degenerate frame already.
             positions = np.asarray(frame.atoms.positions, dtype=float)
-            wrapped.append(
-                to_cartesian(_fold_fractional(to_fractional(positions, lattice)), lattice)
-            )
+            pbc = tuple(frame.cell.pbc) if frame.cell is not None else (False, False, False)
+            if not any(pbc):
+                # No periodic direction → nothing to wrap into; the coordinates are returned
+                # unchanged (a no-op; hazards_for then suppresses the R5 warning).
+                wrapped.append(positions.copy())
+                continue
+            frac = to_fractional(positions, lattice)
+            periodic = np.array(pbc, dtype=bool)
+            folded = np.where(periodic, _fold_fractional(frac), frac)
+            wrapped.append(to_cartesian(folded, lattice))
         return wrapped
 
     def block(self, obj: CanonicalObject, parameters: dict[str, Any]) -> RepairBlock | None:
