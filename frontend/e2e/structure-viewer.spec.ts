@@ -86,12 +86,22 @@ test("the Structure tab's reset/expand controls work and the viewer survives a t
   await page.getByRole("button", { name: /reset view/i }).click();
   await expect(mount).toBeVisible();
 
-  // Expand opens the focus-trapped dialog; Escape closes it and no dialog remains.
+  // Expand opens the focus-trapped dialog; Escape closes it and no dialog remains. The Mol* host
+  // must be the SAME DOM node after collapse — a remount would drop the WebGL context, camera, and
+  // loaded trajectory (VIEW-H1). The identity is proven by tagging the live node: React only
+  // preserves an imperatively-set attribute if reconciliation kept that very node, so finding the
+  // tag on the still-mounted element after collapse means no re-mount happened.
+  await mount.evaluate((el) => {
+    (el as HTMLElement).dataset.survivesExpand = "true";
+  });
   await page.getByRole("button", { name: /expand/i }).click();
   const dialog = page.getByRole("dialog", { name: /structure viewer/i });
   await expect(dialog).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page.locator('[data-mounted=true][data-survives-expand=true]'),
+  ).toHaveCount(1);
 
   // Dark mode: the header toggle flips `<html data-theme>`; the viewer re-themes its background in
   // place — the canvas stays mounted across the flip (theme-aware, not a re-mount).

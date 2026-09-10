@@ -275,7 +275,7 @@ export function StructureViewer({
       : "grid grid-rows-[auto_auto_auto] gap-2";
 
   return (
-    <div className={rootClassName}>
+    <div className={rootClassName} data-expanded={expanded}>
       <div data-testid="viewer-annotations" className="space-y-2">
         {label ? (
           <div className="text-xs font-medium text-muted">{label}</div>
@@ -301,19 +301,13 @@ export function StructureViewer({
           </p>
         ) : null}
       </div>
-      <div
-        data-testid="viewer-canvas"
-        className="relative h-96 w-full overflow-hidden rounded border border-line"
-      >
-        {expanded ? (
-          <div className="h-full w-full" />
-        ) : (
-          viewerBody
-        )}
-      </div>
-      {expanded ? (
-        <FullscreenViewer onClose={closeOverlay}>{viewerBody}</FullscreenViewer>
-      ) : null}
+      {/* viewerBody must occupy ONE stable position in the tree across expand/collapse — moving it
+          between an inline slot and a <FullscreenViewer> child remounts the Mol* plugin and drops the
+          WebGL context, camera, and loaded trajectory (VIEW-H1). Expansion is a styling/behaviour
+          state on the always-mounted shell, not a change of the node's parent. */}
+      <FullscreenViewer expanded={expanded} onCollapse={closeOverlay}>
+        {viewerBody}
+      </FullscreenViewer>
       <div data-testid="viewer-controls" className="flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -352,40 +346,56 @@ const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * The expand overlay (D-next): a fixed-inset dialog that hosts the same `viewerBody` full-screen.
+ * The expand shell (VIEW-H1): an always-mounted presentational wrapper that hosts the SAME
+ * `viewerBody` element instance in both states. Collapsed it is the inline canvas slot (the
+ * bordered `h-96` box the viewer lives in); expanded it becomes the fixed-inset dialog, with the
+ * Close header appearing above the content. Because the children sit at the same tree position in
+ * both states (the header row is always rendered, just hidden), React never remounts the Mol*
+ * subtree on toggle — the WebGL context, camera, and loaded trajectory survive expand/collapse.
+ *
  * Focus moves onto the dialog on open and returns to the previously focused element on close, and
  * Escape closes it — the axe-scanned pages this viewer mounts on hold serious+critical to zero, so
  * the dialog carries an accessible name (`aria-label`) rather than relying on visible text alone.
  *
- * Fix round 1 (findings 1 + 2): the dialog now implements a **real** focus trap, not just an
- * initial focus call — Tab/Shift+Tab cycle only among the dialog's own focusable elements (the
- * same event-capture pattern `CommandPalette`'s `trapTab` uses: intercept Tab, `preventDefault`,
- * and move focus manually — reused here for consistency rather than introducing a second trap
+ * Fix round 1 (findings 1 + 2): the dialog implements a **real** focus trap, not just an initial
+ * focus call — Tab/Shift+Tab cycle only among the dialog's own focusable elements (the same
+ * event-capture pattern `CommandPalette`'s `trapTab` uses: intercept Tab, `preventDefault`, and
+ * move focus manually — reused here for consistency rather than introducing a second trap
  * convention). Because every Tab press inside the dialog is caught and redirected, the sibling
  * `viewer-controls` row mounted behind the `z-50` overlay is never reachable by keyboard, with no
  * need for `inert`/`aria-hidden` on the background (the codebase has no such convention either —
- * the palette doesn't use it, so neither does this). `onClose` must be a **stable** callback (the
- * caller now wraps it in `useCallback`) so this mount effect — which captures the pre-open focus
- * target and wires the Escape/close-on-unmount handling — runs exactly once per open rather than
- * re-running (and re-stealing focus) on every incidental re-render of the parent while expanded.
+ * the palette doesn't use it, so neither does this). `onCollapse` must be a **stable** callback
+ * (the caller wraps it in `useCallback`) so the focus/close effect — which captures the pre-open
+ * focus target and wires the Escape/close-on-collapse handling — runs exactly once per open rather
+ * than re-running (and re-stealing focus) on every incidental re-render of the parent while
+ * expanded.
  */
-function FullscreenViewer({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+function FullscreenViewer({
+  expanded,
+  onCollapse,
+  children,
+}: {
+  expanded: boolean;
+  onCollapse: () => void;
+  children: ReactNode;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    if (!expanded) return;
     const prev = document.activeElement as HTMLElement | null;
     ref.current?.focus();
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCollapse();
     }
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
       prev?.focus();
     };
-  }, [onClose]);
+  }, [expanded, onCollapse]);
 
   function trapTab(e: React.KeyboardEvent<HTMLDivElement>) {
-    if (e.key !== "Tab") return;
+    if (!expanded || e.key !== "Tab") return;
     const container = ref.current;
     if (!container) return;
     const focusables = Array.from(
@@ -405,26 +415,42 @@ function FullscreenViewer({ children, onClose }: { children: ReactNode; onClose:
     focusables[nextIdx].focus();
   }
 
+  // One root element in both states; only its classes/attributes and the header row's content
+  // change on toggle. The header div is always present (hidden while collapsed) so the children
+  // container — and the Mol* subtree inside it — keeps its index-1 slot and never remounts.
   return (
     <div
       ref={ref}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Structure viewer"
-      tabIndex={-1}
+      data-testid="viewer-canvas"
+      role={expanded ? "dialog" : undefined}
+      aria-modal={expanded ? "true" : undefined}
+      aria-label={expanded ? "Structure viewer" : undefined}
+      tabIndex={expanded ? -1 : undefined}
       onKeyDown={trapTab}
-      className="fixed inset-0 z-50 flex flex-col bg-surface p-4 outline-none"
+      className={
+        expanded
+          ? "fixed inset-0 z-50 flex flex-col bg-surface p-4 outline-none"
+          : "relative h-96 w-full overflow-hidden rounded border border-line"
+      }
     >
-      <div className="mb-2 flex justify-end">
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded border border-line px-2 py-1 text-xs text-muted hover:bg-raised"
-        >
-          Close
-        </button>
+      <div className={expanded ? "mb-2 flex justify-end" : "hidden"}>
+        {expanded ? (
+          <button
+            type="button"
+            onClick={onCollapse}
+            className="rounded border border-line px-2 py-1 text-xs text-muted hover:bg-raised"
+          >
+            Close
+          </button>
+        ) : null}
       </div>
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded border border-line">
+      <div
+        className={
+          expanded
+            ? "relative min-h-0 flex-1 overflow-hidden rounded border border-line"
+            : "h-full w-full"
+        }
+      >
         {children}
       </div>
     </div>
