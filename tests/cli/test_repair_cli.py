@@ -5,7 +5,7 @@ Drives ``main(argv)`` end to end and pins the ordered-list grammar: repeated
 order (order is scientific meaning — wrap-then-center ≠ center-then-wrap, and the report
 records which happened), a bad request is a clean usage error (exit 1), a blocked repair (a
 cell-less wrap) refuses through the ordinary refusal path (exit 2) fabricating nothing — or,
-when the caller pre-supplied the matching ``--recover missing_lattice=…`` preset (v1.7.1,
+when the caller pre-supplied the matching ``--recover missing_lattice=…`` preset (v1.7.0,
 D260), resolves in place: the choice is applied to the object before the repair is retried,
 so the conversion completes. A no-``--repair`` run is byte-identical to a pre-v1.7 one (the
 opt-in invariant).
@@ -28,7 +28,7 @@ NACL_CIF = str(GOLDEN / "cif" / "nacl-fm3m" / "nacl_fm3m.cif")
 
 # An unwrapped variant of CO_IN_CELL: the C atom pushed one lattice vector (6 Å) outside the
 # box, so a wrap genuinely folds atoms. (CO_IN_CELL itself is already in-cell, so wrapping it
-# is a no-op that v1.7.1 correctly leaves unwarned — the R5 fixtures write this to disk.)
+# is a no-op that v1.7.0 correctly leaves unwarned — the R5 fixtures write this to disk.)
 UNWRAPPED_EXTXYZ = (
     "2\n"
     'Lattice="6.0 0.0 0.0 0.0 6.0 0.0 0.0 0.0 6.0" '
@@ -59,7 +59,7 @@ def test_repair_wrap_converts_and_records(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The unwrapped variant: a wrap that genuinely folds atoms carries the R5 warning (a
-    # no-op wrap of an already-in-cell structure correctly carries none since v1.7.1).
+    # no-op wrap of an already-in-cell structure correctly carries none since v1.7.0).
     source = tmp_path / "unwrapped.extxyz"
     source.write_text(UNWRAPPED_EXTXYZ)
     out = tmp_path / "wrapped.extxyz"
@@ -184,7 +184,7 @@ def test_repair_cell_less_wrap_refuses_via_missing_lattice(
 def test_repair_cell_less_wrap_resolves_in_place_with_a_preset(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # v1.7.1 (D260): the blocked repair resolves through the pre-supplied recovery — the
+    # v1.7.0 (D260): the blocked repair resolves through the pre-supplied recovery — the
     # --recover preset is applied to the object before the repair is retried, so the
     # conversion completes instead of refusing (the refusal test above pins the no-preset
     # behaviour).

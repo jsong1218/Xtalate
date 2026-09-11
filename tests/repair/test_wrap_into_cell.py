@@ -5,7 +5,7 @@ unwrapped MD trajectory, wrapped on explicit request, converts and validates gre
 the R5 warning in plain language, and re-derives byte-identically from source + the report's
 recorded parameters. Also: the cell-less refusal composes with the existing ``missing_lattice``
 recovery (nothing is fabricated; a pre-supplied choice resolves the block in place since
-v1.7.1, D260), boundary handling is deterministic with the fold clamped into ``[0, 1)`` at
+v1.7.0, D260), boundary handling is deterministic with the fold clamped into ``[0, 1)`` at
 every precision (the subnormal-residue idempotence fix, D258→D260), the R5 warning is
 suppressed on a no-op application, and the *transformative* hazard class is registered and
 exercised.
@@ -177,7 +177,7 @@ def test_cell_less_wrap_refuses_via_missing_lattice() -> None:
 
 
 def test_cell_less_wrap_resolves_in_place_with_presupplied_recovery() -> None:
-    # v1.7.1 (D260): a blocked repair resolves in place when the caller pre-supplied the choice
+    # v1.7.0 (D260): a blocked repair resolves in place when the caller pre-supplied the choice
     # its block scenario offers — the choice is applied to the object before the repair is
     # retried, so the cell-less wrap now completes instead of refusing (the v1.7 limitation).
     reg = _registry()
@@ -230,7 +230,7 @@ def test_cell_less_wrap_resolves_in_place_with_presupplied_recovery() -> None:
 
 
 def test_supplied_recovery_that_still_blocks_refuses_with_the_choice_carried() -> None:
-    # v1.7.1 (D260): all-or-nothing survives the in-place resolution — a pre-supplied recovery
+    # v1.7.0 (D260): all-or-nothing survives the in-place resolution — a pre-supplied recovery
     # that *satisfies the scenario but not the repair* (a manual_input lattice that is itself
     # singular) leads to a refusal that carries the pre-repair Assumption: the caller's choice
     # is recorded as supplied, nothing is applied, and nothing is silently dropped.
@@ -259,7 +259,7 @@ def test_supplied_recovery_that_still_blocks_refuses_with_the_choice_carried() -
 
 
 def test_pre_flight_refusal_after_pre_repair_carries_recovery_and_repair_rows() -> None:
-    # v1.7.1 (D260): when the pre-supplied recovery un-blocks the repair but a *pre-flight*
+    # v1.7.0 (D260): when the pre-supplied recovery un-blocks the repair but a *pre-flight*
     # scenario is still unanswered (a multi-frame source to a single-frame POSCAR target with no
     # frame_selection choice), the refusal carries the pre-repair recovery row AND the repair
     # row — nothing applied beyond the caller's choice, nothing recorded as if it had been.
@@ -298,7 +298,7 @@ def test_pre_flight_refusal_after_pre_repair_carries_recovery_and_repair_rows() 
 
 
 def test_pre_repair_and_pre_flight_recovery_are_recorded_in_application_order() -> None:
-    # v1.7.1 (D260): the full pipeline with both recovery stages — a pre-repair choice that
+    # v1.7.0 (D260): the full pipeline with both recovery stages — a pre-repair choice that
     # un-blocks the wrap AND a pre-flight choice the target needs — records contiguous A1..
     # rows in application order: missing_lattice → wrap → frame_selection.
     reg = _registry()
@@ -405,7 +405,7 @@ def test_wrap_boundary_handling_is_deterministic() -> None:
 
 
 def test_wrap_fold_stays_inside_half_open_interval_at_boundary_residues() -> None:
-    # v1.7.1 (D260; the M67-S1 property find): a coordinate within float-underflow of a cell
+    # v1.7.0 (D260; the M67-S1 property find): a coordinate within float-underflow of a cell
     # face (a residue below the ULP of 1.0, ~2.2e-16) still folds inside [0, 1) — 1 - eps is
     # not representable and np.mod(-eps, 1.0) rounds to exactly 1.0, which the fold clamps to
     # 0.0 (the minimum-image value of a coordinate on a face). The fold is therefore
@@ -427,7 +427,7 @@ def test_wrap_fold_stays_inside_half_open_interval_at_boundary_residues() -> Non
 
 
 def test_wrap_noop_suppresses_the_r5_warning() -> None:
-    # v1.7.1 (D260): a wrap that moves no position discards no trajectory information, so the
+    # v1.7.0 (D260): a wrap that moves no position discards no trajectory information, so the
     # R5 statement is suppressed — the dedupe/identity-permutation precedent: a no-op repair
     # must not claim a loss. An application that actually folds atoms still warns (the
     # flagship above).
@@ -466,7 +466,7 @@ def test_transformative_hazard_class_is_registered_and_exercised() -> None:
     assert warning.message == WRAP_DISCARDS_UNWRAPPED_PATHS.message
 
 
-# --- pbc-aware wrap (v1.7.1 arch review, REPAIR-C1) ---------------------------------------
+# --- pbc-aware wrap (v1.7.0 arch review, REPAIR-C1) ---------------------------------------
 
 
 def _one_frame(positions: np.ndarray, pbc: tuple[bool, bool, bool]) -> CanonicalObject:

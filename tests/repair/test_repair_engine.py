@@ -289,7 +289,7 @@ def test_reproducibility_from_report_alone() -> None:
     assert rederived.output is not None and rederived.output == first
 
 
-# --- the recovery-preview seams are repair-aware (v1.7.1 arch review R3; REPAIR-H3) ----------
+# --- the recovery-preview seams are repair-aware (v1.7.0 arch review R3; REPAIR-H3) ----------
 
 
 def _out_of_cell_object() -> CanonicalObject:
