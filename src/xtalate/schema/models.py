@@ -196,7 +196,7 @@ class ConversionRecord(_Model):
     """One entry in the object's conversion history. Append-only (§3.9)."""
 
     timestamp: str  # ISO 8601 UTC.
-    operation: str  # "parse" | "convert" | "recovery" | "migrate" | "repair".
+    operation: str  # "parse" | "convert" | "recovery" | "migrate" | "repair" | "analyze".
     source_format: str | None
     target_format: str | None
     tool_version: str

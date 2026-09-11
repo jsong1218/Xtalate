@@ -1,10 +1,12 @@
-"""Parser / exporter plugin ABCs (MASTER_SPEC Part 3 §2).
+"""Parser / exporter / analysis plugin ABCs (MASTER_SPEC Part 3 §2).
 
 First-party and third-party formats implement the *same* interface; core formats hold no
 privileged API (this is what makes the SDK trustworthy, §2). A parser reads exactly one
 native format and never reads another, calls another parser, writes files, or defaults an
 absent field (P2, P3). An exporter is the mirror: reads a Canonical Object, writes exactly
-one native format, never reads native files.
+one native format, never reads native files. The third kind, the analysis plugin (v1.8 M68),
+reads a Canonical Object and annotates *only its own* ``user_metadata`` namespace — never a
+scientific field, never another plugin's namespace, and never what Xtalate converts.
 """
 
 from __future__ import annotations
@@ -12,6 +14,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, BinaryIO
+
+from pydantic import JsonValue
 
 from xtalate.schema import CanonicalObject
 from xtalate.sdk.capabilities import FormatCapabilities
@@ -125,6 +129,48 @@ class ParserPlugin(ABC):
     def capabilities(self) -> FormatCapabilities:
         """This format's read-side capability declaration (§4). Assembled into the matrix
         at registry load; never hand-maintained centrally."""
+
+
+class AnalysisPlugin(ABC):
+    """Base class for all analysis plugins (Part 2 §6, Part 3 §2; v1.8 M68, D267).
+
+    An analysis plugin *reads* a Canonical Object and *annotates its own namespace*: it returns a
+    mapping of ``"<name>:<key>"`` → JSON-serializable value, which the runner
+    (:func:`xtalate.sdk.analysis.run_analysis`) merges into ``user_metadata.custom_global`` and
+    records as a ``"analyze"`` ``ConversionRecord``. Analysis is therefore **annotation, not
+    conversion** — it never changes what Xtalate converts, reports, or validates — and
+    ``custom_global`` is Part 2 §6.1's destination for global, opaque content the core carries but
+    does not interpret (the same container format carry-through routes to, so there is no separate
+    ``analysis_results`` surface to learn).
+
+    Deliberately minimal (D267): a name, a version, and one method. There are no lifecycle hooks,
+    no configuration-schema language, and no capability negotiation — each is a plausible *future*
+    additive extension, and shipping it speculatively is the seam-anticipation this ladder
+    declines. The bar is a contract a third party can implement in an afternoon, with the M69
+    reference plugin and the M71 third-party fixture as its tests.
+    """
+
+    name: (
+        str  # The plugin's namespace: every key it writes is prefixed "<name>:". Lowercase, unique.
+    )
+    version: str  # Plugin version, recorded in the "analyze" ConversionRecord (D269).
+
+    @abstractmethod
+    def analyze(self, canonical: CanonicalObject) -> Mapping[str, JsonValue]:
+        """Read ``canonical`` and return results keyed under this plugin's own namespace.
+
+        Every key must be ``"<name>:"``-prefixed for this plugin's declared ``name``; the runner
+        merges exactly those keys into ``user_metadata.custom_global`` and rejects any other key —
+        an un-namespaced key (reserved for end users and parser carry-through), a canonical
+        scientific path, or another plugin's namespace — as a reported plugin error, returning the
+        object untouched (Part 2 §6 rule 2, enforced at write time; D268).
+
+        The object handed in is a deep copy: the plugin may read everything and mutate nothing that
+        matters, because the caller's object is never the one mutated. Values must be
+        JSON-serializable — the container validates them exactly as it validates a parser's
+        carry-through — and their meaning is never interpreted (§6 rule 1, "semantics-free").
+        Returning an empty mapping is legal: the run is still recorded in Provenance.
+        """
 
 
 class ExporterPlugin(ABC):

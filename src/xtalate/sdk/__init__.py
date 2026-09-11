@@ -1,12 +1,15 @@
-"""Plugin SDK — parser/exporter ABCs, error contract, and capability data model.
+"""Plugin SDK — parser/exporter/analysis ABCs, error contract, and capability data model.
 
 Publishes ``ParserPlugin``/``ExporterPlugin`` (Part 3 §2), ``ParseResult``/
-``ParseIssue``/``ParseError`` (Part 3 §5), and the ``FormatCapabilities``/
+``ParseIssue``/``ParseError`` (Part 3 §5), the ``FormatCapabilities``/
 ``FieldCapability``/``CapabilityLevel`` data model (Part 3 §4.1, placed here per
-Revision 1.2 so a plugin can declare capabilities without importing the registry).
-Depends only on ``schema``. Implemented in M2.
+Revision 1.2 so a plugin can declare capabilities without importing the registry), and —
+from v1.8 M68 — the third plugin kind, ``AnalysisPlugin``, with its runner
+``run_analysis`` and its ``AnalysisError`` (Part 2 §6). Depends only on ``schema``.
+Implemented in M2.
 """
 
+from xtalate.sdk.analysis import AnalysisError, run_analysis
 from xtalate.sdk.capabilities import (
     CapabilityLevel,
     FieldCapability,
@@ -14,7 +17,7 @@ from xtalate.sdk.capabilities import (
 )
 from xtalate.sdk.deepmd import stress_from_virial, virial_from_stress
 from xtalate.sdk.image_flags import IMAGE_FLAGS_CARRY_KEY
-from xtalate.sdk.plugins import ExporterPlugin, ParserPlugin
+from xtalate.sdk.plugins import AnalysisPlugin, ExporterPlugin, ParserPlugin
 from xtalate.sdk.results import (
     AssembleContribution,
     ExporterWarning,
@@ -37,6 +40,8 @@ from xtalate.sdk.streaming import (
 from xtalate.sdk.stress_carries import STRESS_CARRY_KEYS
 
 __all__ = [
+    "AnalysisError",
+    "AnalysisPlugin",
     "AssembleContribution",
     "CapabilityLevel",
     "ExporterPlugin",
@@ -60,5 +65,6 @@ __all__ = [
     "export_stream",
     "materialize",
     "parse_as_stream",
+    "run_analysis",
     "stream_of",
 ]
