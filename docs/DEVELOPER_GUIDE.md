@@ -779,12 +779,12 @@ in v1.7.
 
 The hazard contract: a *transformative* operation (wrap, center) — one that changes values in
 place and loses the originals — states its loss in a `ReportWarning(source="repair")` on every
-application that changed positions (D251); a no-op application claims no loss (wrap since v1.7.1,
+application that changed positions (D251); a no-op application claims no loss (wrap since v1.7.0,
 dedupe/species_reorder all along — they suppress their warning when nothing changed). Repairs
 never fabricate: a blocked repair (a cell-less wrap, or a `cell_center` reference/target on a
 cell-less frame) refuses through the existing `missing_lattice` recovery — the engine's
 fabricative bright line (D43), and nothing is ever silently "fixed": the report says what changed,
-to which atoms, by whose request. **In place since v1.7.1 (D260):** a pre-supplied recovery choice
+to which atoms, by whose request. **In place since v1.7.0 (D260):** a pre-supplied recovery choice
 un-blocks the repair — the engine applies the choice to the object before retrying the blocked
 repair, so the resume (over HTTP) and the CLI's `--recover missing_lattice=…` preset complete the
 conversion instead of re-pausing with the same block; the choice is recorded as a recovery

@@ -3,9 +3,9 @@
 ``README.md`` is the most user-visible surface the project has, and its shields.io ``version``
 badge is a fourth place the release number is written by hand — alongside ``pyproject.toml`` and
 ``xtalate.__version__`` (guarded in ``test_version.py``) and ``CITATION.cff`` (guarded in
-``test_citation_version.py``). Unlike those three it had **no** guard, so it silently lagged at
-``1.7.0`` through the ``1.7.1`` bump — every other surface moved, the full suite stayed green, and
-the badge told every reader the wrong version. Like the citation drift (D99), it corrupts no
+``test_citation_version.py``). Unlike those three it had **no** guard, so it could silently lag a
+release behind — every other surface moving while the full suite stayed green, and the badge
+telling every reader the wrong version. Like the citation drift (D99), it corrupts no
 provenance, but it makes the project misreport itself on its own front page — a transparency
 defect for a tool whose whole claim is that its record can be trusted — so the same slip should be
 caught by CI, not by the next reviewer.

@@ -12,8 +12,8 @@ Wrap-into-cell (M64-S2) is the version's flagship: the one operation with a phys
 failure mode (R5 — unwrapped diffusion paths are destroyed), carried as the D251
 *transformative* hazard class: explicit request **plus** a report warning naming exactly what
 is unrecoverable (suppressed when the wrap changed nothing — a no-op discards nothing,
-v1.7.1 D260). It composes with recovery — a cell-less object refuses via the existing
-``missing_lattice`` scenario rather than fabricating a box (D43), and since v1.7.1 a
+v1.7.0 D260). It composes with recovery — a cell-less object refuses via the existing
+``missing_lattice`` scenario rather than fabricating a box (D43), and since v1.7.0 a
 pre-supplied recovery choice resolves the block in place (the choice is applied to the object
 before the repair is retried).
 """
@@ -82,11 +82,11 @@ _MIN_CELL_VOLUME = 1e-12
 #: A wrap is a no-op when no position moved beyond this — the project's position tolerance for
 #: repaired coordinates (Å, the atol the M64 flagship uses for the wrap's inverse-solve float
 #: noise). Used by ``WrapIntoCell.hazards_for`` to decide whether the application discarded
-#: anything (v1.7.1, D260).
+#: anything (v1.7.0, D260).
 _WRAP_NOOP_ATOL = 1e-9
 
 #: A center is a no-op when every per-frame shift is within this of zero (Å) — the same position
-#: tolerance the wrap uses for repaired coordinates (v1.7.1 arch review; a no-op must not claim a
+#: tolerance the wrap uses for repaired coordinates (v1.7.0 arch review; a no-op must not claim a
 #: loss, D252/D254/D260).
 _CENTER_NOOP_ATOL = 1e-9
 
@@ -102,7 +102,7 @@ def _fold_fractional(frac: np.ndarray) -> np.ndarray:
     that precision (the M67-S1 property find, D258). The clamp forces ``1.0`` to ``0.0`` —
     the minimum-image value of a coordinate on a face — so the fold stays inside ``[0, 1)``
     at every precision, and every value in ``[0, 1)`` passes through unchanged (idempotent
-    by construction, v1.7.1, D260).
+    by construction, v1.7.0, D260).
     """
     folded = np.mod(frac, 1.0)
     return np.where(folded >= 1.0, 0.0, folded)
@@ -132,7 +132,7 @@ class WrapIntoCell(RepairOperation):
     exactly on a cell face lands the same way on every run — every integer fractional
     coordinate (``1.0``, ``2.0``, ``-1.0``, …) maps to exactly ``0.0``, ``0.5`` stays
     ``0.5``, every other value folds into ``[0, 1)``, and even a coordinate within
-    float-underflow of a face folds inside the half-open interval (v1.7.1, D260) — the fold
+    float-underflow of a face folds inside the half-open interval (v1.7.0, D260) — the fold
     is idempotent at every precision.
 
     Transformative hazard (D251): wrapping discards the unwrapped trajectory information —
@@ -140,7 +140,7 @@ class WrapIntoCell(RepairOperation):
     as the ``WRAP_DISCARDS_UNWRAPPED_PATHS`` report warning on every application that actually
     moved positions. An application that changed nothing (an already-in-cell structure) discards
     no trajectory information, so the statement is suppressed — the dedupe/identity-permutation
-    precedent: a no-op repair must not claim a loss (D252/D254; v1.7.1, D260). A frame with
+    precedent: a no-op repair must not claim a loss (D252/D254; v1.7.0, D260). A frame with
     no cell (or a degenerate/zero-volume one) **blocks** through the existing
     ``missing_lattice`` recovery scenario: wrap invents no box (D43).
     """

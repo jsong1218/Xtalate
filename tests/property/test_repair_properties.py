@@ -26,7 +26,7 @@ strategies compose the existing stage-2 generator (``_strategies.canonical_objec
 with filters — no ``_strategies.py`` edit was needed. **No engine behaviour is
 changed; tests only** (the engine freeze, M64–M67).
 
-**v1.7.1 note (D260):** both engine findings the suite recorded are **fixed** — the wrap fold
+**v1.7.0 note (D260):** both engine findings the suite recorded are **fixed** — the wrap fold
 now clamps into ``[0, 1)`` at every precision (``_fold_fractional``), so family 1 asserts
 idempotence over the **full** domain (the residue filter is gone), and ``WrapIntoCell`` now
 overrides ``hazards_for``, so the second (no-op) application's hazard list is asserted empty
@@ -58,7 +58,7 @@ _ENGINE = ConversionEngine(default_registry())
 #: Family 1's domain: any object whose **every** frame carries a usable cell — the
 #: domain on which wrap never blocks and idempotence is well-defined. The generator's
 #: lattices are diagonal-dominant (hence non-singular), so presence is the only cell
-#: gate. The fold clamps into ``[0, 1)`` at every precision (v1.7.1, D260), so the
+#: gate. The fold clamps into ``[0, 1)`` at every precision (v1.7.0, D260), so the
 #: domain needs no boundary-residue filter — hypothesis's subnormal-drawing floats
 #: are in scope, and idempotence holds for them too.
 _WRAP_DOMAIN = _strategies.canonical_objects().filter(
@@ -199,7 +199,7 @@ def test_wrap_into_cell_is_idempotent_within_tolerance(source: CanonicalObject) 
     assert first.operation == second.operation == "wrap_into_cell"
     assert first.parameters == second.parameters == {}
     # The second application is a no-op (nothing moved beyond float noise), so it discards
-    # no trajectory information and carries no R5 hazard (v1.7.1 D260 — the conditional
+    # no trajectory information and carries no R5 hazard (v1.7.0 D260 — the conditional
     # hazards_for the frozen-engine suite deliberately left unasserted).
     assert second.hazards == []
 

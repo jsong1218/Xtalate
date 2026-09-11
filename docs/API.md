@@ -70,7 +70,7 @@ mode). Key options:
   incoherent parameter) is the engine's `RepairError` surfaced as a clean usage error (exit 1); a
   **blocked** repair (a cell-less `wrap_into_cell`, or a `cell_center` reference/target on a
   cell-less frame) refuses through the existing `missing_lattice` recovery path (exit 2) — or,
-  when the caller pre-supplied the matching `--recover missing_lattice=…` preset (v1.7.1, D260),
+  when the caller pre-supplied the matching `--recover missing_lattice=…` preset (v1.7.0, D260),
   resolves in place: the choice is applied to the object before the repair is retried, recorded as
   a recovery Assumption ahead of the repair row. Nothing is ever fabricated to un-block a repair
   beyond what the caller's own recovery choice fabricates. `--json`/`--report` carry the repairs inside the
@@ -480,7 +480,7 @@ all.
 The only interactive pause a repair can cause is the genuine cell-less **`missing_lattice`** block:
 with `allow_recovery: true` a cell-less `wrap_into_cell` pauses with the standard block and its
 computed option list; without it, the job completes as a refused HTTP-200. **Resolved in place
-since v1.7.1 (D260):** a *resumed* blocked repair completes — the worker applies the pre-supplied
+since v1.7.0 (D260):** a *resumed* blocked repair completes — the worker applies the pre-supplied
 recovery choice to the object **before** retrying the blocked repair, so the `missing_lattice`
 answer (bounding_box / manual_input / upload_reference) finishes the job instead of re-pausing
 with the same block. The choice is recorded as a recovery Assumption **ahead of the repair row**,

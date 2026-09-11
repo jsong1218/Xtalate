@@ -8,7 +8,7 @@ records that order. A malformed repair (unknown operation, missing required para
 clean ``MALFORMED_REQUEST`` failed job, never a 500 (the engine's ``RepairError`` mapped in the
 worker's failure funnel, reusing the binding code — D256). A *blocked* repair (a cell-less
 wrap) pauses to ``awaiting_recovery`` with the existing ``missing_lattice`` block iff
-``allow_recovery``, else refuses at HTTP 200 — and since v1.7.1 a *resumed* blocked repair
+``allow_recovery``, else refuses at HTTP 200 — and since v1.7.0 a *resumed* blocked repair
 completes in place: the pre-supplied choice is applied to the object before the repair is
 retried (D260), so the resume answers the pause instead of re-pausing.
 """
@@ -34,7 +34,7 @@ H -0.757  0.586  0.000
 
 # An unwrapped variant of CO_IN_CELL: the C atom pushed one lattice vector (6 Å) outside the
 # box, so a wrap genuinely folds atoms. (CO_IN_CELL itself is already in-cell, so wrapping it
-# is a no-op that v1.7.1 correctly leaves unwarned — the R5 fixtures use this variant.)
+# is a no-op that v1.7.0 correctly leaves unwarned — the R5 fixtures use this variant.)
 UNWRAPPED_CO_IN_CELL = (
     b"2\n"
     b'Lattice="6.0 0.0 0.0 0.0 6.0 0.0 0.0 0.0 6.0" '
@@ -89,7 +89,7 @@ def _strip_volatile(node: object) -> object:
 
 def test_repair_wrap_applies_and_records(client: TestClient) -> None:
     # The unwrapped variant: a wrap that genuinely folds atoms carries the R5 warning (a
-    # no-op wrap of an already-in-cell structure correctly carries none since v1.7.1).
+    # no-op wrap of an already-in-cell structure correctly carries none since v1.7.0).
     file_id = _upload(client, UNWRAPPED_CO_IN_CELL, "sample.extxyz")
     env = _convert(client, file_id, "extxyz", {"repairs": [{"operation": "wrap_into_cell"}]})
     assert env["state"] == "completed"
@@ -217,7 +217,7 @@ def test_cell_less_wrap_with_allow_recovery_pauses_with_missing_lattice(
 def test_cell_less_wrap_over_http_completes_on_resume_with_presupplied_recovery(
     client: TestClient,
 ) -> None:
-    """A cell-less ``wrap_into_cell`` over HTTP is resolvable in place since v1.7.1 (D260): the
+    """A cell-less ``wrap_into_cell`` over HTTP is resolvable in place since v1.7.0 (D260): the
     resume applies the pre-supplied ``missing_lattice`` choice to the object *before* the
     blocked repair is retried, so the job completes instead of re-pausing with the same block
     (the v1.7 limitation pinned by the test this replaces, D259's option A). The choice is

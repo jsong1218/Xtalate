@@ -48,7 +48,7 @@ export const FIXTURES = {
   celledPoscar: { file: "celled.poscar", mimeType: "application/octet-stream" },
   /** A fully-periodic NaCl cell with an atom **outside** the box (Direct 1.50 0.50 0.50) — a
    *  wrap_into_cell genuinely moves it, so the R5 warning must fire (the wrap flagship's real
-   *  move; v1.7.1 arch review REPAIR-E1). */
+   *  move; v1.7.0 arch review REPAIR-E1). */
   unwrappedPoscar: { file: "unwrapped.poscar", mimeType: "application/octet-stream" },
   /** A celled ZnO hexagonal P1 cell (golden corpus `cif/zno-hexagonal-p1`) — wireframe case. */
   celledCif: { file: "celled.cif", mimeType: "application/octet-stream" },

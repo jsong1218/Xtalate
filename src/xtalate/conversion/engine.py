@@ -190,7 +190,7 @@ class ConversionEngine:
         ``True`` for a directory-writing caller (CLI), ``False`` for the single-download HTTP
         service, so the pause the service shows never offers a choice it cannot fulfil.
 
-        ``repairs`` (v1.7.1 arch review; REPAIR-H3) is applied best-effort so the draft describes
+        ``repairs`` (v1.7.0 arch review; REPAIR-H3) is applied best-effort so the draft describes
         the repaired document a ``convert`` with the same ``repairs`` would produce — falling back
         to the raw object when a repair would block (the pause resolves that block). A draft and
         the final report must describe one document (the runner's pause → resume invariant)."""
@@ -264,7 +264,7 @@ class ConversionEngine:
         applied to the parsed object between parse and pre-flight — see the repair stage below. A
         ``None``/empty list runs exactly the pre-v1.7 pipeline (no repairs, byte-identical
         reports). A blocked repair whose recovery scenario the caller pre-supplied is resolved
-        **in place** (v1.7.1, D260): the choice is applied to the object before the repair is
+        **in place** (v1.7.0, D260): the choice is applied to the object before the repair is
         retried, recorded as a recovery Assumption ahead of the repair rows (the report's row
         order stays the application order)."""
         recovery_choices = recovery_choices or {}
@@ -293,11 +293,11 @@ class ConversionEngine:
         # caller's `source` object is never mutated.
         repaired = source
         repair_applied: list[AppliedRepair] = []
-        # Pre-repair recovery (v1.7.1; D260): a *blocked* repair resolves in place when the
+        # Pre-repair recovery (v1.7.0; D260): a *blocked* repair resolves in place when the
         # caller pre-supplied the choice its block scenario offers. The repair stage runs before
         # pre-flight recovery (M64's placement, D250), so a cell-less wrap once re-blocked on
         # every resume even with a pre-supplied missing_lattice choice — the v1.7 limitation.
-        # v1.7.1 applies the pre-supplied recovery to the object *first*, then retries the
+        # v1.7.0 applies the pre-supplied recovery to the object *first*, then retries the
         # repair: the fabricated paths are recorded as a recovery Assumption (ahead of the
         # repair rows, in application order) and accounted exactly like parse-time recovery's.
         # All-or-nothing is preserved — a repair that still blocks (e.g. a manual_input lattice
@@ -410,7 +410,7 @@ class ConversionEngine:
         # are present in the objects downstream stages see yet absent from the original file, so
         # the completeness invariant must treat them as absent-at-source (they belong in
         # `supplied`, never `preserved`) — the `fabricated_at_parse` precedent, extended to the
-        # v1.7.1 pre-repair recovery (D260).
+        # v1.7.0 pre-repair recovery (D260).
         fabricated = fabricated_at_parse | fabricated_at_pre_repair
 
         diff = build_preflight(
@@ -514,7 +514,7 @@ class ConversionEngine:
             _map_assumptions(all_applied)
         )
         # The report's assumptions list reads in application order: the parse-time rows (A1..),
-        # then any pre-repair recovery rows (v1.7.1 — the recovery that un-blocked a repair
+        # then any pre-repair recovery rows (v1.7.0 — the recovery that un-blocked a repair
         # precedes the repair rows it enabled), then the repair rows (their own user-requested
         # section — `ConversionReport.repairs`), then the pre-flight recovery rows.
         assumptions = [
@@ -527,7 +527,7 @@ class ConversionEngine:
         # A fabricated field enters the write_plan so it is exported and validated — *unless* the
         # target cannot store it (the D47 precedent: chained `missing_masses` masses on POSCAR are
         # audited in `supplied` but kept out of the plan so validation doesn't expect them). The
-        # v1.7.1 pre-repair recovery can fabricate a lattice a repair needs that the *target* does
+        # v1.7.0 pre-repair recovery can fabricate a lattice a repair needs that the *target* does
         # not (a cell-less `wrap_into_cell` on a plain-XYZ target): the cell is honestly reported
         # in `supplied` — the wrap ran, the lattice was invented — but a target that cannot write
         # a cell must not plan one, or validation would expect bytes it cannot hold.
@@ -798,7 +798,7 @@ class ConversionEngine:
         ``False``) so the preview offers exactly the ``split_all``-gated option set the conversion
         will honour — a preview that advertised a choice the conversion then refused would mislead.
 
-        ``repairs`` (v1.7.1 arch review; REPAIR-H3) is applied best-effort, exactly as in
+        ``repairs`` (v1.7.0 arch review; REPAIR-H3) is applied best-effort, exactly as in
         :meth:`preflight`: the preview describes the repaired document a resume would convert,
         falling back to the raw object when a repair would block (the pause resolves that block).
 
