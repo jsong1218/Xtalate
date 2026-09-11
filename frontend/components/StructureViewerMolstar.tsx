@@ -205,6 +205,10 @@ export default function StructureViewerMolstar({
         viewerWriteupRef.current =
           viewerControlsRef.current?.onReady({ resetCamera: () => handle.resetCamera() }) ?? null;
         if (bondsRef.current) void handle.setBonds(true);
+        // Reconcile the background the same way bonds/window/frame are: a theme change that landed
+        // while the async mount was in flight left themeRef ahead of the handle, and the [theme]
+        // effect no-oped because handleRef was still null (VIEW-M1). Apply the current theme now.
+        void handle.setBackground(THEME_BG[themeRef.current]);
         // A window/frame changed while the plugin was mounting → reconcile now.
         if (geometryJsonRef.current !== mountedGeoRef.current) void applyWindow();
         else if (frameRef.current !== mountedFrameRef.current) void applyFrame();

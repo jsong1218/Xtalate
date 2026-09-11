@@ -17,7 +17,7 @@ downloads while reports outlive them). These tests pin the load-bearing rules:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager
 from datetime import timedelta
 from typing import Any, cast
@@ -241,3 +241,62 @@ def test_geometry_cache_avoids_reparse_within_its_bound(
 
     assert [f["index"] for f in first.json()["frames"]] == [0, 1]
     assert [f["index"] for f in second.json()["frames"]] == [2, 3]
+
+
+# --- frame-cap and gone-bytes hardening (v1.6/v1.7 arch review R4; GEO-H1, GEO-H2, GEO-L1) -----
+
+
+def test_file_geometry_refuses_over_cap_trajectory(
+    build_client: Callable[..., TestClient],
+) -> None:
+    # GEO-H1: a settings.max_frames of 2 against a 5-frame upload — the geometry read refuses with
+    # the same 422 FRAME_LIMIT_EXCEEDED the convert/inspect paths use (M39-S3), not a 200 that
+    # materialized the whole trajectory.
+    client = build_client(max_frames=2)
+    file_id = _upload(client, _extxyz(5), "traj.xyz")
+    resp = client.get(f"/v1/files/{file_id}/geometry", params={"frames": "0:5"})
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error"]["code"] == "FRAME_LIMIT_EXCEEDED"
+    # A window that alone exceeds the cap is refused up front — never silently narrowed (P1).
+    resp = client.get(f"/v1/files/{file_id}/geometry", params={"frames": "0:3"})
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error"]["code"] == "FRAME_LIMIT_EXCEEDED"
+    # Even a small window of an over-cap file refuses: the cap gates the whole read mid-stream
+    # (frame_count counts every frame), exactly like the convert path.
+    resp = client.get(f"/v1/files/{file_id}/geometry", params={"frames": "0:1"})
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error"]["code"] == "FRAME_LIMIT_EXCEEDED"
+    # Under-cap files are unaffected.
+    client_ok = build_client(max_frames=10)
+    file_id_ok = _upload(client_ok, _extxyz(5), "traj.xyz")
+    ok = client_ok.get(f"/v1/files/{file_id_ok}/geometry", params={"frames": "1:3"})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["frame_count"] == 5
+
+
+def test_conversion_output_geometry_gone_bytes_returns_410(
+    client: TestClient, repository: Repository
+) -> None:
+    # GEO-H2: a live conversion record whose output bytes were swept (the Tier-1 bucket-lifecycle
+    # case): geometry returns 410 OUTPUT_EXPIRED (reports outlive bytes) — the same contract
+    # downloads.py honours — not a 500.
+    object_store = cast(ObjectStore, client.app.state.object_store)  # type: ignore[attr-defined]
+    conversion_id = _seed_output_conversion(repository, object_store, output_bytes=_extxyz(1))
+    object_store.delete(f"outputs/{conversion_id}")  # the sweep, leaving the record live
+
+    resp = client.get(f"/v1/conversions/{conversion_id}/geometry", params={"side": "output"})
+    assert resp.status_code == 410, resp.text
+    assert resp.json()["error"]["code"] == "OUTPUT_EXPIRED"
+
+
+def test_geometry_byte_estimate_accounts_for_python_heap() -> None:
+    # GEO-L1: the projected-frame estimate must not undercount by ~4x (list/pydantic heap), or the
+    # "bounded in bytes" cache bound is loose. A 100-atom frame's estimate should exceed the raw
+    # float bytes by a realistic per-object factor.
+    from backend.models import GeometryFrame
+    from backend.routers.geometry import _estimate_single
+
+    frame = GeometryFrame(index=0, positions=[[0.0, 0.0, 0.0]] * 100, cell=None)
+    raw_float_bytes = 100 * 3 * 8
+    # Heap overhead is counted, not ignored.
+    assert _estimate_single(frame) >= raw_float_bytes * 3

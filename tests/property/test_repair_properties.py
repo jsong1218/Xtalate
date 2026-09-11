@@ -46,6 +46,7 @@ from xtalate.conversion import ConversionEngine
 from xtalate.registry import default_registry
 from xtalate.repair import RepairRequest, apply_repairs
 from xtalate.schema import CanonicalObject
+from xtalate.schema.cell import to_fractional
 
 #: The project's position tolerance for repaired coordinates (Å) — the atol the M64
 #: flagship uses for the wrap's inverse-solve float noise (tests/repair/test_wrap_into_cell.py).
@@ -163,6 +164,22 @@ def test_wrap_into_cell_is_idempotent_within_tolerance(source: CanonicalObject) 
     """
     once = apply_repairs(source, [RepairRequest("wrap_into_cell")])
     assert once.canonical is not None and not once.blocked
+
+    # A non-periodic direction is invariant under the wrap (P3): the *fractional* coordinate
+    # on every axis the frame declares non-periodic is untouched. Fractional, not Cartesian —
+    # the generated lattices are triclinic, so folding a periodic fractional direction also
+    # moves the Cartesian components of other axes through the lattice cross-terms; only the
+    # fractional coordinate of a non-periodic direction is a true invariant (they coincide for
+    # orthogonal cells).
+    for frame_in, frame_out in zip(source.frames, once.canonical.frames, strict=True):
+        assert frame_in.cell is not None  # _WRAP_DOMAIN filters to all-celled frames
+        pbc = frame_in.cell.pbc
+        lattice = np.asarray(frame_in.cell.lattice_vectors, dtype=float)
+        frac_in = to_fractional(np.asarray(frame_in.atoms.positions, dtype=float), lattice)
+        frac_out = to_fractional(np.asarray(frame_out.atoms.positions, dtype=float), lattice)
+        for axis, periodic in enumerate(pbc):
+            if not periodic:
+                np.testing.assert_allclose(frac_out[:, axis], frac_in[:, axis], atol=1e-9)
 
     twice = apply_repairs(once.canonical, [RepairRequest("wrap_into_cell")])
     assert twice.canonical is not None and not twice.blocked

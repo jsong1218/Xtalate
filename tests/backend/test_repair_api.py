@@ -252,3 +252,55 @@ def test_cell_less_wrap_over_http_completes_on_resume_with_presupplied_recovery(
     ]
     # The fabricated cell is accounted as supplied — never silently invented.
     assert any(s["path"] == "cell.lattice_vectors" for s in report["supplied"])
+
+
+def test_recovery_preview_on_a_paused_repair_job_describes_the_repaired_document(
+    client: TestClient,
+) -> None:
+    # REPAIR-H3: the interactive preview of a paused repair job is computed on the same *repaired*
+    # document the resume converts — and a preview never refuses. A cell-less XYZ → POSCAR pauses
+    # for the target-required lattice; the `center` repair applies cleanly (centroid → origin
+    # needs no cell), so the preview is computed on the centered document, and its description is
+    # byte-identical to what the resume records (P4). The job stays paused and answerable
+    # throughout.
+    file_id = _upload(client, CELL_LESS_XYZ, "mol.xyz")
+    env = _convert(
+        client,
+        file_id,
+        "poscar",
+        {
+            "repairs": [
+                {
+                    "operation": "center",
+                    "parameters": {"reference": "centroid", "target": "origin"},
+                }
+            ],
+            "allow_recovery": True,
+        },
+    )
+    assert env["state"] == "awaiting_recovery"
+    job_id = env["job_id"]
+    choice = {"missing_lattice": {"choice": "bounding_box", "parameters": {"padding_ang": 5.0}}}
+
+    preview = client.post(f"/v1/jobs/{job_id}/recovery/preview", json={"choices": choice})
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["unresolved"] == []
+    (row,) = body["previews"]
+    assert row["scenario"] == "missing_lattice"
+    assert row["choice"] == "bounding_box"
+    assert client.get(f"/v1/jobs/{job_id}").json()["state"] == "awaiting_recovery"
+
+    resumed = client.post(f"/v1/jobs/{job_id}/recovery", json={"choices": choice}).json()
+    assert resumed["state"] == "completed"
+    report = resumed["result"]["conversion_report"]
+    # Application order (D250): repairs run between parse and pre-flight, so the repair row
+    # precedes the pre-flight recovery row.
+    assert [(a["scenario"], a["choice"]) for a in report["assumptions"]] == [
+        ("repair", "center"),
+        ("missing_lattice", "bounding_box"),
+    ]
+    recorded = [
+        a["description"] for a in report["assumptions"] if a["scenario"] == "missing_lattice"
+    ]
+    assert recorded == [row["description"]]  # the preview is the record (P4)

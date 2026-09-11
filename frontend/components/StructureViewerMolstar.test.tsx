@@ -8,7 +8,7 @@
  * tests assert the mount lifecycle without a real WebGL context. The per-frame render fidelity
  * (`data-unitcell-drawn` etc.) is covered against real Mol* in the e2e.
  */
-import { render, act } from "@testing-library/react";
+import { render, act, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { Schemas } from "@/lib/api/client";
 import StructureViewerMolstar from "./StructureViewerMolstar";
@@ -133,6 +133,27 @@ describe("StructureViewerMolstar lifecycle", () => {
     await settle();
     expect(setBackground).toHaveBeenCalledWith(0x0f172a);
     expect(mountMock).toHaveBeenCalledTimes(1);
+    document.documentElement.removeAttribute("data-theme");
+  });
+
+  it("reconciles the background when a theme change lands during the async mount (VIEW-M1)", async () => {
+    document.documentElement.removeAttribute("data-theme");
+    let resolveMount: (handle: unknown) => void = () => {};
+    mountMock.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveMount = resolve)),
+    );
+    const win = windowFixture(0, 8);
+    const { rerender } = render(<StructureViewerMolstar geometry={win} frameIndex={0} />);
+
+    // The theme flips to dark WHILE the mount promise is still pending: the [theme] effect no-ops
+    // because handleRef is still null, so only the post-mount reconcile can apply the current
+    // theme — the mount-time light background must not win (VIEW-M1).
+    document.documentElement.setAttribute("data-theme", "dark");
+    rerender(<StructureViewerMolstar geometry={win} frameIndex={0} />);
+    expect(setBackground).not.toHaveBeenCalled();
+
+    resolveMount({ setFrame, setWindow, dispose, setBackground, setBonds, resetCamera });
+    await waitFor(() => expect(setBackground).toHaveBeenCalledWith(0x0f172a));
     document.documentElement.removeAttribute("data-theme");
   });
 

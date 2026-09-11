@@ -447,6 +447,7 @@ def preview_recovery(
     from backend.jobs.recovery import resolve_reference_choices
     from xtalate.conversion import ConversionEngine, FrameLimitExceeded, parse_with_recovery
     from xtalate.recovery import RecoveryError
+    from xtalate.repair import RepairRequest
 
     job = repository.get_job(job_id)
     if job is None:
@@ -473,6 +474,9 @@ def preview_recovery(
     # object the engine can read (the library is filesystem-free; Part 4 §3.3).
     options = dict(job.request.get("options") or {})
     effective = {**(options.get("recovery_choices") or {}), **body.choices}
+    # The same ordered repair list the runner's trial convert applies: the preview must describe
+    # the *repaired* document a resume converts, not the raw upload (REPAIR-H3).
+    preview_repairs = [RepairRequest(**r) for r in options.get("repairs") or []]
     file_id = job.request.get("file_id")
     upload = repository.get_upload(file_id) if isinstance(file_id, str) else None
     if upload is None:
@@ -510,6 +514,7 @@ def preview_recovery(
             # eventual convert will honour — no `split_all` (matches the runner's convert). See
             # `ConversionEngine.convert`'s `output_multifile` (Part 4 §3.3).
             output_multifile=False,
+            repairs=preview_repairs,
         )
     except FrameLimitExceeded as exc:
         # The frame cap fired while preview-parsing the job's trajectory or a reference file — a

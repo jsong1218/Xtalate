@@ -34,7 +34,9 @@ is served from cache after its first read.
 from __future__ import annotations
 
 import re
+import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, Depends, Query, status
@@ -53,7 +55,9 @@ from backend.models import GeometryFrame, GeometryResponse, GeometrySource
 from backend.records import output_bytes_expired, report_retention_expired
 from backend.routers.jobs import _require_live_upload
 from backend.storage import ObjectStore
+from backend.storage.objects import ObjectNotFound
 from xtalate.capabilities import Registry
+from xtalate.conversion import FrameLimitExceeded
 from xtalate.discovery import Sniffer
 from xtalate.sdk import ParseError, ParserPlugin, parse_as_stream
 
@@ -79,6 +83,13 @@ _DEFAULT_FRAME_RANGE = (0, 1)
 _EST_CELL_FLOATS = 9
 _EST_FRAME_OVERHEAD = 128
 
+#: Projected frames live as pydantic ``GeometryFrame`` models holding Python ``list[list[float]]``,
+#: not packed ``float64`` arrays: each float is a boxed ``PyFloat`` (~24 B) inside list slots
+#: (~8 B) under model overhead. The raw ``floats*8`` undercounts real RSS ~4x, which loosens the
+#: byte bound the cache promises (D232). This factor turns the float count into a realistic heap
+#: estimate; it is deliberately conservative (over- rather than under-count).
+_EST_HEAP_FACTOR = 4
+
 
 class GeometryCache:
     """A bounded LRU of projected geometry keyed by ``(file_id | conversion_id+side)`` (D232).
@@ -97,21 +108,27 @@ class GeometryCache:
     an isolated instance via dependency injection.
     """
 
-    __slots__ = ("max_bytes", "_data", "_bytes")
+    __slots__ = ("max_bytes", "_data", "_bytes", "_lock")
 
     def __init__(self, max_bytes: int) -> None:
         self.max_bytes = max_bytes
         #: Ordered map ``key -> (entry, entry_bytes)``; iteration order is access (LRU) order.
         self._data: OrderedDict[tuple[str, ...], tuple[dict[str, Any], int]] = OrderedDict()
         self._bytes = 0
+        # The endpoints are sync ``def`` → FastAPI runs them in a threadpool, so concurrent geometry
+        # requests hit one shared cache from multiple threads. One lock serializes the whole
+        # get/set critical section (the RateLimiter precedent, backend/security.py) — the mutations
+        # are O(entries) and in-memory, so a single coarse lock is correct and cheap here.
+        self._lock = threading.Lock()
 
     def get(self, key: tuple[str, ...]) -> dict[str, Any] | None:
         """Cached projected geometry for ``key``, or None (bumping it to LRU-most-recent)."""
-        hit = self._data.pop(key, None)
-        if hit is None:
-            return None
-        self._data[key] = hit  # move_to_end: this key is now most-recent
-        return hit[0]
+        with self._lock:
+            hit = self._data.pop(key, None)
+            if hit is None:
+                return None
+            self._data[key] = hit  # move_to_end: this key is now most-recent
+            return hit[0]
 
     def set(self, key: tuple[str, ...], entry: dict[str, Any]) -> None:
         """Cache ``entry`` (an object whose ``frames`` is the full projection), evicting as needed.
@@ -120,16 +137,17 @@ class GeometryCache:
         can never fit, and caching it would exceed the bound on every future request until evicted.
         """
         entry_bytes = _estimate_geometry_bytes(entry["frames"])
-        if entry_bytes > self.max_bytes:
-            return
-        old = self._data.pop(key, None)
-        if old is not None:
-            self._bytes -= old[1]
-        self._data[key] = (entry, entry_bytes)
-        self._bytes += entry_bytes
-        while self._bytes > self.max_bytes and self._data:
-            _, (_, evicted_bytes) = self._data.popitem(last=False)  # evict least-recent
-            self._bytes -= evicted_bytes
+        with self._lock:
+            if entry_bytes > self.max_bytes:
+                return
+            old = self._data.pop(key, None)
+            if old is not None:
+                self._bytes -= old[1]
+            self._data[key] = (entry, entry_bytes)
+            self._bytes += entry_bytes
+            while self._bytes > self.max_bytes and self._data:
+                _, (_, evicted_bytes) = self._data.popitem(last=False)  # evict least-recent
+                self._bytes -= evicted_bytes
 
 
 def _estimate_geometry_bytes(frames: list[GeometryFrame]) -> int:
@@ -139,7 +157,7 @@ def _estimate_geometry_bytes(frames: list[GeometryFrame]) -> int:
         floats = sum(len(row) for row in frame.positions)
         if frame.cell is not None:
             floats += _EST_CELL_FLOATS
-        total += floats * 8 + _EST_FRAME_OVERHEAD
+        total += floats * 8 * _EST_HEAP_FACTOR + _EST_FRAME_OVERHEAD
     return total
 
 
@@ -166,7 +184,11 @@ def _project(frame: Frame) -> GeometryFrame:
 
 
 def _collect_geometry(
-    stream: FrameStream, start: int, end: int, cache: GeometryCache
+    stream: FrameStream,
+    start: int,
+    end: int,
+    cache: GeometryCache,
+    max_frames: int | None,
 ) -> dict[str, Any]:
     """Stream once and return ``{species, cell, frame_count, frames}`` for ``[start, end)``.
 
@@ -189,6 +211,12 @@ def _collect_geometry(
             species = list(frame.atoms.symbols)
             cell = _lattice_or_none(frame.cell)
         total += 1
+        if max_frames is not None and total > max_frames:
+            # The geometry read honours the same frame cap the convert/inspect paths do (M39-S3,
+            # F1): an over-cap trajectory is refused mid-stream without materializing, rather than
+            # projecting the whole thing into memory. The endpoint maps this to 422
+            # FRAME_LIMIT_EXCEEDED.
+            raise FrameLimitExceeded(frame_count=total, max_frames=max_frames)
         if candidate is not None:
             gf = _project(frame)
             candidate.append(gf)
@@ -211,10 +239,10 @@ def _estimate_single(frame: GeometryFrame) -> int:
     floats = sum(len(row) for row in frame.positions)
     if frame.cell is not None:
         floats += _EST_CELL_FLOATS
-    return floats * 8 + _EST_FRAME_OVERHEAD
+    return floats * 8 * _EST_HEAP_FACTOR + _EST_FRAME_OVERHEAD
 
 
-def _parse_range(spec: str | None) -> tuple[int, int]:
+def _parse_range(spec: str | None, max_frames: int | None = None) -> tuple[int, int]:
     """Interpret the ``?frames=start:end`` parameter as a half-open ``[start, end)`` range."""
     if spec is None:
         return _DEFAULT_FRAME_RANGE
@@ -230,6 +258,19 @@ def _parse_range(spec: str | None) -> tuple[int, int]:
         )
     start = int(match.group("start"))
     end = int(match.group("end"))
+    if max_frames is not None and end - start > max_frames:
+        # The window itself asks for more frames than the server cap permits — refuse rather than
+        # silently narrow it (P1: a clamped window would drop frames the caller asked for without
+        # saying so). Same 422 FRAME_LIMIT_EXCEEDED the convert path uses.
+        raise ApiError(
+            status_code=422,
+            code="FRAME_LIMIT_EXCEEDED",
+            message=(
+                f"The requested frames window spans {end - start} frames, more than the "
+                f"maximum {max_frames} a geometry request will project; narrow the 'frames' "
+                "range or raise the server's max_frames."
+            ),
+        )
     if start >= end:
         raise ApiError(
             status_code=400,
@@ -251,19 +292,21 @@ def _parse_into_read(
     end: int,
     cache: GeometryCache,
     key: tuple[str, ...],
+    max_frames: int | None,
 ) -> dict[str, Any] | None:
     """Stream ``data`` via the SDK seam for ``format_id`` and return the projected read.
 
     Returns ``None`` only when no parser is registered for ``format_id`` (the caller surfaces a
     ``422 UNKNOWN_FORMAT``). Streams once through ``parse_as_stream``, stores the budget-permitted
     full projection in the cache for ``key``, and returns the ``[start, end)`` window (plus
-    ``format_id``, ``species``, ``cell``, and the whole object's ``frame_count``).
+    ``format_id``, ``species``, ``cell``, and the whole object's ``frame_count``). ``max_frames``
+    gates the whole read exactly as the convert/inspect paths do (GEO-H1).
     """
     parser = registry_parser_or_none(registry, format_id)
     if parser is None:
         return None
     stream = parse_as_stream(parser, data, filename=filename)
-    read = _collect_geometry(stream, start, end, cache)
+    read = _collect_geometry(stream, start, end, cache, max_frames)
     candidate = read.pop("_candidate", None)
     read["format_id"] = format_id
     if candidate is not None:
@@ -313,9 +356,16 @@ def _source_of(upload: Upload, format_id: str) -> GeometrySource:
     return GeometrySource(format_id=format_id, filename=upload.filename)
 
 
-def _read_bytes(object_store: ObjectStore, key: str) -> bytes:
-    with object_store.open(key) as chunks:
-        return b"".join(chunks)
+def _read_bytes(
+    object_store: ObjectStore, key: str, *, on_missing: Callable[[], ApiError]
+) -> bytes:
+    # The record outlives its bytes (reports-outlive-bytes, Part 9 §5.2): a swept object is a clean
+    # 410, not a 500 — the geometry twin of downloads.py's ObjectNotFound → _output_expired_error.
+    try:
+        with object_store.open(key) as chunks:
+            return b"".join(chunks)
+    except ObjectNotFound as exc:
+        raise on_missing() from exc
 
 
 def _parse_error(exc: ParseError) -> ApiError:
@@ -346,12 +396,20 @@ def _resolve_file_geometry(
         raise ApiError(
             status.HTTP_404_NOT_FOUND, "FILE_NOT_FOUND", f"No uploaded file {file_id!r}."
         )
-    start, end = _parse_range(frames)
+    start, end = _parse_range(frames, settings.max_frames)
     key = _cache_key("file", file_id)
     cached = cache.get(key)
     if cached is not None:
         return _serve_cached(cached, _source_of(upload, cached["format_id"]), start, end)
-    data = _read_bytes(object_store, upload.storage_key)
+    data = _read_bytes(
+        object_store,
+        upload.storage_key,
+        on_missing=lambda: ApiError(
+            status.HTTP_410_GONE,
+            "FILE_EXPIRED",
+            f"The bytes for file {file_id!r} are gone; its reports remain readable.",
+        ),
+    )
     override = upload.format_override
     if override is not None:
         format_id: str | None = override
@@ -365,7 +423,9 @@ def _resolve_file_geometry(
                 "The file's format could not be identified; pass an explicit format override."
             ),
         )
-    read = _parse_into_read(data, upload.filename, format_id, registry, start, end, cache, key)
+    read = _parse_into_read(
+        data, upload.filename, format_id, registry, start, end, cache, key, settings.max_frames
+    )
     if read is None:
         raise ApiError(
             status_code=422,
@@ -393,7 +453,7 @@ def _resolve_conversion_geometry(
             "CONVERSION_NOT_FOUND",
             f"No conversion {conversion_id!r}.",
         )
-    start, end = _parse_range(frames)
+    start, end = _parse_range(frames, settings.max_frames)
     key = _cache_key("conversion", conversion_id, side)
     # Both branches compute ``format_id``/``filename``; they are declared optional up front so the
     # output branch's ``str`` target_format and the source branch's ``str | None`` (sniffed-or-
@@ -412,7 +472,11 @@ def _resolve_conversion_geometry(
             return _serve_cached(
                 cached, GeometrySource(format_id=cached["format_id"], filename=filename), start, end
             )
-        data = _read_bytes(object_store, conversion.output_storage_key)
+        data = _read_bytes(
+            object_store,
+            conversion.output_storage_key,
+            on_missing=lambda: _output_expired_error(conversion_id),
+        )
     else:  # side == "source"
         file_id = conversion.source_file_id
         if file_id is None:
@@ -429,7 +493,15 @@ def _resolve_conversion_geometry(
         cached = cache.get(key)
         if cached is not None:
             return _serve_cached(cached, _source_of(upload, cached["format_id"]), start, end)
-        data = _read_bytes(object_store, upload.storage_key)
+        data = _read_bytes(
+            object_store,
+            upload.storage_key,
+            on_missing=lambda: ApiError(
+                status.HTTP_410_GONE,
+                "FILE_EXPIRED",
+                "The source upload's bytes are gone; its reports remain readable.",
+            ),
+        )
         format_id = (
             conversion.source_format
             or upload.format_override
@@ -442,7 +514,9 @@ def _resolve_conversion_geometry(
                 code="UNKNOWN_FORMAT",
                 message="The source's format could not be identified.",
             )
-    read = _parse_into_read(data, filename, format_id, registry, start, end, cache, key)
+    read = _parse_into_read(
+        data, filename, format_id, registry, start, end, cache, key, settings.max_frames
+    )
     if read is None:
         raise ApiError(
             status_code=422,
@@ -508,6 +582,16 @@ def file_geometry(
         )
     except ParseError as exc:
         raise _parse_error(exc) from exc
+    except FrameLimitExceeded as exc:
+        raise ApiError(
+            status_code=422,
+            code="FRAME_LIMIT_EXCEEDED",
+            message=(
+                f"This file has more than the maximum {exc.max_frames} frames a geometry request "
+                "will project; narrow the 'frames' range or raise the server's max_frames."
+            ),
+            details={"frame_count": exc.frame_count, "max_frames": exc.max_frames},
+        ) from exc
 
 
 @router.get(
@@ -549,3 +633,13 @@ def conversion_geometry(
         )
     except ParseError as exc:
         raise _parse_error(exc) from exc
+    except FrameLimitExceeded as exc:
+        raise ApiError(
+            status_code=422,
+            code="FRAME_LIMIT_EXCEEDED",
+            message=(
+                f"This file has more than the maximum {exc.max_frames} frames a geometry request "
+                "will project; narrow the 'frames' range or raise the server's max_frames."
+            ),
+            details={"frame_count": exc.frame_count, "max_frames": exc.max_frames},
+        ) from exc

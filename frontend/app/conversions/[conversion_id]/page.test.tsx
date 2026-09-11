@@ -18,12 +18,16 @@ import refusedRecord from "@/components/__fixtures__/conversion.record.refused.j
 
 // Hoisted so the mocked `useSearchParams` returns a value tests can change per-case: the page's
 // back affordance and re-convert link branch on whether a live `file_id` was handed forward.
-const { urlSearchParams } = vi.hoisted(() => ({ urlSearchParams: new URLSearchParams() }));
+const { urlSearchParams, routerReplace } = vi.hoisted(() => ({
+  urlSearchParams: new URLSearchParams(),
+  // Hoisted so the VIEW-M2 pagination test can assert the bookmark redirect fired.
+  routerReplace: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ conversion_id: "cnv-under-test" }),
   useSearchParams: () => urlSearchParams,
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ replace: routerReplace, push: vi.fn() }),
 }));
 
 const apiGet = vi.fn();
@@ -42,6 +46,11 @@ function renderWithRecord(body: unknown) {
   apiGet.mockImplementation((path: unknown) => {
     if (typeof path === "string" && path.includes("/geometry")) {
       return Promise.resolve({ data: undefined, error: undefined });
+    }
+    if (typeof path === "string" && path.includes("/history")) {
+      // The history lookup is not under test here: an empty page resolves nothing, so the record
+      // renders standalone — exactly the no-file_id path these cases exercise.
+      return Promise.resolve({ data: { items: [], next_cursor: null }, error: undefined });
     }
     return Promise.resolve({ data: body, error: undefined });
   });
@@ -185,6 +194,67 @@ describe(
     renderWithRecord(lossyRecord);
     await screen.findByRole("heading", { level: 1 });
     expect(screen.queryByRole("region", { name: /resolve and retry/i })).not.toBeInTheDocument();
+  });
+
+  it("follows next_cursor to resolve a bookmark older than the first history page (VIEW-M2)", async () => {
+    // Other cases above already invoked the shared mock; scope this test's call ledger to itself.
+    apiGet.mockClear();
+    routerReplace.mockClear();
+    // Page 1 (the most-recent 100) lacks the target; page 2 (via next_cursor) holds it. Older
+    // items carry `conversion_status`/`source` like a real HistoryItem, but no live `file_id` —
+    // only the target row resolves.
+    const page1 = Array.from({ length: 100 }, (_, i) => ({
+      conversion_id: `cnv-${i}`,
+      conversion_status: "converted",
+      created_at: "2026-08-01T00:00:00Z",
+      source: { filename: `old-${i}.xyz` },
+    }));
+    const pages: Array<{ items: unknown[]; next_cursor: string | null }> = [
+      { items: page1, next_cursor: "c1" },
+      {
+        items: [
+          {
+            conversion_id: "cnv-under-test",
+            conversion_status: "converted",
+            created_at: "2026-07-01T00:00:00Z",
+            file_id: "file-9",
+            source: { filename: "old-9.xyz" },
+          },
+        ],
+        next_cursor: null,
+      },
+    ];
+    apiGet.mockImplementation((path: unknown) => {
+      if (typeof path === "string" && path.includes("/geometry")) {
+        return Promise.resolve({ data: undefined, error: undefined });
+      }
+      if (typeof path === "string" && path.includes("/history")) {
+        return Promise.resolve({ data: pages.shift(), error: undefined });
+      }
+      return Promise.resolve({ data: lossyRecord, error: undefined });
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ConversionRecordPage />
+      </QueryClientProvider>,
+    );
+
+    // The resolver followed the cursor into page 2, found the record, and redirected into the
+    // workspace — searching only the first 100 would never fire this redirect.
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith("/f/file-9/report/cnv-under-test"),
+    );
+    // And it genuinely paged: the second /v1/history call carried the first page's cursor.
+    const historyCalls = apiGet.mock.calls.filter(
+      (call) => typeof call[0] === "string" && String(call[0]).includes("/history"),
+    );
+    expect(historyCalls).toHaveLength(2);
+    expect(historyCalls[1][1]).toEqual(
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ cursor: "c1" }) },
+      }),
+    );
   });
   },
   20_000,

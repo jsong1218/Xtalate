@@ -169,6 +169,24 @@ describe("StructureViewer", () => {
     expect(document.activeElement).toBe(closeButton);
   });
 
+  it("expanding the viewer does not remount the Mol* host (VIEW-H1)", async () => {
+    render(<StructureViewer geometry={fixture} />);
+    const mount = await screen.findByTestId("molstar-mount");
+
+    await userEvent.click(screen.getByRole("button", { name: /expand/i }));
+    expect(
+      screen.getByRole("dialog", { name: /structure viewer/i })
+    ).toBeInTheDocument();
+    // A stable tree position means the SAME DOM node persists across the toggle — React never
+    // unmounts the Mol* host, so the WebGL context, camera, and loaded trajectory survive
+    // expand/collapse (VIEW-H1: the old code moved viewerBody across parents and remounted).
+    expect(screen.getByTestId("molstar-mount")).toBe(mount);
+
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("molstar-mount")).toBe(mount);
+  });
+
   it("does not re-run the overlay's mount effect (and re-steal focus) on an unrelated re-render", async () => {
     const { rerender } = render(<StructureViewer geometry={fixture} />);
     await userEvent.click(screen.getByRole("button", { name: /expand/i }));
