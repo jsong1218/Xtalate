@@ -163,6 +163,12 @@ function checkTheme(theme: string, block: () => string) {
       ["text-muted", "surface-raised"], // the "frame" label on the scrubber bar
       ["text-body", "surface-muted"], // the Compare RMSD overlay caption on its well fill
       ["text-muted", "surface"], // the species-legend rows and the cell-less caption
+      // The metadata chip: `text-muted` on the `bg-well` fill — the app-wide inert-chip pairing
+      // (RecentsStrip source note + format tag, JobPhase, DecisionCard, SamplePicker, the report
+      // panels, PresetManager, …). `text-faint` on this same fill only reaches ~4.34:1 light /
+      // ~4.04:1 dark, so it is *not* legible here — the whole-page axe scan caught a RecentsStrip
+      // chip that used it; guarding the canonical `text-muted` pair keeps that from recurring.
+      ["text-muted", "surface-muted"],
     ] as const)("viewer chrome %s clears AA on %s", (fg, bg) => {
       expect(contrast(t(fg), t(bg))).toBeGreaterThanOrEqual(AA);
     });

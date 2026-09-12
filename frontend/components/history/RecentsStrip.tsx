@@ -45,7 +45,7 @@ export function RecentsStrip() {
     <section aria-label="Recent files" className="space-y-2">
       <div className="flex items-center gap-2">
         <h2 className="text-sm font-semibold text-strong">Recent files</h2>
-        <span className="rounded bg-well px-1.5 py-0.5 text-xs text-faint">from this browser + history</span>
+        <span className="rounded bg-well px-1.5 py-0.5 text-xs text-muted">from this browser + history</span>
       </div>
       <ul className="flex flex-wrap gap-2" data-testid="recents-strip">
         {recents.map((r) => (
