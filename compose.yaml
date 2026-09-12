@@ -64,7 +64,9 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    # MinIO removed its images from Docker Hub (`minio/minio` now 404s); quay.io is the live
+    # registry and serves the byte-identical image (same sha256 as the former Docker Hub `:latest`).
+    image: quay.io/minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-xtalate}
@@ -88,7 +90,8 @@ services:
   # defaults are 24 h) — short enough to prove expiry locally. The record-retention window is a
   # different, much longer thing swept in-app (`backend.jobs.retention`), not a bucket rule.
   minio-init:
-    image: minio/mc:latest
+    # See the minio service above: pulled from quay.io, not the removed Docker Hub `minio/mc`.
+    image: quay.io/minio/mc:latest
     depends_on:
       minio:
         condition: service_healthy
