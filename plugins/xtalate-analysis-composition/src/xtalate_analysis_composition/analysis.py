@@ -63,9 +63,13 @@ class CompositionAnalysis(AnalysisPlugin):
         frame = canonical.frames[0]
         counts = element_counts(frame.atoms.symbols)
         density, note = _density(canonical)
+        # `counts` is a dict[str, int]; JsonValue's object branch is the invariant dict[str,
+        # JsonValue], so a plain dict[str, int] is not assignable to it. A comprehension with the
+        # declared target type re-types each int against JsonValue (int ⊆ JsonValue) and passes.
+        counts_json: dict[str, JsonValue] = {sym: n for sym, n in counts.items()}
         return {
             "composition:formula": hill_formula(counts),
-            "composition:element_counts": counts,
+            "composition:element_counts": counts_json,
             "composition:atom_count": len(frame.atoms.symbols),
             "composition:mass_density_g_per_cm3": density,
             "composition:density_note": note,

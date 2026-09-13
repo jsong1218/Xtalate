@@ -796,7 +796,84 @@ The CLI grammar is `--repair OPERATION[,param=value…]` (repeatable, ordered �
 §1.2); the wire shape is `options.repairs: [{operation, parameters}]` (`docs/API.md` §5.6 and
 `docs/openapi.json`).
 
-## 8. Where to go next
+## 8. Writing an analysis plugin (v1.8)
+
+An **analysis plugin** reads a Canonical Object and annotates *its own namespace* — it never
+changes what Xtalate converts, reports, or validates (P6; Part 2 §6). The reference plugin
+`plugins/xtalate-analysis-composition/` is the worked example; copy it.
+
+### 8.1 The contract
+
+Subclass `xtalate.sdk.AnalysisPlugin`, declare a `name` and `version`, and implement one method:
+
+```python
+from collections.abc import Mapping
+from pydantic import JsonValue
+from xtalate.schema import CanonicalObject
+from xtalate.sdk import AnalysisPlugin
+
+class CompositionAnalysis(AnalysisPlugin):
+    name = "composition"      # your namespace: every key you write is prefixed "composition:"
+    version = "1.0.0"
+
+    def analyze(self, canonical: CanonicalObject) -> Mapping[str, JsonValue]:
+        return {"composition:atom_count": len(canonical.frames[0].atoms.symbols)}
+```
+
+That is the whole contract — no lifecycle hooks, no configuration language, no capability
+negotiation. A contract a third party cannot implement in an afternoon is a private API in a
+costume.
+
+### 8.2 The namespace rule (enforced, not trusted)
+
+`xtalate.sdk.analysis.run_analysis(canonical, plugin)` runs your plugin against a **deep copy**
+(so you may read everything and can mutate nothing that matters), then merges **only** keys
+prefixed `"<name>:"` into `user_metadata.custom_global` and appends an `operation="analyze"`
+`ConversionRecord` naming your plugin and the keys written (D268, D269). Any key outside your
+namespace — an un-namespaced user key, a scientific path, another plugin's namespace — or any
+value `user_metadata` cannot hold, or any exception you raise, is an `AnalysisError`: the object
+is returned **untouched**. Return only your own keys; return an empty mapping and the run is still
+recorded.
+
+One typing note you will hit immediately: `custom_global` is typed `dict[str, JsonValue]`, and
+`JsonValue`'s object branch is the *invariant* `dict[str, JsonValue]`, so a `dict[str, int]` you
+built (element counts, say) is not directly assignable. Re-type it through a comprehension with
+the declared target — `counts_json: dict[str, JsonValue] = {k: v for k, v in counts.items()}` —
+which checks each value against `JsonValue` and passes.
+
+### 8.3 Report absence; never fill it (P3/P4)
+
+If you cannot compute something, say so — do not invent a value. The composition plugin reports
+mass density only when the source carries both a cell and masses; otherwise it returns
+`mass_density_g_per_cm3: null` and a `density_note` stating *why*, and it **never** fabricates
+masses (filling absent data is recovery's job, and recovery is explicit). This mirrors the
+Discovery Report's ✓/✗ honesty: a reader learns what was and was not computable, and why.
+
+### 8.4 Package it and ship it (no fork)
+
+Declare one entry point under the `xtalate.analysis` group — `default_registry()` discovers it
+exactly like a parser or exporter (Part 3 §7.1):
+
+```toml
+[project.entry-points."xtalate.analysis"]
+composition = "xtalate_analysis_composition.analysis:CompositionAnalysis"
+```
+
+`pip install ./your-plugin`, and it is discovered. Build **only** against `xtalate.sdk` and
+`xtalate.schema`; reaching into any other `xtalate.*` module couples you to internals that move
+without notice (the parent repo's import-linter proves the reference plugin obeys this).
+
+### 8.5 What analysis is not
+
+Analysis is annotation, not configuration: the core never *reads* your namespace to change engine
+behavior. It cannot add a 3D overlay or ship frontend code — the Web UI renders analysis output
+**generically** (scalars, tables, arrays, and your stated not-computable reasons). A plugin that
+wants pixels is out of scope. First-party analysis stops at this one trivial reference plugin by
+design; RDF, coordination numbers, trajectory statistics, and anything ML (descriptors,
+uncertainty, learned frame selection) are yours to build as plugins — the core never depends on,
+bundles, or blesses any of it.
+
+## 9. Where to go next
 
 - [Architecture Overview](ARCHITECTURE.md) — the design and the principles.
 - [API Reference](API.md) — the library and CLI surface.
