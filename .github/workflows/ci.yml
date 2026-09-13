@@ -56,6 +56,16 @@ jobs:
       - name: Install reference plugin (M36 compatibility canary)
         run: pip install --no-deps ./plugins/example-format
 
+      # The M69 analysis-plugin canary, part 1 of 2: install the reference *analysis* plugin
+      # (plugins/xtalate-analysis-composition/) before lint-imports for the same reason as the M36
+      # format plugin above — its forbidden contract, "the reference analysis plugin builds only on
+      # the frozen public SDK", can only evaluate a package import-linter can import. `--no-deps`:
+      # its declared `xtalate`/`numpy` deps are already satisfied by the editable install. Like
+      # example-format and unlike toyfmt, this is a *required* gate, not skip-if-absent — an SDK
+      # change that breaks it fails the pytest step below.
+      - name: Install reference analysis plugin (M69 compatibility canary)
+        run: pip install --no-deps ./plugins/xtalate-analysis-composition
+
       # Promoted to a required check in v0.2 M11 (Part 10 §1 deferral table, "earliest
       # v0.2"): the import-linter contract from M0 confirmed as a blocking gate.
       - name: Import-graph lint (P2)
@@ -86,8 +96,13 @@ jobs:
       # only `tests/` and stays green without the plugin, while CI (which always installs it above)
       # makes it a hard gate. A core change that breaks exfmt's parse/export/capabilities fails here,
       # not silently. One coverage run covers both trees.
-      - name: Pytest (unit + golden + governance + reference-plugin canary, with coverage gate)
-        run: pytest tests plugins/example-format/tests
+      #
+      # The M69 analysis-plugin canary, part 2 of 2: the analysis reference plugin's own suite
+      # (plugins/xtalate-analysis-composition/tests/) is collected here the same way, beside the
+      # format plugin's — so from v1.8 the audit inherits two tripwires instead of one. An SDK
+      # change that breaks the reference analysis plugin's contract fails here, not silently.
+      - name: Pytest (unit + golden + governance + reference-plugin canaries, with coverage gate)
+        run: pytest tests plugins/example-format/tests plugins/xtalate-analysis-composition/tests
 
   # Frontend lanes (v0.6 M26; Part 8 §5). Fast, fixture-first checks on the presentation layer: the
   # typed client generates from the committed OpenAPI artifact (postinstall runs `gen:api`), then

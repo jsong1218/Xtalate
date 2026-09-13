@@ -1,0 +1,34 @@
+# xtalate-analysis-composition — the published reference *analysis* plugin (M69).
+#
+# The third plugin kind's canary and textbook in one artifact (IMPLEMENTATION_PLAN_v1.8.md §2).
+# Unlike tests/fixtures/xtalate_toyfmt (the hidden from-docs proof fixture, which skips when
+# absent), this is the reference distribution a third party copies to add an analysis plugin.
+# Its SDK compatibility is verified by a CI canary on every PR — an SDK change that breaks it
+# fails the run — with ZERO changes to xtalate's core (src/xtalate/).
+#
+# Apache-2.0 (matching the parent repo); self-contained, so it has no coupling to the
+# golden-corpus governance suite (which scans only tests/golden/, never here).
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xtalate-analysis-composition"
+version = "1.0.0"
+description = "The reference third-party Xtalate analysis plugin: element counts, reduced formula, and mass density, reported with honest absence (P3/P4)."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+# `xtalate` is always already present in the environment this plugin installs into. Declared here
+# for realism — a real third-party plugin depends on the SDK — but CI installs with `--no-deps` so
+# pip never resolves it from an index. A real third party building against the frozen 1.x SDK would
+# pin `xtalate>=1.0,<2.0` per the SemVer promise; left bare here for the --no-deps reason only.
+dependencies = ["xtalate", "numpy"]
+
+# Advertise one analysis plugin under the Xtalate entry-point group (MASTER_SPEC Part 3 §7.1).
+# `default_registry()` discovers it through the same declaration validation and duplicate-name
+# guards a built-in plugin gets (M68).
+[project.entry-points."xtalate.analysis"]
+composition = "xtalate_analysis_composition.analysis:CompositionAnalysis"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xtalate_analysis_composition"]
