@@ -40,6 +40,7 @@ from backend.jobs.queue import JobQueue
 from backend.jobs.result import build_job_result
 from backend.jobs.state_machine import InvalidTransition, is_terminal
 from backend.models import (
+    AnalyzeRequest,
     AssumptionPreview,
     BatchConvertRequest,
     ConvertRequest,
@@ -212,6 +213,57 @@ def convert(
                 "file_id": body.file_id,
                 "target_format_id": body.target_format_id,
                 "options": body.options.model_dump(mode="json"),
+                "request_id": _request_id(request),
+            },
+        )
+    )
+    job_queue.enqueue(job_id)
+    return _job_envelope(_reload(repository, job_id), repository, object_store)
+
+
+@router.post(
+    "/analyze",
+    response_model=JobEnvelope,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=_SUBMIT_GUARD,
+)
+def analyze(
+    body: AnalyzeRequest,
+    request: Request,
+    repository: Repository = Depends(get_repository),
+    object_store: ObjectStore = Depends(get_object_store),
+    registry: Registry = Depends(get_registry),
+    job_queue: JobQueue = Depends(get_job_queue),
+) -> JobEnvelope:
+    """Run one installed analysis plugin on an uploaded file (v1.8 M70). Mirrors ``convert``: an
+    unknown *plugin* is a fast ``422 UNKNOWN_PLUGIN`` at submit (the analysis analogue of an unknown
+    target format), while a plugin that runs and *fails* is a completed job whose report says so.
+
+    The service holds no plugin knowledge of its own (Part 1 §2): it asks the registry which
+    analysis plugins are installed and refuses a name outside that set, listing the installed ones
+    so a caller can correct the request without a second round-trip to ``/v1/plugins``.
+    """
+    _require_live_upload(repository, body.file_id)
+
+    installed = {p.name for p in registry.analysis_plugins()}
+    if body.plugin not in installed:
+        raise ApiError(
+            status_code=422,  # literal, not status.HTTP_422_* (deprecated upstream; see errors.py)
+            code="UNKNOWN_PLUGIN",
+            message=f"No analysis plugin named {body.plugin!r} is installed.",
+            details={"installed_plugins": sorted(installed)},
+        )
+
+    job_id = uuid.uuid4().hex
+    repository.add_job(
+        Job(
+            job_id=job_id,
+            kind="analyze",
+            state="queued",
+            request={
+                "file_id": body.file_id,
+                "plugin": body.plugin,
+                "format_override": body.format_override,
                 "request_id": _request_id(request),
             },
         )

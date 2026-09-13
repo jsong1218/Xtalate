@@ -2,11 +2,11 @@
 
 The service holds **no** plugin knowledge of its own (Part 1 §2): it asks the ``xtalate`` registry
 and lists what is installed. A client asking "what can this instance do" gets one answer across all
-three plugin kinds — the "future plugin-listing endpoint" Part 7 §6 names, generalized from analysis
-alone to every plugin kind so a single call enumerates the whole surface. Format plugins already have
-``/v1/capabilities`` for their per-field declarations; this endpoint is the flat roster (kind, name,
-version) that the Analysis tab reads to offer the installed analysis plugins, and that a human reads
-to see, at a glance, everything an instance can do.
+three plugin kinds — the "future plugin-listing endpoint" Part 7 §6 names, generalized from
+analysis alone to every plugin kind so a single call enumerates the whole surface. Format plugins
+already have ``/v1/capabilities`` for their per-field declarations; this endpoint is the flat roster
+(kind, name, version) that the Analysis tab reads to offer the installed analysis plugins, and that
+a human reads to see, at a glance, everything an instance can do.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def _inventory(registry: Registry) -> list[dict[str, Any]]:
             }
         )
     for analysis in registry.analysis_plugins():
-        # Analysis plugins carry no format: their namespace is ``name``, and there is no file format.
+        # Analysis plugins carry no format: their namespace is ``name``, and there is no format id.
         rows.append(
             {
                 "kind": "analysis",

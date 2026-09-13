@@ -232,6 +232,14 @@ ERROR_CODES: tuple[ErrorCodeSpec, ...] = (
         "No format with this id is registered on this instance. See the capabilities endpoint for "
         "the supported set.",
     ),
+    ErrorCodeSpec(
+        "UNKNOWN_PLUGIN",
+        422,
+        "No analysis plugin with this `name` is installed on this instance. `details."
+        "installed_plugins` lists the analysis plugins that are; see the plugins endpoint for the "
+        "full roster. Distinct from an analysis that *ran and failed* — that is a completed job "
+        'whose report carries `status: "error"` (HTTP 200), never this code.',
+    ),
     # --- Server ---------------------------------------------------------------------------------
     ErrorCodeSpec(
         "INTERNAL_ERROR",

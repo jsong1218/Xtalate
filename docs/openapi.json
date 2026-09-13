@@ -1,6 +1,36 @@
 {
   "components": {
     "schemas": {
+      "AnalyzeRequest": {
+        "description": "``POST /v1/analyze`` body (v1.8 M70) \u2014 run one installed analysis plugin on an uploaded file.\n\n``plugin`` names the analysis plugin by its ``name`` namespace (the id ``GET /v1/plugins``\nlists for a ``kind: \"analysis\"`` row); a name no plugin declares is a ``422 UNKNOWN_PLUGIN`` at\nsubmit, not a job. ``format_override`` overrides the Format Sniffer for the parse, exactly as on\n``inspect``/``convert`` \u2014 analysis reads a Canonical Object, so it parses the upload first.\nThere is no target format: analysis annotates the object's own namespace, never converts (\u00a76).",
+        "properties": {
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "format_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format Override"
+          },
+          "plugin": {
+            "title": "Plugin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id",
+          "plugin"
+        ],
+        "title": "AnalyzeRequest",
+        "type": "object"
+      },
       "AssumptionPreview": {
         "description": "One Assumption a paused job *would* record for a previewed choice (Part 6 \u00a73.2 preview).\n\nThe ``description`` is the engine's own sentence, verbatim \u2014 byte-identical to what the resume\nwill record \u2014 so the UI shows a user the exact provenance they are creating before they confirm\nit (P4). ``scenario``/``choice``/``parameters`` echo the decision the sentence describes.",
         "properties": {
@@ -1078,6 +1108,45 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/analyze": {
+      "post": {
+        "description": "Run one installed analysis plugin on an uploaded file (v1.8 M70). Mirrors ``convert``: an\nunknown *plugin* is a fast ``422 UNKNOWN_PLUGIN`` at submit (the analysis analogue of an unknown\ntarget format), while a plugin that runs and *fails* is a completed job whose report says so.\n\nThe service holds no plugin knowledge of its own (Part 1 \u00a72): it asks the registry which\nanalysis plugins are installed and refuses a name outside that set, listing the installed ones\nso a caller can correct the request without a second round-trip to ``/v1/plugins``.",
+        "operationId": "analyze_v1_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Analyze"
+      }
+    },
     "/v1/batch/convert": {
       "post": {
         "description": "Submit a batch conversion (Part 6 \u00a72, v1.5 M58): N uploaded files, one aggregate job.\n\nA **transport** over proven semantics: the endpoint validates the manifest up front and\ncreates **only the parent** job \u2014 the worker fans out to N ordinary ``convert`` child jobs, so\na rejected submit leaves no orphans. Submit-time checks mirror the single-file convert: every\n``file_id`` must be a live upload (``404 FILE_NOT_FOUND`` / ``410 FILE_EXPIRED``), the target\nmust be writable (``422 UNKNOWN_FORMAT``), the manifest must name at least one file\n(``422 EMPTY_BATCH``) and no file twice (``400 MALFORMED_REQUEST`` \u2014 a ``file_id`` is the\nidentity of one upload, and both the override map and the child fan-out key on it, so a repeat\nis an ambiguous request, not a request to convert the file twice), and a per-file override\nnaming a file outside the manifest is a malformed request (``400 MALFORMED_REQUEST``).\nAggregation, never curation: the request has no fields for selection, splitting, or\ndeduplication (roadmap \u00a711) \u2014 and rejecting a duplicate is not de-duplication, it is refusing\nto guess which of two identical, indistinguishable slots the client meant.",

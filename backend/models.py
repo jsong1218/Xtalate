@@ -68,6 +68,48 @@ class InspectRequest(BaseModel):
     format_override: str | None = None
 
 
+class AnalyzeRequest(BaseModel):
+    """``POST /v1/analyze`` body (v1.8 M70) — run one installed analysis plugin on an uploaded file.
+
+    ``plugin`` names the analysis plugin by its ``name`` namespace (the id ``GET /v1/plugins``
+    lists for a ``kind: "analysis"`` row); a name no plugin declares is a ``422 UNKNOWN_PLUGIN`` at
+    submit, not a job. ``format_override`` overrides the Format Sniffer for the parse, exactly as on
+    ``inspect``/``convert`` — analysis reads a Canonical Object, so it parses the upload first.
+    There is no target format: analysis annotates the object's own namespace, never converts (§6).
+    """
+
+    file_id: str
+    plugin: str
+    format_override: str | None = None
+
+
+class AnalysisReport(BaseModel):
+    """The ``analysis_report`` a completed ``analyze`` job carries (v1.8 M70) — the transport's own
+    report shape, since the library has no analysis *report* model (analysis annotates the Canonical
+    Object; it produces no ``ConversionReport``).
+
+    Two outcomes, both a **completed** job at HTTP 200 (a plugin that runs and fails is a reported
+    failure, not a transport error — the analysis analogue of a refused conversion):
+
+    * ``status: "ok"`` — the plugin ran and annotated the object. ``results`` is exactly the
+      ``"<plugin>:"``-namespaced keys it wrote into ``user_metadata.custom_global`` (verbatim, the
+      values the plugin returned), and ``record`` is the ``operation: "analyze"``
+      ``ConversionRecord`` the run appended to Provenance, dumped verbatim (D269). ``message`` is
+      ``None``.
+    * ``status: "error"`` — the plugin escaped its namespace, returned a value the container cannot
+      hold, or raised (:class:`~xtalate.sdk.AnalysisError`). ``message`` is the engine's own
+      sentence naming the plugin; ``results`` and ``record`` are ``None`` (nothing was annotated —
+      the object was left untouched, D268).
+    """
+
+    status: Literal["ok", "error"]
+    plugin: str
+    plugin_version: str
+    results: dict[str, Any] | None = None
+    record: dict[str, Any] | None = None
+    message: str | None = None
+
+
 class RepairSpec(BaseModel):
     """One user-requested repair on the wire — the ordered-list analogue of a recovery choice
     (v1.7 M66-S2; D256).

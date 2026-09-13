@@ -146,6 +146,11 @@
       "summary": "The file's format could not be identified with enough confidence to parse it. Pass an explicit format if you know it."
     },
     {
+      "code": "UNKNOWN_PLUGIN",
+      "http_status": 422,
+      "summary": "No analysis plugin with this `name` is installed on this instance. `details.installed_plugins` lists the analysis plugins that are; see the plugins endpoint for the full roster. Distinct from an analysis that *ran and failed* \u2014 that is a completed job whose report carries `status: \"error\"` (HTTP 200), never this code."
+    },
+    {
       "code": "VALIDATION_ACK_REQUIRED",
       "http_status": 409,
       "summary": "The download is gated because post-conversion validation failed; acknowledge the named failures to proceed. The record keeps showing the failure afterward."

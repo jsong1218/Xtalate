@@ -31,7 +31,7 @@ from backend.db.base import Base, JSONType, utcnow
 #: Job kinds — the long-running operations (Part 6 §3). ``batch_convert`` (v1.5 M58) is the
 #: additive aggregate kind: a transport job whose worker fans out to ordinary ``convert`` children
 #: and whose result is the aggregate of their persisted reports (Part 6 §3, §7).
-JOB_KINDS = ("inspect", "convert", "validate", "batch_convert")
+JOB_KINDS = ("inspect", "convert", "validate", "batch_convert", "analyze")
 
 #: Job states (Part 6 §3.2). The transitions between them are M22's tested state machine; here they
 #: are just the allowed column values.
