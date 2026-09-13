@@ -873,6 +873,30 @@ design; RDF, coordination numbers, trajectory statistics, and anything ML (descr
 uncertainty, learned frame selection) are yours to build as plugins — the core never depends on,
 bundles, or blesses any of it.
 
+### 8.6 How your results are consumed (v1.8 M70)
+
+You write the plugin once; three surfaces read the keys it wrote, all through the **same** engine
+(`run_analysis`), so they can never drift:
+
+- **CLI** — `xtalate analyze FILE --plugin <name>` prints your namespaced keys as a labelled table
+  (or `--json`). See API Reference §1.5.
+- **HTTP** — `POST /v1/analyze` runs your plugin as a job and embeds the result in the completed
+  job's `analysis_report`; `GET /v1/plugins` advertises that your plugin is installed. See API
+  Reference §5.7. A plugin that breaks containment (escapes its namespace, returns an unserializable
+  value, raises) is a *reported* failure — a completed job with `status: "error"` naming your
+  plugin — not a 500.
+- **Web UI** — the workspace's Analysis tab offers the installed plugins and renders your results
+  **generically**: it walks the map by JSON value type with **zero branching on any key or plugin
+  name**, so a third-party plugin renders through exactly the same path as the reference one. The day
+  you ship `rdf:` or `msd:`, no frontend code changes.
+
+Two authoring consequences follow from the generic renderer. Return only **JSON-serializable**
+values (strings, numbers, booleans, `null`, and nested lists/objects of those) — a value that cannot
+be serialized is the reported-failure path, not a rendered result. And honour absence explicitly: a
+value you could not compute is a `null` **paired with a `*_note`/`*_reason` sibling** carrying the
+reason in words (§8.3); every surface shows the `null` as "not computed" beside that reason rather
+than dropping the key, so a reader never mistakes "not shown" for "not measured" (P1, P3).
+
 ## 9. Where to go next
 
 - [Architecture Overview](ARCHITECTURE.md) — the design and the principles.

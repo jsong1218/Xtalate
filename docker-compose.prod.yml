@@ -61,7 +61,10 @@ services:
   # The job queue. Ephemeral by design (§6.2: object storage and the queue are not backed up; only
   # Postgres is). Reachable only inside the compose network — no host port is published.
   queue:
-    image: redis:7-alpine
+    # AWS ECR Public Docker Hub mirror, not Docker Hub itself, to avoid unauthenticated Docker Hub
+    # pull rate limiting (the intermittent `connection reset by peer` seen in CI) — the byte-identical
+    # official image. Same intent as the MinIO→quay.io move in compose.yaml.
+    image: public.ecr.aws/docker/library/redis:7-alpine
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

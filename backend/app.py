@@ -32,6 +32,7 @@ from backend.routers import (
     health,
     jobs,
     limits,
+    plugins,
     uploads,
 )
 from backend.routers.geometry import GeometryCache
@@ -154,6 +155,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router, prefix="/v1")
     app.include_router(accounts.router, prefix="/v1")
     app.include_router(capabilities.router, prefix="/v1", dependencies=public)
+    app.include_router(plugins.router, prefix="/v1", dependencies=public)
     app.include_router(limits.router, prefix="/v1", dependencies=public)
     app.include_router(uploads.router, prefix="/v1", dependencies=guarded)
     app.include_router(jobs.router, prefix="/v1", dependencies=guarded)

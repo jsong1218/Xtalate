@@ -8,6 +8,11 @@ the output legible in any terminal/pipe (✓/✗ are the one concession, matchin
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
+
+from pydantic import JsonValue
+
 from xtalate.conversion.batch import BatchReport
 from xtalate.conversion.report import ConversionReport
 from xtalate.discovery.report import DiscoveryReport
@@ -132,6 +137,28 @@ def render_batch(report: BatchReport) -> str:
     )
     if report.note:
         lines.append(f"  note: {report.note}")
+    return "\n".join(lines)
+
+
+def render_analysis(plugin_name: str, plugin_version: str, results: Mapping[str, JsonValue]) -> str:
+    """Render one analysis plugin's namespaced results as a labelled table (v1.8 M70).
+
+    A **view** of what the plugin wrote, never a second schema: one ``key = value`` line per
+    entry, sorted by key so the output is deterministic. A ``null`` value is shown as ``null`` and
+    the plugin's paired plain-language sibling (a ``composition:density_note`` beside a null
+    ``composition:mass_density_g_per_cm3``) renders on its own line — the honest statement of an
+    absence travels with the absence (P1, P3), never a silently dropped ``None``. Scalars render
+    bare; lists and objects render as compact JSON so a structured result (an RDF curve, a table)
+    stays legible. ``--json`` bypasses this and emits ``{plugin, version, results}`` verbatim.
+    """
+    lines = [
+        f"Analysis Report  [{plugin_name} {plugin_version}]",
+        f"  results ({len(results)}):",
+    ]
+    for key in sorted(results):
+        value = results[key]
+        rendered = "null" if value is None else json.dumps(value, ensure_ascii=False)
+        lines.append(f"    {key} = {rendered}")
     return "\n".join(lines)
 
 

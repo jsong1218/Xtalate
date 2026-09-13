@@ -6,9 +6,10 @@ import { FIXTURES, uploadFixture } from "./support/api";
  * assertions over the live workspace:
  *
  *  1. Every reserved **seam renders its "coming later" state and does nothing** — File Repair is a
- *     genuinely `disabled` button (cannot be activated, navigates nowhere), the Assistant is a plain
- *     labelled box (not a control), and the Analysis tab is an inert placeholder page with no engine
- *     call. This is the P6 anti-scope-creep guarantee, proven behaviourally, not by inspection.
+ *     genuinely `disabled` button (cannot be activated, navigates nowhere) and the Assistant is a
+ *     plain labelled box (not a control). This is the P6 anti-scope-creep guarantee, proven
+ *     behaviourally, not by inspection. (The Analysis tab is no longer a reserved seam — v1.8 M70
+ *     made it live; its journey is `analysis.spec.ts`.)
  *  2. The seams appear on every workspace tab (they belong to the shell, not one surface).
  *  3. `/f/[id]` respects **`prefers-reduced-motion`**: the global guard collapses the restrained
  *     tab transition to an instant when the user asks for reduced motion, and leaves it at its normal
@@ -38,25 +39,6 @@ test("the reserved seams render 'coming later' and are inert across the workspac
   await expect(page.getByTestId("seam-assistant").locator("a, button, [role=button], [role=link]")).toHaveCount(0);
   // Both seats say they are coming later — nothing claims to work today.
   await expect(page.getByTestId("future-seams")).toContainText("coming later");
-});
-
-test("the Analysis seam tab renders its placeholder and starts no conversation (S6)", async ({
-  page,
-  request,
-}) => {
-  const fileId = await uploadFixture(request, FIXTURES.workedExample);
-  // Track any engine call the seam might spuriously make — there must be none above the shell's own.
-  const convertCalls: string[] = [];
-  page.on("request", (r) => {
-    if (/\/v1\/(convert|files\/[^/]+\/geometry)/.test(r.url())) convertCalls.push(r.url());
-  });
-
-  await page.goto(`/f/${fileId}/analysis`);
-  await expect(page.getByRole("heading", { name: "Analysis" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/reserved for per-atom and trajectory analysis — coming in a later version/i)).toBeVisible();
-
-  // The seam does nothing: neither a convert nor a geometry read fires because of this page.
-  expect(convertCalls.filter((u) => u.includes("/v1/convert"))).toEqual([]);
 });
 
 test("prefers-reduced-motion is honoured on the workspace (S6)", async ({ page, request }) => {

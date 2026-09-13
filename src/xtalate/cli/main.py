@@ -49,7 +49,7 @@ from xtalate.discovery import DiscoveryEngine
 from xtalate.recovery import RecoveryError
 from xtalate.registry import PluginLoadError, default_registry
 from xtalate.repair import RepairError, RepairRequest
-from xtalate.sdk import ParseError
+from xtalate.sdk import AnalysisError, ParseError, run_analysis
 from xtalate.validation import (
     ToleranceProfile,
     ValidationEngine,
@@ -102,8 +102,15 @@ def main(argv: list[str] | None = None) -> int:
             "convert": _cmd_convert,
             "validate": _cmd_validate,
             "capabilities": _cmd_capabilities,
+            "analyze": _cmd_analyze,
         }[args.command]
         return handler(args, registry)
+    except AnalysisError as exc:
+        # A plugin that broke containment or crashed is a broken plugin, not a graceful refusal:
+        # a clean stderr message naming it and exit 1 (§A.2 "usage/internal error"), never a
+        # traceback — the run-time analogue of the broken-installed-plugin surface above.
+        print(f"error: analysis failed: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     except ParseError as exc:
         for issue in exc.issues:
             print(f"parse error [{issue.code}]: {issue.message}", file=sys.stderr)
@@ -532,6 +539,40 @@ def _cmd_capabilities(args: argparse.Namespace, registry: Registry) -> int:
     return EXIT_OK
 
 
+def _cmd_analyze(args: argparse.Namespace, registry: Registry) -> int:
+    """Run one installed analysis plugin against a file and render its namespaced results.
+
+    The CLI mirror of ``POST /v1/analyze`` (M70): one engine (:func:`run_analysis`), two
+    presenters. The plugin is looked up by ``name`` in the registry — an unknown name is a caller
+    mistake that names the installed set (exit 1), not a refusal; a plugin that breaks containment
+    raises :class:`AnalysisError`, handled centrally (exit 1). The results shown are exactly the
+    keys the plugin wrote — its own ``"<name>:"`` namespace, filtered out of ``custom_global`` after
+    the run, the same derivation the HTTP job uses so the two surfaces can never drift.
+    """
+    installed = {plugin.name: plugin for plugin in registry.analysis_plugins()}
+    plugin = installed.get(args.plugin)
+    if plugin is None:
+        names = ", ".join(sorted(installed)) or "(none installed)"
+        raise _UsageError(
+            f"unknown analysis plugin {args.plugin!r}; installed analysis plugins: {names} "
+            "(see `xtalate capabilities` or the plugins endpoint for the full roster)"
+        )
+    data = _read_bytes(args.file)
+    canonical, _fmt = _parse_source(registry, data, args.file, args.format)
+    annotated = run_analysis(canonical, plugin)
+    prefix = f"{plugin.name}:"
+    results = {
+        key: value
+        for key, value in annotated.user_metadata.custom_global.items()
+        if key.startswith(prefix)
+    }
+    if args.json:
+        print(_json({"plugin": plugin.name, "version": plugin.version, "results": results}))
+    else:
+        print(render.render_analysis(plugin.name, plugin.version, results))
+    return EXIT_OK
+
+
 # --- validate helpers ----------------------------------------------------------------------------
 
 
@@ -935,6 +976,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="default|strict|loose, or a custom tolerance-table file (YAML/JSON).",
     )
     p_validate.add_argument("--json", action="store_true", help="Print the ValidationReport JSON.")
+
+    p_analyze = sub.add_parser(
+        "analyze", help="Run one installed analysis plugin on a file (annotate its own namespace)."
+    )
+    p_analyze.add_argument("file")
+    p_analyze.add_argument(
+        "--plugin",
+        required=True,
+        metavar="NAME",
+        help="Analysis plugin name (an unknown name lists the installed set).",
+    )
+    p_analyze.add_argument("--format", metavar="FORMAT_ID", help="Override source format sniffing.")
+    p_analyze.add_argument(
+        "--json", action="store_true", help="Print {plugin, version, results} as JSON."
+    )
 
     p_caps = sub.add_parser("capabilities", help="Print the Capability Matrix.")
     p_caps.add_argument("format_id", nargs="?", metavar="FORMAT_ID", help="Limit to one format.")

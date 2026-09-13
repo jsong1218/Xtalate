@@ -33,6 +33,9 @@ def build_job_result(
         return {"discovery_report": discovery.body} if discovery is not None else None
     if job.kind == "convert":
         return _convert_result(job, reports, repository, object_store)
+    if job.kind == "analyze":
+        analysis = _first(reports, "analysis")
+        return {"analysis_report": analysis.body} if analysis is not None else None
     if job.kind == "validate":
         validation = _first(reports, "validation")
         return {"validation_report": validation.body} if validation is not None else None

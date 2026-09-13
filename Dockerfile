@@ -21,6 +21,14 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install --no-cache-dir ".[service]"
 
+# The reference analysis plugin, as its own installed distribution (v1.8 M70). It ships separately
+# from the core (it is not part of the wheel), so the Analysis tab needs it present in the running
+# image to have a plugin to offer and run. `--no-deps` because its only dependencies (xtalate,
+# numpy) are already installed above; this is the same "install a plugin distribution beside the
+# library" shape the toyfmt/example-format canaries use in CI.
+COPY plugins/xtalate-analysis-composition ./plugins/xtalate-analysis-composition
+RUN pip install --no-cache-dir --no-deps ./plugins/xtalate-analysis-composition
+
 # The service layer and the migration config (not part of the wheel).
 COPY backend ./backend
 COPY alembic.ini ./

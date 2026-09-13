@@ -114,7 +114,23 @@ xtalate capabilities [FORMAT_ID] [--json]
 Prints the Capability Matrix — what each format can and cannot express, per direction (read/write).
 Limit to one format by naming it.
 
-### 1.5 Exit codes
+### 1.5 `analyze`
+
+```
+xtalate analyze FILE --plugin NAME [--format FORMAT_ID] [--json]
+```
+
+Runs one **installed analysis plugin** against a file and prints the namespaced results it wrote —
+its own `"<name>:"` keys, nothing else. Analysis reads the Canonical Object and annotates its own
+namespace; it never converts or edits the file. The plugin is looked up by `--plugin NAME`; an
+unknown name lists the installed set and exits `1` (a caller mistake, not a refusal). `--json`
+prints `{plugin, version, results}`; the default is a labelled table. Absence is shown honestly — a
+value the plugin could not compute prints as its `null` with the plugin's plain-language note beside
+it, never a blank (P1, P3). Analysis plugins ship as their own installable distributions, so a fresh
+`pip install xtalate` has none until you install one (this is the CLI mirror of `POST /v1/analyze`,
+§5.7 — one engine, two presenters).
+
+### 1.6 Exit codes
 
 The CLI is CI-native: it signals outcome through the exit code, so you never parse stdout.
 
@@ -491,3 +507,62 @@ resume is pinned by
 (the v1.7 re-pause behaviour it replaced was pinned by D259's renamed test); without
 `allow_recovery` the cell-less wrap still completes as a refused HTTP-200, and without a
 pre-supplied choice the pause is still offered.
+
+### 5.7 The analysis surface (`GET /v1/plugins`, `POST /v1/analyze`) — an additive read + job kind (v1.8 M70)
+
+Analysis is a Secondary Goal that attaches at a defined seam (**P6**): a plugin reads a Canonical
+Object and annotates its own `"<name>:"` namespace — it never converts or edits the file. Two
+additive surfaces expose it over HTTP; both are additive under Part 6 §7 (a new read route and a new
+job kind — no existing route changed).
+
+**`GET /v1/plugins`** — the installed-plugin roster, across all three kinds. Public, unauthenticated,
+synchronous (not a job). It lists what *this instance* has installed, pre-sorted:
+
+```
+curl -s "http://localhost:8000/v1/plugins"
+# { "plugins": [
+#     { "kind": "analysis", "name": "composition", "version": "1.0.0", "format_name": null },
+#     { "kind": "exporter", "name": "cif", "version": "0.1.0", "format_name": "Crystallographic Information File" },
+#     { "kind": "parser",   "name": "xyz", "version": "0.1.0", "format_name": "Plain XYZ" },
+#     ... ] }
+```
+
+Each row is `{ kind: "parser" | "exporter" | "analysis", name, version, format_name }` —
+`format_name` is the human format label for parsers/exporters and `null` for analysis plugins. The
+empty analysis roster is a first-class state, not an error: analysis plugins ship as their own
+installable distributions, so an instance that has installed none simply lists none.
+
+**`POST /v1/analyze`** — run one analysis plugin against an uploaded file, as an async job (the same
+submit → poll `GET /v1/jobs/{job_id}` flow as convert). It is an **action, not an idempotent
+lookup**: each POST mints a fresh job.
+
+```
+# file_id comes from POST /v1/upload (§5.2). plugin is a name from GET /v1/plugins.
+curl -s -X POST "http://localhost:8000/v1/analyze" \
+  -H 'content-type: application/json' \
+  -d '{ "file_id": "<file_id>", "plugin": "composition", "format_override": null }'
+# → { "job_id": "...", "state": "queued" }  — then poll GET /v1/jobs/{job_id} to completed.
+```
+
+Naming an unknown plugin is refused at submit with `422 UNKNOWN_PLUGIN` (the roster is knowable up
+front from `GET /v1/plugins`). A completed job's `result.analysis_report` carries the outcome:
+
+```
+{ "analysis_report": {
+    "status": "ok",                      // "ok" | "error"
+    "plugin": "composition",
+    "plugin_version": "1.0.0",
+    "results": { "composition:formula": "H2O", "composition:mass_density_g_per_cm3": null,
+                 "composition:density_note": "mass density not computed: no simulation cell declared in the source", ... },
+    "record": { ... },                   // the appended analyze ConversionRecord; null on the error path
+    "message": null } }                  // the engine's failure sentence when status == "error"
+```
+
+**Both outcomes are a completed job at HTTP 200.** `status: "ok"` means the plugin annotated the
+object; `status: "error"` means the plugin **ran and failed** — it escaped its namespace, returned an
+unserializable value, or raised — so the object was left untouched and `message` names the plugin.
+This is the analysis analogue of a refused conversion: a *reported* failure, not a transport error.
+The only failed-job path is a **parse** failure (nothing could be read to analyze), which surfaces as
+a `failed` job with a `PARSE_ERROR` envelope exactly as inspect/convert would. Results honour absence
+(P1, P3): a key the plugin computed to "absent" is a `null` value paired with a plain-language
+`*_note`/`*_reason` sibling, never a dropped key.

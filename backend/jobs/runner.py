@@ -188,7 +188,7 @@ def _resolve_preconditions(
     inspect/convert need their upload present and its bytes unexpired; validate needs its stored
     conversion. A lost precondition is a ``_JobFailure`` (→ ``failed``), never a mid-run crash.
     """
-    if job.kind in ("inspect", "convert"):
+    if job.kind in ("inspect", "convert", "analyze"):
         file_id = job.request.get("file_id")
         upload = repository.get_upload(file_id) if isinstance(file_id, str) else None
         if upload is None:
@@ -283,6 +283,8 @@ def _dispatch(
         _run_inspect(job, upload, repository, object_store, registry, settings)
     elif job.kind == "convert":
         _run_convert(job, upload, repository, object_store, registry, settings)
+    elif job.kind == "analyze":
+        _run_analyze(job, upload, repository, object_store, registry, settings)
     elif job.kind == "validate":
         _run_validate(job, repository, settings)
     elif job.kind == "batch_convert":
@@ -320,6 +322,94 @@ def _run_inspect(
             report_id=_new_id("rep"),
             job_id=job.job_id,
             kind="discovery",
+            body=report.model_dump(mode="json"),
+        )
+    )
+
+
+def _run_analyze(
+    job: Job,
+    upload: Any,
+    repository: Repository,
+    object_store: ObjectStore,
+    registry: Registry,
+    settings: Settings,
+) -> None:
+    """Run one analysis plugin over the uploaded bytes — the ``xtalate analyze`` path (Part 2 §6).
+
+    Parse the upload to a Canonical Object (the frame cap applies, exactly as inspect/convert), then
+    hand it to :func:`~xtalate.sdk.run_analysis`. Two outcomes, **both a completed job**:
+
+    * The plugin ran and annotated the object → a ``status: "ok"`` :class:`AnalysisReport` carrying
+      the ``"<plugin>:"`` keys it wrote (verbatim) and the ``operation: "analyze"`` record the run
+      appended to Provenance.
+    * The plugin escaped its namespace, returned an unholdable value, or raised
+      (:class:`~xtalate.sdk.AnalysisError`) → a ``status: "error"`` report naming the plugin. A
+      plugin error is its *own* reported failure (D268), the analysis analogue of a refused
+      conversion — a completed HTTP-200 job, never a ``failed`` one.
+
+    A *parse* failure is different: the file could not be read at all, so there is nothing to
+    analyze. That raises out of :func:`parse_with_recovery` and falls through to the runner's
+    ``failed`` path (``_failure_body`` → ``PARSE_ERROR`` / ``UNKNOWN_FORMAT`` /
+    ``FRAME_LIMIT_EXCEEDED``), exactly as it does for inspect.
+    """
+    from backend.db.models import Report
+    from backend.models import AnalysisReport
+    from xtalate.conversion import parse_with_recovery
+    from xtalate.sdk import AnalysisError, run_analysis
+
+    plugin_name = job.request["plugin"]
+    # The plugin was verified installed at submit; look it up by its ``name`` namespace. A registry
+    # that lost it between submit and run (a hot-unload is not a supported operation) is a genuine
+    # server fault — the ``KeyError`` becomes the runner's INTERNAL_ERROR backstop.
+    plugin = {p.name: p for p in registry.analysis_plugins()}[plugin_name]
+
+    override = job.request.get("format_override") or upload.format_override
+    data = _read_bytes(object_store, upload.storage_key)
+    parsed = parse_with_recovery(
+        registry,
+        data,
+        filename=upload.filename,
+        format_override=override,
+        # The frame cap is a service policy (M39-S3, F1): an over-cap trajectory is refused
+        # mid-stream (``FrameLimitExceeded`` → 422 ``FRAME_LIMIT_EXCEEDED``) without materializing.
+        max_frames=settings.max_frames,
+    )
+
+    try:
+        annotated = run_analysis(parsed.canonical, plugin)
+    except AnalysisError as exc:
+        # A plugin error is a *reported* failure, not a transport fault (D268): a completed job
+        # whose report says the plugin failed, the analysis analogue of a refused conversion.
+        report = AnalysisReport(
+            status="error",
+            plugin=plugin.name,
+            plugin_version=plugin.version,
+            message=str(exc),
+        )
+    else:
+        # The keys this run wrote are exactly the plugin's own ``"<name>:"`` namespace merged into
+        # ``custom_global`` (run_analysis rejects any other key before merging), and the single
+        # ``operation: "analyze"`` record it appended is the last history entry (D269).
+        prefix = f"{plugin.name}:"
+        results = {
+            key: value
+            for key, value in annotated.user_metadata.custom_global.items()
+            if key.startswith(prefix)
+        }
+        report = AnalysisReport(
+            status="ok",
+            plugin=plugin.name,
+            plugin_version=plugin.version,
+            results=results,
+            record=annotated.provenance.history[-1].model_dump(mode="json"),
+        )
+
+    repository.add_report(
+        Report(
+            report_id=_new_id("rep"),
+            job_id=job.job_id,
+            kind="analysis",
             body=report.model_dump(mode="json"),
         )
     )

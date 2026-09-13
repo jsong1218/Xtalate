@@ -210,6 +210,15 @@ conversion report remains readable; re-run the conversion to regenerate the outp
 **HTTP 404.** No format with this id is registered on this instance. See
 [`/v1/capabilities`](./api) for the supported set on your instance.
 
+### UNKNOWN_PLUGIN
+
+**HTTP 422.** `POST /v1/analyze` named an analysis plugin that is not installed on this instance.
+`details.installed_plugins` lists the analysis plugins that are; [`/v1/plugins`](./api) is the full
+roster of every installed plugin. This is distinct from an analysis that *ran and failed*: a plugin
+that escapes its namespace, returns a value the Canonical Object cannot hold, or raises is a
+**completed** job (HTTP 200) whose `analysis_report` carries `status: "error"` and a message naming
+the plugin — the analysis analogue of a refused conversion, never this code.
+
 ## Server
 
 ### INTERNAL_ERROR
