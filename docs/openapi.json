@@ -1871,6 +1871,36 @@
         ]
       }
     },
+    "/v1/plugins": {
+      "get": {
+        "description": "Every installed plugin's kind, name, and version (format plugins add ``format_name``).",
+        "operationId": "plugins_v1_plugins_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Plugins V1 Plugins Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Plugins",
+        "tags": [
+          "plugins"
+        ]
+      }
+    },
     "/v1/upload": {
       "post": {
         "operationId": "upload_v1_upload_post",
