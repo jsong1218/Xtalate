@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -65,6 +65,12 @@ class _RoguePlugin(AnalysisPlugin):
         return {"other:leak": 1}
 
 
+def _returns(plugin: AnalysisPlugin) -> Callable[[], object]:
+    """A zero-arg factory yielding ``plugin`` — the callable an entry point's ``load()`` returns
+    and discovery then calls (a closure, not a defaulted lambda, so mypy can infer its type)."""
+    return lambda: plugin
+
+
 def _install(monkeypatch: pytest.MonkeyPatch, *plugins: AnalysisPlugin) -> None:
     """Route entry-point discovery to exactly ``plugins`` (deterministic across CI and a local
     editable install of the composition reference plugin — the phantom-install footgun)."""
@@ -73,7 +79,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, *plugins: AnalysisPlugin) -> None:
             p.name,
             f"test_dist:{type(p).__name__}",
             registry_mod.ANALYSIS_ENTRY_POINT_GROUP,
-            lambda p=p: p,
+            _returns(p),
         )
         for p in plugins
     ]

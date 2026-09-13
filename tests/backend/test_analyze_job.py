@@ -55,7 +55,7 @@ def _upload(client: TestClient, content: bytes, filename: str) -> str:
 
 
 def test_analyze_completes_and_embeds_the_analysis_report(client: TestClient) -> None:
-    client.app.state.registry.register_analysis_plugin(_ProbePlugin())
+    client.app.state.registry.register_analysis_plugin(_ProbePlugin())  # type: ignore[attr-defined]
     file_id = _upload(client, XYZ_SAMPLE, "mol.xyz")
 
     resp = client.post("/v1/analyze", json={"file_id": file_id, "plugin": "probe"})
@@ -94,7 +94,7 @@ def test_analyze_unknown_plugin_is_422_envelope(client: TestClient) -> None:
 def test_analyze_plugin_error_is_a_completed_job_reporting_the_failure(client: TestClient) -> None:
     # A plugin that escapes its namespace is its own reported failure (D268) — a completed HTTP-200
     # job whose report says so, the analysis analogue of a refused conversion, never a failed job.
-    client.app.state.registry.register_analysis_plugin(_RoguePlugin())
+    client.app.state.registry.register_analysis_plugin(_RoguePlugin())  # type: ignore[attr-defined]
     file_id = _upload(client, XYZ_SAMPLE, "mol.xyz")
 
     resp = client.post("/v1/analyze", json={"file_id": file_id, "plugin": "rogue"})
@@ -112,7 +112,7 @@ def test_analyze_plugin_error_is_a_completed_job_reporting_the_failure(client: T
 def test_analyze_unparseable_upload_is_a_failed_job(client: TestClient) -> None:
     # A parse failure is different from a plugin failure: the file could not be read at all, so
     # there is nothing to analyze — the job fails exactly as inspect/convert would.
-    client.app.state.registry.register_analysis_plugin(_ProbePlugin())
+    client.app.state.registry.register_analysis_plugin(_ProbePlugin())  # type: ignore[attr-defined]
     file_id = _upload(client, b"not a molecule in any known format\n", "junk.xyz")
 
     resp = client.post("/v1/analyze", json={"file_id": file_id, "plugin": "probe"})
