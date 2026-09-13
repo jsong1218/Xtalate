@@ -6,12 +6,15 @@ declare a format's sniff behaviour and capability fields inline without a real p
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from typing import BinaryIO
 
 import numpy as np
+from pydantic import JsonValue
 
 from xtalate.schema import AtomsBlock, CanonicalObject, Frame, Provenance
 from xtalate.sdk import (
+    AnalysisPlugin,
     ExporterPlugin,
     FieldCapability,
     FormatCapabilities,
@@ -82,6 +85,37 @@ class DummyParser(ParserPlugin):
             required_fields=self._required,
             native_coordinate_system="cartesian",
         )
+
+
+class DummyAnalysis(AnalysisPlugin):
+    """Configurable analysis plugin: the in-tree toy M68 proves the contract with.
+
+    Declares whatever ``name``/``version``/``results`` a test needs, and can be told to mutate its
+    argument (the read-only-view test) or to raise (the crashing-plugin test) — so the adversarial
+    cases are the *same* tiny plugin with one knob turned, not bespoke classes.
+    """
+
+    def __init__(
+        self,
+        name: str = "toy",
+        *,
+        version: str = "0.1.0",
+        results: Mapping[str, JsonValue] | None = None,
+        mutate: Callable[[CanonicalObject], None] | None = None,
+        raises: Exception | None = None,
+    ) -> None:
+        self.name = name
+        self.version = version
+        self._results = dict(results or {})
+        self._mutate = mutate
+        self._raises = raises
+
+    def analyze(self, canonical: CanonicalObject) -> Mapping[str, JsonValue]:
+        if self._mutate is not None:
+            self._mutate(canonical)
+        if self._raises is not None:
+            raise self._raises
+        return self._results
 
 
 class DummyExporter(ExporterPlugin):

@@ -10,6 +10,12 @@ At registration the plugin's ``capabilities()`` declaration is validated against
 canonical schema paths and its wildcards expanded (§4.1): "the registry rejects
 declarations with unknown paths ... which keeps the matrix and the schema from drifting."
 
+**Analysis plugins (v1.8 M68, Part 2 §6).** The third plugin kind registers here too, keyed by
+its namespace ``name`` rather than a ``format_id``: it declares no capabilities, holds no matrix
+row, and is never a conversion source or target — so ``register_analysis_plugin`` can move the
+format surface not at all, which is the structural half of "analysis is annotation, not
+conversion". The run-time half lives in ``sdk.analysis`` (D268).
+
 **Parser-only formats (read-only, v1.2 M42-S1, D159).** A ``ParserPlugin`` may register
 with **no** paired ``ExporterPlugin`` — the parser-only seam every DFT-*output* format needs
 (outputs of a code are never conversion targets). The matrix is keyed by
@@ -25,6 +31,7 @@ from __future__ import annotations
 
 from xtalate.schema.paths import expand_capability_path, is_valid_path
 from xtalate.sdk import (
+    AnalysisPlugin,
     CapabilityLevel,
     ExporterPlugin,
     FieldCapability,
@@ -104,11 +111,12 @@ class CapabilityMatrix:
 
 
 class Registry:
-    """Explicit-list registry of parsers and exporters (§4.1, §7.1)."""
+    """Explicit-list registry of parsers, exporters, and analysis plugins (§4.1, §7.1)."""
 
     def __init__(self) -> None:
         self._parsers: dict[str, ParserPlugin] = {}
         self._exporters: dict[str, ExporterPlugin] = {}
+        self._analysis: dict[str, AnalysisPlugin] = {}
         self._declarations: dict[tuple[str, str], FormatCapabilities] = {}
 
     def register_parser(self, parser: ParserPlugin) -> None:
@@ -135,11 +143,30 @@ class Registry:
         self._exporters[exporter.format_id] = exporter
         self._declarations[(exporter.format_id, "write")] = caps
 
+    def register_analysis_plugin(self, plugin: AnalysisPlugin) -> None:
+        """Register an analysis plugin under its ``name`` namespace (v1.8 M68; Part 2 §6, §7.1).
+
+        An analysis plugin carries no capability declaration: it reads a Canonical Object and
+        annotates its own ``user_metadata`` namespace, so it contributes no Capability Matrix row
+        and is neither a conversion source nor a target. Registration is therefore the duplicate
+        guard plus the name bookkeeping — and, by construction, nothing here can change what
+        ``parsers()``/``exporters()`` report, so a rogue analysis plugin cannot widen the format
+        surface (P6). The duplicate guard is on ``name``, the plugin's namespace: two plugins
+        writing the same namespace is the one collision that would make an annotation
+        unattributable.
+        """
+        if plugin.name in self._analysis:
+            raise ValueError(f"an analysis plugin is already registered for name {plugin.name!r}")
+        self._analysis[plugin.name] = plugin
+
     def parsers(self) -> list[ParserPlugin]:
         return list(self._parsers.values())
 
     def exporters(self) -> list[ExporterPlugin]:
         return list(self._exporters.values())
+
+    def analysis_plugins(self) -> list[AnalysisPlugin]:
+        return list(self._analysis.values())
 
     def get_parser(self, format_id: str) -> ParserPlugin:
         return self._parsers[format_id]

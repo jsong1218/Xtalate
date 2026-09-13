@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 import xtalate.registry as registry_mod
-from tests._dummy_plugins import DummyExporter, DummyParser
+from tests._dummy_plugins import DummyAnalysis, DummyExporter, DummyParser
 from tests._fake_entry_points import FakeEntryPoint
 from tests._fake_entry_points import patch_entry_points as _patch_entry_points
 from xtalate.capabilities.registry import InvalidCapabilityDeclaration
@@ -38,6 +38,17 @@ def test_default_registry_has_no_plugins_when_none_installed(
     # Sanity: the built-in set is non-empty and unchanged by an empty discovery pass.
     assert "xyz" in baseline
     assert baseline == {p.format_id for p in default_registry().parsers()}
+
+
+def test_no_analysis_plugin_is_registered_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """M68 ships the seam, not the science: the built-in analysis list is empty, so an
+    installation with no analysis distribution advertises no analysis plugins (P6 — the third
+    group is purely additive and the format surface is untouched)."""
+    _patch_entry_points(monkeypatch)
+    registry = default_registry()
+
+    assert registry.analysis_plugins() == []
+    assert "xyz" in {p.format_id for p in registry.parsers()}
 
 
 def test_wellformed_plugin_is_discovered(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -72,6 +83,121 @@ def test_wellformed_plugin_is_discovered(monkeypatch: pytest.MonkeyPatch) -> Non
     assert matrix.get("toyfmt", "write").format_id == "toyfmt"
     # The built-ins are untouched.
     assert registry.get_parser("xyz").format_id == "xyz"
+
+
+# --- the third group: xtalate.analysis (v1.8 M68) --------------------------------------
+
+
+def test_wellformed_analysis_plugin_is_discovered(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An analysis plugin advertised under ``xtalate.analysis`` is registered into
+    ``default_registry()`` through the same additive pass as a parser or exporter — and, because it
+    holds no capability declaration, it changes the format surface not at all."""
+    _patch_entry_points(
+        monkeypatch,
+        analysis=[
+            FakeEntryPoint(
+                "toy-analysis",
+                "toy_dist.analysis:ToyAnalysis",
+                registry_mod.ANALYSIS_ENTRY_POINT_GROUP,
+                lambda: DummyAnalysis("toy", version="0.2.0", results={"toy:score": 1}),
+            )
+        ],
+    )
+    registry = default_registry()
+
+    assert [p.name for p in registry.analysis_plugins()] == ["toy"]
+    assert registry.analysis_plugins()[0].version == "0.2.0"
+    # An analysis plugin is not a format: it leaks into neither the format lists nor the
+    # Capability Matrix, so it can never become a conversion source or target.
+    assert "toy" not in {p.format_id for p in registry.parsers()}
+    assert "toy" not in {e.format_id for e in registry.exporters()}
+    with pytest.raises(KeyError):
+        registry.capability_matrix().get("toy", "read")
+
+
+def test_a_builtin_analysis_plugin_registers_through_the_same_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The explicit first-party list is the same registration path a discovered plugin takes (the
+    P6 rule: discovery is additive, the built-in list stays explicit). Empty in M68, so the seam
+    is proven by populating it."""
+    _patch_entry_points(monkeypatch)
+    monkeypatch.setattr(
+        registry_mod, "BUILTIN_ANALYSIS_PLUGINS", (DummyAnalysis("builtin", results={}),)
+    )
+
+    assert [p.name for p in default_registry().analysis_plugins()] == ["builtin"]
+
+
+def test_broken_analysis_entry_point_fails_loudly_naming_the_entry_point(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A broken analysis plugin is never swallowed: the failure names its entry point, exactly as a
+    broken parser/exporter does (the D60–D62 behavior, inherited unchanged)."""
+
+    def boom() -> object:
+        raise ModuleNotFoundError("no module named 'toy_dist.analysis'")
+
+    _patch_entry_points(
+        monkeypatch,
+        analysis=[
+            FakeEntryPoint(
+                "toy-analysis",
+                "toy_dist.analysis:ToyAnalysis",
+                registry_mod.ANALYSIS_ENTRY_POINT_GROUP,
+                boom,
+            )
+        ],
+    )
+    with pytest.raises(PluginLoadError, match=r"toy-analysis.*toy_dist\.analysis:ToyAnalysis"):
+        default_registry()
+
+
+def test_wrong_kind_target_under_the_analysis_group_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An exporter (or parser) advertised under ``xtalate.analysis`` is rejected before
+    ``register_analysis_plugin`` — the kind check is per group, where the expected type is known."""
+    _patch_entry_points(
+        monkeypatch,
+        analysis=[
+            FakeEntryPoint(
+                "toy-analysis",
+                "toy_dist:NotAnAnalysis",
+                registry_mod.ANALYSIS_ENTRY_POINT_GROUP,
+                lambda: DummyExporter("toy"),
+            )
+        ],
+    )
+    with pytest.raises(PluginLoadError, match="not an AnalysisPlugin"):
+        default_registry()
+
+
+def test_colliding_analysis_namespace_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two analysis plugins claiming one namespace would make an annotation unattributable, so the
+    second hits the registry's duplicate guard and is rejected as a ``PluginLoadError`` naming the
+    offending entry point — the same containment the format-id collision gets."""
+    _patch_entry_points(
+        monkeypatch,
+        analysis=[
+            FakeEntryPoint(
+                "toy-analysis",
+                "toy_dist.analysis:ToyAnalysis",
+                registry_mod.ANALYSIS_ENTRY_POINT_GROUP,
+                lambda: DummyAnalysis("toy", results={"toy:a": 1}),
+            ),
+            FakeEntryPoint(
+                "toy-analysis-imposter",
+                "imposter_dist.analysis:ToyAnalysis",
+                registry_mod.ANALYSIS_ENTRY_POINT_GROUP,
+                lambda: DummyAnalysis("toy", results={"toy:b": 2}),
+            ),
+        ],
+    )
+    with pytest.raises(
+        PluginLoadError, match=r"imposter_dist\.analysis:ToyAnalysis.*already registered.*'toy'"
+    ):
+        default_registry()
 
 
 def test_factory_entry_point_is_supported(monkeypatch: pytest.MonkeyPatch) -> None:

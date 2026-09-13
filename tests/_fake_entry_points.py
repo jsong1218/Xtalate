@@ -3,7 +3,8 @@
 Not a test module (no ``test_`` prefix); imported by tests under ``tests/``. An in-memory
 stand-in for :class:`importlib.metadata.EntryPoint`, monkeypatched over
 ``xtalate.registry.entry_points`` — the real installable proof plugin is M16B
-(``tests/fixtures/xtalate_toyfmt/``).
+(``tests/fixtures/xtalate_toyfmt/``). Covers all three groups, including the analysis group
+(``xtalate.analysis``, v1.8 M68).
 """
 
 from __future__ import annotations
@@ -37,11 +38,15 @@ def patch_entry_points(
     *,
     parsers: list[FakeEntryPoint] | None = None,
     exporters: list[FakeEntryPoint] | None = None,
+    analysis: list[FakeEntryPoint] | None = None,
 ) -> None:
-    """Route ``xtalate.registry.entry_points(group=...)`` to the supplied fakes, per group."""
+    """Route ``xtalate.registry.entry_points(group=...)`` to the supplied fakes, per group.
+    A group the caller does not populate yields nothing, so every test states exactly the
+    installed plugins it exercises."""
     by_group = {
         registry_mod.PARSER_ENTRY_POINT_GROUP: parsers or [],
         registry_mod.EXPORTER_ENTRY_POINT_GROUP: exporters or [],
+        registry_mod.ANALYSIS_ENTRY_POINT_GROUP: analysis or [],
     }
 
     def fake_entry_points(*, group: str) -> list[FakeEntryPoint]:
