@@ -44,7 +44,11 @@ x-backend-env: &backend-env
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # Pulled from the AWS ECR Public Docker Hub mirror, not Docker Hub itself: the `main`
+    # compose-integration job fails intermittently on `connection reset by peer` pulling the base
+    # images from registry-1.docker.io (unauthenticated Docker Hub rate limiting). The mirror serves
+    # the byte-identical official image without that limit — same intent as the MinIO→quay.io move.
+    image: public.ecr.aws/docker/library/postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-xtalate}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xtalate}
@@ -113,7 +117,8 @@ services:
     restart: "no"
 
   queue:
-    image: redis:7-alpine
+    # AWS ECR Public Docker Hub mirror — see the postgres service above (Docker Hub pull flakiness).
+    image: public.ecr.aws/docker/library/redis:7-alpine
     # Loopback-only: this Redis has no auth, so it must never be reachable off the host.
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
@@ -188,7 +193,8 @@ services:
   # ../docs/openapi.json (mounted read-only). node_modules is a named volume so it stays off the host
   # tree and avoids a host/container platform mismatch.
   frontend:
-    image: node:20-alpine
+    # AWS ECR Public Docker Hub mirror — see the postgres service above (Docker Hub pull flakiness).
+    image: public.ecr.aws/docker/library/node:20-alpine
     working_dir: /repo/frontend
     command: ["sh", "-c", "npm install && npm run dev"]
     depends_on:
