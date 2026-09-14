@@ -10,8 +10,8 @@ type: software
 authors:
   - family-names: Song
     given-names: Jiayu
-version: 1.7.0
-date-released: 2026-08-30
+version: 1.8.0
+date-released: 2026-09-13
 license: Apache-2.0
 repository-code: "https://github.com/jsong1218/Xtalate"
 keywords:
