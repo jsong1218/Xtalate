@@ -45,12 +45,36 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      # Bring up postgres + minio + minio-init + redis + backend + worker. `--wait` blocks until the
-      # healthchecks pass — including the backend's readiness probe, which only goes green after
-      # `alembic upgrade head` and once the DB + object store answer. So a green `up` already means
-      # the full stack is live; the loop below then proves it actually converts.
+      # Fetch the stack's base images (postgres/redis from ECR Public, minio/mc from quay.io, the
+      # node image, and the python:3.13-slim build base from Docker Hub) behind a bounded backoff.
+      # Every public registry rate-limits anonymous pulls per source IP, and GitHub's shared runner
+      # pool routinely exhausts that budget: a `toomanyrequests` here aborted this job on a commit
+      # whose sibling `e2e` job pulled the identical images from a different runner IP and passed —
+      # so the limit is transient and IP-bound, not a config fault a registry-hop can cure (the
+      # earlier Docker-Hub→quay.io/ECR moves did not). `--ignore-buildable` skips backend/worker
+      # (built below); the retry rides out a throttled window rather than failing the build on it.
+      - name: Pull and build images (retry past transient registry rate limits)
+        run: |
+          attempt=1
+          max=5
+          until docker compose pull --ignore-buildable --quiet && docker compose build; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::stack images still unavailable after ${max} attempts" >&2
+              exit 1
+            fi
+            backoff=$((attempt * 20))
+            echo "::warning::image pull/build attempt ${attempt} failed; retrying in ${backoff}s"
+            sleep "${backoff}"
+            attempt=$((attempt + 1))
+          done
+
+      # Bring up postgres + minio + minio-init + redis + backend + worker from the now-local images
+      # (no pull). `--wait` blocks until the healthchecks pass — including the backend's readiness
+      # probe, which only goes green after `alembic upgrade head` and once the DB + object store
+      # answer. So a green `up` already means the full stack is live; the loop below then proves it
+      # actually converts.
       - name: Start the Tier 1 stack
-        run: docker compose up -d --build --wait
+        run: docker compose up -d --wait
 
       - name: Drive the lifecycle loop over HTTP
         env:
@@ -101,12 +125,32 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      # Bring up postgres + minio + redis + backend + worker + frontend. `--wait` blocks until every
-      # healthcheck is green — including the frontend's, which only passes once `next dev` serves — so
-      # a green `up` already means the whole stack, UI included, is ready to drive.
+      # Fetch the stack's base images behind a bounded backoff — see the compose-integration job for
+      # why (transient, IP-bound anonymous registry rate limits on the shared runner pool that no
+      # registry-hop cures). `--ignore-buildable` skips backend/worker (built below).
+      - name: Pull and build images (retry past transient registry rate limits)
+        working-directory: .
+        run: |
+          attempt=1
+          max=5
+          until docker compose pull --ignore-buildable --quiet && docker compose build; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::stack images still unavailable after ${max} attempts" >&2
+              exit 1
+            fi
+            backoff=$((attempt * 20))
+            echo "::warning::image pull/build attempt ${attempt} failed; retrying in ${backoff}s"
+            sleep "${backoff}"
+            attempt=$((attempt + 1))
+          done
+
+      # Bring up postgres + minio + redis + backend + worker + frontend from the now-local images (no
+      # pull). `--wait` blocks until every healthcheck is green — including the frontend's, which only
+      # passes once `next dev` serves — so a green `up` already means the whole stack, UI included, is
+      # ready to drive.
       - name: Start the Tier 1 stack
         working-directory: .
-        run: docker compose up -d --build --wait
+        run: docker compose up -d --wait
 
       - name: Run the e2e journeys
         env:
