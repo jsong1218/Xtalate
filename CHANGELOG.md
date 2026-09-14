@@ -19,6 +19,78 @@ Schema version: 1.0.0
 
 _The next release accrues here._
 
+## [1.8.0] — 2026-09-13
+
+Schema version: 1.0.0
+
+v1.8 is the **Analysis Plugin Surface**: a stable, third-party-facing way to *read* a Canonical
+Object and annotate its own namespace — element counts, a density, an RDF — **without touching the
+core, and without ever changing what Xtalate converts, reports, or validates** (P6). Analysis is
+annotation, not conversion: results land in `user_metadata.custom_global` (the container the core
+carries but never interprets), are contained to the plugin's own `"<name>:"` namespace *structurally*
+rather than on trust, and are recorded in Provenance as an `operation="analyze"` record. It adds
+**zero schema fields** — the schema stays `1.0.0`, because `operation="analyze"` was reserved
+vocabulary in the 1.x schema all along, and a `str` field gaining a documented value changes no
+shape. First-party analysis stops at **one trivial reference plugin** by design; RDF, coordination
+numbers, trajectory statistics, and anything ML are yours to build as plugins — the core never
+depends on, bundles, or blesses any of them.
+
+### Added — the `AnalysisPlugin` SDK, structural containment, and discovery (v1.8 M68; D267–D269)
+
+A third plugin kind on the frozen public SDK: `xtalate.sdk.AnalysisPlugin` — a `name`, a `version`,
+and one `analyze(canonical) -> Mapping[str, JsonValue]` method, no lifecycle hooks or configuration
+language (D267). The runner (`xtalate.sdk.run_analysis`) makes two guarantees literal:
+**containment is enforced, not trusted** (D268) — the plugin is handed a **deep copy** so it can
+mutate nothing that matters, and only keys prefixed `"<name>:"` are merged; any escape (an
+un-namespaced key, a scientific path, another plugin's namespace), any value `user_metadata` cannot
+hold, or any exception is an `AnalysisError` with the caller's object returned **untouched**; and
+**every run is recorded** (D269) — one `ConversionRecord(operation="analyze")` naming the plugin,
+its version, and the keys it wrote. Discovery gains a third entry-point group, `xtalate.analysis`,
+resolved by `default_registry()` exactly like parsers and exporters.
+
+### Added — the composition reference plugin (v1.8 M69; D270)
+
+`xtalate-analysis-composition`, its own installable distribution and a hard CI canary: element
+counts, a reduced Hill formula, and mass density — deliberately trivial science, deliberately
+exemplary honesty. Mass density is reported **only** when the source carries both a cell and masses;
+otherwise it is `null` with a `density_note` stating *why*, and the plugin **never** fabricates
+masses (filling absent data is recovery's job, and recovery is explicit — P3/P4, D270). An
+import-linter contract proves it builds only against the frozen `xtalate.sdk` and `xtalate.schema`.
+
+### Added — the plugin inventory, the analyze surface, and the Analysis tab (v1.8 M70; D271–D272)
+
+You write a plugin once; three surfaces read the keys it wrote, all through the **same** engine, so
+they can never drift. `GET /v1/plugins` advertises the installed plugins of **all** kinds through one
+inventory rather than three per-kind routes (D271); `POST /v1/analyze` runs one plugin as a job and
+embeds its result in the completed job's `analysis_report`; the CLI's `xtalate analyze FILE --plugin
+<name>` prints the namespaced keys as a labelled table (or `--json`); and the Web UI's **Analysis
+tab** offers the installed plugins and renders results **generically** — walking the map by JSON
+value type with zero branching on any key or plugin name, so a third-party plugin renders through
+exactly the same path as the reference one. A plugin that breaks containment is a **reported**
+failure — a completed job with `analysis_report.status: "error"` naming the plugin — not a 500
+(D272).
+
+### Added — the third-party proof and the release (v1.8 M71)
+
+The version's stopping bar, run literally: `tests/fixtures/xtalate_toyanalysis`, a toy third-party
+analysis plugin as its own installable distribution, **written from the developer guide's "Writing
+an analysis plugin" chapter alone** — against only the frozen public SDK, with zero core edits — and
+installed as a second analysis CI canary beside the reference plugin. Its suite proves the whole
+contract end to end on a *real installed distribution*: discovered additively in the registry, run
+and contained by `run_analysis`, absence-honest about a cell-less source's volume (P3/P4), and
+rendered on the CLI consumer surface. The package reaches **1.8.0** on schema **1.0.0**; the git tag
+and publish are the maintainer's manual, nightly-green-gated step.
+
+### Changed — the `main` compose CI rides out transient registry rate limits (D273)
+
+The `main.yml` compose-integration and e2e jobs split the single `docker compose up -d --build
+--wait` into a bounded backoff-retry `docker compose pull --ignore-buildable && docker compose build`
+followed by `docker compose up -d --wait` from the now-local images. On both the M69 and M70 merges
+the compose job aborted with `toomanyrequests: Rate exceeded` while a sibling job pulling the
+identical images from a different runner IP passed — proof the throttle is a *transient, per-IP
+anonymous registry rate limit* every public registry enforces, not a config fault a registry-hop
+cures (D273).
+
 ## [1.7.0] — 2026-09-06
 
 Schema version: 1.0.0
