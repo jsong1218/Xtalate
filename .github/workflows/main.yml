@@ -30,6 +30,11 @@ permissions:
 jobs:
   compose-integration:
     runs-on: ubuntu-latest
+    # Mapped so the login step below can gate on presence in `if:` (the secrets context is not
+    # reliably available there). Absent on forks / secret-less contexts — the step then skips and the
+    # pull falls back to the anonymous+retry path unchanged.
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -45,14 +50,27 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      # Authenticate to Docker Hub before any pull so the remaining Docker-Hub images (the
+      # python:3.13-slim build base and the node image) draw on the account's much higher, per-account
+      # pull budget instead of the low anonymous per-IP one the shared runner pool exhausts. Skipped
+      # when the secret is unset (forks, secret-less contexts): the anonymous+retry path below still
+      # runs. A read-only access token, not a password (see the repo secrets DOCKERHUB_USERNAME /
+      # DOCKERHUB_TOKEN).
+      - name: Log in to Docker Hub (raise the pull rate limit)
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       # Fetch the stack's base images (postgres/redis from ECR Public, minio/mc from quay.io, the
       # node image, and the python:3.13-slim build base from Docker Hub) behind a bounded backoff.
       # Every public registry rate-limits anonymous pulls per source IP, and GitHub's shared runner
       # pool routinely exhausts that budget: a `toomanyrequests` here aborted this job on a commit
-      # whose sibling `e2e` job pulled the identical images from a different runner IP and passed —
-      # so the limit is transient and IP-bound, not a config fault a registry-hop can cure (the
-      # earlier Docker-Hub→quay.io/ECR moves did not). `--ignore-buildable` skips backend/worker
-      # (built below); the retry rides out a throttled window rather than failing the build on it.
+      # whose sibling `e2e` job pulled the identical images from a different runner IP and passed. The
+      # Docker Hub login above raises the ceiling for the images still pulled from there; this retry
+      # remains the backstop for a throttled window on any registry (and the whole anonymous path when
+      # the login is skipped). `--ignore-buildable` skips backend/worker (built below).
       - name: Pull and build images (retry past transient registry rate limits)
         run: |
           attempt=1
@@ -109,6 +127,8 @@ jobs:
       # wall-clock minute — including the next journey's upload — a timing flake, not a product one.
       # Raise the lane's window far above suite volume; the limiter stays on (unit-tested elsewhere).
       XTALATE_RATE_LIMIT_PER_MINUTE: "100000"
+      # Mapped so the Docker Hub login step can gate on presence in `if:` (see compose-integration).
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -125,9 +145,20 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
+      # Authenticate to Docker Hub before any pull (see compose-integration for the full rationale):
+      # the account's per-account pull budget replaces the anonymous per-IP one for the images still
+      # drawn from Docker Hub. Skipped when the secret is unset; the retry below still runs.
+      - name: Log in to Docker Hub (raise the pull rate limit)
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       # Fetch the stack's base images behind a bounded backoff — see the compose-integration job for
-      # why (transient, IP-bound anonymous registry rate limits on the shared runner pool that no
-      # registry-hop cures). `--ignore-buildable` skips backend/worker (built below).
+      # why (transient, IP-bound anonymous registry rate limits on the shared runner pool). The login
+      # above raises the ceiling for the Docker-Hub images; this retry is the backstop for a throttled
+      # window on any registry. `--ignore-buildable` skips backend/worker (built below).
       - name: Pull and build images (retry past transient registry rate limits)
         working-directory: .
         run: |
