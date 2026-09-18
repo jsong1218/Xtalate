@@ -697,10 +697,12 @@ class Deduplicate(RepairOperation):
     atoms — a reductive loss, not a transformative one — and the report warns with
     ``DEDUPE_REMOVED_ATOMS`` (the count removed) on every application that removed
     something. A trajectory **refuses** (``RepairError``): inter-atom distances change
-    frame to frame, a per-frame removal set would violate the trajectory-wide
-    constant-atom-count invariant and the object-level ``custom_per_atom``, and atoms
-    transiently within a threshold is physics, not a defect — "duplicate atoms" is a
-    structure-cleanup concern.
+    frame to frame, so a removal set is per-frame, but the reindex spine applies one
+    frame-invariant survivor selection to every frame (D252) — a per-frame set has no
+    single well-defined sequence — and atoms transiently within a threshold is physics,
+    not a defect. "Duplicate atoms" is a structure-cleanup concern. (The schema no
+    longer forbids per-frame atom counts as of 2.0.0/M72; dedupe still refuses a
+    trajectory for the reindex reason, not the old constant-N one.)
     """
 
     operation = "deduplicate"
@@ -730,9 +732,9 @@ class Deduplicate(RepairOperation):
             raise RepairError(
                 "deduplicate operates on a single structure only — this object has "
                 f"{obj.frame_count} frames; inter-atom distances change frame to frame, "
-                "and a per-frame removal set would violate the trajectory-wide "
-                "constant-atom-count invariant (and the object-level custom_per_atom), "
-                "so a trajectory cannot be deduplicated"
+                "so the removal set is per-frame, but the reindex spine applies one "
+                "frame-invariant survivor selection to every frame — a trajectory cannot "
+                "be deduplicated"
             )
         frame = obj.frames[0]
         n = frame.atoms.positions.shape[0]

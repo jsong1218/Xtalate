@@ -70,7 +70,7 @@ def test_golden_hashes_match_manifest(case: str) -> None:
     expected = GOLDEN / case / manifest["expected_canonical"]
     assert _sha256(source) == manifest["sha256"]
     assert _sha256(expected) == manifest["expected_sha256"]
-    assert manifest["canonical_schema_version"] == "1.0.0"
+    assert manifest["canonical_schema_version"] == "2.0.0"
     assert manifest["origin"]["license"] == "Apache-2.0"
 
 

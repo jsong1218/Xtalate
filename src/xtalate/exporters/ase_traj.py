@@ -56,7 +56,6 @@ class AseTrajExporter(ExporterPlugin):
     version = "0.1.0"
 
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
-        custom_per_atom = canonical.user_metadata.custom_per_atom
         per_frame = canonical.user_metadata.custom_per_frame
         writer = TrajectoryWriter(stream, "w")
         for frame in canonical.frames:
@@ -64,7 +63,7 @@ class AseTrajExporter(ExporterPlugin):
                 key: (values[frame.index] if frame.index < len(values) else None)
                 for key, values in per_frame.items()
             }
-            writer.write(self._atoms_from(frame, custom_per_atom, row))
+            writer.write(self._atoms_from(frame, frame.custom_per_atom, row))  # per-frame (M72)
         # Deliberately not closed: TrajectoryWriter.close() would close the caller's stream, and ULM
         # flushes each frame on write, so the output is already complete (M14; verified round-trip).
 

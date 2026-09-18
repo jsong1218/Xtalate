@@ -155,6 +155,14 @@ def canonical_objects(draw: st.DrawFn) -> CanonicalObject:
 
     frames = [draw(_frame(i, symbols, n)) for i in range(f)]
 
+    # custom_per_atom relocated onto each Frame in schema 2.0.0 (M72). Parsers produce a
+    # frame-invariant per-atom map for a constant-N object (frame 0's columns are the object-level
+    # view), so the same length-n dict is drawn once and placed on every frame — the shape a real
+    # parser emits, and the shape the reindex spine and the report path both assume.
+    per_atom = draw(st.dictionaries(_keys, st.lists(_floats, min_size=n, max_size=n), max_size=2))
+    for frame in frames:
+        frame["custom_per_atom"] = per_atom
+
     data: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "frames": frames,
@@ -168,18 +176,16 @@ def canonical_objects(draw: st.DrawFn) -> CanonicalObject:
             "parse_notes": [],
             "history": [],
         },
-        # custom_per_atom / custom_per_frame become extXYZ per-atom/per-frame *columns* on export;
-        # numeric columns carry through cleanly and unambiguously, whereas free-form string columns
-        # surface exporter column-formatting edge cases (empty tokens, type inference) that are I/O
-        # robustness, not report completeness. So the per-atom/per-frame carry-through is exercised
-        # with numeric values; custom_global (a comment-line key=value) keeps the mixed scalar set.
+        # custom_per_frame becomes an extXYZ per-frame *column* on export (custom_per_atom, now on
+        # each frame above, becomes the per-atom column); numeric columns carry through cleanly and
+        # unambiguously, whereas free-form string columns surface exporter column-formatting edge
+        # cases (empty tokens, type inference) that are I/O robustness, not report completeness. So
+        # the carry-through is exercised with numeric values; custom_global (a comment-line
+        # key=value) keeps the mixed scalar set.
         "user_metadata": {
             "tags": draw(st.lists(_keys, max_size=3, unique=True)),
             "annotations": draw(st.dictionaries(_keys, _text, max_size=2)),
             "custom_global": draw(st.dictionaries(_keys, _scalars, max_size=2)),
-            "custom_per_atom": draw(
-                st.dictionaries(_keys, st.lists(_floats, min_size=n, max_size=n), max_size=2)
-            ),
             "custom_per_frame": draw(
                 st.dictionaries(_keys, st.lists(_floats, min_size=f, max_size=f), max_size=2)
             ),

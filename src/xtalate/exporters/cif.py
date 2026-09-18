@@ -297,7 +297,7 @@ class CifExporter(ExporterPlugin):
     def _atom_site_loop(
         self, canonical: CanonicalObject, symbols: list[str], fractional: np.ndarray
     ) -> list[str]:
-        per_atom = canonical.user_metadata.custom_per_atom
+        per_atom = canonical.frames[0].custom_per_atom  # per-frame in schema 2.0.0 (M72)
         n = len(symbols)
         # Fallbacks are applied **per atom**, not per column. `or` tests truthiness, and a column
         # of all-`None` — a source whose _atom_site_type_symbol was `?` on every row — is a

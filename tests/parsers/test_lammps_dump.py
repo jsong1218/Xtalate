@@ -161,7 +161,7 @@ def test_velocities_converted_from_metal_angstrom_per_picosecond() -> None:
 def test_generic_columns_carried_with_warning() -> None:
     result = _parse("metal-ortho-declared")
     assert result.issues[0].code == "LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED"
-    carried = result.canonical.user_metadata.custom_per_atom["lammps_dump:c_pe"]
+    carried = result.canonical.frames[0].custom_per_atom["lammps_dump:c_pe"]
     assert np.asarray(carried).tolist() == [5.0, 6.0]
 
 
@@ -172,7 +172,7 @@ def test_image_flags_carried_specifically_and_never_applied() -> None:
     codes = [i.code for i in result.issues]
     assert "LAMMPSDUMP_IMAGE_FLAGS_CARRIED" in codes
     assert "LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED" not in codes
-    carried = result.canonical.user_metadata.custom_per_atom["lammps_dump:image_flags"]
+    carried = result.canonical.frames[0].custom_per_atom["lammps_dump:image_flags"]
     assert np.asarray(carried).tolist() == [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
     # The positions stay wrapped — the parser never unwraps (D43); atom 2 is at (0.5,0.5,0.5),
     # not (10.5,0.5,0.5).
@@ -202,7 +202,7 @@ def test_partial_image_flag_family_is_malformed() -> None:
 
 def test_xu_counterpart_carries_no_image_flags() -> None:
     result = _parse("xu-counterpart-metal")
-    assert "lammps_dump:image_flags" not in result.canonical.user_metadata.custom_per_atom
+    assert "lammps_dump:image_flags" not in result.canonical.frames[0].custom_per_atom
     assert all(i.code != "LAMMPSDUMP_IMAGE_FLAGS_CARRIED" for i in result.issues)
 
 
@@ -215,7 +215,7 @@ def test_per_frame_column_variance_warns_once_per_column() -> None:
     codes = [i.code for i in result.issues]
     assert codes.count("LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE") == 1
     # Frame 0's values are carried; the diverging frame 1 is not silently kept.
-    carried = result.canonical.user_metadata.custom_per_atom["lammps_dump:c_pe"]
+    carried = result.canonical.frames[0].custom_per_atom["lammps_dump:c_pe"]
     assert np.asarray(carried).tolist() == [5.0, 6.0]
 
 
@@ -265,7 +265,7 @@ def test_species_map_recovery_validates_against_observed_types() -> None:
     assert ok.canonical.frames[0].atoms.symbols == ["Si", "O"]
     assert any(i.code == "LAMMPSDUMP_SPECIES_SUPPLIED" for i in ok.issues)
     # The original type numbers ride along under the carry key (frame 0, first dim N).
-    assert np.asarray(ok.canonical.user_metadata.custom_per_atom["lammps_dump:type"]).tolist() == [
+    assert np.asarray(ok.canonical.frames[0].custom_per_atom["lammps_dump:type"]).tolist() == [
         1.0,
         2.0,
     ]

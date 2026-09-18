@@ -1852,7 +1852,8 @@ def _apply_write_plan(
         tags=um.tags if "user_metadata.tags" in plan else [],
         annotations=um.annotations if "user_metadata.annotations" in plan else {},
         custom_global=_kept_custom(um.custom_global, "user_metadata.custom_global", plan),
-        custom_per_atom=_kept_custom(um.custom_per_atom, "user_metadata.custom_per_atom", plan),
+        # custom_per_atom is filtered per frame in _filter_frame (relocated onto Frame in 2.0.0,
+        # M72).
         custom_per_frame=_kept_custom(um.custom_per_frame, "user_metadata.custom_per_frame", plan),
     )
 
@@ -2004,6 +2005,10 @@ def _filter_frame(frame: Frame, plan: set[str]) -> Frame:
         cell=cell,
         dynamics=dynamics,
         electronic=electronic,
+        # custom_per_atom relocated onto each Frame in schema 2.0.0 (M72); filtered per frame vs
+        # the stable object-level identifier (the per-atom category label the write_plan and the
+        # Capability Matrix share, §3.10).
+        custom_per_atom=_kept_custom(frame.custom_per_atom, "user_metadata.custom_per_atom", plan),
     )
 
 

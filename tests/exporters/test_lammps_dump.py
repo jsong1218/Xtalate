@@ -46,6 +46,25 @@ def parse_dump_case(case: str) -> ParseResult:
     return make_lammps_dump_parser().parse(io.BytesIO(src), filename=None)
 
 
+def _without_per_atom_key(obj: CanonicalObject, key: str) -> CanonicalObject:
+    """Drop ``key`` from every frame's ``custom_per_atom`` (per-atom data is per-frame as of
+    schema 2.0.0, M72) so a writer-generated column can be excluded from a scientific diff."""
+    return obj.model_copy(
+        update={
+            "frames": [
+                frame.model_copy(
+                    update={
+                        "custom_per_atom": {
+                            k: v for k, v in frame.custom_per_atom.items() if k != key
+                        }
+                    }
+                )
+                for frame in obj.frames
+            ]
+        }
+    )
+
+
 def _resolved(case: str = _METAL) -> CanonicalObject:
     obj = parse_dump_case(case).canonical
     style = obj.user_metadata.custom_global[_UNITS_KEY]
@@ -188,32 +207,10 @@ def test_small_roundtrip_reproduces_scientific_content() -> None:
     since the source dump never had it (its element column was the identity)."""
     obj = _resolved(_METAL)
     reparsed = _reparse(_export(obj))
-    left = obj.model_copy(
-        update={
-            "user_metadata": obj.user_metadata.model_copy(
-                update={
-                    "custom_per_atom": {
-                        k: v
-                        for k, v in obj.user_metadata.custom_per_atom.items()
-                        if k != "lammps_dump:type"
-                    }
-                }
-            )
-        }
-    )
-    right = reparsed.model_copy(
-        update={
-            "user_metadata": reparsed.user_metadata.model_copy(
-                update={
-                    "custom_per_atom": {
-                        k: v
-                        for k, v in reparsed.user_metadata.custom_per_atom.items()
-                        if k != "lammps_dump:type"
-                    }
-                }
-            )
-        }
-    )
+    # custom_per_atom lives on each Frame as of schema 2.0.0 (M72), so the writer's generated
+    # ``type`` column is stripped from every frame rather than from a single object-level map.
+    left = _without_per_atom_key(obj, "lammps_dump:type")
+    right = _without_per_atom_key(reparsed, "lammps_dump:type")
     assert_scientifically_equal(left, right)
 
 
@@ -227,8 +224,8 @@ def test_image_flags_are_written_back_with_the_coordinate_convention() -> None:
     assert rows[1].split()[-3:] == ["1", "0", "0"]
     reparsed = _reparse(_export(obj))
     np.testing.assert_array_equal(
-        reparsed.user_metadata.custom_per_atom["lammps_dump:image_flags"],
-        obj.user_metadata.custom_per_atom["lammps_dump:image_flags"],
+        reparsed.frames[0].custom_per_atom["lammps_dump:image_flags"],
+        obj.frames[0].custom_per_atom["lammps_dump:image_flags"],
     )
 
 
@@ -257,7 +254,7 @@ def test_wrapped_flags_roundtrip_reconstructs_unwrapped_positions_in_test() -> N
     wrapped = _resolved("wrapped-flags-metal")
     reparsed = _reparse(_export(wrapped))
     xu = _resolved("xu-counterpart-metal")
-    flags = np.asarray(reparsed.user_metadata.custom_per_atom["lammps_dump:image_flags"])
+    flags = np.asarray(reparsed.frames[0].custom_per_atom["lammps_dump:image_flags"])
     cell = reparsed.frames[0].cell
     assert cell is not None
     reconstructed = reparsed.frames[0].atoms.positions + flags * np.diag(cell.lattice_vectors)

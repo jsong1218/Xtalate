@@ -128,7 +128,7 @@ def test_wrapped_flags_and_xu_counterpart_reconstruct_identically() -> None:
     The parser never applies them — the test owns the unwrap arithmetic."""
     wrapped = _parse("wrapped-flags-metal")
     xu = _parse("xu-counterpart-metal")
-    flags = wrapped.user_metadata.custom_per_atom["lammps_dump:image_flags"]
+    flags = wrapped.frames[0].custom_per_atom["lammps_dump:image_flags"]
     assert np.asarray(flags).shape == (2, 3)
     # The wrapped positions are still wrapped (the parser did not unwrap).
     assert wrapped.frames[0].atoms.positions[1].tolist() == [0.5, 0.5, 0.5]

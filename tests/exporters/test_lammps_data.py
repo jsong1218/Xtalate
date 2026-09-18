@@ -307,7 +307,7 @@ def test_multi_frame_object_is_not_unrepresentable() -> None:
 def test_molecule_id_without_charges_is_unrepresentable() -> None:
     obj = _load("full-triclinic-topology")
     # The full-style object carries a molecule-id; strip its charges → no writable style remains.
-    assert _MOLECULE_KEY in obj.user_metadata.custom_per_atom
+    assert _MOLECULE_KEY in obj.frames[0].custom_per_atom
     obj.frames[0].electronic.charges = None
     reason = make_lammps_data_exporter().unrepresentable(obj)
     assert reason is not None and "molecule-id" in reason

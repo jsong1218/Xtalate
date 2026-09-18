@@ -302,10 +302,13 @@ def _assemble(
                 cell=cell,
                 dynamics=Dynamics(velocities=velocities),
                 electronic=Electronic(charges=charges, magnetic_moments=magmoms),
+                # custom_per_atom is per-frame in schema 2.0.0 (M72): a pymatgen structure/molecule
+                # is one configuration, so its verbatim per-site carries live on that frame.
+                custom_per_atom=custom_per_atom,
             )
         ],
         provenance=_build_provenance(original_coordinate_system=original_coordinate_system),
-        user_metadata=UserMetadata(custom_global=custom_global, custom_per_atom=custom_per_atom),
+        user_metadata=UserMetadata(custom_global=custom_global),
     )
 
 
@@ -328,7 +331,7 @@ def to_pymatgen(canonical: CanonicalObject) -> Structure | Molecule:
         )
     frame = canonical.frames[0]
     um = canonical.user_metadata
-    sites = _restore_species(frame, um)
+    sites = _restore_species(frame)
 
     if frame.cell is not None:
         structure = Structure(
@@ -336,7 +339,7 @@ def to_pymatgen(canonical: CanonicalObject) -> Structure | Molecule:
             species=sites,
             coords=frame.atoms.positions.tolist(),
             coords_are_cartesian=True,
-            site_properties=_restore_site_properties(frame, um),
+            site_properties=_restore_site_properties(frame),
         )
         carried_charge = um.custom_global.get(_CHARGE_KEY)
         if carried_charge is not None:
@@ -346,7 +349,7 @@ def to_pymatgen(canonical: CanonicalObject) -> Structure | Molecule:
     kwargs: dict[str, Any] = {
         "species": sites,
         "coords": frame.atoms.positions.tolist(),
-        "site_properties": _restore_site_properties(frame, um),
+        "site_properties": _restore_site_properties(frame),
     }
     carried_charge = um.custom_global.get(_CHARGE_KEY)
     if carried_charge is not None:
@@ -379,7 +382,7 @@ def _numeric_carry(value: JsonValue, key: str) -> float:
     return float(value)
 
 
-def _restore_species(frame: Frame, um: UserMetadata) -> list[Any]:
+def _restore_species(frame: Frame) -> list[Any]:
     """Re-decorate species with carried oxidation states (bare element symbols where none
     was declared) and restore partial site occupancy. A site whose ``atoms.occupancies``
     value is not full becomes a per-site ``{species: fraction}`` dict — pymatgen's native
@@ -390,7 +393,7 @@ def _restore_species(frame: Frame, um: UserMetadata) -> list[Any]:
     silently change the chemistry."""
     from pymatgen.core import Species
 
-    oxi_states = um.custom_per_atom.get(_OXI_STATE_KEY)
+    oxi_states = frame.custom_per_atom.get(_OXI_STATE_KEY)  # per-frame in schema 2.0.0 (M72)
     occupancies = frame.atoms.occupancies
     sites: list[Any] = []
     for i, symbol in enumerate(frame.atoms.symbols):
@@ -410,7 +413,7 @@ def _restore_species(frame: Frame, um: UserMetadata) -> list[Any]:
     return sites
 
 
-def _restore_site_properties(frame: Frame, um: UserMetadata) -> dict[str, Any]:
+def _restore_site_properties(frame: Frame) -> dict[str, Any]:
     """Invert the site-property/carry mapping: the three mapped arrays go back to their
     pymatgen site-property names, and every ``pymatgen:``-namespaced carry restores under
     its bare key. Foreign-namespace carries (other formats') stay out — they belong to
@@ -422,7 +425,7 @@ def _restore_site_properties(frame: Frame, um: UserMetadata) -> dict[str, Any]:
         properties["charge"] = frame.electronic.charges.tolist()
     if frame.dynamics.velocities is not None:
         properties["velocities"] = frame.dynamics.velocities.tolist()
-    for key, value in um.custom_per_atom.items():
+    for key, value in frame.custom_per_atom.items():  # per-frame in schema 2.0.0 (M72)
         # The oxidation-state carry is restored onto the species by _restore_species; it must
         # NOT also reappear as a site property the source never had (a round-trip infidelity).
         if key.startswith(_KEY_PREFIX) and key != _OXI_STATE_KEY:

@@ -1,22 +1,21 @@
 """The shared per-atom reindex spine (v1.7 M65-S1; D252).
 
 ``reindex_per_atom`` is the **one place** that touches the atom axis of a Canonical
-Object. The per-atom arrays are spread across **four** schema locations
-(``AtomsBlock`` per frame, ``Dynamics`` per frame, ``Electronic`` per frame, and the
-object-level ``UserMetadata.custom_per_atom`` — both the ndarray and the
-``list[JsonValue]`` forms), and ``constraints[].atom_indices`` are per-atom
-*references* rather than values. Species reorder (a permutation) and deduplicate (a
-survivor selection) both reindex through this single helper, so a half-reindexed
-object — positions belonging to one atom, velocities/forces/charges to another — is
-impossible by construction (the silent corruption this milestone exists to prevent,
-D252).
+Object. The per-atom arrays are spread across **four** per-frame schema locations
+(``AtomsBlock``, ``Dynamics``, ``Electronic``, and ``Frame.custom_per_atom`` — both
+the ndarray and the ``list[JsonValue]`` forms; relocated onto ``Frame`` in schema
+2.0.0, M72), and ``constraints[].atom_indices`` are per-atom *references* rather than
+values. Species reorder (a permutation) and deduplicate (a survivor selection) both
+reindex through this single helper, so a half-reindexed object — positions belonging
+to one atom, velocities/forces/charges to another — is impossible by construction (the
+silent corruption this milestone exists to prevent, D252).
 
 The helper is **pure and deterministic**: it takes a ``CanonicalObject`` and an index
 sequence (output position *i* holds source atom ``sequence[i]``) and returns a new
 object via ``model_copy``; the caller's object is never mutated. Every per-atom
-array/reference follows the same sequence; every frame is reindexed identically; and
-the object-level ``custom_per_atom`` is reindexed **once** (one reindex covers all
-frames, because the map is frame-invariant by construction). A
+array/reference follows the same sequence and every frame is reindexed identically —
+including each frame's ``custom_per_atom`` (the map is frame-invariant for a constant-N
+object, so the same sequence is well-defined on every frame). A
 ``constraints[].atom_indices`` entry naming an index outside the sequence — a
 *removed* atom under a constraint, under dedupe — is refused with a ``RepairError``
 rather than silently dropped or reassigned: choosing which surviving atom inherits a
@@ -30,7 +29,7 @@ from typing import Any
 import numpy as np
 
 from xtalate.repair.contract import RepairError
-from xtalate.schema import CanonicalObject, Constraint, Frame, UserMetadata
+from xtalate.schema import CanonicalObject, Constraint, Frame
 
 
 def _validated_sequence(sequence: Any, n: int, *, operation: str) -> list[int]:
@@ -72,8 +71,8 @@ def reindex_per_atom(
     ``sequence[i]`` is the source atom written at output position *i*: for reorder a
     permutation of ``range(N)``; for dedupe a survivor selection. Applied identically
     to every frame (atom identity is frame-invariant, so a frame-invariant map is
-    always well-defined — the constant-N invariant is trajectory-wide) and once to the
-    object-level ``custom_per_atom`` (both the ndarray and ``list[JsonValue]`` forms).
+    always well-defined — the constant-N invariant is trajectory-wide), including each
+    frame's ``custom_per_atom`` (both the ndarray and ``list[JsonValue]`` forms).
     ``constraints[].atom_indices`` are remapped through the inverse of ``sequence``;
     a reference to an index the sequence does not contain raises ``RepairError``
     (the dedupe removed-atom-under-a-constraint refusal, surfaced here so the two
@@ -84,8 +83,7 @@ def reindex_per_atom(
     # Source index -> output index, for exactly the surviving source atoms.
     inverse = {old: new for new, old in enumerate(idx)}
     frames = [_reindex_frame(f, idx, inverse, operation=operation) for f in obj.frames]
-    user_metadata = _reindex_user_metadata(obj.user_metadata, idx)
-    return obj.model_copy(update={"frames": frames, "user_metadata": user_metadata})
+    return obj.model_copy(update={"frames": frames})
 
 
 def _reindex_frame(
@@ -130,8 +128,24 @@ def _reindex_frame(
         }
     )
 
+    # custom_per_atom relocated onto Frame in schema 2.0.0 (M72): reindex it here per frame (the map
+    # is frame-invariant for a constant-N object, so the same sequence applies to every frame). The
+    # reindexed values keep their form — ndarray[idx] stays an ndarray, list stays a list — so the
+    # model_copy update needs no re-coercion.
+    per_atom: dict[str, Any] = {}
+    for key, val in frame.custom_per_atom.items():
+        if isinstance(val, np.ndarray):
+            per_atom[key] = val[idx]
+        else:  # list[JsonValue] — the §3.10 carry-through of per-atom free text.
+            per_atom[key] = [val[i] for i in idx]
+
     return frame.model_copy(
-        update={"atoms": new_atoms, "dynamics": new_dynamics, "electronic": new_electronic}
+        update={
+            "atoms": new_atoms,
+            "dynamics": new_dynamics,
+            "electronic": new_electronic,
+            "custom_per_atom": per_atom,
+        }
     )
 
 
@@ -150,14 +164,3 @@ def _reindex_constraint(
                 "keeps constrained atoms or drop the constraint first"
             ) from None
     return constraint.model_copy(update={"atom_indices": remapped})
-
-
-def _reindex_user_metadata(um: UserMetadata, idx: list[int]) -> UserMetadata:
-    """Reindex the object-level ``custom_per_atom`` (ndarray and list forms), once."""
-    per_atom: dict[str, Any] = {}
-    for key, val in um.custom_per_atom.items():
-        if isinstance(val, np.ndarray):
-            per_atom[key] = val[idx]
-        else:  # list[JsonValue] — the §3.10 carry-through of per-atom free text.
-            per_atom[key] = [val[i] for i in idx]
-    return um.model_copy(update={"custom_per_atom": per_atom})

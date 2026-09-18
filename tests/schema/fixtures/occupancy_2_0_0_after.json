@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "frames": [
     {
       "index": 0,
@@ -75,6 +75,18 @@
         "charges": null,
         "magnetic_moments": null,
         "total_spin": null
+      },
+      "custom_per_atom": {
+        "cif:atom_site_label": [
+          "Na1",
+          "Cl1",
+          "Cl2"
+        ],
+        "cif:type_symbol": [
+          "Na",
+          "Cl",
+          "Cl"
+        ]
       }
     }
   ],
@@ -109,8 +121,9 @@
         "tool_version": "<migrated>",
         "parser_version": null,
         "assumptions": [
-          "Migrated canonical schema 0.1.0 \u2192 1.0.0.",
-          "Promoted user_metadata.custom_per_atom['cif:occupancy'] to atoms.occupancies for 3 atom(s)."
+          "Migrated canonical schema 0.1.0 → 2.0.0.",
+          "Promoted user_metadata.custom_per_atom['cif:occupancy'] to atoms.occupancies for 3 atom(s).",
+          "Relocated user_metadata.custom_per_atom (cif:atom_site_label, cif:type_symbol) onto each frame's custom_per_atom (per-atom data is per-frame as of schema 2.0.0)."
         ]
       }
     ]
@@ -120,18 +133,6 @@
     "annotations": {},
     "custom_global": {
       "cif:data_block_name": "occupancy_cell_uncertainty"
-    },
-    "custom_per_atom": {
-      "cif:atom_site_label": [
-        "Na1",
-        "Cl1",
-        "Cl2"
-      ],
-      "cif:type_symbol": [
-        "Na",
-        "Cl",
-        "Cl"
-      ]
     },
     "custom_per_frame": {}
   }

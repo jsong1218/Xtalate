@@ -323,6 +323,9 @@ def build(
         atoms=AtomsBlock(symbols=symbols, positions=positions, occupancies=occupancies),
         cell=Cell(lattice_vectors=lattice, pbc=(True, True, True), space_group=space_group),
         electronic=Electronic(charges=charges),
+        # custom_per_atom is per-frame in schema 2.0.0 (M72): a CIF block is one structure, so its
+        # per-site carry-through columns (labels, type symbols) live on that frame.
+        custom_per_atom=custom_per_atom,
     )
     canonical = CanonicalObject(
         frames=[frame],
@@ -337,7 +340,6 @@ def build(
         ),
         user_metadata=UserMetadata(
             custom_global={"cif:data_block_name": block.name},
-            custom_per_atom=custom_per_atom,
         ),
     )
     return canonical, issues

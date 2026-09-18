@@ -62,13 +62,12 @@ def _object(
                 index=i,
                 atoms=AtomsBlock(symbols=symbols, positions=positions, occupancies=occupancies),
                 cell=Cell(lattice_vectors=lattice, pbc=(True, True, True), space_group=space_group),
+                custom_per_atom=custom_per_atom or {},
             )
             for i in range(n_frames)
         ],
         simulation=SimulationMetadata(extra=extra) if extra else None,
-        user_metadata=UserMetadata(
-            custom_global=custom_global or {}, custom_per_atom=custom_per_atom or {}
-        ),
+        user_metadata=UserMetadata(custom_global=custom_global or {}),
         provenance=build_provenance(
             format_id="test",
             filename=None,
@@ -306,7 +305,7 @@ def test_a_literal_question_mark_is_quoted_so_it_stays_a_value() -> None:
     # read side precisely to keep them apart, so throwing it away on write forfeited that work.
     text = _write(_object(custom_per_atom={"cif:atom_site_label": ["?", "Cl1"]}))
     assert "  '?'  " in text
-    assert _reparse(text).user_metadata.custom_per_atom["cif:atom_site_label"] == ["?", "Cl1"]
+    assert _reparse(text).frames[0].custom_per_atom["cif:atom_site_label"] == ["?", "Cl1"]
 
 
 def test_an_all_unknown_column_falls_back_per_atom_not_per_column() -> None:
@@ -329,7 +328,7 @@ def test_a_partly_unknown_column_keeps_the_rows_the_source_stated() -> None:
 
 def test_source_site_labels_are_preserved() -> None:
     obj = _object(custom_per_atom={"cif:atom_site_label": ["Na1a", "Cl1b"]})
-    assert _reparse(_write(obj)).user_metadata.custom_per_atom["cif:atom_site_label"] == [
+    assert _reparse(_write(obj)).frames[0].custom_per_atom["cif:atom_site_label"] == [
         "Na1a",
         "Cl1b",
     ]
@@ -339,7 +338,7 @@ def test_labels_are_generated_when_the_source_carries_none() -> None:
     # CIF keys its site rows on the label, so one must exist; an identifier asserts nothing about
     # the structure, which is why generating it is not a P4 fabrication.
     obj = _object(symbols=["Na", "Na", "Cl"], positions=np.zeros((3, 3)))
-    assert _reparse(_write(obj)).user_metadata.custom_per_atom["cif:atom_site_label"] == [
+    assert _reparse(_write(obj)).frames[0].custom_per_atom["cif:atom_site_label"] == [
         "Na1",
         "Na2",
         "Cl1",
@@ -349,7 +348,7 @@ def test_labels_are_generated_when_the_source_carries_none() -> None:
 def test_the_oxidation_state_suffix_of_a_type_symbol_survives() -> None:
     obj = _object(custom_per_atom={"cif:type_symbol": ["Na1+", "Cl1-"]})
     reparsed = _reparse(_write(obj))
-    assert reparsed.user_metadata.custom_per_atom["cif:type_symbol"] == ["Na1+", "Cl1-"]
+    assert reparsed.frames[0].custom_per_atom["cif:type_symbol"] == ["Na1+", "Cl1-"]
     assert reparsed.frames[0].atoms.symbols == ["Na", "Cl"]
 
 

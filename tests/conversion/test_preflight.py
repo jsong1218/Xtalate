@@ -269,7 +269,7 @@ def test_extxyz_target_preserves_a_per_atom_key_that_matches_the_pattern() -> No
     reg = _registry()
     data = b"1\nProperties=species:S:1:pos:R:3:tag:S:1\nH 0 0 0 core\n"
     source = reg.get_parser("extxyz").parse(io.BytesIO(data), filename="s.extxyz").canonical
-    assert "extxyz:tag" in source.user_metadata.custom_per_atom
+    assert "extxyz:tag" in source.frames[0].custom_per_atom
 
     diff = build_preflight(source, _matrix(reg), "extxyz")
     key = "user_metadata.custom_per_atom['extxyz:tag']"
@@ -285,9 +285,7 @@ def test_ase_traj_target_removes_every_per_atom_key_regardless_of_name() -> None
     source = _parse(reg, "cif", GOLDEN / "cif" / "zno-hexagonal-p1" / "zno_hexagonal.cif")
     diff = build_preflight(source, _matrix(reg), "ase_traj")
 
-    per_atom = {
-        f"user_metadata.custom_per_atom['{k}']" for k in source.user_metadata.custom_per_atom
-    }
+    per_atom = {f"user_metadata.custom_per_atom['{k}']" for k in source.frames[0].custom_per_atom}
     assert per_atom  # the fixture must actually carry columns, or this proves nothing
     assert per_atom <= {e.path for e in diff.removed}
     assert not (per_atom & diff.write_plan)

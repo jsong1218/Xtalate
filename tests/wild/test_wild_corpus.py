@@ -339,9 +339,12 @@ def _dump_scientific_dump(obj: CanonicalObject) -> dict[str, Any]:
     everything else exactly and pins the type carry as the one audited difference.
     """
     dumped = scientific_dump(obj)
-    per_atom = dumped.get("user_metadata", {}).get("custom_per_atom")
-    if isinstance(per_atom, dict):
-        per_atom.pop(_DUMP_TYPE_KEY, None)
+    # custom_per_atom relocated onto each Frame in schema 2.0.0 (M72): normalise the type carry
+    # away on every frame (frame-invariant for a constant-N dump).
+    for frame in dumped.get("frames", []):
+        per_atom = frame.get("custom_per_atom")
+        if isinstance(per_atom, dict):
+            per_atom.pop(_DUMP_TYPE_KEY, None)
     return dumped
 
 
@@ -376,8 +379,8 @@ def test_roundtrip_cases_round_trip_self_consistently(case: gov.GoldenCase) -> N
         return
     # lammps_dump: the type carry is the one audited gain (D178) — nothing else may appear or
     # disappear, and everything else must be scientifically identical.
-    gained = set(second.user_metadata.custom_per_atom) - set(first.user_metadata.custom_per_atom)
-    lost = set(first.user_metadata.custom_per_atom) - set(second.user_metadata.custom_per_atom)
+    gained = set(second.frames[0].custom_per_atom) - set(first.frames[0].custom_per_atom)
+    lost = set(first.frames[0].custom_per_atom) - set(second.frames[0].custom_per_atom)
     assert gained <= {_DUMP_TYPE_KEY}, (
         f"{case.rel_manifest}: the dump round-trip gained unexpected carries {sorted(gained)} "
         f"(only the reported {_DUMP_TYPE_KEY!r} type column may appear)"
@@ -425,7 +428,7 @@ def test_image_flags_case_predicts_unwrapping_loss_on_export() -> None:
     output looks correct but can no longer be unwrapped, and the Conversion Report says so."""
     case = _case_by_name("dump-declared-metal-image-flags")
     canonical = _parse(case).canonical
-    assert IMAGE_FLAGS_CARRY_KEY in canonical.user_metadata.custom_per_atom
+    assert IMAGE_FLAGS_CARRY_KEY in canonical.frames[0].custom_per_atom
     engine = ConversionEngine(default_registry())
     result = engine.convert(
         canonical,

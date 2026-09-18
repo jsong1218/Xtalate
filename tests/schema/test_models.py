@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 from pydantic import ValidationError
@@ -45,7 +47,7 @@ def _obj(frames: list[Frame] | None = None) -> CanonicalObject:
 
 def test_minimal_object_constructs() -> None:
     obj = _obj()
-    assert obj.schema_version == SCHEMA_VERSION == "1.0.0"
+    assert obj.schema_version == SCHEMA_VERSION == "2.0.0"
     assert obj.frame_count == 1
     assert obj.frames[0].cell is None  # absence, not identity lattice
 
@@ -94,12 +96,47 @@ def test_atomic_numbers_mismatch_rejected() -> None:
         AtomsBlock(symbols=["O"], atomic_numbers=[1], positions=np.array([[0.0, 0.0, 0.0]]))
 
 
-def test_constant_atom_count_enforced_across_frames() -> None:
-    with pytest.raises(ValidationError):
-        CanonicalObject(
-            frames=[Frame(index=0, atoms=_atoms(2)), Frame(index=1, atoms=_atoms(3))],
-            provenance=_provenance(),
-        )
+def test_frames_may_have_different_atom_counts() -> None:
+    # v2.0 (M72): the constant-N invariant is lifted (Part 2 §3.2). A trajectory whose atom count
+    # varies across frames — grand-canonical, deposition, evaporation — is now representable, not
+    # refused. A constant N remains a special case, not a mode.
+    obj = CanonicalObject(
+        frames=[Frame(index=0, atoms=_atoms(3)), Frame(index=1, atoms=_atoms(2))],
+        provenance=_provenance(),
+    )
+    assert obj.frame_count == 2
+    assert obj.frames[0].atoms.positions.shape[0] == 3
+    assert obj.frames[1].atoms.positions.shape[0] == 2
+
+
+def test_frame_custom_per_atom_matches_frame_n() -> None:
+    # v2.0 (M72): custom_per_atom is per-frame; its first dim must match THAT frame's atom count.
+    frame = Frame(index=0, atoms=_atoms(3), custom_per_atom={"toy:k": [1.0, 2.0, 3.0]})
+    val = frame.custom_per_atom["toy:k"]
+    assert (val.shape[0] if isinstance(val, np.ndarray) else len(val)) == 3
+    with pytest.raises(ValidationError, match="custom_per_atom"):
+        Frame(index=0, atoms=_atoms(3), custom_per_atom={"toy:k": [1.0, 2.0]})
+
+
+def test_user_metadata_has_no_custom_per_atom() -> None:
+    # v2.0 (M72): custom_per_atom relocated from root UserMetadata to Frame. custom_per_frame (F)
+    # stays at the root.
+    assert "custom_per_atom" not in UserMetadata.model_fields
+    assert "custom_per_frame" in UserMetadata.model_fields
+    assert "custom_per_atom" in Frame.model_fields
+
+
+def test_wire_format_carries_schema_2_0_0_and_per_frame_custom_per_atom() -> None:
+    # v2.0 (M72) acceptance: the serialized wire form (model_dump -> JSON -> back) carries
+    # schema_version "2.0.0", and custom_per_atom rides on the frame — not root user_metadata —
+    # so a consumer reading the JSON sees the relocated shape, not just the in-memory attribute.
+    obj = _obj([Frame(index=0, atoms=_atoms(3), custom_per_atom={"toy:k": [1.0, 2.0, 3.0]})])
+    wire = json.loads(obj.model_dump_json())
+    assert wire["schema_version"] == "2.0.0"
+    assert "custom_per_atom" not in wire.get("user_metadata", {})
+    assert wire["frames"][0]["custom_per_atom"]["toy:k"] == [1.0, 2.0, 3.0]
+    # And it re-validates from the wire form unchanged (round-trip fidelity).
+    assert CanonicalObject.model_validate(wire).schema_version == "2.0.0"
 
 
 def test_frame_index_must_match_position() -> None:

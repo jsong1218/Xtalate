@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "frames": [
     {
       "index": 0,
@@ -61,7 +61,8 @@
         "charges": null,
         "magnetic_moments": null,
         "total_spin": null
-      }
+      },
+      "custom_per_atom": {}
     }
   ],
   "trajectory": null,
@@ -83,7 +84,6 @@
     "tags": [],
     "annotations": {},
     "custom_global": {},
-    "custom_per_atom": {},
     "custom_per_frame": {
       "exfmt:label": [
         "methane, tetrahedral geometry"

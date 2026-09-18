@@ -249,7 +249,11 @@ def _extras(obj: CanonicalObject) -> list[str]:
     extras: list[str] = []
     for container, keys in (
         ("user_metadata.custom_global", um.custom_global),
-        ("user_metadata.custom_per_atom", um.custom_per_atom),
+        # custom_per_atom relocated onto each Frame in schema 2.0.0 (M72); the object-level view
+        # is frame 0's (frame-invariant for a constant-N object). The reported container identifier
+        # stays stable — it names the canonical per-atom category, matched against the Capability
+        # Matrix, not a live attribute path.
+        ("user_metadata.custom_per_atom", obj.frames[0].custom_per_atom),
         ("user_metadata.custom_per_frame", um.custom_per_frame),
     ):
         extras.extend(f"{container}['{key}']" for key in keys)

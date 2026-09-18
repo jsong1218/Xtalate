@@ -996,6 +996,9 @@ class LammpsDataParser(ParserPlugin):
             cell=Cell(lattice_vectors=lattice, pbc=(True, True, True)),
             dynamics=Dynamics(velocities=velocities),
             electronic=Electronic(charges=charges),
+            # custom_per_atom is per-frame in schema 2.0.0 (M72): a data file is one configuration,
+            # so its per-atom carries (ids, molecule-ids, types, image flags) live on that frame.
+            custom_per_atom=cast("dict[str, Any]", custom_per_atom),
         )
         canonical = CanonicalObject(
             frames=[frame],
@@ -1003,7 +1006,6 @@ class LammpsDataParser(ParserPlugin):
             provenance=provenance,
             user_metadata=UserMetadata(
                 custom_global=cast("dict[str, JsonValue]", custom_global),
-                custom_per_atom=cast("dict[str, Any]", custom_per_atom),
             ),
         )
         return ParseResult(canonical=canonical, issues=issues)

@@ -62,7 +62,7 @@ def test_single_species_partial_occupancy_maps_onto_canonical_field() -> None:
     assert frame.atoms.occupancies == pytest.approx([0.8, 1.0])
     assert frame.atoms.symbols == ["Fe", "O"]
     # No oxidation state was declared, so no derivation may appear either.
-    assert canonical.user_metadata.custom_per_atom == {}
+    assert canonical.frames[0].custom_per_atom == {}
 
 
 def test_partial_occupancy_roundtrips_through_to_pymatgen_preserving_fraction() -> None:
@@ -94,7 +94,7 @@ def test_partial_occupancy_combines_with_declared_oxidation_state() -> None:
     frame = canonical.frames[0]
     assert frame.atoms.symbols == ["Fe", "O"]
     assert frame.atoms.occupancies == pytest.approx([0.8, 1.0])
-    assert list(canonical.user_metadata.custom_per_atom["pymatgen:oxidation_state"]) == [
+    assert list(canonical.frames[0].custom_per_atom["pymatgen:oxidation_state"]) == [
         pytest.approx(2.0),
         pytest.approx(-2.0),
     ]

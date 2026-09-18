@@ -107,12 +107,84 @@ def _promote_occupancy(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]
     return data, [note]
 
 
+# --- the 1.0.0 -> 2.0.0 step (M72) --------------------------------------------------------------
+
+
+def _relocate_custom_per_atom(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Move ``user_metadata.custom_per_atom`` onto every frame's ``custom_per_atom`` (M72).
+
+    Schema 2.0.0 lifts the constant-N invariant (Part 2 §3.2): a per-atom column can no longer live
+    at object level, because its first dimension is *a* frame's atom count and frames may now differ
+    in N. In 1.x the column lived at the root precisely because one N held for every frame, so the
+    move is mechanical and lossless — the single root array is written onto each frame unchanged
+    (D-d). ``custom_per_frame`` is untouched: its first dimension is the frame count F, which is not
+    affected, and it stays at the root.
+
+    Recorded only if a frame actually received the value (the same F15 honesty as
+    ``_promote_occupancy``): on a malformed mapping (empty ``frames``, or frames without an
+    ``atoms`` block) the column is left in place and no "Relocated …" note is appended. A
+    structurally invalid object still fails the single final ``model_validate`` in
+    ``load_canonical``; ``migrate()`` alone never claims a move that did not happen."""
+    user_metadata = data.get("user_metadata")
+    if not isinstance(user_metadata, dict):
+        return data, []
+    custom_per_atom = user_metadata.get("custom_per_atom")
+    if not isinstance(custom_per_atom, dict) or not custom_per_atom:
+        # Nothing to move (absent or empty): drop the now-invalid root key if present, no note.
+        if isinstance(custom_per_atom, dict):
+            user_metadata.pop("custom_per_atom")
+        return data, []
+
+    frames = data.get("frames", [])
+    received = [i for i, frame in enumerate(frames) if isinstance(frame.get("atoms"), dict)]
+    if not received:
+        # Nothing can receive the value: leave the carry-through in place, record no relocation.
+        return data, []
+
+    user_metadata.pop("custom_per_atom")
+    keys = sorted(custom_per_atom)
+    for i in received:
+        # Each frame gets its own deep copy so per-frame mutation later cannot alias the columns.
+        frames[i]["custom_per_atom"] = copy.deepcopy(custom_per_atom)
+    scope = (
+        "each frame"
+        if len(received) == len(frames)
+        else f"frame(s) {', '.join(map(str, received))}"
+    )
+    note = (
+        f"Relocated user_metadata.custom_per_atom ({', '.join(keys)}) onto {scope}'s "
+        f"custom_per_atom (per-atom data is per-frame as of schema 2.0.0)."
+    )
+    return data, [note]
+
+
 # The registry: source version -> (target version, step). Composed by ``migrate`` into a chain that
-# runs until the object reaches ``SCHEMA_VERSION``. A future 1.0.0 -> 2.0.0 step is a new entry
-# here; the runner needs no change.
+# runs until the object reaches ``SCHEMA_VERSION``. Each new schema major is a new entry here; the
+# runner needs no change.
 _MIGRATIONS: dict[str, _Step] = {
     "0.1.0": ("1.0.0", _promote_occupancy),
+    "1.0.0": ("2.0.0", _relocate_custom_per_atom),
 }
+
+
+def has_migration_path(version: str) -> bool:
+    """True if a persisted object declaring ``version`` can be carried forward to the current
+    schema — i.e. it is already current, or every step from it up to ``SCHEMA_VERSION`` is
+    registered. This is the predicate the golden-corpus governance uses to decide how far an
+    expectation may lag: any version that still loads (migrates) forward is admissible, however
+    many majors back, because the fixture is migrated on load rather than regenerated. A version
+    with no registered successor before reaching current returns ``False``."""
+    seen: set[str] = set()
+    current = version
+    while current != SCHEMA_VERSION:
+        if current in seen:  # a cycle would loop forever; defensive, the registry is a DAG.
+            return False
+        seen.add(current)
+        step = _MIGRATIONS.get(current)
+        if step is None:
+            return False
+        current = step[0]
+    return True
 
 
 def migrate(data: dict[str, Any]) -> dict[str, Any]:

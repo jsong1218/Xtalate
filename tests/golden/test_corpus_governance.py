@@ -146,20 +146,21 @@ def _synthetic_case(schema_version: str) -> gov.GoldenCase:
 
 
 @pytest.mark.parametrize(
-    ("current", "declared", "ok"),
+    ("declared", "ok"),
     [
-        ("2.0.0", "2.1.0", True),  # same major, ahead minor — fine
-        ("2.0.0", "1.5.0", True),  # one major behind — the permitted lag
-        ("2.0.0", "0.9.0", False),  # two majors behind — must regenerate
-        ("1.0.0", "2.0.0", False),  # ahead of current major — impossible, a mistake
+        # Current schema is 2.0.0; the registered chain is 0.1.0 → 1.0.0 → 2.0.0 (M72).
+        ("2.0.0", True),  # already current — nothing to migrate
+        ("1.0.0", True),  # one major back, migrates forward (custom_per_atom relocation)
+        ("0.1.0", True),  # two majors back, but a full path exists — admissible (D-c)
+        ("0.9.0", False),  # no registered successor for this version — cannot load, regenerate
+        ("2.1.0", False),  # ahead of current — a schema that does not yet exist, a mistake
+        ("3.0.0", False),  # ahead of current major — impossible
     ],
 )
-def test_schema_version_lag_boundary(
-    monkeypatch: pytest.MonkeyPatch, current: str, declared: str, ok: bool
-) -> None:
-    # The live corpus is all 0.1.0, so lag can never be >1 (or negative) there; monkeypatch the
-    # current schema version to prove the bound actually fires at the boundary in both directions.
-    monkeypatch.setattr(gov, "SCHEMA_VERSION", current)
+def test_schema_version_lag_boundary(declared: str, ok: bool) -> None:
+    # Exercised against the *real* migration registry (schema.migrations): the bound is now "does a
+    # path to current exist?", so a fixture any number of majors back is fine as long as every step
+    # is registered, and an unregistered or future version fires the ManifestError (D-c, M72).
     case = _synthetic_case(declared)
     if ok:
         gov.check_schema_version_lag(case)

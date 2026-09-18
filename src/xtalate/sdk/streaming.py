@@ -42,6 +42,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, BinaryIO
 
+from pydantic import TypeAdapter
+
 from xtalate.schema import (
     CanonicalObject,
     Frame,
@@ -54,6 +56,15 @@ from xtalate.sdk.results import FrameLimitExceeded, ParseError, ParseIssue
 
 if TYPE_CHECKING:
     from xtalate.sdk.plugins import ExporterPlugin, ParserPlugin
+
+# Coerce a header's frame-invariant per-atom column set exactly as ``Frame.custom_per_atom`` would
+# (the left-to-right union: numeric input → ndarray, non-numeric → list — D12). Pre-2.0 the header's
+# columns entered the object through ``UserMetadata`` field coercion in ``materialize``; the field
+# now lives on ``Frame`` and ``model_copy(update=...)`` skips validation, so coerce here to preserve
+# that contract for a streaming parser that emits numeric lists rather than ndarrays.
+_PER_ATOM_ADAPTER: TypeAdapter[dict[str, Any]] = TypeAdapter(
+    Frame.model_fields["custom_per_atom"].annotation
+)
 
 
 @dataclass
@@ -79,7 +90,12 @@ class StreamHeader:
     @classmethod
     def from_object(cls, obj: CanonicalObject) -> StreamHeader:
         """The header half of an already-materialized object — the basis of the ``stream_of``
-        adapter that lets a whole-file parser masquerade as a streaming one."""
+        adapter that lets a whole-file parser masquerade as a streaming one.
+
+        ``custom_per_atom`` moved onto each ``Frame`` in schema 2.0.0 (M72), but the streaming
+        header stays object-level for M72 (D-b): every M72 object is frame-invariant, so the
+        object-level view is frame 0's column set. The per-frame ``StreamFrame`` relocation rides
+        M73's streaming/SDK major."""
         um = obj.user_metadata
         return cls(
             schema_version=obj.schema_version,
@@ -89,7 +105,7 @@ class StreamHeader:
             tags=list(um.tags),
             annotations=dict(um.annotations),
             custom_global=dict(um.custom_global),
-            custom_per_atom=dict(um.custom_per_atom),
+            custom_per_atom=dict(obj.frames[0].custom_per_atom),
         )
 
 
@@ -167,9 +183,18 @@ def materialize(stream: FrameStream) -> tuple[CanonicalObject, list[ParseIssue]]
         tags=list(h.tags),
         annotations=dict(h.annotations),
         custom_global=dict(h.custom_global),
-        custom_per_atom=dict(h.custom_per_atom),
         custom_per_frame=custom_per_frame,
     )
+    # ``custom_per_atom`` lives on each Frame in schema 2.0.0 (M72). The header carries it
+    # object-level for M72 (D-b), so distribute the header's frame-invariant column set onto every
+    # frame that does not already carry it (a streaming parser writes it to the header, not the
+    # frame). Each frame gets its own dict so a later per-frame mutation cannot alias the columns.
+    if h.custom_per_atom:
+        coerced = _PER_ATOM_ADAPTER.validate_python(dict(h.custom_per_atom))
+        frames = [
+            f if f.custom_per_atom else f.model_copy(update={"custom_per_atom": dict(coerced)})
+            for f in frames
+        ]
     # A lone frame is a structure, not a trajectory (Part 2 §3.2): drop the trajectory container
     # so a materialized single-frame stream matches what a whole-file parser would have produced.
     trajectory = h.trajectory if n_frames > 1 else None

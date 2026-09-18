@@ -265,8 +265,8 @@ def _assert_per_atom_arrays_are_survivor_slices(
     assert out.time == src.time
 
     # Object-level custom_per_atom (ndarray or list[JsonValue] form) follows once.
-    for key, value in source.user_metadata.custom_per_atom.items():
-        out_value = repaired.user_metadata.custom_per_atom[key]
+    for key, value in source.frames[0].custom_per_atom.items():
+        out_value = repaired.frames[0].custom_per_atom[key]
         if isinstance(value, np.ndarray):
             assert isinstance(out_value, np.ndarray)
             assert np.array_equal(out_value, value[survivors])
@@ -401,8 +401,8 @@ def test_species_reorder_emits_a_valid_permutation_every_array_follows_it(
 
     # The object-level custom_per_atom follows the map once (one reindex covers all
     # frames — the map is frame-invariant by construction).
-    for key, value in source.user_metadata.custom_per_atom.items():
-        out_value = outcome.canonical.user_metadata.custom_per_atom[key]
+    for key, value in source.frames[0].custom_per_atom.items():
+        out_value = outcome.canonical.frames[0].custom_per_atom[key]
         if isinstance(value, np.ndarray):
             assert isinstance(out_value, np.ndarray)
             assert np.array_equal(out_value, value[permutation])
