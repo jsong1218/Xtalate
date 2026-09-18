@@ -2,9 +2,9 @@ case: labeled-methane
 format_id: exfmt
 source_file: labeled_methane.exfmt
 expected_canonical: expected.canonical.json
-canonical_schema_version: "1.0.0"
+canonical_schema_version: "2.0.0"
 sha256: "ca7d205579c7c38f2dfe5fc62bdd6cd410422ef4e031e87001b64e04c4b791f9"
-expected_sha256: "3d296298e617ca216d4cc81f85636c7ee228c469899b58b332a596021995216f"
+expected_sha256: "889c9f3cae5d808ef4cf9e8889d9b872523b8803287ff2d9d8acc77b48531be7"
 origin:
   kind: synthetic
   source: "Hand-written labeled methane for the xtalate-example-format reference plugin (M36)."
