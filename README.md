@@ -1,7 +1,7 @@
 # Xtalate
 
 [![CI](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml/badge.svg)](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.7.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.8.0-blue.svg)](CHANGELOG.md)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -82,7 +82,7 @@ These formats close the MLIP data loop end to end — **relabel** production fra
 - **Validation is not optional.** Every conversion is re-parsed and diffed against the source under a tolerance profile (`default` / `strict` / `loose`, or a custom table). There is no switch to skip it.
 - **Absence is information (P3).** The model distinguishes "the source never had this" (`None`) from "the source had it, and the value is zero." Parsers never default an absent field.
 - **Scales to large trajectories.** A frame-chunked streaming core keeps memory sub-linear in frame count; a 10⁴-frame XDATCAR streams at roughly constant memory and yields a byte-identical report.
-- **Extensible by plugins.** A parser/exporter in a separate package is discovered through Python entry points (`xtalate.parsers` / `xtalate.exporters`) with no fork or edit. First-party formats hold no privileged API.
+- **Extensible by plugins.** A parser, exporter, or analysis plugin in a separate package is discovered through Python entry points (`xtalate.parsers` / `xtalate.exporters` / `xtalate.analysis`) with no fork or edit. First-party formats and plugins hold no privileged API.
 
 ## Beyond the CLI
 
@@ -135,6 +135,25 @@ then reproduce it byte-for-byte from the report's own recorded parameters. The o
 a file that cannot become a Canonical Object cannot be repaired, only recovered. Xtalate remains
 **not a molecular editor**: modification is a bounded, recorded, user-initiated act, never a tool
 the pipeline applies on its own.
+
+**Analyzing on request (v1.8).** v1.8 is the **Analysis Plugin Surface** — a stable, third-party
+way to *read* a Canonical Object and annotate its own namespace, without touching the core and
+without ever changing what Xtalate converts, reports, or validates. A plugin is a `name`, a
+`version`, and one `analyze()` method (see [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) §8);
+`pip install` it and `default_registry()` discovers it through the `xtalate.analysis` entry point,
+exactly like a parser. Results are **contained to the plugin's own `"<name>:"` namespace
+structurally, not on trust** — the runner hands the plugin a deep copy and merges only its own keys
+into `user_metadata.custom_global`, recording the run in Provenance — and every consumer renders them
+**generically**: `xtalate analyze FILE --plugin <name>`, `POST /v1/analyze`, and the Web UI's
+**Analysis tab** all walk the results by JSON value type with no branching on any plugin or key, so a
+third-party plugin renders through the same path as the first-party one. The reference plugin,
+`xtalate-analysis-composition`, is deliberately **the only first-party analysis** — element counts,
+a formula, and a mass density reported only when the source actually carries a cell and masses (and
+`null` with a stated reason otherwise, never fabricated). **What is *not* first-party** — radial
+distribution functions, coordination numbers, trajectory statistics, and anything ML (descriptors,
+uncertainty quantification, learned frame selection) — is yours to build as a plugin: the surface is
+the answer, and the core neither bundles nor blesses any of it. Xtalate stays a **converter**, not an
+analysis package; analysis is a *consumer* of the Canonical Model that attaches at a defined seam.
 
 **Batch** — `xtalate convert --batch manifest.yaml -o out/` (and `POST /v1/batch/convert`) converts a whole directory into one record: each file's reports embedded verbatim, tallies on top, one file's failure never aborting the rest. Selection, splitting, and deduplication are deliberately out of scope — curation is a scientific judgment, conversion is a translation.
 

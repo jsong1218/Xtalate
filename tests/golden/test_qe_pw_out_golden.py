@@ -44,7 +44,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._format_helpers import assert_matches_golden
+from tests._format_helpers import _normalise_history, assert_matches_golden
 from xtalate.parsers._qe.labels import (
     FORCES_FACTOR,
     RY_TO_EV,
@@ -115,8 +115,13 @@ def test_6x_and_7x_layouts_agree_except_source_code(case: str) -> None:
     reconstructed reals agree to within float noise (the ``vc-relax`` cell is rebuilt through
     each layout's ``alat`` scaling). A layout whose scrape diverged from the other's — a
     dropped block, a wrong mapping, a real numeric divergence — would fail here."""
-    seven = json.loads(_parse(case).canonical.model_dump_json())
-    six = json.loads(_parse(case + "-6x").canonical.model_dump_json())
+    # Both parses stamp provenance.history with the wall-clock parse time (plus tool/parser
+    # versions); two independent parses straddling a whole-second boundary would otherwise differ
+    # there — a 1-second flake, not a scientific divergence. Scrub that run-varying bookkeeping the
+    # same way the single-parse golden comparison does; parse wall-time is not part of "the two
+    # layouts read the same run to the same object".
+    seven = _normalise_history(json.loads(_parse(case).canonical.model_dump_json()))
+    six = _normalise_history(json.loads(_parse(case + "-6x").canonical.model_dump_json()))
     assert seven["simulation"]["source_code"] != six["simulation"]["source_code"]
     seven["simulation"]["source_code"] = six["simulation"]["source_code"]
     _agree_except_float_noise(seven, six)

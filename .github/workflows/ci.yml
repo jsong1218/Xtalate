@@ -78,6 +78,14 @@ jobs:
       - name: Install entry-point discovery fixture (M16B)
         run: pip install --no-deps ./tests/fixtures/xtalate_toyfmt
 
+      # Install the third-party *analysis* plugin fixture (M71) so the analysis entry-point
+      # discovery path is exercised against a real installed distribution too — without it,
+      # tests/test_toyanalysis_plugin.py skips. Written from docs/DEVELOPER_GUIDE §8 alone against
+      # the frozen public SDK; the standing proof a third party can ship an analysis plugin from the
+      # docs with zero core edits. `--no-deps` for the same reason as the toyfmt fixture above.
+      - name: Install third-party analysis plugin fixture (M71)
+        run: pip install --no-deps ./tests/fixtures/xtalate_toyanalysis
+
       # Pytest enforces the coverage ratchet (--cov-fail-under in pyproject addopts) and the
       # golden-corpus governance suite: manifest schema + license, per-source sha256, the
       # schema-version migration-chain load, and the tests/golden/ATTRIBUTIONS.md regeneration diff
