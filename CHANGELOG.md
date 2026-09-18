@@ -17,7 +17,27 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 2.0.0
 
-_The next release accrues here._
+### Changed
+
+- **Canonical schema major `1.0.0 → 2.0.0`: the constant-N invariant is lifted.** A
+  `CanonicalObject`'s frames may now differ in atom count; the object-level cross-frame N check is
+  removed and each frame validates its own N against its own per-atom arrays. This is a change on the
+  schema axis of the two-axis SemVer promise — **the product package version is unchanged** (the
+  product flip is a later v2.0 milestone).
+- **`custom_per_atom` relocated from root `user_metadata` onto each `frame`.** A per-atom column's
+  first dimension is a *frame's* atom count, which is no longer an object-level quantity, so the
+  container lives on the frame it describes. `custom_per_frame` (first dim = frame count) and
+  `custom_global` are unchanged and stay on root `user_metadata`. The Capability-Matrix / report /
+  `vocabulary.json` identifier for the category stays the string `user_metadata.custom_per_atom` (an
+  opaque category key), so constant-N conversion output is byte-identical and the published vocabulary
+  is untouched.
+
+### Migration
+
+- A real `1.0.0 → 2.0.0` migration carries stored 1.x objects forward: the single root-level
+  `custom_per_atom` array is replicated onto every frame (mechanical, because 1.x guaranteed one N for
+  all frames), recorded with one `operation="migrate"` provenance record. The migration registry chain
+  is now `0.1.0 → 1.0.0 → 2.0.0`; older stored objects load through the full chain.
 
 ## [1.8.0] — 2026-09-13
 
