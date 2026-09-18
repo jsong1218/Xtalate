@@ -1,12 +1,14 @@
-"""The real 0.1.0 -> 1.0.0 schema migration (M35 / D114, Part 2 §5, Part 8 §3.3).
+"""The real schema migration chain 0.1.0 -> 1.0.0 -> 2.0.0 (D114, M72; Part 2 §5, Part 8 §3.3).
 
-The v1.0 contract freeze is the schema's first genuine version transition. These tests pin the
-three things the freeze promised: the move is *real* (occupancy leaves the pre-1.0
-``custom_per_atom['cif:occupancy']`` carry-through and lands in the first-class
-``atoms.occupancies`` field), it is *recorded* (exactly one ``operation="migrate"`` provenance
-entry, never silent — P1/§3.9), and it is *safe to run twice* (an already-current object is
-untouched). The committed before/after JSON pair is the migration's worked example: a genuine
-0.1.0 object and the exact 1.0.0 result the chain produces.
+The v1.0 contract freeze was the schema's first genuine version transition; the v2.0 gate (M72)
+added the second. These tests pin the things both steps promise: each move is *real* (occupancy
+leaves the pre-1.0 ``custom_per_atom['cif:occupancy']`` carry-through for the first-class
+``atoms.occupancies`` field; the remaining root ``custom_per_atom`` relocates onto each frame when
+the constant-N invariant is lifted), each is *recorded* (exactly one ``operation="migrate"``
+provenance entry for the whole transition, never silent — P1/§3.9), and the chain is *safe to run
+twice* (an already-current object is untouched). The committed before/after JSON pair is the
+migration's worked example: a genuine 0.1.0 object and the exact 2.0.0 result the full chain
+produces.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from xtalate.schema import (
 
 FIXTURES = Path(__file__).parent / "fixtures"
 BEFORE = FIXTURES / "occupancy_0_1_0_before.json"
-AFTER = FIXTURES / "occupancy_1_0_0_after.json"
+AFTER = FIXTURES / "occupancy_2_0_0_after.json"
 
 
 def _before() -> dict[str, Any]:
@@ -52,7 +54,7 @@ def _pin_migrate_bookkeeping(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_migrating_the_before_fixture_produces_the_after_fixture() -> None:
-    # The whole migration, end to end, against a real persisted 0.1.0 object: the produced 1.0.0
+    # The whole chain, end to end, against a real persisted 0.1.0 object: the produced 2.0.0
     # mapping (with the migrate record's clock/version pinned) must equal the committed artifact.
     produced = _pin_migrate_bookkeeping(migrate(_before()))
     expected = json.loads(AFTER.read_text(encoding="utf-8"))
@@ -60,10 +62,10 @@ def test_migrating_the_before_fixture_produces_the_after_fixture() -> None:
 
 
 def test_the_after_fixture_is_a_valid_current_object() -> None:
-    # The artifact is not just a shape we asserted — it validates against the live 1.0.0 models,
+    # The artifact is not just a shape we asserted — it validates against the live 2.0.0 models,
     # so the pair cannot drift from the schema it documents.
     obj = CanonicalObject.model_validate_json(AFTER.read_text(encoding="utf-8"))
-    assert obj.schema_version == "1.0.0"
+    assert obj.schema_version == "2.0.0"
     assert obj.frames[0].atoms.occupancies == [1.0, 0.5, None]
 
 
@@ -73,9 +75,11 @@ def test_the_after_fixture_is_a_valid_current_object() -> None:
 def test_occupancy_moves_from_custom_per_atom_into_the_first_class_field() -> None:
     obj = load_canonical(_before())
     assert obj.frames[0].atoms.occupancies == [1.0, 0.5, None]
-    assert "cif:occupancy" not in obj.user_metadata.custom_per_atom
-    # The other carry-through columns are untouched — only the promoted key moves.
-    assert "cif:atom_site_label" in obj.user_metadata.custom_per_atom
+    # The occupancy key is gone entirely (promoted). The other carry-through columns survive but now
+    # live per-frame (M72), not at root — user_metadata no longer carries custom_per_atom at all.
+    assert "cif:occupancy" not in obj.frames[0].custom_per_atom
+    assert "cif:atom_site_label" in obj.frames[0].custom_per_atom
+    assert "custom_per_atom" not in type(obj.user_metadata).model_fields
 
 
 def test_object_level_occupancy_applies_to_every_frame() -> None:
@@ -98,7 +102,7 @@ def test_object_level_occupancy_applies_to_every_frame() -> None:
 
 def test_schema_version_is_stamped_current() -> None:
     obj = load_canonical(_before())
-    assert obj.schema_version == SCHEMA_VERSION == "1.0.0"
+    assert obj.schema_version == SCHEMA_VERSION == "2.0.0"
 
 
 def test_exactly_one_migrate_record_is_appended() -> None:
@@ -111,8 +115,10 @@ def test_exactly_one_migrate_record_is_appended() -> None:
     assert record.target_format is None
     assert record.parser_version is None
     assert record.tool_version == __version__
-    assert record.assumptions[0] == "Migrated canonical schema 0.1.0 → 1.0.0."
+    # One record spans the whole chain (0.1.0 -> 2.0.0); the two step notes follow in order.
+    assert record.assumptions[0] == "Migrated canonical schema 0.1.0 → 2.0.0."
     assert "atoms.occupancies for 3 atom(s)" in record.assumptions[1]
+    assert "custom_per_atom" in record.assumptions[2] and "each frame" in record.assumptions[2]
 
 
 def test_the_original_parse_record_is_preserved() -> None:
@@ -138,7 +144,8 @@ def test_no_promotion_note_when_no_frame_receives_the_value() -> None:
 
     migrated = migrate(data)
     record = next(r for r in migrated["provenance"]["history"] if r["operation"] == "migrate")
-    assert record["assumptions"] == ["Migrated canonical schema 0.1.0 → 1.0.0."]
+    # No frame received either step's value, so neither the promotion nor the relocation note fires.
+    assert record["assumptions"] == ["Migrated canonical schema 0.1.0 → 2.0.0."]
     # The value stayed put — not silently dropped.
     assert "cif:occupancy" in migrated["user_metadata"]["custom_per_atom"]
 
@@ -149,7 +156,7 @@ def test_no_promotion_note_when_the_frame_has_no_atoms_block() -> None:
 
     migrated = migrate(data)
     record = next(r for r in migrated["provenance"]["history"] if r["operation"] == "migrate")
-    assert record["assumptions"] == ["Migrated canonical schema 0.1.0 → 1.0.0."]
+    assert record["assumptions"] == ["Migrated canonical schema 0.1.0 → 2.0.0."]
     assert "cif:occupancy" in migrated["user_metadata"]["custom_per_atom"]
 
 
@@ -190,16 +197,19 @@ def test_the_occupancy_literal_has_exactly_one_definition_in_the_schema_layer() 
 
 
 def test_a_0_1_0_object_without_occupancy_still_migrates_and_records() -> None:
-    # Every 0.1.0 object crosses the version boundary, occupancy or not: the version is stamped and
-    # the transition recorded, but the field-move note is absent because nothing moved.
+    # Every 0.1.0 object crosses both version boundaries, occupancy or not. With no occupancy the
+    # promotion note is absent, but the surviving carry-through columns still relocate onto each
+    # frame (M72) — so the record names that move and occupancies stays absent (P3).
     data = _before()
     data["user_metadata"]["custom_per_atom"].pop("cif:occupancy")
 
     obj = load_canonical(data)
-    assert obj.schema_version == "1.0.0"
+    assert obj.schema_version == "2.0.0"
     assert obj.frames[0].atoms.occupancies is None
     record = next(r for r in obj.provenance.history if r.operation == "migrate")
-    assert record.assumptions == ["Migrated canonical schema 0.1.0 → 1.0.0."]
+    assert record.assumptions[0] == "Migrated canonical schema 0.1.0 → 2.0.0."
+    assert not any("atoms.occupancies" in a for a in record.assumptions)
+    assert any("Relocated user_metadata.custom_per_atom" in a for a in record.assumptions)
 
 
 # --- idempotence and the no-op ------------------------------------------------------------------
@@ -208,9 +218,9 @@ def test_a_0_1_0_object_without_occupancy_still_migrates_and_records() -> None:
 def test_an_already_current_object_is_not_migrated_again() -> None:
     once = load_canonical(_before())
     twice = load_canonical(once.model_dump(mode="json"))
-    # Loading a 1.0.0 object adds no second migrate record — the chain is a no-op at current.
+    # Loading a 2.0.0 object adds no second migrate record — the chain is a no-op at current.
     assert [r.operation for r in twice.provenance.history] == ["parse", "migrate"]
-    assert twice.schema_version == "1.0.0"
+    assert twice.schema_version == "2.0.0"
 
 
 def test_migrate_does_not_mutate_its_input() -> None:
@@ -237,6 +247,74 @@ def test_unknown_schema_version_is_refused() -> None:
         migrate(data)
 
 
+# --- the 1.0.0 -> 2.0.0 step: custom_per_atom relocates to each frame (M72) ----------------------
+
+
+def _one_zero_object() -> dict[str, Any]:
+    """A minimal decoded schema-1.0.0 object: two 2-atom frames and a root-level custom_per_atom."""
+    atoms = {
+        "symbols": ["O", "H"],
+        "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+    }
+    return {
+        "schema_version": "1.0.0",
+        "frames": [
+            {"index": 0, "atoms": copy.deepcopy(atoms)},
+            {"index": 1, "atoms": copy.deepcopy(atoms)},
+        ],
+        "provenance": {
+            "source_filename": "t.extxyz",
+            "source_format": "extxyz",
+            "original_coordinate_system": "cartesian",
+            "history": [],
+        },
+        "user_metadata": {"custom_per_atom": {"extxyz:foo": [1.0, 2.0]}},
+    }
+
+
+def test_1x_object_relocates_custom_per_atom_onto_each_frame() -> None:
+    migrated = migrate(_one_zero_object())
+    assert migrated["schema_version"] == "2.0.0"
+    # The root no longer carries custom_per_atom; every frame does, matching its own N.
+    assert "custom_per_atom" not in migrated["user_metadata"]
+    for frame in migrated["frames"]:
+        assert frame["custom_per_atom"] == {"extxyz:foo": [1.0, 2.0]}
+    # Exactly one migrate record, naming the transition and the relocation.
+    records = [r for r in migrated["provenance"]["history"] if r["operation"] == "migrate"]
+    assert len(records) == 1
+    assert records[0]["assumptions"][0] == "Migrated canonical schema 1.0.0 → 2.0.0."
+    assert any("custom_per_atom" in a and "frame" in a for a in records[0]["assumptions"][1:])
+    # It validates end to end as a current object.
+    obj = load_canonical(_one_zero_object())
+    assert obj.schema_version == "2.0.0"
+    val = obj.frames[1].custom_per_atom["extxyz:foo"]
+    assert (val.shape[0] if hasattr(val, "shape") else len(val)) == 2
+
+
+def test_1x_object_without_custom_per_atom_is_version_bump_only() -> None:
+    data = _one_zero_object()
+    data["user_metadata"]["custom_per_atom"] = {}
+    migrated = migrate(data)
+    assert migrated["schema_version"] == "2.0.0"
+    records = [r for r in migrated["provenance"]["history"] if r["operation"] == "migrate"]
+    assert records[0]["assumptions"] == ["Migrated canonical schema 1.0.0 → 2.0.0."]
+    for frame in migrated["frames"]:
+        assert frame.get("custom_per_atom", {}) == {}
+
+
+def test_full_chain_0_1_0_to_2_0_0() -> None:
+    # A real 0.1.0 object crosses both steps in one load: occupancy promotes (0.1.0 -> 1.0.0) and
+    # the remaining custom_per_atom relocates onto each frame (1.0.0 -> 2.0.0), one migrate record.
+    obj = load_canonical(_before())
+    assert obj.schema_version == "2.0.0"
+    assert obj.frames[0].atoms.occupancies == [1.0, 0.5, None]
+    # The surviving carry-through column now lives on the frame, not the root.
+    assert "cif:atom_site_label" in obj.frames[0].custom_per_atom
+    records = [r for r in obj.provenance.history if r.operation == "migrate"]
+    assert len(records) == 1
+    assert records[0].assumptions[0] == "Migrated canonical schema 0.1.0 → 2.0.0."
+
+
 # --- load_canonical accepts text, bytes, and mappings -------------------------------------------
 
 
@@ -252,5 +330,5 @@ def test_load_canonical_accepts_text_bytes_and_dict(as_: str) -> None:
         source = json.loads(raw)
 
     obj = load_canonical(source)
-    assert obj.schema_version == "1.0.0"
+    assert obj.schema_version == "2.0.0"
     assert obj.frames[0].atoms.occupancies == [1.0, 0.5, None]

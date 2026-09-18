@@ -38,7 +38,6 @@ from xtalate.schema import (
     Electronic,
     Frame,
     Provenance,
-    UserMetadata,
 )
 
 #: The species-reorder permutation for the shared fixture's symbols below
@@ -112,15 +111,17 @@ def _rich_object() -> CanonicalObject:
             magnetic_moments=np.array([0.0, 1.0, 0.5, 2.0, 1.5, 0.0]),
         ),
     )
-    return CanonicalObject(
-        frames=[frame],
-        provenance=_provenance(),
-        user_metadata=UserMetadata(
-            custom_per_atom={
+    frame = frame.model_copy(
+        update={
+            "custom_per_atom": {
                 "tags": np.array([10, 20, 30, 40, 50, 60]),
                 "labels": ["a", "b", "c", "d", "e", "f"],
             }
-        ),
+        }
+    )
+    return CanonicalObject(
+        frames=[frame],
+        provenance=_provenance(),
     )
 
 
@@ -298,20 +299,20 @@ def test_species_reorder_permutes_magnetic_moments() -> None:
 
 def test_species_reorder_permutes_custom_per_atom_ndarray_form() -> None:
     source = _rich_object()
-    source_tags = source.user_metadata.custom_per_atom["tags"]
+    source_tags = source.frames[0].custom_per_atom["tags"]
     assert isinstance(source_tags, np.ndarray)
     repaired, _ = _apply(source)
-    tags = repaired.user_metadata.custom_per_atom["tags"]
+    tags = repaired.frames[0].custom_per_atom["tags"]
     assert isinstance(tags, np.ndarray)
     assert np.array_equal(tags, source_tags[PERM])
 
 
 def test_species_reorder_permutes_custom_per_atom_list_form() -> None:
     source = _rich_object()
-    source_labels = source.user_metadata.custom_per_atom["labels"]
+    source_labels = source.frames[0].custom_per_atom["labels"]
     assert isinstance(source_labels, list)
     repaired, _ = _apply(source)
-    labels = repaired.user_metadata.custom_per_atom["labels"]
+    labels = repaired.frames[0].custom_per_atom["labels"]
     assert isinstance(labels, list)
     assert labels == [source_labels[i] for i in PERM]
 

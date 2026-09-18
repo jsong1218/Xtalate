@@ -104,7 +104,7 @@ def test_unmapped_site_property_carries_verbatim_under_namespace() -> None:
     flags = [[False, False, False], [True, True, True]]
     structure = _cubic_fe_o(selective_dynamics=flags)
     canonical = from_pymatgen(structure)
-    carried = canonical.user_metadata.custom_per_atom["pymatgen:selective_dynamics"]
+    carried = canonical.frames[0].custom_per_atom["pymatgen:selective_dynamics"]
     np.testing.assert_array_equal(np.asarray(carried), flags)
 
     back = to_pymatgen(canonical)
@@ -123,7 +123,7 @@ def test_declared_oxidation_states_strip_from_symbols_and_carry_per_site() -> No
     frame = canonical.frames[0]
     # The symbol strips the decoration; the state itself is declared data and carries.
     assert frame.atoms.symbols == ["Fe", "O"]
-    carried = canonical.user_metadata.custom_per_atom["pymatgen:oxidation_state"]
+    carried = canonical.frames[0].custom_per_atom["pymatgen:oxidation_state"]
     assert list(carried) == pytest.approx([2.0, -2.0])
     back = to_pymatgen(canonical)
     assert [site.specie.symbol for site in back] == ["Fe", "O"]

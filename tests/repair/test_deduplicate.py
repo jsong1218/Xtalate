@@ -36,7 +36,6 @@ from xtalate.schema import (
     Electronic,
     Frame,
     Provenance,
-    UserMetadata,
 )
 
 
@@ -102,15 +101,17 @@ def _duplicates_object(with_cell: bool = True) -> CanonicalObject:
             magnetic_moments=np.array([0.0, 1.0, 0.5, 2.0, 1.5, 0.0]),
         ),
     )
-    return CanonicalObject(
-        frames=[frame],
-        provenance=_provenance(),
-        user_metadata=UserMetadata(
-            custom_per_atom={
+    frame = frame.model_copy(
+        update={
+            "custom_per_atom": {
                 "tags": np.array([10, 20, 30, 40, 50, 60]),
                 "labels": ["a", "b", "c", "d", "e", "f"],
             }
-        ),
+        }
+    )
+    return CanonicalObject(
+        frames=[frame],
+        provenance=_provenance(),
     )
 
 
@@ -203,8 +204,8 @@ def test_deduplicate_keeps_survivor_values_verbatim() -> None:
     assert elec.magnetic_moments is not None and src_elec.magnetic_moments is not None
     assert np.array_equal(elec.magnetic_moments, src_elec.magnetic_moments[survivors])
 
-    tags = repaired.user_metadata.custom_per_atom["tags"]
-    labels = repaired.user_metadata.custom_per_atom["labels"]
+    tags = repaired.frames[0].custom_per_atom["tags"]
+    labels = repaired.frames[0].custom_per_atom["labels"]
     assert isinstance(tags, np.ndarray) and isinstance(labels, list)
     assert np.array_equal(tags, np.array([10, 40, 60]))
     assert labels == ["a", "d", "f"]

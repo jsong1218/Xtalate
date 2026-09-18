@@ -40,7 +40,7 @@ def test_default_structure_yields_no_fabricated_electronic_or_charge_data() -> N
     assert frame.dynamics.velocities is None
     assert frame.dynamics.forces is None
     assert canonical.user_metadata.custom_global == {}
-    assert canonical.user_metadata.custom_per_atom == {}
+    assert canonical.frames[0].custom_per_atom == {}
 
 
 def test_oxidation_state_sum_is_never_mapped_as_total_charge() -> None:
@@ -52,7 +52,7 @@ def test_oxidation_state_sum_is_never_mapped_as_total_charge() -> None:
     assert float(structure.charge) == pytest.approx(0.0)  # the sum pymatgen fabricates
     canonical = from_pymatgen(structure)
     # The declared per-site states carry; the derived total never enters the object.
-    assert list(canonical.user_metadata.custom_per_atom["pymatgen:oxidation_state"]) == [
+    assert list(canonical.frames[0].custom_per_atom["pymatgen:oxidation_state"]) == [
         2,
         -2,
     ]
@@ -76,5 +76,5 @@ def test_empty_site_properties_is_a_default_not_an_explicit_none() -> None:
     canonical = from_pymatgen(structure)
     assert all(
         key != "pymatgen:magmom" and key != "pymatgen:charge"
-        for key in canonical.user_metadata.custom_per_atom
+        for key in canonical.frames[0].custom_per_atom
     )

@@ -226,7 +226,7 @@ def test_atoms_sorted_by_ascending_id() -> None:
     """The atomic golden lists ids out of order (3,1,4,2); the per-atom arrays come back id-sorted
     so id/type/position/carry all line up."""
     obj = _recover("atomic-metal-ortho").canonical
-    ids = np.asarray(obj.user_metadata.custom_per_atom["lammps_data:id"]).tolist()
+    ids = np.asarray(obj.frames[0].custom_per_atom["lammps_data:id"]).tolist()
     assert ids == [1.0, 2.0, 3.0, 4.0]
     # id 1 sits at (1,1,1); id 4 at (9,3,2) — positions follow the sorted ids, not file order.
     assert obj.frames[0].atoms.positions[0].tolist() == [1.0, 1.0, 1.0]
@@ -249,7 +249,7 @@ def test_atomic_style_has_no_charges() -> None:
 
 def test_full_style_carries_molecule_id() -> None:
     obj = _recover("full-triclinic-topology").canonical
-    mol = np.asarray(obj.user_metadata.custom_per_atom["lammps_data:molecule_id"])
+    mol = np.asarray(obj.frames[0].custom_per_atom["lammps_data:molecule_id"])
     assert mol.tolist() == [1.0] * 8
 
 
@@ -259,7 +259,7 @@ def test_image_flags_carried_under_the_shared_key_and_never_applied() -> None:
     result = _recover("full-triclinic-topology")
     codes = [i.code for i in result.issues]
     assert "LAMMPSDATA_IMAGE_FLAGS_CARRIED" in codes
-    flags = np.asarray(result.canonical.user_metadata.custom_per_atom["lammps_dump:image_flags"])
+    flags = np.asarray(result.canonical.frames[0].custom_per_atom["lammps_dump:image_flags"])
     assert flags[3].tolist() == [-1.0, 0.0, 0.0]  # atom id 4 carries ix=-1
     # Positions are the coordinates as written, unit-converted — never shifted by the flags.
     assert result.canonical.frames[0].atoms.positions[3].tolist() == [0.6, 0.1, 1.7]

@@ -62,15 +62,13 @@ def test_lammps_dump_identity_gains_exactly_the_reported_type_carry() -> None:
 
     # The source carried only element labels, so the numeric type carry must not already exist —
     # otherwise "gained" proves nothing.
-    assert _TYPE_KEY not in first.user_metadata.custom_per_atom
+    assert _TYPE_KEY not in first.frames[0].custom_per_atom
 
     # The one and only per-atom carry that appears is the type column, and it is REPORTED — the
     # augmentation is audited, never silent (P1).
-    gained = (
-        second.user_metadata.custom_per_atom.keys() - first.user_metadata.custom_per_atom.keys()
-    )
+    gained = second.frames[0].custom_per_atom.keys() - first.frames[0].custom_per_atom.keys()
     assert gained == {_TYPE_KEY}
-    assert _TYPE_KEY in second.user_metadata.custom_per_atom
+    assert _TYPE_KEY in second.frames[0].custom_per_atom
     assert _TYPES_ASSIGNED in {w.code for w in exporter.export_warnings(first)}
 
     # And the gain stops there. Everything the earlier formats' identity tests would have compared
@@ -83,8 +81,8 @@ def test_lammps_dump_identity_gains_exactly_the_reported_type_carry() -> None:
         assert np.allclose(f0.atoms.positions, f1.atoms.positions)
         assert f0.dynamics.velocities is not None and f1.dynamics.velocities is not None
         assert np.allclose(f0.dynamics.velocities, f1.dynamics.velocities)
-    for key, col in first.user_metadata.custom_per_atom.items():
-        second_col = second.user_metadata.custom_per_atom[key]
+    for key, col in first.frames[0].custom_per_atom.items():
+        second_col = second.frames[0].custom_per_atom[key]
         assert np.array_equal(np.asarray(col), np.asarray(second_col))
 
 
@@ -96,7 +94,7 @@ def test_lammps_dump_reaches_its_fixed_point_at_the_first_hop() -> None:
     source = parse_bytes(parser, _META.read_bytes()).canonical
     hop1 = parse_bytes(parser, _write(exporter, source)).canonical
     hop2 = parse_bytes(parser, _write(exporter, hop1)).canonical
-    assert _TYPE_KEY in hop1.user_metadata.custom_per_atom
+    assert _TYPE_KEY in hop1.frames[0].custom_per_atom
     assert_scientifically_equal(hop1, hop2)
 
 
@@ -126,7 +124,7 @@ def test_lammps_dump_writes_integer_atom_ids_not_floats() -> None:
     parser, exporter = make_lammps_dump_parser(), make_lammps_dump_exporter()
     source = parse_bytes(parser, _META.read_bytes()).canonical
     # The fixture really carries an id column — otherwise the check proves nothing.
-    assert _ID_KEY in source.user_metadata.custom_per_atom
+    assert _ID_KEY in source.frames[0].custom_per_atom
     written = _write(exporter, source).decode("utf-8")
 
     rows = _atoms_rows(written)
@@ -184,8 +182,8 @@ def test_lammps_dump_identity_preserves_image_flags() -> None:
     first = parse_bytes(parser, _FLAGS.read_bytes()).canonical
     second = parse_bytes(parser, _write(exporter, first)).canonical
 
-    first_flags = np.asarray(first.user_metadata.custom_per_atom[IMAGE_FLAGS_CARRY_KEY])
-    second_flags = np.asarray(second.user_metadata.custom_per_atom[IMAGE_FLAGS_CARRY_KEY])
+    first_flags = np.asarray(first.frames[0].custom_per_atom[IMAGE_FLAGS_CARRY_KEY])
+    second_flags = np.asarray(second.frames[0].custom_per_atom[IMAGE_FLAGS_CARRY_KEY])
     # The fixture must actually carry a non-trivial flag, or the round-trip proves nothing.
     assert np.any(first_flags != 0.0)
     assert np.array_equal(first_flags, second_flags)

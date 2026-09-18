@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from xtalate.schema import CanonicalObject
+from xtalate.schema.migrations import migrate
 
 _GOLDEN = Path(__file__).parent.parent / "golden"
 
@@ -50,7 +51,11 @@ _GOLDEN_JSON: dict[str, str] = {
 def _base_dict(format_id: str) -> dict[str, Any]:
     text = (_GOLDEN / _GOLDEN_JSON[format_id]).read_text()
     data: dict[str, Any] = json.loads(text)
-    return data
+    # Golden bases are committed at their original schema versions (the corpus proves migration,
+    # Task 4 — they are never regenerated). Carry them forward before mutating/validating so the
+    # sweep runs on current-schema objects: schema 2.0.0 (M72) relocated custom_per_atom off
+    # user_metadata onto each frame, which raw model_validate would reject as an extra key.
+    return migrate(data)
 
 
 # --- Synthetic populate values -------------------------------------------------------------------
@@ -174,8 +179,11 @@ def _mutants(format_id: str) -> Iterator[tuple[str, CanonicalObject]]:
         yield f"populate[user_metadata.{um_field}]", CanonicalObject.model_validate(data)
 
     # --- Dynamic custom_* containers: null each present per-key path, populate a global one -------
+    # custom_global and custom_per_frame stay at the root (UserMetadata); custom_per_atom relocated
+    # onto each frame in schema 2.0.0 (M72) and is handled per-frame below. The capability id
+    # for the per-atom column stays ``user_metadata.custom_per_atom`` (an opaque category key, M72).
     um = base.get("user_metadata") or {}
-    for container_key in ("custom_global", "custom_per_atom", "custom_per_frame"):
+    for container_key in ("custom_global", "custom_per_frame"):
         for key in um.get(container_key) or {}:
             data = copy.deepcopy(base)
             del data["user_metadata"][container_key][key]
@@ -183,6 +191,16 @@ def _mutants(format_id: str) -> Iterator[tuple[str, CanonicalObject]]:
                 f"null[user_metadata.{container_key}['{key}']]",
                 CanonicalObject.model_validate(data),
             )
+    # custom_per_atom: null each present per-key path across *every* frame (a column is
+    # frame-invariant for a constant-N object; the reported category identifier is unchanged).
+    for key in base["frames"][0].get("custom_per_atom") or {}:
+        data = copy.deepcopy(base)
+        for frame in data["frames"]:
+            frame.get("custom_per_atom", {}).pop(key, None)
+        yield (
+            f"null[user_metadata.custom_per_atom['{key}']]",
+            CanonicalObject.model_validate(data),
+        )
     if not (um.get("custom_global") or {}):
         data = copy.deepcopy(base)
         data.setdefault("user_metadata", {}).setdefault("custom_global", {})["gkey"] = "gval"

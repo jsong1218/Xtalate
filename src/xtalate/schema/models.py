@@ -7,9 +7,10 @@ are forbidden from filling absent fields; that is exclusively the Recovery Engin
 
 All values are stored in the one canonical unit system (§3.1): Å, fs, eV, eV/Å, u, e, μB.
 Numeric arrays are ``float64`` ``np.ndarray`` in memory and nested JSON lists when
-serialized (see ``arrays``). Cross-field shape invariants (constant N, first-dim = N/F)
-are enforced by the model validators here, since a lone array cannot know the object's
-atom or frame count.
+serialized (see ``arrays``). Shape invariants (first-dim = N per frame, first-dim = F for
+object-level per-frame arrays) are enforced by the model validators here, since a lone array
+cannot know the frame's atom count or the object's frame count. The atom count N may differ
+per frame as of schema 2.0.0 (§3.2, M72); it is a frame-local quantity, not an object one.
 """
 
 from __future__ import annotations
@@ -32,12 +33,14 @@ from xtalate.schema.arrays import (
 )
 from xtalate.schema.elements import atomic_number, is_valid_symbol
 
-# The Canonical Model schema version (§5), frozen at the v1.0 contract-freeze milestone (M35).
-# The predecessor 0.x series is carried forward by the real 0.1.0 -> 1.0.0 migration in
-# ``schema.migrations`` (D114); a stored 0.1.0 object loaded through ``load_canonical`` becomes a
-# 1.0.0 object with a ``migrate`` provenance record. This is the *schema* version — the product
-# package version moves under separate rules (Part 10 §4.2) and is not this string.
-SCHEMA_VERSION = "1.0.0"
+# The Canonical Model schema version (§5). Frozen at 1.0.0 by the v1.0 contract-freeze (M35), then
+# raised to 2.0.0 by the v2.0 gate (M72) which lifted the constant-N invariant (Part 2 §3.2) and
+# relocated ``custom_per_atom`` from the root onto each frame. The predecessor versions are carried
+# forward by the real migration chain in ``schema.migrations`` (0.1.0 -> 1.0.0 -> 2.0.0, D114, M72);
+# a stored older object loaded through ``load_canonical`` gains a single ``migrate`` provenance
+# record. This is the *schema* version — the product package version moves under separate rules
+# (Part 10 §4.2) and is not this string.
+SCHEMA_VERSION = "2.0.0"
 
 
 class _Model(BaseModel):
@@ -158,6 +161,17 @@ class Electronic(_Model):
 # --- §3.5 Frame + Trajectory ---------------------------------------------------------
 
 
+# A per-atom/per-frame custom value is a sequence whose first dimension is N/F (§3.10, §6
+# rule 1): either a numeric ndarray (extXYZ extra columns) OR a length-N/F list of JSON
+# scalars (e.g. per-frame free-text comments — the §8.1 / §6.1 carry-through of XYZ comment
+# lines). left_to_right union so numeric input becomes an ndarray and only non-numeric
+# input (strings) falls through to the list form. See MASTER_SPEC Part 2 §3.10 Rev 1.3.
+# Defined here (above Frame) because ``custom_per_atom`` is now a Frame field (M72);
+# ``_PerFrameValue`` stays paired with it and is used by ``UserMetadata`` below.
+_PerAtomValue = Annotated[ArrayNx | list[JsonValue], Field(union_mode="left_to_right")]
+_PerFrameValue = Annotated[ArrayFx | list[JsonValue], Field(union_mode="left_to_right")]
+
+
 class TrajectoryMetadata(_Model):
     # fs. None = frames exist but source declared no timestep (XDATCAR). The container's
     # single field is an intentional seam for future trajectory-level metadata (§3.5);
@@ -172,6 +186,22 @@ class Frame(_Model):
     cell: Cell | None = None  # §3.4.
     dynamics: Dynamics = Field(default_factory=Dynamics)  # required container, optional contents.
     electronic: Electronic = Field(default_factory=Electronic)  # required container.
+    # Per-atom custom arrays, first dim = THIS frame's atom count (§3.10). Relocated from the object
+    # root to the frame in schema 2.0.0 (M72) so that, with the constant-N invariant lifted (§3.2),
+    # each frame's arrays match its own N. For a constant-N trajectory every frame carries the same
+    # arrays (the pre-2.0 object-level semantics, expressed per frame).
+    custom_per_atom: dict[str, _PerAtomValue] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_custom_per_atom(self) -> Frame:
+        # A per-atom value's first dim must equal this frame's atom count (§3.10, §6 rule 1). A
+        # value is a numeric ndarray (first-dim = shape[0]) or a JSON-scalar list (first-dim = len).
+        n = self.atoms.positions.shape[0]
+        for key, val in self.custom_per_atom.items():
+            length = val.shape[0] if isinstance(val, np.ndarray) else len(val)
+            if length != n:
+                raise ValueError(f"custom_per_atom[{key!r}] first dim {length} != atom count {n}")
+        return self
 
 
 # --- §3.8 Simulation Metadata --------------------------------------------------------
@@ -216,20 +246,14 @@ class Provenance(_Model):
 # --- §3.10 User Metadata -------------------------------------------------------------
 
 
-# A per-atom/per-frame custom value is a sequence whose first dimension is N/F (§3.10, §6
-# rule 1): either a numeric ndarray (extXYZ extra columns) OR a length-N/F list of JSON
-# scalars (e.g. per-frame free-text comments — the §8.1 / §6.1 carry-through of XYZ comment
-# lines). left_to_right union so numeric input becomes an ndarray and only non-numeric
-# input (strings) falls through to the list form. See MASTER_SPEC Part 2 §3.10 Rev 1.3.
-_PerAtomValue = Annotated[ArrayNx | list[JsonValue], Field(union_mode="left_to_right")]
-_PerFrameValue = Annotated[ArrayFx | list[JsonValue], Field(union_mode="left_to_right")]
-
-
 class UserMetadata(_Model):
     tags: list[str] = Field(default_factory=list)
     annotations: dict[str, str] = Field(default_factory=dict)
     custom_global: dict[str, JsonValue] = Field(default_factory=dict)
-    custom_per_atom: dict[str, _PerAtomValue] = Field(default_factory=dict)  # first dim = N.
+    # custom_per_atom relocated to Frame in schema 2.0.0 (M72, §3.10): a per-atom array's first
+    # dimension is a frame's atom count, and with the constant-N invariant lifted (§3.2) that count
+    # can differ per frame, so the array can no longer live once at the object root.
+    # custom_per_frame (first dim = frame count F) remains here — F is an object-level quantity.
     custom_per_frame: dict[str, _PerFrameValue] = Field(default_factory=dict)  # first dim = F.
 
 
@@ -286,16 +310,10 @@ class CanonicalObject(_Model):
 
     @model_validator(mode="after")
     def _check(self) -> CanonicalObject:
-        # Constant-N invariant (§3.2): every frame has the same atom count, which is what
-        # makes the root-level custom_per_atom arrays (first dim N) well-defined.
-        n = self.frames[0].atoms.positions.shape[0]
-        for frame in self.frames:
-            fn = frame.atoms.positions.shape[0]
-            if fn != n:
-                raise ValueError(
-                    f"constant-atom-count invariant violated (§3.2): frame {frame.index} "
-                    f"has {fn} atoms, frame 0 has {n}"
-                )
+        # The constant-N invariant is lifted in schema 2.0.0 (M72, §3.2): frames may differ in atom
+        # count, so there is no cross-frame N check here. Each frame validates its own atom count
+        # and its own custom_per_atom arrays (see Frame); this validator owns only the object-level
+        # invariants — frame ordering and the object-level custom_per_frame (first dim = F).
         # Frame indices are their 0-based position in the trajectory (§3.5).
         for position, frame in enumerate(self.frames):
             if frame.index != position:
@@ -303,14 +321,9 @@ class CanonicalObject(_Model):
                     f"frame at position {position} declares index {frame.index}; "
                     "frame.index must equal its 0-based position (§3.5)"
                 )
-        # Root-level custom per-atom / per-frame values must match N / F (§3.10, §6 rule 1).
-        # A value is either a numeric ndarray (first-dim = shape[0]) or a JSON-scalar list
-        # (first-dim = len); both are validated against the object's atom / frame count.
+        # Root-level custom per-frame values must match F (§3.10, §6 rule 1). A value is either a
+        # numeric ndarray (first-dim = shape[0]) or a JSON-scalar list (first-dim = len).
         f = len(self.frames)
-        for key, val in self.user_metadata.custom_per_atom.items():
-            length = val.shape[0] if isinstance(val, np.ndarray) else len(val)
-            if length != n:
-                raise ValueError(f"custom_per_atom[{key!r}] first dim {length} != atom count {n}")
         for key, val in self.user_metadata.custom_per_frame.items():
             length = val.shape[0] if isinstance(val, np.ndarray) else len(val)
             if length != f:

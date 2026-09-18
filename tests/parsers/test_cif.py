@@ -312,7 +312,7 @@ def test_per_site_columns_are_replicated_onto_generated_atoms() -> None:
     occupancies = canonical.frames[0].atoms.occupancies
     assert occupancies is not None
     assert list(occupancies) == pytest.approx([1.0, 0.5, 0.5])
-    assert list(canonical.user_metadata.custom_per_atom["cif:atom_site_label"]) == [
+    assert list(canonical.frames[0].custom_per_atom["cif:atom_site_label"]) == [
         "Na1",
         "Cl1",
         "Cl1",
@@ -436,7 +436,7 @@ def test_raw_type_symbol_is_preserved_per_atom() -> None:
     data = CUBIC.replace(b"Na1 Na ", b"Na1 Na1+ ")
     result = _parse(data)
     assert result.canonical.frames[0].atoms.symbols == ["Na", "Cl"]
-    assert result.canonical.user_metadata.custom_per_atom["cif:type_symbol"] == ["Na1+", "Cl"]
+    assert result.canonical.frames[0].custom_per_atom["cif:type_symbol"] == ["Na1+", "Cl"]
 
 
 # --- carry-through (P1) --------------------------------------------------------------------
@@ -444,7 +444,7 @@ def test_raw_type_symbol_is_preserved_per_atom() -> None:
 
 def test_unmapped_atom_site_columns_are_carried_verbatim() -> None:
     result = _parse((GOLDEN / "zno_hexagonal.cif").read_bytes())
-    carried = result.canonical.user_metadata.custom_per_atom
+    carried = result.canonical.frames[0].custom_per_atom
     # Columns with no canonical field are carried verbatim into custom_per_atom (label, raw type
     # symbol). Occupancy is *mapped* to atoms.occupancies, not carried here.
     assert carried["cif:atom_site_label"] == ["Zn1", "O1"]
@@ -678,7 +678,7 @@ def test_occupancy_lands_in_the_first_class_field_not_custom_per_atom() -> None:
     occupancies = canonical.frames[0].atoms.occupancies
     assert occupancies is not None
     assert occupancies == pytest.approx([1.0, 0.5])
-    per_atom = canonical.user_metadata.custom_per_atom
+    per_atom = canonical.frames[0].custom_per_atom
     assert "cif:occupancy" not in per_atom
     assert "cif:atom_site_occupancy" not in per_atom
 
@@ -779,7 +779,7 @@ def test_type_symbol_suffix_alone_does_not_populate_charges() -> None:
     for the purpose populates the field — the suffix stays preserved verbatim."""
     result = _parse(CUBIC.replace(b"Na1 Na ", b"Na1 Na1+ "))
     assert result.canonical.frames[0].electronic.charges is None
-    assert result.canonical.user_metadata.custom_per_atom["cif:type_symbol"] == ["Na1+", "Cl"]
+    assert result.canonical.frames[0].custom_per_atom["cif:type_symbol"] == ["Na1+", "Cl"]
 
 
 def test_a_symbol_disagreeing_with_its_declared_number_is_reported() -> None:

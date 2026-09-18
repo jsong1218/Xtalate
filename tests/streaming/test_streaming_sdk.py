@@ -45,6 +45,7 @@ def _obj(n_frames: int = 3, *, with_cell_frame0: bool = True) -> CanonicalObject
                 atoms=AtomsBlock(symbols=["O", "H"], positions=np.array([[0.0, 0, 0], [1, 0, 0]])),
                 cell=cell,
                 dynamics=Dynamics(velocities=np.zeros((2, 3)) if i == 1 else None),
+                custom_per_atom={"lab": ["x", "y"]},
             )
         )
     return CanonicalObject(
@@ -57,7 +58,6 @@ def _obj(n_frames: int = 3, *, with_cell_frame0: bool = True) -> CanonicalObject
         user_metadata=UserMetadata(
             tags=["a"],
             custom_global={"g": 1},
-            custom_per_atom={"lab": ["x", "y"]},
             custom_per_frame={"c": [10, None, 30]} if n_frames == 3 else {},
         ),
     )

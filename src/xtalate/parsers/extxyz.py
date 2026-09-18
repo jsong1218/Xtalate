@@ -47,7 +47,7 @@ from ase.io import read as ase_read
 from ase.stress import voigt_6_to_full_3x3_stress
 from pydantic import JsonValue
 
-from xtalate.parsers._common import build_provenance, decode_text
+from xtalate.parsers._common import attach_per_atom, build_provenance, decode_text
 from xtalate.schema import (
     SCHEMA_VERSION,
     AtomsBlock,
@@ -330,7 +330,11 @@ class ExtxyzParser(ParserPlugin):
                 "velocities converted from ASE internal units to Å/fs (source 'momenta' column)."
             )
 
-        user_metadata = self._build_user_metadata(atoms_list, carried_calc, issues)
+        custom_per_atom = self._collect_custom_columns(atoms_list, issues)
+        user_metadata = self._build_user_metadata(atoms_list, carried_calc)
+        # custom_per_atom is per-frame in schema 2.0.0 (M72); this frame-invariant column set is
+        # written onto every frame (Part 2 §3.10, D-d).
+        frames = attach_per_atom(frames, custom_per_atom)
         provenance = build_provenance(
             format_id=FORMAT_ID,
             filename=filename,
@@ -502,14 +506,11 @@ class ExtxyzParser(ParserPlugin):
         self,
         atoms_list: list[Atoms],
         carried_calc: list[dict[str, JsonValue]],
-        issues: list[ParseIssue],
     ) -> UserMetadata:
-        custom_per_atom = self._collect_custom_columns(atoms_list, issues)
+        # custom_per_atom moved onto each Frame in schema 2.0.0 (M72) and is attached separately;
+        # user_metadata now carries only the object-level per-frame column set.
         custom_per_frame = self._collect_comment_metadata(atoms_list, carried_calc)
-        return UserMetadata(
-            custom_per_atom=custom_per_atom,
-            custom_per_frame=custom_per_frame,
-        )
+        return UserMetadata(custom_per_frame=custom_per_frame)
 
     @staticmethod
     def _collect_custom_columns(

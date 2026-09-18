@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from pydantic import JsonValue
 
 from xtalate.schema import (
     AtomsBlock,
@@ -21,6 +22,7 @@ from xtalate.schema import (
     TrajectoryMetadata,
     UserMetadata,
 )
+from xtalate.schema.arrays import ArrayNx
 from xtalate.sdk.streaming import stream_of
 
 
@@ -42,13 +44,21 @@ def _accumulate(obj: CanonicalObject) -> object:
     return acc.result()
 
 
-def _frame(i: int, *, cell: bool = False, vel: bool = False, energy: bool = False) -> Frame:
+def _frame(
+    i: int,
+    *,
+    cell: bool = False,
+    vel: bool = False,
+    energy: bool = False,
+    cpa: dict[str, ArrayNx | list[JsonValue]] | None = None,
+) -> Frame:
     return Frame(
         index=i,
         atoms=AtomsBlock(symbols=["O", "H"], positions=np.array([[0.0, 0, 0], [1, 0, 0]])),
         cell=Cell(lattice_vectors=np.eye(3) * 5, pbc=(True, True, True)) if cell else None,
         dynamics=Dynamics(velocities=np.zeros((2, 3)) if vel else None),
         electronic=Electronic(total_energy=-1.0 if energy else None),
+        custom_per_atom=cpa or {},
     )
 
 
@@ -71,7 +81,7 @@ CASES = {
         provenance=_prov(),
     ),
     "rich_metadata": CanonicalObject(
-        frames=[_frame(0), _frame(1)],
+        frames=[_frame(0, cpa={"lab": ["x", "y"]}), _frame(1, cpa={"lab": ["x", "y"]})],
         trajectory=TrajectoryMetadata(timestep=None),
         simulation=SimulationMetadata(source_code="vasp", temperature=300.0),
         provenance=_prov(),
@@ -79,7 +89,6 @@ CASES = {
             tags=["md"],
             annotations={"note": "x"},
             custom_global={"g": 1},
-            custom_per_atom={"lab": ["x", "y"]},
             custom_per_frame={"c": [1, None]},
         ),
     ),

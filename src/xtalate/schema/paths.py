@@ -45,9 +45,20 @@ _CATEGORY_MODELS: dict[str, type[BaseModel]] = {
 # `frame.atoms` are not capability-declarable leaves; `frame.time` is the one that is.
 _FRAME_LEAVES = frozenset({"frame.time"})
 
+# Stable capability identifiers that no longer name a live attribute path. Schema 2.0.0 (M72)
+# relocated ``custom_per_atom`` from ``UserMetadata`` onto each ``Frame`` (per-atom columns are
+# a property of a frame's atoms, and the constant-N invariant that made an object-level home
+# coherent is lifted). The *capability identifier* stays ``user_metadata.custom_per_atom`` on
+# purpose: it names the canonical per-atom carry-through category matched between parser and
+# exporter declarations, the pre-flight diff, and the write plan — an opaque field-category key,
+# not a live attribute path — so keeping it stable holds constant-N output byte-identical and
+# avoids a matrix-wide rename (M73 revisits when variable-N *emission* lands). It is registered
+# here explicitly because it is no longer derivable from any model's ``model_fields``.
+_RELOCATED_IDENTIFIERS = frozenset({"user_metadata.custom_per_atom"})
+
 
 def _build_paths() -> frozenset[str]:
-    paths = set(_FRAME_LEAVES)
+    paths = set(_FRAME_LEAVES) | set(_RELOCATED_IDENTIFIERS)
     for category, model in _CATEGORY_MODELS.items():
         for field_name in model.model_fields:
             paths.add(f"{category}.{field_name}")

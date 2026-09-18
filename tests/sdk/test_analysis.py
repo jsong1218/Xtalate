@@ -115,7 +115,8 @@ def test_run_writes_only_the_plugins_namespace_and_touches_nothing_else() -> Non
     assert after["provenance"]["original_coordinate_system"] == "cartesian"
     assert after["user_metadata"]["tags"] == before["user_metadata"]["tags"]
     assert after["user_metadata"]["annotations"] == before["user_metadata"]["annotations"]
-    assert after["user_metadata"]["custom_per_atom"] == before["user_metadata"]["custom_per_atom"]
+    # custom_per_atom relocated onto each frame in schema 2.0.0 (M72); its untouched-ness is already
+    # covered by the frames byte-equality asserted above.
     assert after["user_metadata"]["custom_per_frame"] == before["user_metadata"]["custom_per_frame"]
 
     # The annotation, and nothing but the annotation, in the plugin's own namespace.
@@ -172,8 +173,9 @@ def test_a_plugin_that_writes_no_keys_still_records_its_run() -> None:
 
 def test_analyze_joins_the_reserved_operation_vocabulary() -> None:
     """``operation`` is a plain ``str`` and ``"analyze"`` is a *documented* value on it (D269) —
-    recording it changes no schema shape, which is why ``SCHEMA_VERSION`` does not move."""
-    assert SCHEMA_VERSION == "1.0.0"
+    recording it changes no schema shape, so it did not itself move ``SCHEMA_VERSION`` (the bump to
+    2.0.0 is M72's constant-N/custom_per_atom relocation, unrelated to the analysis vocabulary)."""
+    assert SCHEMA_VERSION == "2.0.0"
     assert ConversionRecord.model_fields["operation"].annotation is str
     assert run_analysis(_obj(), DummyAnalysis("toy")).provenance.history[-1].operation == "analyze"
 

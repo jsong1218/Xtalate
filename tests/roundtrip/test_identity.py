@@ -109,10 +109,10 @@ def test_cif_identity_loses_exactly_the_space_group_symbol_and_nothing_else() ->
 
     # The FULL-only subspace above says nothing about the `cif:` carry-through columns, which are
     # PARTIAL — and they are most of what M19 added, so they get their own assertion.
-    assert first.user_metadata.custom_per_atom.keys() == second.user_metadata.custom_per_atom.keys()
+    assert first.frames[0].custom_per_atom.keys() == second.frames[0].custom_per_atom.keys()
     assert (
-        second.user_metadata.custom_per_atom["cif:atom_site_label"]
-        == first.user_metadata.custom_per_atom["cif:atom_site_label"]
+        second.frames[0].custom_per_atom["cif:atom_site_label"]
+        == first.frames[0].custom_per_atom["cif:atom_site_label"]
     )
     assert second.user_metadata.custom_global == first.user_metadata.custom_global
 

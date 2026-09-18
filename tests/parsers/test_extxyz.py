@@ -140,8 +140,8 @@ def test_energy_and_forces_map_to_canonical_fields() -> None:
 def test_arbitrary_column_carries_to_custom_per_atom() -> None:
     data = b"1\nProperties=species:S:1:pos:R:3:my_label:R:1\nH 0 0 0 7.0\n"
     obj = parse_bytes(_parser(), data).canonical
-    assert "extxyz:my_label" in obj.user_metadata.custom_per_atom
-    column = np.asarray(obj.user_metadata.custom_per_atom["extxyz:my_label"])
+    assert "extxyz:my_label" in obj.frames[0].custom_per_atom
+    column = np.asarray(obj.frames[0].custom_per_atom["extxyz:my_label"])
     assert np.isclose(column[0], 7.0)
 
 
@@ -246,4 +246,4 @@ def test_string_per_atom_column_carried_as_list() -> None:
         b"Si 0 0 0 core\nC 1 1 1 shell\n"
     )
     result = parse_bytes(_parser(), source)
-    assert result.canonical.user_metadata.custom_per_atom["extxyz:label"] == ["core", "shell"]
+    assert result.canonical.frames[0].custom_per_atom["extxyz:label"] == ["core", "shell"]

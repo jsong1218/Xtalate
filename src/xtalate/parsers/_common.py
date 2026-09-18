@@ -9,10 +9,21 @@ that boilerplate so each format module stays focused on its grammar. It imports 
 
 from __future__ import annotations
 
+from typing import Any
+
+from pydantic import TypeAdapter
+
 from xtalate import __version__
 from xtalate._time import utc_now as _utc_now
-from xtalate.schema import ConversionRecord, Provenance
+from xtalate.schema import ConversionRecord, Frame, Provenance
 from xtalate.sdk import ParseError, ParseIssue
+
+# Coerce a raw per-atom column set exactly as the ``Frame.custom_per_atom`` field would (the
+# left-to-right union: numeric input → ndarray, non-numeric → list — D12), driven off the field's
+# own annotation so it can never drift from the model.
+_PER_ATOM_ADAPTER: TypeAdapter[dict[str, Any]] = TypeAdapter(
+    Frame.model_fields["custom_per_atom"].annotation
+)
 
 
 def decode_text(data: bytes, *, format_id: str) -> str:
@@ -66,6 +77,23 @@ def parse_record(format_id: str, *, parser_version: str | None = None) -> Conver
         parser_version=parser_version or f"{format_id}-parser {__version__}",
         assumptions=[],
     )
+
+
+def attach_per_atom(frames: list[Frame], custom_per_atom: dict[str, Any]) -> list[Frame]:
+    """Write an object-level per-atom column set onto every frame (schema 2.0.0, M72).
+
+    Pre-2.0, ``custom_per_atom`` lived once at the object root because the constant-N invariant
+    guaranteed one atom count for all frames (Part 2 §3.10). Schema 2.0.0 lifts that invariant and
+    relocates the columns onto each ``Frame``, validated against *that* frame's N. A whole-file
+    parser still collects one frame-invariant column set (it produces constant-N objects in M72 —
+    variable-N emission is M73), so it writes the same set onto every frame here: the single place
+    the "same array to every frame" rule lives, so no parser hand-rolls the loop. Each frame gets
+    its own dict so a later per-frame mutation cannot alias another frame's columns. An empty set
+    leaves the frames untouched (no ``custom_per_atom`` to carry)."""
+    if not custom_per_atom:
+        return frames
+    coerced = _PER_ATOM_ADAPTER.validate_python(dict(custom_per_atom))
+    return [f.model_copy(update={"custom_per_atom": dict(coerced)}) for f in frames]
 
 
 def build_provenance(

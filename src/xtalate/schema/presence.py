@@ -165,7 +165,11 @@ def compute_field_presence(obj: CanonicalObject) -> PresenceMap:
     um = obj.user_metadata
     for key in um.custom_global:
         entries.append(PathPresence(path=f"user_metadata.custom_global['{key}']", status="present"))
-    for key in um.custom_per_atom:
+    # custom_per_atom relocated onto each Frame in schema 2.0.0 (M72); the object-level view is
+    # frame 0's (frame-invariant for a constant-N object). The path identifier is stable (§3.10) —
+    # it names the canonical per-atom category, not a live attribute path, and keeps constant-N
+    # presence output identical to pre-2.0.
+    for key in obj.frames[0].custom_per_atom:
         entries.append(
             PathPresence(path=f"user_metadata.custom_per_atom['{key}']", status="present")
         )

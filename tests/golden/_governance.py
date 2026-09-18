@@ -53,6 +53,7 @@ from typing import Any
 import yaml
 
 from xtalate.schema import SCHEMA_VERSION, CanonicalObject, load_canonical
+from xtalate.schema.migrations import has_migration_path
 
 GOLDEN_ROOT = Path(__file__).parent
 # The real-world corpus (v0.4 M20, DECISIONS.md D70) lives in its own root and carries a
@@ -339,6 +340,10 @@ def _major(version: str) -> int:
     return int(version.split(".", 1)[0])
 
 
+def _version_tuple(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
 def load_expected_through_migration_chain(case: GoldenCase) -> CanonicalObject:
     """Load ``expected.canonical.json`` as the current schema would (Part 8 §3.3).
 
@@ -367,22 +372,25 @@ def load_expected_through_migration_chain(case: GoldenCase) -> CanonicalObject:
 
 
 def check_schema_version_lag(case: GoldenCase) -> None:
-    """Fail if the manifest's schema version is more than one *major* behind current, or ahead of
-    current at all (§3.3). Expectations may lag one major (they get migrated forward); one authored
-    against a *future* major cannot have been validated against a schema that does not yet exist, so
-    it is a mistake, not a lag."""
+    """Fail if the manifest's schema version cannot be carried forward to current, or is ahead of
+    current at all (§3.3). An expectation may lag any number of versions **as long as a migration
+    path to current is registered** — it is migrated forward on load, never regenerated, so the
+    corpus keeps proving the chain (D-c, M72). Before M72 the bound was "at most one major behind",
+    but that would force regenerating fixtures the moment a second migration lands even though they
+    still load perfectly; the honest predicate is "does it still migrate?" One authored against a
+    *future* version cannot have been validated against a schema that does not yet exist, so it is a
+    mistake, not a lag."""
 
     declared = str(case.data["canonical_schema_version"])
-    lag = _major(SCHEMA_VERSION) - _major(declared)
-    if lag > 1:
-        raise ManifestError(
-            f"{case.rel_manifest}: canonical_schema_version {declared!r} is {lag} major "
-            f"versions behind current {SCHEMA_VERSION!r} (max 1) — regenerate the expectation."
-        )
-    if lag < 0:
+    if _version_tuple(declared) > _version_tuple(SCHEMA_VERSION):
         raise ManifestError(
             f"{case.rel_manifest}: canonical_schema_version {declared!r} is ahead of current "
-            f"{SCHEMA_VERSION!r} — an expectation cannot be authored against a future schema major."
+            f"{SCHEMA_VERSION!r} — an expectation cannot be authored against a future schema."
+        )
+    if not has_migration_path(declared):
+        raise ManifestError(
+            f"{case.rel_manifest}: canonical_schema_version {declared!r} has no registered "
+            f"migration path to current {SCHEMA_VERSION!r} — regenerate the expectation."
         )
 
 

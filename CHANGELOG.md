@@ -15,7 +15,7 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 ## [Unreleased]
 
-Schema version: 1.0.0
+Schema version: 2.0.0
 
 _The next release accrues here._
 
