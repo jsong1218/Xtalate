@@ -88,11 +88,11 @@ class ExtxyzExporter(ExporterPlugin):
 
         ASE serialises each ``Atoms`` as an independent extXYZ block (count, comment, atom rows), so
         writing images one at a time and concatenating is byte-identical to a single whole-list
-        write — the streamed output matches ``export`` exactly. The object-level ``custom_per_atom``
-        columns ride on the header and apply to every frame; the per-frame comment metadata rides on
-        each ``StreamFrame``."""
+        write — the streamed output matches ``export`` exactly. The per-atom ``custom_per_atom``
+        columns ride on each ``StreamFrame.frame`` (schema 2.0.0, M73), sized to that frame's own N;
+        the per-frame comment metadata rides on each ``StreamFrame`` alongside."""
         for sf in frames:
-            atoms = self._atoms_from(sf.frame, header.custom_per_atom, sf.per_frame_custom)
+            atoms = self._atoms_from(sf.frame, sf.frame.custom_per_atom, sf.per_frame_custom)
             buf = io.StringIO()
             ase_write(buf, atoms, format="extxyz")
             stream.write(buf.getvalue().encode("utf-8"))

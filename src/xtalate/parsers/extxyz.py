@@ -47,7 +47,13 @@ from ase.io import read as ase_read
 from ase.stress import voigt_6_to_full_3x3_stress
 from pydantic import JsonValue
 
-from xtalate.parsers._common import attach_per_atom, build_provenance, decode_text
+from xtalate.parsers._common import (
+    attach_per_atom,
+    build_provenance,
+    coerce_per_atom,
+    decode_text,
+    with_per_atom,
+)
 from xtalate.schema import (
     SCHEMA_VERSION,
     AtomsBlock,
@@ -397,6 +403,11 @@ class ExtxyzParser(ParserPlugin):
         # custom_per_atom is object-level and frame-invariant (Part 2 §3.10): established from the
         # first frame's Properties= columns and re-checked as later frames stream in.
         custom_per_atom = _collect_custom_columns_single(first_atoms)
+        # Coerce the frame-invariant column set once and attach it onto each streamed frame — since
+        # the M73 SDK major ``custom_per_atom`` rides each ``StreamFrame.frame``, not the header
+        # (Part 2 §3.10). extXYZ streaming remains constant-N (the variable-N gate below still
+        # refuses divergence), so frame 0's column set fits every frame.
+        coerced_per_atom = coerce_per_atom(custom_per_atom)
         provenance = build_provenance(
             format_id=FORMAT_ID,
             filename=filename,
@@ -408,12 +419,13 @@ class ExtxyzParser(ParserPlugin):
             schema_version=SCHEMA_VERSION,
             provenance=provenance,
             trajectory=TrajectoryMetadata(timestep=None),
-            custom_per_atom=custom_per_atom,
         )
 
         def _frames() -> Iterator[StreamFrame]:
             warned_columns: set[str] = set()
-            yield self._stream_frame(first_atoms, first_comment, first_cell, 0, n_atoms, issues)
+            yield self._stream_frame(
+                first_atoms, first_comment, first_cell, 0, n_atoms, coerced_per_atom, issues
+            )
             index = 1
             for block, comment in blocks:
                 atoms = _read_block(block, index)
@@ -427,7 +439,9 @@ class ExtxyzParser(ParserPlugin):
                     )
                 _check_columns_consistent(atoms, custom_per_atom, warned_columns, issues)
                 cell, _ = self._build_cell(atoms, comment)
-                yield self._stream_frame(atoms, comment, cell, index, n_atoms, issues)
+                yield self._stream_frame(
+                    atoms, comment, cell, index, n_atoms, coerced_per_atom, issues
+                )
                 index += 1
 
         return FrameStream(header, _frames(), issues=issues)
@@ -439,26 +453,32 @@ class ExtxyzParser(ParserPlugin):
         cell: Cell | None,
         index: int,
         n_atoms: int,
+        coerced_per_atom: dict[str, Any],
         issues: list[ParseIssue],
     ) -> StreamFrame:
         """Build one ``StreamFrame`` (Frame + its per-frame custom slice) from one ASE image,
-        reusing the whole-file per-frame mappers so streamed and materialized frames match."""
+        reusing the whole-file per-frame mappers so streamed and materialized frames match.
+        ``coerced_per_atom`` is the frame-invariant per-atom column set (coerced once) written onto
+        this frame — the streaming mirror of the whole-file ``attach_per_atom`` (M73)."""
         mapped, carried = _partition_calc(atoms, n_atoms, index, issues)
         per_frame_custom: dict[str, Any] = {}
         for key in atoms.info:
             per_frame_custom[_namespace(key)] = _as_json(atoms.info.get(key))
         for key, value in carried.items():
             per_frame_custom[_namespace(key)] = value
-        frame = Frame(
-            index=index,
-            atoms=self._build_atoms(atoms),
-            cell=cell,
-            dynamics=self._build_dynamics(atoms, mapped),
-            electronic=Electronic(
-                total_energy=mapped.get("energy"),
-                charges=mapped.get("charges"),
-                magnetic_moments=mapped.get("magmoms"),
+        frame = with_per_atom(
+            Frame(
+                index=index,
+                atoms=self._build_atoms(atoms),
+                cell=cell,
+                dynamics=self._build_dynamics(atoms, mapped),
+                electronic=Electronic(
+                    total_energy=mapped.get("energy"),
+                    charges=mapped.get("charges"),
+                    magnetic_moments=mapped.get("magmoms"),
+                ),
             ),
+            coerced_per_atom,
         )
         return StreamFrame(frame=frame, per_frame_custom=per_frame_custom)
 

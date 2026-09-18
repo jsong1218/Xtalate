@@ -79,6 +79,29 @@ def parse_record(format_id: str, *, parser_version: str | None = None) -> Conver
     )
 
 
+def coerce_per_atom(custom_per_atom: dict[str, Any]) -> dict[str, Any]:
+    """Coerce a raw per-atom column set once, exactly as ``Frame.custom_per_atom`` would (numeric →
+    ndarray, non-numeric → list, D12). A streaming parser establishes one frame-invariant column set
+    and attaches it onto every ``StreamFrame.frame`` (:func:`with_per_atom`); coercing once here,
+    rather than per frame, keeps that cost off the frame loop. An empty set coerces to ``{}``."""
+    if not custom_per_atom:
+        return {}
+    return dict(_PER_ATOM_ADAPTER.validate_python(dict(custom_per_atom)))
+
+
+def with_per_atom(frame: Frame, coerced: dict[str, Any]) -> Frame:
+    """Attach an *already-coerced* per-atom column set onto one ``Frame`` (schema 2.0.0, M72/M73).
+
+    The single-frame companion to :func:`attach_per_atom`, for the streaming path where each
+    ``StreamFrame.frame`` carries its own ``custom_per_atom`` (M73's ``StreamHeader`` relocation).
+    ``model_copy(update=...)`` skips validation, so ``coerced`` must already be a coerced set from
+    :func:`coerce_per_atom`. Each frame gets its own dict so a per-frame mutation cannot alias
+    another frame's columns. An empty set leaves the frame untouched."""
+    if not coerced:
+        return frame
+    return frame.model_copy(update={"custom_per_atom": dict(coerced)})
+
+
 def attach_per_atom(frames: list[Frame], custom_per_atom: dict[str, Any]) -> list[Frame]:
     """Write an object-level per-atom column set onto every frame (schema 2.0.0, M72).
 
@@ -90,10 +113,10 @@ def attach_per_atom(frames: list[Frame], custom_per_atom: dict[str, Any]) -> lis
     the "same array to every frame" rule lives, so no parser hand-rolls the loop. Each frame gets
     its own dict so a later per-frame mutation cannot alias another frame's columns. An empty set
     leaves the frames untouched (no ``custom_per_atom`` to carry)."""
-    if not custom_per_atom:
+    coerced = coerce_per_atom(custom_per_atom)
+    if not coerced:
         return frames
-    coerced = _PER_ATOM_ADAPTER.validate_python(dict(custom_per_atom))
-    return [f.model_copy(update={"custom_per_atom": dict(coerced)}) for f in frames]
+    return [with_per_atom(f, coerced) for f in frames]
 
 
 def build_provenance(

@@ -986,34 +986,21 @@ class ConversionEngine:
         # plan per-key, not as the whole container: a container-level entry makes `_kept_custom`
         # keep every key — including ones the pre-flight classifies Removed and the exporter drops
         # — so the streamed validation expected side would demand them back and false-fail where
-        # the materialized path passes (standing rule 3). The keys are eager in the header (both
-        # containers are object-level), so the refinement is known before the pass, exactly like the
-        # capability plan itself. `custom_per_frame` is deliberately *not* refined here — and the
-        # reason is the streaming-eligibility gate, not the absence of a per-key-classifying target
-        # (lammps_dump does per-key-classify custom_per_frame and is a streaming exporter). It is
-        # safe only because `streaming_eligible()` rejects every target that would need it:
-        # lammps_dump is `requires_units_style` and so never streams, and no other
-        # streaming-eligible exporter per-key-classifies custom_per_frame. If one ever does, this
-        # loop cannot fix it — custom_per_frame keys are per-frame, not eager in the header, so the
-        # refinement would have to live in `_filter_stream_frame` (per row), not here. Widen the
-        # eligibility gate or add that per-frame refinement before relying on it.
-        for container, keys in (
-            ("user_metadata.custom_global", header.custom_global),
-            ("user_metadata.custom_per_atom", header.custom_per_atom),
-        ):
-            allowed = caps.writable_custom_keys.get(container)
-            pattern = caps.writable_custom_key_pattern.get(container)
-            if allowed is None and pattern is None:
-                continue
-            write_plan.discard(container)
-            for key in keys:
-                is_writable = (
-                    key in allowed
-                    if allowed is not None
-                    else re.fullmatch(pattern or "", key) is not None
-                )
-                if is_writable:
-                    write_plan.add(f"{container}['{key}']")
+        # the materialized path passes (standing rule 3). `custom_global` keys are eager in the
+        # header, so that refinement is known before the pass. `custom_per_atom` keys ride each
+        # frame (schema 2.0.0, M73), no longer the header, so its refinement is deferred to frame 0
+        # inside `_planned_frames` (frame-invariant for the constant-N streams this path handles —
+        # the reader refusals still gate divergence). `custom_per_frame` is deliberately *not*
+        # refined — and the reason is the streaming-eligibility gate, not the absence of a
+        # per-key-classifying target (lammps_dump does per-key-classify custom_per_frame and is a
+        # streaming exporter). It is safe only because `streaming_eligible()` rejects every target
+        # that would need it: lammps_dump is `requires_units_style` and so never streams, and no
+        # other streaming-eligible exporter per-key-classifies custom_per_frame. If one ever does,
+        # this cannot fix it — the refinement would have to live per row. Widen the eligibility gate
+        # or add that per-frame refinement before relying on it.
+        _refine_custom_key_plan(
+            write_plan, caps, "user_metadata.custom_global", header.custom_global
+        )
         acc = PresenceAccumulator(header.schema_version)
         acc.observe_header(
             trajectory=header.trajectory,
@@ -1021,12 +1008,26 @@ class ConversionEngine:
             tags=header.tags,
             annotations=header.annotations,
             custom_global=header.custom_global,
-            custom_per_atom=header.custom_per_atom,
         )
         counters = {"frames": 0}
+        per_atom_refined = False
 
         def _planned_frames() -> Any:
+            nonlocal per_atom_refined
             for sf in stream.frames():
+                if not per_atom_refined:
+                    # Refine the custom_per_atom plan from frame 0's keys — they ride each frame
+                    # now (M73), and are frame-invariant for the constant-N streams this path
+                    # handles, so frame 0's set matches the eager header-based refinement this
+                    # replaced and keeps the reported/validation write_plan identical to the
+                    # materialized path (rule 3).
+                    _refine_custom_key_plan(
+                        write_plan,
+                        caps,
+                        "user_metadata.custom_per_atom",
+                        sf.frame.custom_per_atom,
+                    )
+                    per_atom_refined = True
                 present_keys = [k for k, v in sf.per_frame_custom.items() if v is not None]
                 acc.observe_frame(sf.frame, present_keys)
                 counters["frames"] += 1
@@ -1247,7 +1248,6 @@ class ConversionEngine:
             tags=header.tags,
             annotations=header.annotations,
             custom_global=header.custom_global,
-            custom_per_atom=header.custom_per_atom,
         )
         first_frame: StreamFrame | None = None
         last_frame: StreamFrame | None = None
@@ -1954,8 +1954,33 @@ def _filter_stream_header(header: StreamHeader, plan: set[str]) -> StreamHeader:
         tags=header.tags if "user_metadata.tags" in plan else [],
         annotations=header.annotations if "user_metadata.annotations" in plan else {},
         custom_global=_kept_custom(header.custom_global, "user_metadata.custom_global", plan),
-        custom_per_atom=_kept_custom(header.custom_per_atom, "user_metadata.custom_per_atom", plan),
+        # custom_per_atom is filtered per frame in _filter_stream_frame → _filter_frame (relocated
+        # onto each Frame in schema 2.0.0, M73); the header no longer carries it.
     )
+
+
+def _refine_custom_key_plan(plan: set[str], caps: Any, container: str, keys: Any) -> None:
+    """Refine a ``custom_*`` container in the write plan from container-level to per-key, in place.
+
+    A target that writes only *specific* keys of a container (an allowlist ``writable_custom_keys``
+    or a name ``writable_custom_key_pattern``, D69) must enter the plan per key, not as the whole
+    container — a container-level entry makes ``_kept_custom`` keep every key, including ones the
+    pre-flight classifies Removed, so the streamed-validation expected side would demand them back
+    and false-fail where the materialized path passes (standing rule 3). A target with neither
+    restriction keeps its container-level entry untouched (writes every key). ``custom_global`` keys
+    are eager in the header; ``custom_per_atom`` keys ride each frame (schema 2.0.0, M73) and are
+    passed from frame 0 (frame-invariant for the constant-N streams the streaming path handles)."""
+    allowed = caps.writable_custom_keys.get(container)
+    pattern = caps.writable_custom_key_pattern.get(container)
+    if allowed is None and pattern is None:
+        return
+    plan.discard(container)
+    for key in keys:
+        is_writable = (
+            key in allowed if allowed is not None else re.fullmatch(pattern or "", key) is not None
+        )
+        if is_writable:
+            plan.add(f"{container}['{key}']")
 
 
 def _kept_custom(container: dict[str, Any], container_path: str, plan: set[str]) -> dict[str, Any]:

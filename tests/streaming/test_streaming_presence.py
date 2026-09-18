@@ -36,7 +36,6 @@ def _accumulate(obj: CanonicalObject) -> object:
         tags=h.tags,
         annotations=h.annotations,
         custom_global=h.custom_global,
-        custom_per_atom=h.custom_per_atom,
     )
     for sf in stream.frames():
         keys = [k for k, v in sf.per_frame_custom.items() if v is not None]

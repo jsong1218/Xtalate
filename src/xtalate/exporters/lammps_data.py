@@ -212,8 +212,7 @@ class LammpsDataExporter(ExporterPlugin):
             lattice = np.asarray(cell.lattice_vectors, dtype=float)
             if not _is_restricted(lattice):
                 return _unrestricted_reason()
-        header = stream_of(canonical).header
-        has_molecule = _MOLECULE_KEY in header.custom_per_atom
+        has_molecule = _MOLECULE_KEY in frame.custom_per_atom
         has_charges = frame.electronic.charges is not None
         if has_molecule and not has_charges:
             return (
@@ -426,7 +425,7 @@ def _write_block(stream: BinaryIO, frame: Any, header: StreamHeader, style: Unit
         atom_types_line_in_counts,
     ) = _split_topology(topology)
 
-    types_per_atom, _type_map, _preserved = _type_numbering(header, symbols)
+    types_per_atom, _type_map, _preserved = _type_numbering(frame, symbols)
     n_types = int(np.max(types_per_atom)) if n_atoms else 0
 
     lines: list[str] = []
@@ -475,17 +474,17 @@ def _write_block(stream: BinaryIO, frame: Any, header: StreamHeader, style: Unit
 
     # Atoms: the style is inferred from what the object carries (molecule-id → full, else charges →
     # charge, else atomic); the column layout is the exact inverse of the parser's.
-    style_name, layout = _write_style(header, frame)
+    style_name, layout = _write_style(frame)
     lines.append("")
     lines.append(f"Atoms # {style_name}")
     lines.append("")
-    lines.extend(_atom_rows(header, frame, symbols, types_per_atom, positions, layout, distance))
+    lines.extend(_atom_rows(frame, symbols, types_per_atom, positions, layout, distance))
 
     if frame.dynamics.velocities is not None:
         lines.append("")
         lines.append("Velocities")
         lines.append("")
-        lines.extend(_velocity_rows(header, frame, n_atoms, style))
+        lines.extend(_velocity_rows(frame, n_atoms, style))
 
     # Every other carried topology section (Bonds/Angles/… , * Coeffs, unrecognized), verbatim and
     # in file order — the byte-faithful data→data topology write-back.
@@ -523,17 +522,16 @@ def _split_topology(
     return header_counts, verbatim_masses, other, declared_atom_types, atom_types_line_in_counts
 
 
-def _type_numbering(
-    header: StreamHeader, symbols: list[str]
-) -> tuple[np.ndarray, dict[str, int], bool]:
+def _type_numbering(frame: Any, symbols: list[str]) -> tuple[np.ndarray, dict[str, int], bool]:
     """The numeric type per atom, the reported symbol→type map, and whether source numbering was
     preserved.
 
     Whenever the object carries ``lammps_data:type``, the source's own per-atom numbering is
     preserved so every carried atom-type-indexed section stays consistent with the Atoms rows.
     Otherwise types are assigned deterministically by first appearance (Si=1, O=2, …), exactly as
-    the dump exporter does, so a round-trip is stable."""
-    carried = header.custom_per_atom.get(_TYPE_KEY)
+    the dump exporter does, so a round-trip is stable. The carry rides on ``frame.custom_per_atom``
+    (schema 2.0.0, M73); data is a single-frame format, so this is that one frame's column set."""
+    carried = frame.custom_per_atom.get(_TYPE_KEY)
     if carried is not None:
         types = np.asarray(carried)
         if types.shape != (len(symbols),):
@@ -556,12 +554,12 @@ def _type_numbering(
     return types, type_map, False
 
 
-def _write_style(header: StreamHeader, frame: Any) -> tuple[str, tuple[str, ...]]:
+def _write_style(frame: Any) -> tuple[str, tuple[str, ...]]:
     """The atom style to declare and its column layout. A carried molecule-id needs ``full``; else a
     charge needs ``charge``; else ``atomic``. The molecule-without-charge and other value-level
     obstructions are refused upstream by ``unrepresentable``, so this only picks among the writable
-    styles."""
-    if _MOLECULE_KEY in header.custom_per_atom:
+    styles. The molecule-id carry rides on ``frame.custom_per_atom`` (schema 2.0.0, M73)."""
+    if _MOLECULE_KEY in frame.custom_per_atom:
         return "full", _STYLE_LAYOUTS["full"]
     if frame.electronic.charges is not None:
         return "charge", _STYLE_LAYOUTS["charge"]
@@ -569,7 +567,6 @@ def _write_style(header: StreamHeader, frame: Any) -> tuple[str, tuple[str, ...]
 
 
 def _atom_rows(
-    header: StreamHeader,
     frame: Any,
     symbols: list[str],
     types_per_atom: np.ndarray,
@@ -578,15 +575,16 @@ def _atom_rows(
     distance: float,
 ) -> list[str]:
     """The ``Atoms`` data rows in the declared style's column order, with a trailing ``ix iy iz``
-    triple when the object carries image flags."""
+    triple when the object carries image flags. The per-atom carries (ids, molecule-id, image flags)
+    ride on ``frame.custom_per_atom`` (schema 2.0.0, M73)."""
     n_atoms = len(symbols)
-    ids = _carried_ids(header, n_atoms)
-    molecules = header.custom_per_atom.get(_MOLECULE_KEY)
+    ids = _carried_ids(frame, n_atoms)
+    molecules = frame.custom_per_atom.get(_MOLECULE_KEY)
     molecules_array = None if molecules is None else np.asarray(molecules)
     charges = frame.electronic.charges
     charges_array = None if charges is None else np.asarray(charges, dtype=float)
     coords = positions / distance
-    image_flags = _image_flags(header, n_atoms)
+    image_flags = _image_flags(frame, n_atoms)
 
     rows: list[str] = []
     for i in range(n_atoms):
@@ -612,10 +610,10 @@ def _atom_rows(
     return rows
 
 
-def _velocity_rows(header: StreamHeader, frame: Any, n_atoms: int, style: UnitStyle) -> list[str]:
+def _velocity_rows(frame: Any, n_atoms: int, style: UnitStyle) -> list[str]:
     """The ``Velocities`` rows (``id vx vy vz``), unit-converted to the style's basis and using the
     same atom ids as the Atoms section (carried, or a 1..N numbering)."""
-    ids = _carried_ids(header, n_atoms)
+    ids = _carried_ids(frame, n_atoms)
     velocities = np.asarray(frame.dynamics.velocities, dtype=float)
     velocities = velocities / style.velocity_to_angstrom_per_femtosecond
     rows: list[str] = []
@@ -650,11 +648,12 @@ def _regenerated_masses(
     return [f"{t} {_fmt(mass_by_type[t])}" for t in sorted(mass_by_type)]
 
 
-def _carried_ids(header: StreamHeader, n_atoms: int) -> np.ndarray:
+def _carried_ids(frame: Any, n_atoms: int) -> np.ndarray:
     """The carried atom ids, or a 1..N numbering when the object carries none (never a synthesized
     numbering presented as the source's — a data file needs ids, so a generated 1..N is the honest
-    default, stated as generated by the absence of the carry)."""
-    carried = header.custom_per_atom.get(_ID_KEY)
+    default, stated as generated by the absence of the carry). The carry rides on
+    ``frame.custom_per_atom`` (schema 2.0.0, M73)."""
+    carried = frame.custom_per_atom.get(_ID_KEY)
     if carried is None:
         return np.arange(1, n_atoms + 1, dtype=np.int64)
     ids = np.asarray(carried)
@@ -666,10 +665,11 @@ def _carried_ids(header: StreamHeader, n_atoms: int) -> np.ndarray:
     return ids
 
 
-def _image_flags(header: StreamHeader, n_atoms: int) -> np.ndarray | None:
+def _image_flags(frame: Any, n_atoms: int) -> np.ndarray | None:
     """The carried per-atom image flags as an integer ``(N, 3)`` array, or ``None`` when absent
-    (never synthesized — a zero triple would assert no atom has crossed a boundary, P3)."""
-    carried = header.custom_per_atom.get(IMAGE_FLAGS_CARRY_KEY)
+    (never synthesized — a zero triple would assert no atom has crossed a boundary, P3). The carry
+    rides on ``frame.custom_per_atom`` (schema 2.0.0, M73)."""
+    carried = frame.custom_per_atom.get(IMAGE_FLAGS_CARRY_KEY)
     if carried is None:
         return None
     flags = np.asarray(carried)

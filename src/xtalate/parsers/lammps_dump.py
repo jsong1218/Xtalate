@@ -76,7 +76,7 @@ from typing import BinaryIO, cast
 
 import numpy as np
 
-from xtalate.parsers._common import build_provenance
+from xtalate.parsers._common import build_provenance, coerce_per_atom, with_per_atom
 from xtalate.schema import (
     SCHEMA_VERSION,
     AtomsBlock,
@@ -753,11 +753,18 @@ class LammpsDumpParser(ParserPlugin):
             # conversion to validate (Part 5 §2). Parse_notes still record *how* it was
             # established (declared vs. recovery-applied) so the two facts stay distinct.
             custom_global={_UNITS_KEY: first.unit_style.code},
-            custom_per_atom=carries,
         )
+        # Coerce frame 0's per-atom carry columns once and attach them onto each streamed frame —
+        # since the M73 SDK major ``custom_per_atom`` rides each ``StreamFrame.frame``, not the
+        # header (Part 2 §3.10). Dump streaming remains constant-N (the gate below still refuses
+        # divergence), so frame 0's carries fit every frame.
+        coerced_carries = coerce_per_atom(carries)
 
         def _frames() -> Iterator[StreamFrame]:
-            yield StreamFrame(frame=first_frame, per_frame_custom=_per_frame_custom(first))
+            yield StreamFrame(
+                frame=with_per_atom(first_frame, coerced_carries),
+                per_frame_custom=_per_frame_custom(first),
+            )
             index = 1
             while True:
                 boundary = lines.next_significant()
@@ -834,7 +841,10 @@ class LammpsDumpParser(ParserPlugin):
                         "identity across frames (Part 2 §3.2)",
                         location=f"frame {index}",
                     )
-                yield StreamFrame(frame=frame_k, per_frame_custom=_per_frame_custom(header_k))
+                yield StreamFrame(
+                    frame=with_per_atom(frame_k, coerced_carries),
+                    per_frame_custom=_per_frame_custom(header_k),
+                )
                 index += 1
 
         return FrameStream(header, _frames(), issues=issues)
