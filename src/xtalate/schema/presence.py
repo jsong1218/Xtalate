@@ -205,6 +205,12 @@ class PresenceAccumulator:
         self._custom_per_atom_keys: list[str] = []
         self._custom_per_frame_keys: list[str] = []  # union in first-seen order
         self._header_seen = False
+        # Variable-N tracking (v2.0 M73-S3): the first frame's atom count and whether any later
+        # frame diverged from it. The streaming analogue of the materialized
+        # ``len({len(f.atoms.symbols) for f in frames}) > 1`` check, so a streamed source drives the
+        # same pre-flight variable-N refusal a materialized one would.
+        self._first_n: int | None = None
+        self._variable_n = False
 
     def observe_header(
         self,
@@ -239,6 +245,13 @@ class PresenceAccumulator:
         that needs the total without a materialized object."""
         return self._n_frames
 
+    @property
+    def variable_atom_count(self) -> bool:
+        """Whether any observed frame diverged in atom count from the first (v2.0 M73-S3) — the
+        streaming twin of ``len({len(f.atoms.symbols) for f in frames}) > 1``, so the pre-flight
+        variable-N refusal fires identically on a streamed and a materialized source."""
+        return self._variable_n
+
     def observe_frame(self, frame: Frame, per_frame_custom_keys: Iterable[str] = ()) -> None:
         """Fold one streamed frame into the per-frame present counts and the per-frame custom-key
         union. ``per_frame_custom_keys`` names the ``custom_per_frame`` keys this frame carries a
@@ -250,6 +263,9 @@ class PresenceAccumulator:
         # accumulator sees, so frame 0's set is the object-level view.
         if self._n_frames == 0:
             self._custom_per_atom_keys = list(frame.custom_per_atom)
+            self._first_n = len(frame.atoms.symbols)
+        elif len(frame.atoms.symbols) != self._first_n:
+            self._variable_n = True
         for path, getter in _PER_FRAME:
             if getter(frame) is not None:
                 self._present_frames[path].append(idx)

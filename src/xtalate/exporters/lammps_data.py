@@ -151,7 +151,9 @@ class LammpsDataExporter(ExporterPlugin):
         frame = canonical.frames[0]
         header = stream_of(canonical).header
         symbols = list(frame.atoms.symbols)
-        types, type_map, preserved = _type_numbering(header, symbols)
+        # The ``lammps_data:type`` carry rides on ``frame.custom_per_atom`` (schema 2.0.0, M73);
+        # read it from the frame the write uses, not the header (no longer mirrors it — M73-S2).
+        types, type_map, preserved = _type_numbering(frame, symbols)
         mapping = ", ".join(f"type {number} → {symbol}" for symbol, number in type_map.items())
         verb = "Preserved source" if preserved else "Assigned"
         order = "" if preserved else " by first appearance"
@@ -253,7 +255,8 @@ class LammpsDataExporter(ExporterPlugin):
             return None
         frame = canonical.frames[0]
         symbols = list(frame.atoms.symbols)
-        types, _type_map, _preserved = _type_numbering(header, symbols)
+        # The type carry rides on the frame's ``custom_per_atom`` (schema 2.0.0, M73), not header.
+        types, _type_map, _preserved = _type_numbering(frame, symbols)
         species_by_type: dict[int, str] = {}
         for symbol, type_number in zip(symbols, types, strict=True):
             species_by_type.setdefault(int(type_number), symbol)

@@ -221,6 +221,9 @@ class AseTrajExporter(ExporterPlugin):
                 ),
             },
             max_frames=None,
+            # Each ASE image carries its own atom count, so frames of differing N round-trip
+            # (v2.0 M73-S3): a variable-N trajectory needs no frame_selection recovery here.
+            supports_variable_atom_count=True,
             required_fields=["atoms.symbols", "atoms.positions"],
             allows_open_boundaries=True,  # ASE writes pbc; an open cell is expressible.
             representable_constraint_kinds=["fixed_atoms"],

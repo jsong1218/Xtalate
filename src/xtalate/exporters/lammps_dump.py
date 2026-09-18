@@ -292,6 +292,9 @@ class LammpsDumpExporter(ExporterPlugin):
             # (requires_units_style drives the write-side ambiguous_units refusal).
             holds_image_flags=True,
             requires_units_style=True,
+            # Each snapshot declares its own ITEM: NUMBER OF ATOMS, so a dump can hold frames of
+            # differing N (grand-canonical / deposition / evaporation runs — v2.0 M73-S3).
+            supports_variable_atom_count=True,
             lossy_notes=[
                 "Per-snapshot ITEM: TIME / simulation-time carries are not written (a dump "
                 "time axis needs the run's unit convention, which the write style cannot "

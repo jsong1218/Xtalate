@@ -236,6 +236,10 @@ class ExtxyzExporter(ExporterPlugin):
                 "user_metadata.custom_per_atom": _WRITABLE_PER_ATOM_PATTERN
             },
             max_frames=None,
+            # extXYZ writes a count line per frame, so frames of differing atom count round-trip
+            # (v2.0 M73-S3): a variable-N trajectory needs no frame_selection recovery for this
+            # target.
+            supports_variable_atom_count=True,
             # N per-source conversions combine into one multi-frame training file by concatenating
             # the independent per-frame blocks (M55-S4 batch assemble seam; DECISIONS.md D208).
             assemble_capable=True,

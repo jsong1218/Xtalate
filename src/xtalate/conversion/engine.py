@@ -1066,6 +1066,9 @@ class ConversionEngine:
             # so a streamed source carries none — the same scalar (0) the materialized path would
             # compute for the same occupancy-free object (rule 3).
             partial_occupancy=partial_occupancy_count(None),
+            # The accumulator tracked N per frame single-pass (M73-S3), so a variable-N streamed
+            # source drives the same pre-flight refusal a materialized one would (rule 3).
+            variable_atom_count=acc.variable_atom_count,
             matrix=matrix,
             target_format_id=target_format_id,
             source_format_id=source_format_id,
@@ -1281,6 +1284,10 @@ class ConversionEngine:
             # Occupancy is only ever produced by CIF, a single-structure format that never streams,
             # so a streamed source carries none (frame selection cannot introduce it either).
             partial_occupancy=partial_occupancy_count(None),
+            # A variable-N source against a fixed-composition target also resolves via this
+            # frame_selection path (M73-S3), so the accumulator's per-frame-N tracking drives the
+            # same scenario the materialized path would raise (rule 3).
+            variable_atom_count=acc.variable_atom_count,
             matrix=matrix,
             target_format_id=target_format_id,
             source_format_id=source_format_id,
