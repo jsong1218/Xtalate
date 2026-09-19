@@ -101,8 +101,8 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     "exfmt": ("exfmt/water-monomer", "water_monomer.exfmt"),
     # M55: the ASE database exporter closes M55-S1's parser-only state, so ase_db enrols as a full
     # source *and* target. The single-row-labeled anchor is the matrix source: one structure that
-    # bare-parses without recovery (the matrix reads sources with a bare `parse`, and a single-row
-    # .db needs none — a multi-row .db would refuse via ASEDB_MULTIPLE_ROWS, D206), carrying the
+    # bare-parses to a single-frame object without recovery (the matrix reads sources with a bare
+    # `parse`; since M73-S5 a multi-row .db bare-parses too, as one variable-N object), carrying the
     # full label triple sans stress (energy + forces) plus velocities, a fixed_atoms constraint,
     # charges/magmoms, and a carried key-value label + data blob — so every hop out of it exercises
     # the ASE-wrap laundering and the kv/data carry across the matrix. As a target its max_frames=1

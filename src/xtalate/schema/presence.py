@@ -205,6 +205,12 @@ class PresenceAccumulator:
         self._custom_per_atom_keys: list[str] = []
         self._custom_per_frame_keys: list[str] = []  # union in first-seen order
         self._header_seen = False
+        # Variable-N tracking (v2.0 M73-S3): the first frame's atom count and whether any later
+        # frame diverged from it. The streaming analogue of the materialized
+        # ``len({len(f.atoms.symbols) for f in frames}) > 1`` check, so a streamed source drives the
+        # same pre-flight variable-N refusal a materialized one would.
+        self._first_n: int | None = None
+        self._variable_n = False
 
     def observe_header(
         self,
@@ -214,12 +220,14 @@ class PresenceAccumulator:
         tags: Iterable[str],
         annotations: dict[str, str],
         custom_global: Iterable[str],
-        custom_per_atom: Iterable[str],
     ) -> None:
         """Classify the object-level (root) paths from the eager stream header, once.
 
-        Mirrors the ``_ROOT`` sweep and the custom-key enumeration of ``compute_field_presence``,
-        but reads the header's already-separated pieces rather than a whole object."""
+        Mirrors the ``_ROOT`` sweep and the custom-global enumeration of ``compute_field_presence``,
+        but reads the header's already-separated pieces rather than a whole object.
+        ``custom_per_atom`` keys ride each frame in schema 2.0.0 (M73), not the header, so they are
+        captured from the first observed frame (mirroring ``compute_field_presence``'s
+        ``obj.frames[0].custom_per_atom`` — frame-invariant for a constant-N object)."""
         # Reconstruct the minimal shape the _ROOT getters expect: a lightweight stand-in exposing
         # `.trajectory`, `.simulation`, and `.user_metadata` (tags/annotations only — the two
         # enumerated non-custom user-metadata roots). Custom keys are handled separately below.
@@ -228,7 +236,6 @@ class PresenceAccumulator:
         for path, getter in _ROOT:
             self._root_status[path] = "present" if _present(getter(stub)) else "absent"
         self._custom_global_keys = list(custom_global)
-        self._custom_per_atom_keys = list(custom_per_atom)
         self._header_seen = True
 
     @property
@@ -238,11 +245,27 @@ class PresenceAccumulator:
         that needs the total without a materialized object."""
         return self._n_frames
 
+    @property
+    def variable_atom_count(self) -> bool:
+        """Whether any observed frame diverged in atom count from the first (v2.0 M73-S3) — the
+        streaming twin of ``len({len(f.atoms.symbols) for f in frames}) > 1``, so the pre-flight
+        variable-N refusal fires identically on a streamed and a materialized source."""
+        return self._variable_n
+
     def observe_frame(self, frame: Frame, per_frame_custom_keys: Iterable[str] = ()) -> None:
         """Fold one streamed frame into the per-frame present counts and the per-frame custom-key
         union. ``per_frame_custom_keys`` names the ``custom_per_frame`` keys this frame carries a
         non-``None`` value for; their union across frames becomes the present custom entries."""
         idx = frame.index
+        # custom_per_atom keys ride each frame in schema 2.0.0 (M73). Capture them from the first
+        # observed frame (frame 0), mirroring compute_field_presence's
+        # obj.frames[0].custom_per_atom — frame-invariant for the constant-N objects this
+        # accumulator sees, so frame 0's set is the object-level view.
+        if self._n_frames == 0:
+            self._custom_per_atom_keys = list(frame.custom_per_atom)
+            self._first_n = len(frame.atoms.symbols)
+        elif len(frame.atoms.symbols) != self._first_n:
+            self._variable_n = True
         for path, getter in _PER_FRAME:
             if getter(frame) is not None:
                 self._present_frames[path].append(idx)

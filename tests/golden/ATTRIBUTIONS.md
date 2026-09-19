@@ -619,7 +619,7 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **Source file:** `dump.lammpstrj`
 - **Origin:** synthetic
 - **License:** Apache-2.0
-- **Source:** Authored-realistic LAMMPS dump (M49-S1): a three-snapshot deposition trajectory (3 -> 4 -> 4 atoms) in declared metal units — the grand-canonical/deposition shape the canonical model cannot hold — generalizing the M46 dump block spelling.
+- **Source:** Authored-realistic LAMMPS dump (M49-S1): a three-snapshot deposition trajectory (3 -> 4 -> 4 atoms) in declared metal units — the grand-canonical/deposition shape, now a first-class read (schema 2.0.0, M72/M73) — generalizing the M46 dump block spelling.
 
 ## `outcar` / `killed-truncated-v5` (wild)
 

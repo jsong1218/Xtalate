@@ -189,14 +189,47 @@ def test_multi_frame_is_a_trajectory() -> None:
     assert list(obj.user_metadata.custom_per_frame["extxyz:step"]) == [0.0, 1.0]
 
 
-def test_variable_atom_count_across_frames_raises() -> None:
+def test_variable_atom_count_across_frames_parses() -> None:
+    # Schema 2.0.0 (M72) lifted the constant-N invariant and M73 retired the reader refusal: a
+    # variable-N extXYZ trajectory now parses, each frame carrying its own atom count (never
+    # padded or truncated). This file previously raised EXTXYZ_VARIABLE_ATOM_COUNT — the refusal
+    # fixture is kept as evidence, now asserting the conversion (P3).
     data = (
         b"1\nProperties=species:S:1:pos:R:3\nH 0 0 0\n"
         b"2\nProperties=species:S:1:pos:R:3\nH 0 0 0\nH 1 0 0\n"
     )
-    with pytest.raises(ParseError) as exc:
-        parse_bytes(_parser(), data)
-    assert exc.value.issues[0].code == "EXTXYZ_VARIABLE_ATOM_COUNT"
+    obj = parse_bytes(_parser(), data).canonical
+    assert [len(f.atoms.symbols) for f in obj.frames] == [1, 2]
+    codes = [i.code for i in parse_bytes(_parser(), data).issues]
+    assert "EXTXYZ_VARIABLE_ATOM_COUNT" not in codes
+
+
+def test_parses_variable_n_trajectory() -> None:
+    data = (
+        b'3\nLattice="6 0 0 0 6 0 0 0 6" Properties=species:S:1:pos:R:3 pbc="T T T"\n'
+        b"O 0 0 0\nH 1 0 0\nH 0 1 0\n"
+        b'4\nLattice="6 0 0 0 6 0 0 0 6" Properties=species:S:1:pos:R:3 pbc="T T T"\n'
+        b"O 0 0 0\nO 2 0 0\nH 1 0 0\nH 0 1 0\n"
+    )
+    obj = parse_bytes(_parser(), data).canonical
+    assert [len(f.atoms.symbols) for f in obj.frames] == [3, 4]
+    assert obj.frames[0].atoms.symbols == ["O", "H", "H"]
+    assert obj.frames[1].atoms.symbols == ["O", "O", "H", "H"]
+
+
+def test_variable_n_carries_per_atom_columns_per_frame() -> None:
+    # A per-atom column under variable N is sized to each frame's own N; each frame carries its
+    # own column losslessly — no "only frame 0 carried" compromise, no wrong-sized array (P1).
+    data = (
+        b"2\nProperties=species:S:1:pos:R:3:my_label:R:1\nH 0 0 0 0.1\nH 1 0 0 0.2\n"
+        b"3\nProperties=species:S:1:pos:R:3:my_label:R:1\nH 0 0 0 0.3\nH 1 0 0 0.4\nH 2 0 0 0.5\n"
+    )
+    obj = parse_bytes(_parser(), data).canonical
+    col0 = np.asarray(obj.frames[0].custom_per_atom["extxyz:my_label"])
+    col1 = np.asarray(obj.frames[1].custom_per_atom["extxyz:my_label"])
+    assert col0.shape == (2,)
+    assert col1.shape == (3,)
+    assert np.allclose(col1, [0.3, 0.4, 0.5])
 
 
 # --- sniff disambiguation (Part 3 §6.1) -----------------------------------------------

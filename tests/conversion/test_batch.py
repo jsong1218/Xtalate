@@ -444,8 +444,10 @@ def test_assemble_same_composition_produces_one_validated_artifact(tmp_path: Pat
 
 def test_assemble_mixed_composition_records_dataset_level_variable_n_note(tmp_path: Path) -> None:
     # water (3 atoms) + co-in-cell (2 atoms): the assembled file has variable N across frames.
-    # Per-contribution validations stay green; the single-object re-parse refuses the *existing*
-    # EXTXYZ_VARIABLE_ATOM_COUNT, stated as a dataset-level note — never a per-file loss.
+    # Per-contribution validations stay green; since M73 (schema 2.0 + retired reader refusal) the
+    # single-object re-parse succeeds as one variable-N trajectory, so the note records the
+    # variable-N *property* (never a per-file loss) and the whole-object validation confirms the
+    # round-trip.
     reg = _registry()
     artifact = tmp_path / "mixed.extxyz"
     report = run_batch(
@@ -460,16 +462,20 @@ def test_assemble_mixed_composition_records_dataset_level_variable_n_note(tmp_pa
     assert [e.status for e in report.entries] == ["converted", "converted"]
     assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
     assert report.note is not None
-    assert "EXTXYZ_VARIABLE_ATOM_COUNT" in report.note
+    assert "variable atom counts" in report.note
     assert f"{WATER}: 3" in report.note and f"{CO_IN_CELL}: 2" in report.note
+    # The whole-object validation (M73-S5) diffs the re-parsed assembled trajectory against the
+    # stacked contributions and passes — the round-trip schema 2.0 made possible.
+    assert report.whole_object_validation is not None
+    assert report.whole_object_validation.status == "passed"
 
-    # The whole-file re-parse refuses exactly as the note says (the existing parser behaviour).
+    # The whole-file re-parse now succeeds as one variable-N object (the retired refusal, M73-S4).
+    # WATER is a 2-frame trajectory (3 atoms each) and CO_IN_CELL a single 2-atom frame → 3 frames,
+    # two distinct atom counts.
     parser = reg.get_parser("extxyz")
-    from xtalate.sdk import ParseError
-
-    with pytest.raises(ParseError) as excinfo:
-        parser.parse(io.BytesIO(artifact.read_bytes()), filename="mixed.extxyz")
-    assert excinfo.value.issues[0].code == "EXTXYZ_VARIABLE_ATOM_COUNT"
+    obj = parser.parse(io.BytesIO(artifact.read_bytes()), filename="mixed.extxyz").canonical
+    assert len(obj.frames) == 3
+    assert len({len(f.atoms.symbols) for f in obj.frames}) == 2
 
 
 def test_assemble_non_assemble_capable_target_refuses_clearly() -> None:
@@ -502,13 +508,14 @@ def test_assemble_keeps_refused_and_failed_segments_out(tmp_path: Path) -> None:
     assert report.note is None
 
 
-# --- multi-structure container fan-out (M55-S3, D207) -----------------------------------------
+# --- multi-structure container fan-out (M55-S3, D207; re-triggered M73-S5) --------------------
 #
-# A `.db` with more than one row is a *dataset*, not a trajectory: on the single-file path it
-# refuses ASEDB_MULTIPLE_ROWS (rows are independent structures, never one Canonical Object), and
-# the batch surface is exactly where its rows convert. Under `--batch` such a container **fans
-# out** to N ordinary per-row conversions in one BatchReport — each row an explicit
-# `asedb_row_selection=index` choice (P4), each its own verbatim-embedded report.
+# A `.db` with more than one row reads through as one variable-N Canonical Object on the single-file
+# path since M73-S5 (schema 2.0), but the batch surface treats it as a *dataset*: each row an
+# independent structure. Under `--batch` such a container **fans out** to N ordinary per-row
+# conversions in one BatchReport — each row an explicit `asedb_row_selection=index` choice (P4),
+# each its own verbatim-embedded report. The fan-out is now triggered by `source_frame_count > 1`
+# on the detection parse, not by catching a (retired) refusal.
 
 
 def _multi_row_db(tmp_path: Path, *structures: Atoms, name: str = "dataset.db") -> Path:
@@ -546,7 +553,7 @@ def test_multi_row_db_fans_out_to_ordered_per_row_entries(tmp_path: Path) -> Non
     assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
     assert report.note is not None
     assert f"{db} → 3 per-row conversions" in report.note
-    assert "aggregation, never one Canonical Object" in report.note
+    assert "each row is an independent structure" in report.note
 
 
 def test_fanned_row_report_is_byte_identical_to_the_standalone_row_conversion(
@@ -588,7 +595,7 @@ def test_fanned_row_report_is_byte_identical_to_the_standalone_row_conversion(
 
 def test_single_row_db_stays_one_ordinary_entry_no_spurious_fanout(tmp_path: Path) -> None:
     # A single-row .db is an ordinary single-structure source: one entry, the plain path label (no
-    # ::row= qualifier), and no fan-out note. Fan-out is triggered only by the multi-row refusal.
+    # ::row= qualifier), and no fan-out note. Fan-out is triggered only by source_frame_count > 1.
     db = _multi_row_db(tmp_path, _co(), name="one.db")
     report = run_batch(BatchManifest(sources=[str(db)], target="extxyz"), _registry())
     assert [e.source for e in report.entries] == [str(db)]
@@ -610,9 +617,10 @@ def test_fanned_per_file_outputs_are_row_qualified(tmp_path: Path) -> None:
 def test_multi_row_fanout_parses_the_container_minimally(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # BATCH-4: a 2-row .db is parsed exactly N+1 = 3 times — once for the multi-row refusal that
-    # reports the count, then once per fanned row. The row count comes from that first refusal's
-    # issues, never from an extra full re-parse of the container (the pre-R8 _fanout_row_count).
+    # BATCH-4: a 2-row .db is parsed exactly N+1 = 3 times — once for the detection parse that
+    # reads the container as a variable-N object and reports its frame count, then once per fanned
+    # row. The row count comes from that detection parse's frame count, never an extra re-parse
+    # (M73-S5 re-triggers the same N+1 posture the pre-R8 refusal count had).
     from xtalate.conversion import batch as batch_mod
     from xtalate.conversion.parse_recovery import parse_with_recovery as real_parse
 
@@ -653,10 +661,10 @@ def test_assemble_fans_multi_row_db_into_one_training_set(tmp_path: Path) -> Non
 
 
 def test_assemble_mixed_composition_fanout_records_variable_n(tmp_path: Path) -> None:
-    # A fanned container of mixed composition (CO: 2 atoms, H2O: 3 atoms) assembles into a file with
-    # variable N across frames — the note carries *both* the fan-out statement and the existing
-    # dataset-level EXTXYZ_VARIABLE_ATOM_COUNT statement (keyed by the row labels), never a per-file
-    # loss; per-contribution validations stay green.
+    # A fanned container of mixed composition (CO: 2 atoms, H2O: 3 atoms) assembles into a file
+    # with variable N across frames — the note carries *both* the fan-out statement and the
+    # dataset-level variable-N property (keyed by the row labels), never a per-file loss;
+    # per-contribution validations stay green and the whole-object validation confirms the trip.
     reg = _registry()
     db = _multi_row_db(tmp_path, _co(), _water())
     artifact = tmp_path / "mixed.extxyz"
@@ -669,8 +677,10 @@ def test_assemble_mixed_composition_fanout_records_variable_n(tmp_path: Path) ->
     assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
     assert report.note is not None
     assert "per-row conversions" in report.note  # the fan-out statement
-    assert "EXTXYZ_VARIABLE_ATOM_COUNT" in report.note  # the dataset-level variable-N statement
+    assert "variable atom counts" in report.note  # the dataset-level variable-N statement
     assert f"{db}::row=0: 2" in report.note and f"{db}::row=1: 3" in report.note
+    assert report.whole_object_validation is not None
+    assert report.whole_object_validation.status == "passed"
 
 
 def test_fail_fast_stops_mid_container(tmp_path: Path) -> None:
@@ -760,14 +770,11 @@ def test_assemble_to_ase_db_appends_one_row_per_source(tmp_path: Path) -> None:
     assert len(rows) == 2
     assert list(rows[0].get_chemical_symbols()) == ["C", "O"]
     assert list(rows[1].get_chemical_symbols()) == ["H", "H", "O"]
-    # The assembled multi-row .db is itself a dataset: fed back as a single-file source it refuses
-    # ASEDB_MULTIPLE_ROWS naming its two rows (the S1 refusal), never one silently-flattened object.
-    from xtalate.sdk import ParseError
-
-    with pytest.raises(ParseError) as excinfo:
-        parse_with_recovery(reg, artifact.read_bytes(), filename=artifact.name)
-    issue = next(i for i in excinfo.value.issues if i.code == "ASEDB_MULTIPLE_ROWS")
-    assert issue.location == "rows 2"
+    # The assembled multi-row .db is itself a dataset: fed back as a single-file source it now reads
+    # through as one variable-N Canonical Object (M73-S5), its two rows the two frames at their own
+    # atom counts — never a silently-flattened object, never a refusal.
+    reparsed = parse_with_recovery(reg, artifact.read_bytes(), filename=artifact.name).canonical
+    assert [list(f.atoms.symbols) for f in reparsed.frames] == [["C", "O"], ["H", "H", "O"]]
 
 
 def test_assemble_multi_row_db_source_into_one_ase_db_dataset(tmp_path: Path) -> None:
@@ -793,12 +800,15 @@ def test_assemble_multi_row_db_source_into_one_ase_db_dataset(tmp_path: Path) ->
         ["H", "H", "O"],
         ["C", "O"],
     ]
-    # A multi-row .db has variable-N rows natively — its re-parse is the ordinary
-    # ASEDB_MULTIPLE_ROWS dataset refusal, not the extXYZ single-object variable-N condition — so
-    # only the fan-out statement is noted, never a spurious variable-N claim.
+    # The fanned rows differ in composition (CO/H2O/CO → 2/3/2 atoms), so the assembled .db is a
+    # genuine variable-N dataset: the note carries both the fan-out statement and the variable-N
+    # property statement, and the whole-object validation confirms the round-trip (a .db holds
+    # variable N natively; M73-S5).
     assert report.note is not None
     assert "per-row conversions" in report.note
-    assert "variable atom counts" not in report.note
+    assert "variable atom counts" in report.note
+    assert report.whole_object_validation is not None
+    assert report.whole_object_validation.status == "passed"
 
 
 def test_extxyz_and_ase_db_assemble_are_symmetric(tmp_path: Path) -> None:
@@ -825,9 +835,10 @@ def test_extxyz_and_ase_db_assemble_are_symmetric(tmp_path: Path) -> None:
         f"{db_artifact}::row=1",
     ]
     assert all(e.validation is not None and e.validation.status == "passed" for e in report.entries)
-    # The assembled training file is a legitimate mixed-composition dataset (the M54 note case), so
-    # read its frames straight through ASE — the single-file parse path fixes N across frames and
-    # would refuse the variable-N whole (EXTXYZ_VARIABLE_ATOM_COUNT), which is exactly the note.
+    # The assembled training file is a legitimate mixed-composition dataset — read its frames
+    # straight through ASE. Since M73 the single-file parse path reads the variable-N whole as one
+    # object too (the retired refusal); ASE's own reader is used here to keep the assertion about
+    # the real file bytes rather than a canonical re-read.
     from ase.io import read as ase_read
 
     images = ase_read(str(xyz_artifact), format="extxyz", index=":")

@@ -402,23 +402,20 @@ def _case_by_name(name: str) -> gov.GoldenCase:
     raise AssertionError(f"no wild-corpus case named {name!r}")
 
 
-def test_variable_n_refusal_measures_per_frame_counts() -> None:
-    """The genuine variable-N wild case refuses with the per-frame atom counts in the error
-    detail — the accumulating, user-visible v2.0 evidence file the release notes cite (roadmap
-    §4/§10). Measured, never anecdotal: the assertion pins the exact counts the file really
-    holds, so a fixture that stopped being variable-N (or a parser that stopped measuring)
-    fails here."""
+def test_variable_n_reads_through_measures_per_frame_counts() -> None:
+    """The genuine variable-N wild case reads through with each frame at its own atom count —
+    the accumulating, user-visible v2.0 evidence file the release notes cite (roadmap §4/§10).
+    Schema 2.0.0 (M72) lifted the constant-N invariant and M73 retired the reader refusal.
+    Measured, never anecdotal: the assertion pins the exact counts the file really holds, so a
+    fixture that stopped being variable-N (or a parser that stopped measuring) fails here."""
     case = _case_by_name("dump-variable-n-deposition")
     expectation = _wild.load_expectation(case)
-    assert expectation.parse_error == "LAMMPSDUMP_VARIABLE_ATOM_COUNT"
-    with pytest.raises(ParseError) as excinfo:
-        _parse(case)
-    codes = sorted(i.code for i in excinfo.value.issues if i.severity == "error")
-    assert codes == ["LAMMPSDUMP_VARIABLE_ATOM_COUNT"]
-    message = excinfo.value.issues[0].message
-    # Frame 0 declares 3 atoms, the first diverging frame declares 4 — the refusal lists the
-    # per-frame counts seen so far, never padding or truncation.
-    assert "Per-frame counts seen: [3, 4]" in message, message
+    assert expectation.parse_error is None
+    result = _parse(case)
+    # The deposition grows the population 3 -> 4 -> 4; every frame keeps its own N (P3).
+    assert [len(f.atoms.symbols) for f in result.canonical.frames] == [3, 4, 4]
+    codes = {i.code for i in result.issues}
+    assert "LAMMPSDUMP_VARIABLE_ATOM_COUNT" not in codes
 
 
 def test_image_flags_case_predicts_unwrapping_loss_on_export() -> None:

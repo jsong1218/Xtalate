@@ -305,6 +305,12 @@ class AseDbExporter(ExporterPlugin):
             # per contribution (M55-S4 batch assemble seam; DECISIONS.md D208). Orthogonal to
             # max_frames=1: each row is one structure, the container holds N of them.
             assemble_capable=True,
+            # A .db holds one Atoms per row, each with its own atom count, so the container can
+            # express differing-N structures — the assemble seam appends one row per contribution,
+            # mixed compositions and all (v2.0 M73-S3/S5). (Orthogonal to max_frames=1: a
+            # single-file write of a variable-N *trajectory* still reduces via frame_selection
+            # first, so this flag matters at the dataset/assemble grain.)
+            supports_variable_atom_count=True,
             required_fields=["atoms.symbols", "atoms.positions"],
             allows_open_boundaries=True,  # ASE writes pbc; an open cell is expressible.
             representable_constraint_kinds=["fixed_atoms"],

@@ -134,7 +134,6 @@ class LammpsDumpExporter(ExporterPlugin):
                 frame,
                 i,
                 sf.per_frame_custom,
-                header,
                 style,
                 type_map,
                 coordinate_kind,
@@ -293,6 +292,9 @@ class LammpsDumpExporter(ExporterPlugin):
             # (requires_units_style drives the write-side ambiguous_units refusal).
             holds_image_flags=True,
             requires_units_style=True,
+            # Each snapshot declares its own ITEM: NUMBER OF ATOMS, so a dump can hold frames of
+            # differing N (grand-canonical / deposition / evaporation runs — v2.0 M73-S3).
+            supports_variable_atom_count=True,
             lossy_notes=[
                 "Per-snapshot ITEM: TIME / simulation-time carries are not written (a dump "
                 "time axis needs the run's unit convention, which the write style cannot "
@@ -345,13 +347,16 @@ def _write_snapshot(
     frame: Any,
     index: int,
     per_frame_custom: dict[str, Any],
-    header: StreamHeader,
     style: UnitStyle,
     type_map: dict[str, int],
     coordinate_kind: str,
 ) -> None:
-    """One ``ITEM:``-block snapshot. Shared by whole-file and streamed writes (one code path)."""
+    """One ``ITEM:``-block snapshot. Shared by whole-file and streamed writes (one code path).
+
+    The per-atom carry columns are read from ``frame.custom_per_atom`` — since schema 2.0.0 (M73)
+    they ride on each frame, sized to that frame's own N, rather than once on the stream header."""
     distance = style.distance_to_angstrom
+    custom_per_atom = frame.custom_per_atom
 
     lattice = _require_cell(frame, index)
     _require_restricted(lattice, index)
@@ -416,11 +421,11 @@ def _write_snapshot(
         coordinate_names = ("x", "y", "z") if coordinate_kind == "cartesian" else ("xu", "yu", "zu")
     custom_values = [
         (key[len(FORMAT_ID) + 1 :], np.asarray(values, dtype=float))
-        for key, values in header.custom_per_atom.items()
+        for key, values in custom_per_atom.items()
         if _WRITABLE_PER_ATOM.fullmatch(key)
         and key not in {_ID_KEY, f"{FORMAT_ID}:type", IMAGE_FLAGS_CARRY_KEY}
     ]
-    image_flags = header.custom_per_atom.get(IMAGE_FLAGS_CARRY_KEY)
+    image_flags = custom_per_atom.get(IMAGE_FLAGS_CARRY_KEY)
     image_flags_array = None if image_flags is None else np.asarray(image_flags)
     if image_flags_array is not None:
         if image_flags_array.shape != (len(symbols), 3):
@@ -447,7 +452,7 @@ def _write_snapshot(
         if has_velocities
         else None
     )
-    has_ids = _ID_KEY in header.custom_per_atom
+    has_ids = _ID_KEY in custom_per_atom
     columns: list[str] = []
     if has_ids:
         columns.append("id")
@@ -463,7 +468,7 @@ def _write_snapshot(
     for atom_index, symbol in enumerate(symbols):
         row = []
         if has_ids:
-            _values = header.custom_per_atom[_ID_KEY]
+            _values = custom_per_atom[_ID_KEY]
             if atom_index >= len(_values):
                 raise ValueError(
                     "lammps_dump: the carried id column is shorter than the atom count ("

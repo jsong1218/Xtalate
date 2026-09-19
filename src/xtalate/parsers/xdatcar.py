@@ -581,20 +581,26 @@ def _configurations(
             continue  # fixed-cell form: the next configuration under the same lattice
         # NpT form: VASP restated the whole header, so this frame has its own cell.
         current = _read_header(lines, first=False, index=index)
+        # XDATCAR is a fixed-composition format: its single element/count header (or an NpT
+        # restatement of it) applies to every configuration, so the format itself cannot express a
+        # varying atom count or species order. This refusal names that format constraint — it is not
+        # the retired canonical-model constant-N invariant (schema 2.0.0 permits variable N; M73
+        # retired the extXYZ/dump/ase_traj reader refusals, but XDATCAR stays refused because the
+        # format cannot represent it). Never truncated, never padded.
         if len(current.symbols) != n_atoms:
             raise _error(
                 "XDATCAR_VARIABLE_ATOM_COUNT",
                 f"configuration {index} restates a header with {len(current.symbols)} atoms but "
-                f"configuration 0 has {n_atoms}; the canonical model requires a constant atom "
-                "count across frames (Part 2 §3.2)",
+                f"configuration 0 has {n_atoms}; XDATCAR writes one element/count header shared by "
+                "every configuration, so it cannot represent a varying atom count",
                 location=f"frame {index}",
             )
         if current.symbols != first_block.symbols:
             raise _error(
                 "XDATCAR_VARIABLE_SPECIES",
                 f"configuration {index} restates a header whose species order differs from "
-                "configuration 0's; the canonical model requires a constant atom identity across "
-                "frames (Part 2 §3.2)",
+                "configuration 0's; XDATCAR's single element/count header cannot represent a "
+                "varying species order",
                 location=f"frame {index}",
             )
         if current.fractional != first_block.fractional:

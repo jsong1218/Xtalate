@@ -103,6 +103,18 @@ class FormatCapabilities(BaseModel):
     # dimension) to fire the write-side `ambiguous_units` scenario — a *target-identity*
     # trigger: a dump needs a style whatever the source carried.
     requires_units_style: bool = False
+    # Whether this format's representation can express a **trajectory whose frames differ in atom
+    # count** (variable N; write side, v2.0 M73-S3). Since schema `2.0.0` lifted the constant-N
+    # invariant (Part 2 §3.2), a Canonical Object's frames may hold different atom counts; a target
+    # whose on-disk layout is fixed-composition (POSCAR/CONTCAR/XDATCAR: one species-count line for
+    # the whole file; deepmd_npy: one fixed-composition system) cannot represent that. The named
+    # capability dimension the pre-flight diff reads directly (mirroring `holds_image_flags`): False
+    # (the default) = constant-N only, so a variable-N source is refused at pre-flight with the
+    # `frame_selection` recovery (pick one frame, or split), never padded/masked/truncated to a
+    # single N (P1 — ghost atoms are a silent fabrication). Declared True by the exporters whose
+    # format can write a per-frame count line (extXYZ, ase_traj, lammps_dump, ase_db); the
+    # fixed-composition targets declare absence by the default.
+    supports_variable_atom_count: bool = False
     # The sign convention of the `electronic.stress` tensor this exporter writes (write side;
     # Part 2 §3.7.1, DECISIONS.md D151). The canonical convention is tension-positive; an exporter
     # whose files carry the opposite (compression-positive, e.g. ASE-native extXYZ) reverses the

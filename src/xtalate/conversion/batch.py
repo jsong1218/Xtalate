@@ -28,12 +28,11 @@ from __future__ import annotations
 
 import glob as _glob
 import io
-import re
 import uuid
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -42,11 +41,11 @@ from xtalate.capabilities import Registry
 from xtalate.conversion.engine import ConversionEngine
 from xtalate.conversion.parse_recovery import parse_with_recovery
 from xtalate.conversion.report import ConversionReport
-from xtalate.sdk import AssembleContribution, ParseError, ParseIssue
+from xtalate.schema import CanonicalObject, Frame, TrajectoryMetadata
+from xtalate.sdk import AssembleContribution, ParseError
+from xtalate.validation.engine import ValidationEngine
 from xtalate.validation.report import ValidationReport
-
-if TYPE_CHECKING:
-    from xtalate.schema import CanonicalObject
+from xtalate.validation.tolerance import ToleranceProfile
 
 __all__ = [
     "BatchEntry",
@@ -198,7 +197,16 @@ class BatchReport(_Model):
     """The aggregate record: the resolved manifest (reproducible), the per-file entries with the
     existing reports embedded verbatim, and the tallies. ``note`` carries the dataset-level
     variable-N statement for an assembled artifact (M54-S2) — a property of the assembled file,
-    never a per-file loss."""
+    never a per-file loss.
+
+    ``whole_object_validation`` (M73-S5) is the re-parse-and-diff of a **single-file assembled
+    artifact** (extXYZ, ASE ``.db``) read back as **one variable-N Canonical Object** against the
+    stacked contributions — the round-trip that schema 2.0 made possible (before M72 a
+    mixed-composition assemble could not re-parse as one object at all, so only per-contribution
+    validation existed). ``None`` in per-file mode, for a directory-format assemble target (whose
+    whole is not one re-parseable file — each contribution is validated in place), and for an
+    assemble that produced no output. It is a *property of the assembled whole*; the per-file
+    ``BatchEntry.validation`` records still carry each source's own round-trip verbatim."""
 
     report_id: str
     created_at: str  # ISO 8601 UTC.
@@ -206,6 +214,7 @@ class BatchReport(_Model):
     entries: list[BatchEntry] = Field(default_factory=list)
     tallies: BatchTallies
     note: str | None = None
+    whole_object_validation: ValidationReport | None = None
 
 
 # --- the `--recover` preset grammar (one implementation, shared with the CLI) -----------------
@@ -270,12 +279,6 @@ _NO_SUFFIX_TARGETS = frozenset({"poscar", "contcar"})
 #: batch-module contract — ``cli/main.py``'s exit-code fold strips it to recover the container's
 #: per-source override (M55-S3). Kept off the ``__all__`` surface; a helper reads it.
 _ROW_LABEL_SEP = "::row="
-
-#: The row-count grammar the ``ase_db`` parser stamps on its ``ASEDB_MULTIPLE_ROWS`` refusal
-#: (``location="rows N"``, mirrored from ``parsers.ase_db._ROW_COUNT_LOCATION``). The fan-out
-#: reads N from it rather than parsing the refusal's prose, so a multi-row container expands to
-#: exactly its row count (M55-S3).
-_ROW_COUNT_LOCATION = re.compile(r"^rows (\d+)$")
 
 
 def run_batch(
@@ -418,11 +421,14 @@ class _Outcome:
     # produced by byte-concatenation (M55-S4). Never serialized — same discipline as
     # ``output_bytes``: ``_assemble_report`` drops this holder and keeps only ``entry``.
     canonical: CanonicalObject | None = None
-    # The machine-readable row count of a multi-structure container, read from its
-    # ``ASEDB_MULTIPLE_ROWS`` refusal's issues at the first parse (BATCH-4) — so the fan-out
-    # never re-parses the container to learn how many rows it has. ``None`` for ordinary sources
-    # and for a refusal that does not name a count.
-    row_count: int | None = None
+    # A **fan-out marker** (M73-S5): set when the first (``row is None``) parse of a source read a
+    # multi-structure container — a multi-row ASE ``.db``, which schema 2.0 now reads through as one
+    # variable-N object (M73-S5) rather than refusing. ``_convert_source`` reads these to fan the
+    # container out to N ordinary per-row conversions (M55 semantics preserved); the marker outcome
+    # is never itself reported. ``source_format_id`` is the parsed format; ``source_frame_count`` is
+    # the container's row count. Both ``None`` for an ordinary single-structure source.
+    source_format_id: str | None = None
+    source_frame_count: int | None = None
 
 
 def _convert_source(
@@ -432,54 +438,28 @@ def _convert_source(
     manifest: BatchManifest,
     shared_choices: dict[str, dict[str, Any]],
 ) -> Iterator[_Outcome]:
-    """Yield the outcome(s) for one resolved source, lazily (M55-S3, D207).
+    """Yield the outcome(s) for one resolved source, lazily (M55-S3, D207; re-triggered M73-S5).
 
     An ordinary source (or a single-row `.db`, or a `.db` for which the caller already pinned one
     row via ``asedb_row_selection=index``) is one outcome. A **multi-structure container** — a
-    `.db` with more than one row — refuses ``ASEDB_MULTIPLE_ROWS`` on the single-file path, and the
-    batch surface is exactly where its rows convert: it **fans out** to N ordinary per-row
-    conversions, each an explicit ``asedb_row_selection=index,row=i`` choice (P4), each its own
-    ``BatchEntry`` with a ``<path>::row=<i>`` label. A **dataset is aggregation, not a new model**
-    (Part 2 §3.2): the rows never become one Canonical Object. Lazy so ``fail_fast`` stops
-    mid-container — the consumer breaks and the remaining rows are never converted."""
+    `.db` with more than one row — is detected on the first parse (``_convert_one`` returns a
+    fan-out marker rather than converting the whole variable-N object), and the batch surface is
+    exactly where its rows convert: it **fans out** to N ordinary per-row conversions, each an
+    explicit ``asedb_row_selection=index,row=i`` choice (P4), each its own ``BatchEntry`` with a
+    ``<path>::row=<i>`` label.
+
+    Schema 2.0 (M72) lets a multi-row `.db` read through as one variable-N Canonical Object
+    (M73-S5), so the single-file ``xtalate convert`` no longer refuses it — but the batch keeps its
+    fan-out semantics (a dataset is aggregation, not a new model; each row an independent
+    structure), now **re-triggered** by ``source_frame_count > 1`` on the detection parse instead
+    of by catching the retired refusal. Lazy so ``fail_fast`` stops mid-container — the consumer
+    breaks and the remaining rows are never converted."""
     outcome = _convert_one(engine, registry, entry, manifest, shared_choices)
-    if not _is_multi_row_refusal(outcome):
-        yield outcome
+    if outcome.source_format_id == "ase_db" and (outcome.source_frame_count or 0) > 1:
+        for row in range(outcome.source_frame_count or 0):
+            yield _convert_one(engine, registry, entry, manifest, shared_choices, row=row)
         return
-    count = outcome.row_count
-    if count is None:
-        # Defensive: the refusal named a count we could not read — surface it as the ordinary
-        # per-file failure rather than silently dropping the source (never a phantom green batch).
-        yield outcome
-        return
-    for row in range(count):
-        yield _convert_one(engine, registry, entry, manifest, shared_choices, row=row)
-
-
-def _is_multi_row_refusal(outcome: _Outcome) -> bool:
-    """True iff this source failed the single-file path *only* because it is a multi-structure
-    container (a multi-row ASE `.db`) — the one failure the batch resolves by fan-out rather than
-    reporting. Any other parse failure stays that source's ``failed`` outcome."""
-    return (
-        outcome.entry.status == "failed"
-        and outcome.entry.error is not None
-        and outcome.entry.error.code == "ASEDB_MULTIPLE_ROWS"
-    )
-
-
-def _row_count_from_issues(issues: Sequence[ParseIssue]) -> int | None:
-    """The machine-readable row count of a multi-structure container, from its refusal's issues.
-
-    The ``ASEDB_MULTIPLE_ROWS`` refusal carries ``location="rows N"`` (mirrored from
-    ``parsers.ase_db._ROW_COUNT_LOCATION``); the count is read from the refusal ``_convert_one``
-    already holds (BATCH-4), so the fan-out expands a container without ever re-parsing it to
-    learn how many rows it has. ``None`` when no issue names a count."""
-    for issue in issues:
-        if issue.code == "ASEDB_MULTIPLE_ROWS" and issue.location:
-            match = _ROW_COUNT_LOCATION.match(issue.location)
-            if match:
-                return int(match.group(1))
-    return None
+    yield outcome
 
 
 def _run_assemble(
@@ -500,10 +480,14 @@ def _run_assemble(
 
     **Per-contribution validation** stays per source: each entry's ``ValidationReport`` is the
     re-parse-and-diff of *that source's own output* against its own Canonical Object — exactly what
-    the per-file conversion validated, so the report keeps its meaning for every file. The
-    assembled *whole* is never the validation unit: a mixed-composition extXYZ artifact is a valid
-    MLIP training file but **not** one Canonical Object (Part 2 §3.2), which the dataset-level note
-    states rather than hiding."""
+    the per-file conversion validated, so the report keeps its meaning for every file. **Since M73
+    the assembled whole is *also* validated** for a single-file target: schema 2.0 lets a
+    mixed-composition extXYZ / ASE ``.db`` re-parse as one variable-N Canonical Object, so the
+    assembled bytes are diffed against the stacked contributions and the result rides
+    ``BatchReport.whole_object_validation`` (before M72 the whole could not re-parse as one object
+    at all, so only per-contribution validation existed). A directory-format whole is not one
+    re-parseable file — each contribution is validated in place — so it carries no whole-object
+    record."""
     engine = ConversionEngine(registry)
     entries: list[_Outcome] = []
     contributions: list[AssembleContribution] = []
@@ -538,6 +522,7 @@ def _run_assemble(
     exporter = registry.get_exporter(manifest.target)
     target_caps = exporter.capabilities()
     note: str | None = None
+    whole_object_validation: ValidationReport | None = None
     if contributions:
         if target_caps.directory_format:
             output_dir, systems = exporter.assemble_dir(contributions)
@@ -554,7 +539,10 @@ def _run_assemble(
             buf = io.BytesIO()
             exporter.assemble(contributions, buf)
             assembled = buf.getvalue()
-            note = _assembled_note(registry, manifest.target, assembled, atom_counts)
+            note = _assembled_note(manifest.target, atom_counts)
+            whole_object_validation = _validate_assembled_whole(
+                registry, manifest, contributions, assembled
+            )
     if output is not None and assembled:
         Path(output).write_bytes(assembled)
     if output is not None and output_dir:
@@ -564,7 +552,9 @@ def _run_assemble(
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-    return _assemble_report(manifest, resolved, entries, note=note)
+    return _assemble_report(
+        manifest, resolved, entries, note=note, whole_object_validation=whole_object_validation
+    )
 
 
 def _convert_one(
@@ -630,6 +620,17 @@ def _convert_one(
             filename=Path(entry.path).name,
             recovery_choices=choices,
         )
+        if row is None and parsed.format_id == "ase_db" and len(parsed.canonical.frames) > 1:
+            # A multi-row ASE `.db` now reads through as one variable-N object (M73-S5), but the
+            # batch fans it out to N ordinary per-row conversions (M55 semantics). Return a fan-out
+            # marker the caller reads — never convert the whole object on this detection parse. The
+            # marker is a ``failed`` shell (never reported); ``_convert_source`` expands it instead.
+            marker = _failed(
+                label, "ASEDB_MULTIPLE_ROWS", "multi-row ASE database — fanned out per row"
+            )
+            marker.source_format_id = parsed.format_id
+            marker.source_frame_count = len(parsed.canonical.frames)
+            return marker
         result = engine.convert(
             parsed.canonical,
             source_format_id=parsed.format_id,
@@ -645,15 +646,11 @@ def _convert_one(
         )
     except ParseError as exc:
         issue = exc.issues[0] if exc.issues else None
-        outcome = _failed(
+        return _failed(
             label,
             issue.code if issue else "PARSE_ERROR",
             issue.message if issue else str(exc),
         )
-        # BATCH-4: the multi-row refusal this outcome reports *is* the row count — read it here,
-        # never re-parse the container in the fan-out to learn how many rows it has.
-        outcome.row_count = _row_count_from_issues(exc.issues)
-        return outcome
     if result.report.status == "refused":
         return _Outcome(entry=BatchEntry(source=label, status="refused", conversion=result.report))
     # `result.outputs` is set iff frame_selection=split_all resolved (one file per frame);
@@ -729,42 +726,101 @@ def _write_per_file_outputs(out_dir: Path | None, outcome: _Outcome, target: str
     return True
 
 
-def _assembled_note(
-    registry: Registry, target: str, assembled: bytes, atom_counts: dict[str, int]
-) -> str | None:
-    """The dataset-level variable-N statement for an assembled artifact. When the assembled sources
-    differ in atom count, a **single-object** target — extXYZ — cannot re-parse the whole file as
-    one Canonical Object: its single-object re-parse refuses via the **existing**
-    ``EXTXYZ_VARIABLE_ATOM_COUNT``, and the note names that property of the assembled file (never a
-    per-file loss; the case joins the v2.0 variable-N evidence stream, counted not anecdotal:
-    ``tests/conversion/batch/evidence/`` pins the refusal). A **multi-structure container** target
-    — ASE ``.db`` — holds variable-N rows natively (its re-parse refuses ``ASEDB_MULTIPLE_ROWS``,
-    the ordinary dataset shape, not this variable-N condition), so it warrants no such note."""
-    if not assembled:
-        return None
+def _assembled_note(target: str, atom_counts: dict[str, int]) -> str | None:
+    """The dataset-level variable-N statement for a single-file assembled artifact (M54-S2,
+    reworded M73-S5). When the assembled sources differ in atom count, the whole file is a
+    **variable-N** trajectory — a property of the assembled file, never a per-file loss.
+
+    Before M72 this was a refusal note: a mixed-composition extXYZ could not re-parse as one
+    Canonical Object (``EXTXYZ_VARIABLE_ATOM_COUNT``), so the note explained why the whole was
+    unvalidatable. Schema 2.0 lifted the constant-N invariant (M72) and M73-S4 retired that reader
+    refusal, so the whole now re-parses as one variable-N object and
+    :func:`_validate_assembled_whole` proves the round-trip — the note simply records the variable-N
+    property (with the per-source counts), no longer an apology for a whole that could not be
+    checked. A constant-N assemble (all counts equal) warrants no such note."""
     distinct = sorted({n for n in atom_counts.values() if n is not None})
     if len(distinct) <= 1:
         return None
-    parser = registry.get_parser(target)
-    try:
-        parser.parse(io.BytesIO(assembled), filename=f"assembled.{target}")
-        return None  # surprisingly one object: no variable-N statement to make
-    except ParseError as exc:
-        code = exc.issues[0].code if exc.issues else ""
-        if code == "EXTXYZ_VARIABLE_ATOM_COUNT":
-            counts = ", ".join(f"{p}: {n}" for p, n in atom_counts.items())
-            return (
-                f"assembled {target} has variable atom counts across frames ({counts}); the "
-                f"single-object re-parse of the whole file refuses EXTXYZ_VARIABLE_ATOM_COUNT "
-                f"(Part 2 §3.2) — the file is a valid MLIP training set, not one Canonical "
-                f"Object. Per-contribution validations stay green; the case is recorded into "
-                f"the v2.0 variable-N evidence stream "
-                f"(tests/conversion/batch/evidence/v2-variable-n-assemble)."
-            )
-    # A multi-structure container (a multi-row `.db`) re-parses to a container refusal, not
-    # EXTXYZ_VARIABLE_ATOM_COUNT — the healthy dataset shape, no note. Any other single-object
-    # re-parse failure would be an assembly bug; the suite pins it.
-    return None
+    counts = ", ".join(f"{p}: {n}" for p, n in atom_counts.items())
+    return (
+        f"assembled {target} has variable atom counts across frames ({counts}); schema 2.0 holds "
+        f"a variable-N trajectory, so the whole file re-parses as one Canonical Object and the "
+        f"whole-object validation confirms the round-trip (Part 2 §3.2) — the file is a valid MLIP "
+        f"training set. Per-contribution validations stay green."
+    )
+
+
+@dataclass(frozen=True)
+class _WholeObjectReportView:
+    """A minimal ``ConversionReportView`` for the whole-object assemble validation (M73-S5).
+
+    An assembled trajectory has no single conversion report — each contribution carries its own,
+    validated per source. The Validation Engine's absence / report-consistency checks read a report
+    for per-source preserved / removed / supplied claims; here those are already validated in place,
+    so this view carries a synthetic ``report_id`` and empty claim lists (the two checks pass
+    trivially) while the structural + numeric checks do the real work. Empty tuples satisfy the
+    ``Sequence`` members of the structural ``ConversionReportView`` Protocol."""
+
+    report_id: str
+    preserved: tuple[Any, ...] = ()
+    removed: tuple[Any, ...] = ()
+    supplied: tuple[Any, ...] = ()
+    assumptions: tuple[Any, ...] = ()
+
+
+def _stack_contributions(contributions: list[AssembleContribution]) -> CanonicalObject:
+    """Stack the per-source write-plan-filtered objects into one variable-N object — the *expected*
+    reference for :func:`_validate_assembled_whole` (M73-S5). Frames are concatenated in
+    contribution (row) order and re-indexed to their position in the stack; ``trajectory`` is set
+    when the stack is multi-frame (a lone frame is a structure, Part 2 §3.2). The stacked object
+    carries only the frames — each frame's own geometry / dynamics / electronic content is what the
+    variable-N structural + numeric checks compare. Per-source ``custom_global`` / metadata /
+    absence claims are validated per contribution (each source's own ``ValidationReport``), so the
+    stack reuses the first contribution's provenance and adds no object-level metadata; the
+    whole-object pass proves the assembled trajectory's structural + numeric round-trip, not a
+    second copy of each source's metadata claims."""
+    frames: list[Frame] = []
+    for contribution in contributions:
+        for frame in contribution.canonical.frames:
+            frames.append(frame.model_copy(update={"index": len(frames)}))
+    trajectory = TrajectoryMetadata(timestep=None) if len(frames) > 1 else None
+    return CanonicalObject(
+        frames=frames,
+        trajectory=trajectory,
+        provenance=contributions[0].canonical.provenance,
+    )
+
+
+def _validate_assembled_whole(
+    registry: Registry,
+    manifest: BatchManifest,
+    contributions: list[AssembleContribution],
+    assembled: bytes,
+) -> ValidationReport | None:
+    """Re-parse the single-file assembled artifact as **one variable-N Canonical Object** and diff
+    it against the stacked contributions (M73-S5). Returns ``None`` when nothing was assembled.
+
+    This is the round-trip schema 2.0 made possible: before M72 a mixed-composition assembled file
+    could not re-parse as one object (the exporter concatenated frames of differing N, and the
+    single-object reader refused), so the whole was unvalidatable and only per-contribution
+    validation existed. Now the whole re-parses through, so the assembled bytes are validated as a
+    trajectory. The Validation Engine's absence / report-consistency checks read a Conversion
+    Report; the whole has no single conversion report (each contribution has its own, validated per
+    source), so a minimal empty view is passed — those two checks concern per-source preserved /
+    removed / supplied claims, already validated in place, and pass trivially here while the
+    structural + numeric checks do the real work."""
+    if not assembled:
+        return None
+    expected = _stack_contributions(contributions)
+    engine = ValidationEngine(registry)
+    view = _WholeObjectReportView(report_id=str(uuid.uuid4()))
+    return engine.validate(
+        expected=expected,
+        output=assembled,
+        target_format_id=manifest.target,
+        conversion_report=view,
+        tolerance=ToleranceProfile.named(manifest.tolerance_profile),
+    )
 
 
 def _assemble_dir_note(
@@ -799,11 +855,13 @@ def _assemble_dir_note(
 
 
 def _fanout_note(entries: list[BatchEntry]) -> str | None:
-    """The dataset-level fan-out statement (M55-S3). When any resolved source was a
-    multi-structure container (a multi-row ASE `.db`) expanded to per-row conversions, this names
-    the expansion — a property of the **input** (aggregation, never a per-file loss): each row is
-    an independent structure converted through the ordinary per-row path
-    (``asedb_row_selection=index``), never a rows-as-frames Canonical Object (Part 2 §3.2)."""
+    """The dataset-level fan-out statement (M55-S3; reworded M73-S5). When any resolved source was
+    a multi-structure container (a multi-row ASE `.db`) expanded to per-row conversions, this names
+    the expansion — a property of the **input**, never a per-file loss: each row is an independent
+    structure converted through the ordinary per-row path (``asedb_row_selection=index``). A
+    multi-row `.db` *can* read through as one variable-N Canonical Object since M73-S5 (that is what
+    a lone ``xtalate convert`` now does), but the batch surface **chooses** per-row aggregation —
+    one converted file per structure — as its dataset shape (M55 semantics)."""
     containers: dict[str, int] = {}
     for entry in entries:
         if _ROW_LABEL_SEP in entry.source:
@@ -814,8 +872,8 @@ def _fanout_note(entries: list[BatchEntry]) -> str | None:
     parts = "; ".join(f"{path} → {count} per-row conversions" for path, count in containers.items())
     return (
         f"multi-structure container fan-out ({parts}): each row is an independent structure "
-        "converted through the ordinary per-row path (asedb_row_selection=index) — a multi-row "
-        "ASE .db is aggregation, never one Canonical Object (Part 2 §3.2)."
+        "converted through the ordinary per-row path (asedb_row_selection=index) — the batch "
+        "surface aggregates a multi-row ASE .db into one converted file per structure (M55)."
     )
 
 
@@ -833,6 +891,7 @@ def _assemble_report(
     entries: list[_Outcome],
     *,
     note: str | None,
+    whole_object_validation: ValidationReport | None = None,
 ) -> BatchReport:
     # Keep only the report models — the raw bytes holder never reaches the serialized report.
     reported = [o.entry for o in entries]
@@ -863,6 +922,7 @@ def _assemble_report(
             label_presence=presence,
         ),
         note=_combine_notes(_fanout_note(reported), note),
+        whole_object_validation=whole_object_validation,
     )
 
 

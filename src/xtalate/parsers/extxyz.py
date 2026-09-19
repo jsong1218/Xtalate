@@ -47,7 +47,13 @@ from ase.io import read as ase_read
 from ase.stress import voigt_6_to_full_3x3_stress
 from pydantic import JsonValue
 
-from xtalate.parsers._common import attach_per_atom, build_provenance, decode_text
+from xtalate.parsers._common import (
+    attach_per_atom,
+    build_provenance,
+    coerce_per_atom,
+    decode_text,
+    with_per_atom,
+)
 from xtalate.schema import (
     SCHEMA_VERSION,
     AtomsBlock,
@@ -279,18 +285,10 @@ class ExtxyzParser(ParserPlugin):
         if not atoms_list:
             raise _error("EXTXYZ_EMPTY", "file contains no frames")
 
-        n_atoms = len(atoms_list[0])
-        for k, atoms in enumerate(atoms_list):
-            if len(atoms) != n_atoms:
-                # The canonical model fixes N across frames (Part 2 §3.2); a variable-N
-                # extXYZ trajectory cannot be represented and must not be silently reshaped.
-                raise _error(
-                    "EXTXYZ_VARIABLE_ATOM_COUNT",
-                    f"frame {k} has {len(atoms)} atoms but frame 0 has {n_atoms}; the canonical "
-                    "model requires a constant atom count across frames (Part 2 §3.2)",
-                    location=f"frame {k}",
-                )
-
+        # Schema 2.0.0 (M72) lifted the constant-N invariant and M73 retired the reader refusal: a
+        # variable-N extXYZ trajectory now parses, each frame carrying its own atom count. Every
+        # frame is built from its own ``atoms`` below, so no reshaping or padding is ever needed
+        # (P3 — a frame's N is the value it has, not one shared object-wide count).
         issues: list[ParseIssue] = []
         parse_notes: list[str] = []
         frames: list[Frame] = []
@@ -301,7 +299,7 @@ class ExtxyzParser(ParserPlugin):
             comment = raw_comments[index] if index < len(raw_comments) else ""
             cell, frame_pbc_note = self._build_cell(atoms, comment)
             undeclared_pbc = undeclared_pbc or frame_pbc_note
-            mapped, carried = _partition_calc(atoms, n_atoms, index, issues)
+            mapped, carried = _partition_calc(atoms, len(atoms), index, issues)
             carried_calc.append(carried)
             frames.append(
                 Frame(
@@ -330,11 +328,22 @@ class ExtxyzParser(ParserPlugin):
                 "velocities converted from ASE internal units to Å/fs (source 'momenta' column)."
             )
 
-        custom_per_atom = self._collect_custom_columns(atoms_list, issues)
         user_metadata = self._build_user_metadata(atoms_list, carried_calc)
-        # custom_per_atom is per-frame in schema 2.0.0 (M72); this frame-invariant column set is
-        # written onto every frame (Part 2 §3.10, D-d).
-        frames = attach_per_atom(frames, custom_per_atom)
+        # custom_per_atom is per-frame in schema 2.0.0 (M72). When N is constant, extXYZ's
+        # per-atom columns are frame-invariant: one column set is collected (with the
+        # EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE warning when a column varies) and written onto
+        # every frame — unchanged behaviour. When N varies (M73), a per-atom column is sized to
+        # each frame's own N and cannot be one object-wide array, so each frame carries its own
+        # columns, collected from its own arrays — lossless, with no "only frame 0 carried"
+        # compromise (P1).
+        if len({len(a) for a in atoms_list}) == 1:
+            custom_per_atom = self._collect_custom_columns(atoms_list, issues)
+            frames = attach_per_atom(frames, custom_per_atom)
+        else:
+            frames = [
+                with_per_atom(frame, coerce_per_atom(_collect_custom_columns_single(atoms)))
+                for frame, atoms in zip(frames, atoms_list, strict=True)
+            ]
         provenance = build_provenance(
             format_id=FORMAT_ID,
             filename=filename,
@@ -361,12 +370,13 @@ class ExtxyzParser(ParserPlugin):
 
         Reads the file **one frame block at a time** off the raw byte stream — never slurping the
         whole trajectory into a string — so peak memory tracks the resident chunk, not the frame
-        count. The first block is read eagerly to establish the object-level header (atom count,
-        the frame-invariant ``custom_per_atom`` columns, and the ``parse_notes``); every remaining
-        block is yielded lazily. Each frame reuses the *same* per-frame builders as ``parse`` (so
-        the laundering rules — zero cell → ``None``, undeclared pbc recorded, synthesised momenta
-        dropped — apply identically), and the constant-atom-count invariant (Part 2 §3.2) is
-        checked as frames arrive, raising ``ParseError`` at the offending frame (Part 3 §5).
+        count. The first block is read eagerly to establish the object-level header (frame 0's
+        ``custom_per_atom`` columns and the ``parse_notes``); every remaining block is yielded
+        lazily. Each frame reuses the *same* per-frame builders as ``parse`` (so the laundering
+        rules — zero cell → ``None``, undeclared pbc recorded, synthesised momenta dropped — apply
+        identically), and each frame carries its own atom count: schema 2.0.0 (M72) lifted the
+        constant-N invariant and M73 retired the reader refusal, so a variable-N trajectory streams
+        (Part 2 §3.2).
 
         ``parse_notes`` are derived from the first frame's declaration state (pbc-declared, momenta
         present). For the homogeneous trajectories extXYZ overwhelmingly holds — every frame written
@@ -381,7 +391,6 @@ class ExtxyzParser(ParserPlugin):
         except StopIteration:
             raise _error("EXTXYZ_EMPTY", "file contains no frames") from None
         first_atoms = _read_block(first_block, 0)
-        n_atoms = len(first_atoms)
 
         first_cell, first_undeclared_pbc = self._build_cell(first_atoms, first_comment)
         parse_notes: list[str] = []
@@ -394,9 +403,14 @@ class ExtxyzParser(ParserPlugin):
             parse_notes.append(
                 "velocities converted from ASE internal units to Å/fs (source 'momenta' column)."
             )
-        # custom_per_atom is object-level and frame-invariant (Part 2 §3.10): established from the
-        # first frame's Properties= columns and re-checked as later frames stream in.
+        # Establish frame 0's Properties= columns. For the constant-N trajectories extXYZ
+        # overwhelmingly holds, these are frame-invariant: the coerced set (below) rides every frame
+        # and a later frame whose column values differ warns once, as it did before M73. A frame
+        # whose N differs (M73 variable-N) collects its own columns in the frame loop instead
+        # (Part 2 §3.10). ``custom_per_atom`` rides each ``StreamFrame.frame``, not the header,
+        # since the M73 SDK major.
         custom_per_atom = _collect_custom_columns_single(first_atoms)
+        coerced_per_atom = coerce_per_atom(custom_per_atom)
         provenance = build_provenance(
             format_id=FORMAT_ID,
             filename=filename,
@@ -408,26 +422,31 @@ class ExtxyzParser(ParserPlugin):
             schema_version=SCHEMA_VERSION,
             provenance=provenance,
             trajectory=TrajectoryMetadata(timestep=None),
-            custom_per_atom=custom_per_atom,
         )
 
         def _frames() -> Iterator[StreamFrame]:
             warned_columns: set[str] = set()
-            yield self._stream_frame(first_atoms, first_comment, first_cell, 0, n_atoms, issues)
+            yield self._stream_frame(
+                first_atoms, first_comment, first_cell, 0, coerced_per_atom, issues
+            )
             index = 1
             for block, comment in blocks:
                 atoms = _read_block(block, index)
-                if len(atoms) != n_atoms:
-                    raise _error(
-                        "EXTXYZ_VARIABLE_ATOM_COUNT",
-                        f"frame {index} has {len(atoms)} atoms but frame 0 has {n_atoms}; the "
-                        "canonical model requires a constant atom count across frames "
-                        "(Part 2 §3.2)",
-                        location=f"frame {index}",
-                    )
-                _check_columns_consistent(atoms, custom_per_atom, warned_columns, issues)
+                # Schema 2.0.0 (M72) + M73: a variable-N extXYZ trajectory streams, each frame
+                # carrying its own atom count (P3). When a later frame matches frame 0's N,
+                # extXYZ's per-atom columns are frame-invariant, so frame 0's coerced set rides
+                # this frame and a varying column warns once
+                # (EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE) — unchanged constant-N behaviour, and
+                # the streaming mirror of the materialized path. When N differs, a per-atom column
+                # is sized to this frame's N and cannot share frame 0's array, so this frame
+                # carries its own columns, collected from its own arrays.
+                if len(atoms) == len(first_atoms):
+                    _check_columns_consistent(atoms, custom_per_atom, warned_columns, issues)
+                    frame_per_atom = coerced_per_atom
+                else:
+                    frame_per_atom = coerce_per_atom(_collect_custom_columns_single(atoms))
                 cell, _ = self._build_cell(atoms, comment)
-                yield self._stream_frame(atoms, comment, cell, index, n_atoms, issues)
+                yield self._stream_frame(atoms, comment, cell, index, frame_per_atom, issues)
                 index += 1
 
         return FrameStream(header, _frames(), issues=issues)
@@ -438,27 +457,33 @@ class ExtxyzParser(ParserPlugin):
         comment: str,
         cell: Cell | None,
         index: int,
-        n_atoms: int,
+        coerced_per_atom: dict[str, Any],
         issues: list[ParseIssue],
     ) -> StreamFrame:
         """Build one ``StreamFrame`` (Frame + its per-frame custom slice) from one ASE image,
-        reusing the whole-file per-frame mappers so streamed and materialized frames match."""
-        mapped, carried = _partition_calc(atoms, n_atoms, index, issues)
+        reusing the whole-file per-frame mappers so streamed and materialized frames match.
+        ``coerced_per_atom`` is this frame's per-atom column set (coerced), written onto this frame
+        — the streaming mirror of the whole-file ``attach_per_atom`` (M73). The per-atom-scalar
+        check reads this frame's own N (``len(atoms)``), correct under variable N."""
+        mapped, carried = _partition_calc(atoms, len(atoms), index, issues)
         per_frame_custom: dict[str, Any] = {}
         for key in atoms.info:
             per_frame_custom[_namespace(key)] = _as_json(atoms.info.get(key))
         for key, value in carried.items():
             per_frame_custom[_namespace(key)] = value
-        frame = Frame(
-            index=index,
-            atoms=self._build_atoms(atoms),
-            cell=cell,
-            dynamics=self._build_dynamics(atoms, mapped),
-            electronic=Electronic(
-                total_energy=mapped.get("energy"),
-                charges=mapped.get("charges"),
-                magnetic_moments=mapped.get("magmoms"),
+        frame = with_per_atom(
+            Frame(
+                index=index,
+                atoms=self._build_atoms(atoms),
+                cell=cell,
+                dynamics=self._build_dynamics(atoms, mapped),
+                electronic=Electronic(
+                    total_energy=mapped.get("energy"),
+                    charges=mapped.get("charges"),
+                    magnetic_moments=mapped.get("magmoms"),
+                ),
             ),
+            coerced_per_atom,
         )
         return StreamFrame(frame=frame, per_frame_custom=per_frame_custom)
 

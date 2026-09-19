@@ -2,13 +2,17 @@
 
 The fourth ASE-backed wrap, built exactly like ``parsers.ase_traj.py``: rows are read via
 ``ase.db``, then the library's manufactured defaults are laundered back to absence (**P3**).
-A ``.db`` row is **one independent structure**; a **single-row** database parses through the
-ordinary spine to one Canonical Object. A **multi-row** database refuses on the single-file
-path with a recoverable ``ASEDB_MULTIPLE_ROWS`` naming its row count and the two honest
-resolutions (``--recover asedb_row_selection=index,row=<i>`` picks one row; ``--batch`` fans
-every row out to its own conversion, M55-S3) — a dataset is aggregation, never one Canonical
-Object (MASTER_SPEC Part 6 preamble; the rows-as-frames-of-one-object alternative breaks the
-constant-N invariant, Part 2 §3.2).
+A ``.db`` row is **one independent structure**. A **single-row** database parses through the
+ordinary spine to one single-frame Canonical Object. A **multi-row** database reads every row
+as a frame of one **variable-N** Canonical Object (schema 2.0 lifted the constant-N invariant,
+M72; the rows-as-frames reading became sound, M73-S5) — each row keeps its own atom count, so a
+dataset whose rows differ in composition rides through losslessly, and each row's key-value /
+data / calculator carry lands per-frame (None-padded across the rows). An empty database refuses
+``ASEDB_EMPTY``. Two honest single-structure escape hatches remain (M55): ``--recover
+asedb_row_selection=index,row=<i>`` pulls one row through as a standalone structure, and
+``--batch`` fans every row out to its own per-row conversion — both resolve through
+``parse_recover`` (the batch fan-out re-parses each row with ``index,row=<i>``; M73-S5 honours an
+explicit ``asedb_row_selection`` proactively now that ``parse`` no longer refuses a multi-row db).
 
 The laundering rules (each pinned by a golden test in ``tests/parsers/test_ase_db.py``),
 mirroring ``ase_traj``:
@@ -43,7 +47,6 @@ laundering suite or the multi-row refusal.
 
 from __future__ import annotations
 
-import re
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -65,6 +68,8 @@ from xtalate.schema import (
     Dynamics,
     Electronic,
     Frame,
+    Provenance,
+    TrajectoryMetadata,
     UserMetadata,
 )
 from xtalate.sdk import (
@@ -104,10 +109,6 @@ _MAPPED_CALC_KEYS = frozenset({"energy", "forces", "charges", "magmoms"})
 # an ASE-unit velocity by it yields Å/fs (mirrors extXYZ; the exporter divides by the same
 # factor).
 _VEL_ASE_TO_ANG_PER_FS: float = ase_units.fs
-# The machine-readable row-count location grammar (mirrors `frame N` in sdk/results.py): the
-# ASEDB_MULTIPLE_ROWS refusal carries `location="rows <n>"` so the batch fan-out (M55-S3) can
-# read the row count without parsing prose.
-_ROW_COUNT_LOCATION = re.compile(r"^rows (\d+)$")
 
 #: parser_version string folding in the wrapped ASE version (D59).
 _PARSER_VERSION = f"{FORMAT_ID}-parser {__version__} (ase {ase.__version__})"
@@ -137,36 +138,24 @@ class AseDbParser(ParserPlugin):
 
     def parse(self, stream: BinaryIO, *, filename: str | None) -> ParseResult:
         """Read the database's rows through ``ase.db``; a single-row database becomes one
-        Canonical Object, a multi-row one refuses (recoverable ``ASEDB_MULTIPLE_ROWS``), and
-        an empty one refuses ``ASEDB_EMPTY``. ``.db`` is SQLite, which ``ase.db`` opens only by
-        real path, so the byte stream is spooled to a temporary file for the read (the
-        conversion layer always hands this parser bytes)."""
+        single-frame Canonical Object, a multi-row one becomes a single **variable-N** object
+        (each row a frame at its own atom count, M73-S5), and an empty one refuses
+        ``ASEDB_EMPTY``. ``.db`` is SQLite, which ``ase.db`` opens only by real path, so the byte
+        stream is spooled to a temporary file for the read (the conversion layer always hands this
+        parser bytes).
+
+        Reading every row materializes every row (schema 2.0 made the rows-as-frames reading
+        sound, M72; the ASEDB-4 "decode only the counted row" deferral is retired for the whole
+        object). The frame cap (``enforce_max_frames``) bounds this on the materialized entry
+        points; the single-row escape hatch (``asedb_row_selection=index``) still decodes exactly
+        one row via ``parse_recover`` for callers that want one structure without materializing the
+        rest (M73-S6 D-log records the DoS posture)."""
         with self._spooled_db(stream) as db:
             ids = self._row_ids(db)
             if not ids:
                 raise _error("ASEDB_EMPTY", "the database contains no rows")
-            if len(ids) > 1:
-                id_list = ", ".join(str(rid) for rid in ids)
-                raise ParseError(
-                    [
-                        ParseIssue(
-                            severity="error",
-                            code="ASEDB_MULTIPLE_ROWS",
-                            message=(
-                                f"this ASE database contains {len(ids)} rows (ids {id_list}); "
-                                "the single-file path accepts one structure — re-parse one row "
-                                "with --recover asedb_row_selection=index,row=<i> (i is the "
-                                "0-based row in the ids listed above), or convert every row under "
-                                "--batch (each row becomes its own per-row conversion)"
-                            ),
-                            location=f"rows {len(ids)}",
-                            recovery_hint="asedb_multiple_rows",
-                        )
-                    ]
-                )
-            # ASEDB-4 (review R5): only this one row is ever decoded from its array blobs —
-            # counting the database read ids alone, never every row's materialization.
-            return self._row_result(self._select_row(db, ids[0]), filename)
+            rows = [self._select_row(db, rid) for rid in ids]
+            return self._build_object(rows, filename)
 
     def parse_recover(
         self,
@@ -182,7 +171,14 @@ class AseDbParser(ParserPlugin):
         ``index,row=<i>`` re-parses exactly that one row — the ``frame_selection`` no-default
         logic applied to rows (which row survives changes the scientific meaning, P4). ``all``
         is the batch fan-out (M55-S3), never a single-file resolution into one object — naming
-        it here refuses cleanly, re-raising the recoverable refusal."""
+        it here refuses cleanly, re-raising the recoverable refusal.
+
+        Since M73-S5 ``parse`` no longer refuses a multi-row db (it reads every row as a frame of
+        one variable-N object), so this hook is reached **proactively** — the conversion layer
+        routes an explicit ``asedb_row_selection`` choice straight here so the choice is honoured
+        rather than silently ignored (P1), and the ``--batch`` fan-out re-parses each row through
+        it with ``index,row=<i>``. Decoding one row here still costs only that row (the escape
+        hatch that avoids materializing the whole dataset)."""
         if hint != "asedb_multiple_rows":
             raise NotImplementedError(f"ase_db parse_recover does not handle hint {hint!r}")
         if choice != "index":
@@ -267,13 +263,13 @@ class AseDbParser(ParserPlugin):
             yield db
 
     def _row_ids(self, db: Any) -> list[int]:
-        """The database's row ids in insertion order — **id column only** (ASEDB-4, review R5):
+        """The database's row ids in insertion order — **id column only**:
         ``db.select(columns=['id'], include_data=False)`` fetches just the ids, never the per-row
-        array blobs (which ASE would otherwise ``deblob`` on row construction), so counting /
-        refusing a multi-row database costs O(rows) rather than O(dataset bytes) — the
-        DoS-shaped concern the reviewer flagged on a service that accepts arbitrary uploads. ``id``
-        order is insertion order (ASE autoincrements); the ids are what the multi-row refusal
-        lists."""
+        array blobs, so the row *ordering* is established without deblobbing every row. The whole
+        object read then decodes each id (M73-S5 reads every row as a frame); the single-row
+        escape hatch (``asedb_row_selection=index``) decodes only the one selected id, so it still
+        costs O(one row) not O(dataset bytes). ``id`` order is insertion order (ASE
+        autoincrements); the ids are what the ``asedb_row_selection`` refusal message lists."""
         try:
             return [row.id for row in db.select(columns=["id"], include_data=False)]
         except Exception as exc:  # noqa: BLE001
@@ -282,15 +278,96 @@ class AseDbParser(ParserPlugin):
             ) from exc
 
     def _select_row(self, db: Any, rid: int) -> Any:
-        """Decode **one** row by id — the ASEDB-4 deferral: full row materialization happens only
-        for the row actually selected, never for the rows merely counted."""
+        """Decode **one** row by id — used both for the whole-object read (one call per id) and
+        for the single-row escape hatch, where full row materialization happens only for the row
+        actually selected."""
         try:
             return db.get(rid)
         except Exception as exc:  # noqa: BLE001
             raise _error("ASEDB_MALFORMED", f"could not reconstruct row {rid}: {exc}") from exc
 
-    def _row_result(self, row: Any, filename: str | None) -> ParseResult:
+    def _provenance(self, filename: str | None) -> Provenance:
+        """The object-level provenance (built once — it depends only on the file and the ASE
+        version, never on a row), recording that ASE's manufactured defaults were laundered to
+        absence (P3)."""
+        return build_provenance(
+            format_id=FORMAT_ID,
+            filename=filename,
+            original_coordinate_system="cartesian",
+            source_units={"positions": "angstrom"},
+            parse_notes=[
+                f"read via ASE {ase.__version__} ase.db; ASE-manufactured defaults "
+                "(zero cell, derived masses, zeroed momenta, generated id/ctime/mtime/user) "
+                "laundered to absence (P3)."
+            ],
+            parser_version=_PARSER_VERSION,
+        )
+
+    def _build_object(self, rows: list[Any], filename: str | None) -> ParseResult:
+        """Build one Canonical Object from the database's rows. A single row → one single-frame
+        object (``trajectory=None``, kv/data carry in ``custom_global`` — byte-identical to the
+        v1.5 read). Multiple rows → one **variable-N** trajectory object (each row a frame at its
+        own atom count; every row's kv/data/calculator carry lands per-frame, None-padded across
+        the rows, since a per-row value is frame-local, not object-global)."""
         issues: list[ParseIssue] = []
+        provenance = self._provenance(filename)
+        if len(rows) == 1:
+            frame, global_carry, frame_carry = self._frame_and_carry(rows[0], 0, issues)
+            canonical = CanonicalObject(
+                frames=[frame],
+                trajectory=None,
+                provenance=provenance,
+                user_metadata=UserMetadata(
+                    custom_global=global_carry,
+                    # A single-row object has one frame, so per-frame customs are length-1 lists
+                    # (custom_per_frame's first dimension is the frame count, Part 2 §3.10).
+                    custom_per_frame={key: [value] for key, value in frame_carry.items()},
+                ),
+            )
+            return ParseResult(canonical=canonical, issues=issues)
+
+        n = len(rows)
+        frames: list[Frame] = []
+        # ``dict[str, Any]`` because the columns are None-padded across the rows (a per-row value is
+        # frame-local; a row lacking a key contributes None at its slot) — the same convention
+        # ``sdk.streaming.materialize`` uses for its reassembled per-frame lists. None is a valid
+        # JSON-null entry the schema accepts; ``Any`` sidesteps both the JsonValue/None union and
+        # the invariance of ``custom_per_frame``'s dict value type.
+        per_frame: dict[str, Any] = {}
+        for i, row in enumerate(rows):
+            frame, global_carry, frame_carry = self._frame_and_carry(row, i, issues)
+            frames.append(frame)
+            # A per-row value belongs to that frame, so a multi-row db routes every carry (kv,
+            # data blob, calculator results, non-FixAtoms constraints) to custom_per_frame,
+            # None-padded to the frame count. Keys appear in first-seen order across the rows.
+            for key, value in self._merge_row_carry(global_carry, frame_carry).items():
+                if key not in per_frame:
+                    per_frame[key] = [None] * n
+                per_frame[key][i] = value
+        canonical = CanonicalObject(
+            frames=frames,
+            trajectory=TrajectoryMetadata(timestep=None),
+            provenance=provenance,
+            user_metadata=UserMetadata(custom_global={}, custom_per_frame=per_frame),
+        )
+        return ParseResult(canonical=canonical, issues=issues)
+
+    def _row_result(self, row: Any, filename: str | None) -> ParseResult:
+        """One row → one single-frame Canonical Object (the ``parse_recover`` single-row escape
+        hatch). A thin wrapper over ``_build_object`` so the selected-row object is byte-identical
+        to a genuine single-row database — which the ``--batch`` fan-out relies on (a fanned
+        per-row report must match the standalone single-row conversion)."""
+        return self._build_object([row], filename)
+
+    def _frame_and_carry(
+        self, row: Any, index: int, issues: list[ParseIssue]
+    ) -> tuple[Frame, dict[str, JsonValue], dict[str, JsonValue]]:
+        """Build one frame from one row, plus its two carry buckets: ``global_carry`` (the row's
+        key-value pairs + arbitrary data blob — what a single-row object stores in
+        ``custom_global``) and ``frame_carry`` (calculator results + non-FixAtoms constraints —
+        what a single-row object stores in ``custom_per_frame``). Appends the carry warnings to
+        ``issues`` in the fixed order kv → data → calc → charge/moment → constraints, so the
+        single-row object stays byte-identical to the v1.5 read."""
         try:
             atoms = row.toatoms()
         except Exception as exc:  # noqa: BLE001
@@ -299,10 +376,9 @@ class AseDbParser(ParserPlugin):
             ) from exc
 
         # Key–value carry: non-empty per-row key-value pairs + the arbitrary data blob ride
-        # into custom_global under the ase_db: namespace (Part 2 §6.1), each with a warning —
-        # nothing dropped, nothing interpreted. An empty kv dict is ASE's manufactured default
-        # → absence (no entry, no warning).
-        custom_global: dict[str, JsonValue] = {}
+        # under the ase_db: namespace (Part 2 §6.1), each with a warning — nothing dropped,
+        # nothing interpreted. An empty kv dict is ASE's manufactured default → absence.
+        global_carry: dict[str, JsonValue] = {}
         for key, value in dict(row.key_value_pairs or {}).items():
             # ASEDB-3 (review R5): a kv pair literally named ``data`` would collide with the
             # row's arbitrary data blob on the same ``ase_db:data`` key and be silently
@@ -312,7 +388,7 @@ class AseDbParser(ParserPlugin):
             # records it.
             collision = _namespace(key) == _DATA_KEY
             ns = _DATA_KV_COLLISION_KEY if collision else _namespace(key)
-            custom_global[ns] = _as_json(value)
+            global_carry[ns] = _as_json(value)
             issues.append(
                 ParseIssue(
                     severity="warning",
@@ -337,7 +413,7 @@ class AseDbParser(ParserPlugin):
                     )
                 )
         if row.data:
-            custom_global[_DATA_KEY] = _as_json(row.data)
+            global_carry[_DATA_KEY] = _as_json(row.data)
             issues.append(
                 ParseIssue(
                     severity="warning",
@@ -350,35 +426,20 @@ class AseDbParser(ParserPlugin):
                 )
             )
 
-        provenance = build_provenance(
-            format_id=FORMAT_ID,
-            filename=filename,
-            original_coordinate_system="cartesian",
-            source_units={"positions": "angstrom"},
-            parse_notes=[
-                f"read via ASE {ase.__version__} ase.db; ASE-manufactured defaults "
-                "(zero cell, derived masses, zeroed momenta, generated id/ctime/mtime/user) "
-                "laundered to absence (P3)."
-            ],
-            parser_version=_PARSER_VERSION,
-        )
-
         mapped, carried = _partition_calc(atoms, len(atoms), issues)
         charges, magmoms = _electronic_arrays(atoms, mapped, issues, carried)
         constraints, carried_constraints = self._build_constraints(atoms, issues)
-        per_frame_custom: dict[str, np.ndarray | list[JsonValue]] = {}
+        frame_carry: dict[str, JsonValue] = {}
         for key, value in carried.items():
-            # A single-row object has one frame, so per-frame customs are length-1 lists
-            # (custom_per_frame's first dimension is the frame count, Part 2 §3.10).
-            per_frame_custom[_namespace(key)] = [value]
+            frame_carry[_namespace(key)] = value
         if carried_constraints:
             # The non-FixAtoms constraints the warning names are really carried (ASEDB-2,
             # review R4) — a JSON-serializable description per constraint, so the P1 report
             # is true and the data is recoverable from the object.
-            per_frame_custom[_CONSTRAINTS_KEY] = [carried_constraints]
+            frame_carry[_CONSTRAINTS_KEY] = carried_constraints
 
         frame = Frame(
-            index=0,
+            index=index,
             atoms=AtomsBlock(
                 symbols=list(atoms.get_chemical_symbols()),
                 positions=np.asarray(atoms.get_positions(), dtype=np.float64),
@@ -400,15 +461,24 @@ class AseDbParser(ParserPlugin):
                 magnetic_moments=magmoms,
             ),
         )
-        canonical = CanonicalObject(
-            frames=[frame],
-            trajectory=None,
-            provenance=provenance,
-            user_metadata=UserMetadata(
-                custom_global=custom_global, custom_per_frame=per_frame_custom
-            ),
-        )
-        return ParseResult(canonical=canonical, issues=issues)
+        return frame, global_carry, frame_carry
+
+    @staticmethod
+    def _merge_row_carry(
+        global_carry: dict[str, JsonValue], frame_carry: dict[str, JsonValue]
+    ) -> dict[str, JsonValue]:
+        """Merge a row's two carry buckets into one per-frame mapping for a multi-row object.
+        A collision (a kv key namespaced to the same ``ase_db:<x>`` as a calculator/constraints
+        key — e.g. a kv literally named ``stress``) never silently overwrites (P1): the kv side
+        is escalated to ``ase_db:kv:<x>`` so both survive, mirroring the data-blob collision
+        rule."""
+        merged: dict[str, JsonValue] = dict(frame_carry)
+        for key, value in global_carry.items():
+            if key in merged:
+                merged[f"{_KEY_PREFIX}kv:{key.removeprefix(_KEY_PREFIX)}"] = value
+            else:
+                merged[key] = value
+        return merged
 
     @staticmethod
     def _build_cell(atoms: Any) -> Cell | None:
@@ -507,7 +577,11 @@ class AseDbParser(ParserPlugin):
                     notes="Carries calculator results verbatim, incl. stress (D18).",
                 ),
             },
-            max_frames=1,  # one row → one structure; a multi-row db refuses ASEDB_MULTIPLE_ROWS
+            # M73-S5: a multi-row db reads every row as a frame of one variable-N object (schema
+            # 2.0), so the reader is no longer capped at one frame. The frame cap
+            # (enforce_max_frames) bounds a huge db on the materialized entry points; the
+            # single-row escape hatch (asedb_row_selection=index) still decodes one row.
+            max_frames=None,
             required_fields=[],  # read side: absence is honoured, not required
             native_coordinate_system="cartesian",
             # M55-S1 (D18, D163): stress is carried through custom_per_frame until the sign

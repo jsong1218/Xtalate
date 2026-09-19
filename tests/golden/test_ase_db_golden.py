@@ -6,11 +6,11 @@ is ASE's binary SQLite container, the fixtures cannot be authored by hand — th
 ASE's non-deterministic row metadata — ``uuid4``, wall-clock timestamps, ``$USER`` — pinned so the
 bytes are reproducible), so the expectation remains external truth rather than a blind snapshot.
 
-A single ``.db`` row is one Canonical Object, never a trajectory: *a dataset is aggregation, not a
-new model.* Multi-row datasets refuse on this single-file path (``ASEDB_MULTIPLE_ROWS``) and fan
-out under ``--batch`` (M55-S3); they are deliberately absent here. The identity round-trip through
-the exporter lands with the ``ase_db`` write side (M55-S2), so this parser-only slice pins the read
-fidelity and the laundering rules only.
+A single ``.db`` row is one single-frame Canonical Object. Since M73-S5 a multi-row dataset reads
+through as one **variable-N** object (each row a frame at its own atom count, schema 2.0) or fans
+out under ``--batch`` (M55-S3); the multi-row read-through is pinned in ``tests/parsers`` and the
+batch suites, so this golden slice covers the single-row read fidelity and the laundering rules
+only. The identity round-trip through the exporter lands with the ``ase_db`` write side (M55-S2).
 """
 
 from __future__ import annotations

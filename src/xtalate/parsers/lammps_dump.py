@@ -56,11 +56,13 @@ Honesty on the ordinary axes, per the M46 plan and Part 3 §3 n.19:
   the wrapped form the source chose); the pre-flight diff predicts the unwrapping loss when
   such a source targets a format that cannot hold them (Part 3 §4; the named capability dimension).
   A partial ``ix``/``iy``/``iz`` family is malformed, refused.
-* **The constant-N boundary is a measured refusal.** A dump whose atom count varies across
-  frames (grand-canonical, deposition, evaporation) raises
-  ``LAMMPSDUMP_VARIABLE_ATOM_COUNT`` naming the first diverging frame and listing the per-frame
-  counts seen — the accumulating, user-visible evidence file for v2.0's variable-N schema
-  (Part 2 §3.2). Never truncated, never padded.
+* **Variable N reads through (schema 2.0.0, M73).** A dump whose atom count varies across frames
+  (grand-canonical, deposition, evaporation) parses: each frame carries its own atom count and its
+  own per-atom columns (Part 2 §3.2), never truncated, never padded. The identity guards remain but
+  fire only at a *constant* atom count — a same-N id-set or species swap is still a silent identity
+  change and is refused; a genuinely different count is a legitimate composition change. A target
+  format that cannot hold variable composition refuses at the pre-flight with ``frame_selection``
+  (Part 3 §4.3), never by padding.
 * **Typed atoms resolve through the existing ``missing_species`` scenario** (Part 3 §7.2): a
   numeric ``type`` column without a ``species_map`` preset raises the recoverable
   ``LAMMPSDUMP_MISSING_SPECIES`` issue (``recovery_hint="supply_species"``, the same hint the
@@ -76,7 +78,7 @@ from typing import BinaryIO, cast
 
 import numpy as np
 
-from xtalate.parsers._common import build_provenance
+from xtalate.parsers._common import build_provenance, coerce_per_atom, with_per_atom
 from xtalate.schema import (
     SCHEMA_VERSION,
     AtomsBlock,
@@ -146,7 +148,8 @@ _AMBIGUOUS_UNITS = "LAMMPSDUMP_AMBIGUOUS_UNITS"
 _UNSUPPORTED_UNITS = "LAMMPSDUMP_UNSUPPORTED_UNITS"
 _MISSING_SPECIES = "LAMMPSDUMP_MISSING_SPECIES"
 _NO_SPECIES_COLUMN = "LAMMPSDUMP_NO_SPECIES_COLUMN"
-_VARIABLE_ATOM_COUNT = "LAMMPSDUMP_VARIABLE_ATOM_COUNT"
+# LAMMPSDUMP_VARIABLE_ATOM_COUNT was retired in M73: schema 2.0.0 (M72) lifted the constant-N
+# invariant, so a deposition/grand-canonical dump now reads through, each frame at its own N (P3).
 _VARIABLE_ATOM_IDENTITY = "LAMMPSDUMP_VARIABLE_ATOM_IDENTITY"
 _VARIABLE_SPECIES = "LAMMPSDUMP_VARIABLE_SPECIES"
 _ATOMS_REORDERED = "LAMMPSDUMP_ATOMS_REORDERED"
@@ -753,11 +756,18 @@ class LammpsDumpParser(ParserPlugin):
             # conversion to validate (Part 5 §2). Parse_notes still record *how* it was
             # established (declared vs. recovery-applied) so the two facts stay distinct.
             custom_global={_UNITS_KEY: first.unit_style.code},
-            custom_per_atom=carries,
         )
+        # Coerce frame 0's per-atom carry columns once. Under constant N they are frame-invariant,
+        # so this one coerced set rides every frame; under variable N (M73) each frame carries its
+        # own carries instead (below). ``custom_per_atom`` rides each ``StreamFrame.frame``, not the
+        # header, since the M73 SDK major (Part 2 §3.10).
+        coerced_carries = coerce_per_atom(carries)
 
         def _frames() -> Iterator[StreamFrame]:
-            yield StreamFrame(frame=first_frame, per_frame_custom=_per_frame_custom(first))
+            yield StreamFrame(
+                frame=with_per_atom(first_frame, coerced_carries),
+                per_frame_custom=_per_frame_custom(first),
+            )
             index = 1
             while True:
                 boundary = lines.next_significant()
@@ -790,18 +800,14 @@ class LammpsDumpParser(ParserPlugin):
                         "a dump's column layout must be constant across frames",
                         location=f"frame {index}",
                     )
-                if header_k.n_atoms != first.n_atoms:
-                    raise _error(
-                        _VARIABLE_ATOM_COUNT,
-                        f"frame {index} declares {header_k.n_atoms} atoms but frame 0 "
-                        f"declares {first.n_atoms}; the canonical model requires a constant "
-                        "atom count across frames (Part 2 §3.2). Per-frame counts seen: "
-                        f"[{first.n_atoms}, {header_k.n_atoms}] — measured, never padded or "
-                        "truncated",
-                        location=f"frame {index}",
-                    )
+                # Schema 2.0.0 (M72) lifted the constant-N invariant and M73 retired the count
+                # refusal: a variable-N dump (grand-canonical / deposition) parses, each frame
+                # carrying its own atom count (P3). The identity checks below stay, but fire only
+                # when N matches — a same-N id-set swap is still a silent identity change worth
+                # refusing; a genuinely different count is a legitimate composition change, never
+                # padded or truncated.
                 rows = _read_data_rows(lines, header_k)
-                frame_k, _, symbols_k, ids_k = _build_frame(
+                frame_k, carries_k, symbols_k, ids_k = _build_frame(
                     header_k,
                     rows,
                     species_map=species_map,
@@ -815,7 +821,12 @@ class LammpsDumpParser(ParserPlugin):
                 # each frame was sorted by id in _build_frame, so equal-length sorted id arrays
                 # that differ mean the *set* of atoms changed (a swap that a plain row-order
                 # comparison would miss) — refuse, naming a bounded sample of the difference.
-                if ids is not None and ids_k is not None and not np.array_equal(ids, ids_k):
+                if (
+                    ids is not None
+                    and ids_k is not None
+                    and len(ids) == len(ids_k)
+                    and not np.array_equal(ids, ids_k)
+                ):
                     only_k = _id_preview(np.setdiff1d(ids_k, ids))
                     only_0 = _id_preview(np.setdiff1d(ids, ids_k))
                     raise _error(
@@ -826,15 +837,26 @@ class LammpsDumpParser(ParserPlugin):
                         f"ids in frame 0 not in frame {index}: [{only_0}]",
                         location=f"frame {index}",
                     )
-                if symbols_k != symbols:
+                if len(symbols_k) == len(symbols) and symbols_k != symbols:
                     raise _error(
                         _VARIABLE_SPECIES,
                         f"frame {index} resolves to species {symbols_k} but frame 0 resolves "
-                        f"to {symbols}; the canonical model requires a constant atom "
-                        "identity across frames (Part 2 §3.2)",
+                        f"to {symbols}; at a constant atom count the canonical model requires a "
+                        "constant atom identity across frames (Part 2 §3.2)",
                         location=f"frame {index}",
                     )
-                yield StreamFrame(frame=frame_k, per_frame_custom=_per_frame_custom(header_k))
+                # Under constant N the per-atom carries are frame-invariant (frame 0's coerced set
+                # rides every frame, and a varying column warns once). Under variable N a carry is
+                # sized to this frame's own N, so this frame carries its own carries (P1).
+                frame_carries = (
+                    coerced_carries
+                    if header_k.n_atoms == first.n_atoms
+                    else coerce_per_atom(carries_k)
+                )
+                yield StreamFrame(
+                    frame=with_per_atom(frame_k, frame_carries),
+                    per_frame_custom=_per_frame_custom(header_k),
+                )
                 index += 1
 
         return FrameStream(header, _frames(), issues=issues)
@@ -1098,9 +1120,18 @@ def _build_frame(
 
     if first_carries is not None and warned is not None:
         for carry_key, carry_values in carries.items():
-            if carry_key not in first_carries or not np.array_equal(
-                np.asarray(carry_values), np.asarray(first_carries[carry_key])
-            ):
+            current = np.asarray(carry_values)
+            # A column present in both frames but of a *different length* is not a varying column —
+            # it is a variable-N frame carrying its own per-atom column (M73), retained losslessly,
+            # so it never triggers the "only frame 0 carried" warning. Only a same-length column
+            # whose values differ (or a column frame 0 lacked) is a frame-invariance loss.
+            reference = first_carries.get(carry_key)
+            same_length_differs = (
+                reference is not None
+                and current.shape == np.asarray(reference).shape
+                and not np.array_equal(current, np.asarray(reference))
+            )
+            if carry_key not in first_carries or same_length_differs:
                 if carry_key not in warned:
                     warned.add(carry_key)
                     issues.append(
