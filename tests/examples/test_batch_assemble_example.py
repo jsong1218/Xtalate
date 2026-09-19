@@ -41,7 +41,7 @@ def test_batch_assemble_example_runs_to_a_green_aggregate(tmp_path: Path) -> Non
     # The sources differ in composition, so the assembled file is variable-N: the honest
     # dataset-level statement must be printed, never elided.
     assert "mixed-composition note:" in proc.stdout
-    assert "EXTXYZ_VARIABLE_ATOM_COUNT" in proc.stdout
+    assert "variable atom counts" in proc.stdout
 
     # And the training set was actually written.
     assert output.is_file()

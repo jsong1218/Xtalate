@@ -62,11 +62,13 @@ _HINT_TO_SCENARIO = {
     # M56: a DeePMD directory carries numeric type indices when type_map.raw is absent; the
     # existing missing_species scenario supplies the ordered element symbols.
     "deepmd_missing_type_map": "missing_species",
-    # M55: a multi-row ASE `.db` refuses on the single-file path (ASEDB_MULTIPLE_ROWS) and
-    # resolves per row via the `asedb_row_selection` scenario — `index,row=<i>` re-parses that
-    # one row through the parser's parse_recover hook, exactly like the other parse-time
-    # scenarios; the batch fan-out (M55-S3) intercepts the refusal *before* resolution and
-    # expands the source into N per-row conversions.
+    # M55: the `asedb_row_selection` scenario resolves per row — `index,row=<i>` re-parses that
+    # one row through the parser's parse_recover hook. Since M73-S5 a multi-row `.db` no longer
+    # refuses at parse (it reads every row as a frame of one variable-N object), so this hint is
+    # driven **proactively** (`_apply_row_selection`) rather than off a ParseError, and the batch
+    # fan-out (M55-S3) re-parses each row with `index,row=<i>` off `source_frame_count`. The
+    # entry is kept so `parse_recover`'s refusal path (the `all` choice on the single-file path)
+    # is still classified as recoverable.
     "asedb_multiple_rows": "asedb_row_selection",
 }
 
@@ -161,6 +163,18 @@ def parse_with_recovery(
             return recovered
         return ParseRecovery(canonical=result.canonical, format_id=fmt, issues=list(result.issues))
     assert data is not None
+    proactive = recovery_choices.get("asedb_row_selection")
+    if fmt == "ase_db" and proactive is not None:
+        # A single-file .db no longer refuses a multi-row database — it reads every row as a frame
+        # of one variable-N object (schema 2.0, M73-S5). But an explicit asedb_row_selection
+        # choice must still be honoured: without this the choice would be silently ignored once
+        # parse() stops refusing (a P1 violation), and the --batch fan-out (which re-parses each
+        # row via index,row=<i>) would convert every row instead of the one asked for. So resolve
+        # it proactively through the parser's parse_recover hook — the same resolution the old
+        # refusal-triggered path produced, so a fanned per-row report stays byte-identical to the
+        # standalone single-row conversion. Selecting one row decodes only that row, so the frame
+        # cap is not needed here (one structure is trivially under any cap).
+        return _apply_row_selection(parser, data, filename, fmt, proactive)
     if max_frames is not None:
         enforce_max_frames(parser, data, filename=filename, max_frames=max_frames)
     try:
@@ -259,6 +273,57 @@ def _try_recover(
             assumptions=assumptions,
             issues=list(result.issues),
         )
+
+
+#: ``_build_assumption``'s ``asedb_row_selection`` branch reads only ``code``/``parameters`` (never
+#: its ``issue`` argument, unlike the truncate branch), so the proactive path passes this
+#: placeholder to satisfy the signature.
+_ROW_SELECTION_ISSUE = ParseIssue(
+    severity="error", code="ASEDB_MULTIPLE_ROWS", message="multi-row ASE database"
+)
+
+
+def _apply_row_selection(
+    parser: object,
+    data: bytes,
+    filename: str | None,
+    fmt: str,
+    choice_spec: dict[str, object],
+) -> ParseRecovery:
+    """Resolve an explicit ``asedb_row_selection`` choice proactively (M73-S5).
+
+    A multi-row ASE ``.db`` no longer refuses at parse (it reads every row as a frame of one
+    variable-N object), so the row-selection choice can no longer ride the refusal→recover path in
+    ``_try_recover``. This applies it directly through ``parse_recover`` and records the same
+    ``AppliedAssumption`` the refusal-triggered path produced: ``index,row=<i>`` keeps that one row
+    (decoding only it), and ``all`` refuses cleanly (its ``ParseError`` propagates, naming
+    ``--batch``). The resulting report is byte-identical to a standalone single-row conversion,
+    which the ``--batch`` fan-out relies on."""
+    scenario = "asedb_row_selection"
+    code = choice_spec.get("choice")
+    offered = available_options(scenario)
+    if not isinstance(code, str) or code not in offered:
+        raise RecoveryError(f"{scenario!r}: choice {code!r} is not an offered option {offered!r}")
+    raw_params = choice_spec.get("parameters")
+    parameters: dict[str, object] = dict(raw_params) if isinstance(raw_params, dict) else {}
+    result = _invoke_parse_recover(
+        parser,
+        BytesIO(data),
+        filename=filename,
+        hint="asedb_multiple_rows",
+        choice=code,
+        parameters=parameters,
+        recovery_context={scenario: {"choice": code, "parameters": dict(parameters)}},
+    )
+    assumption = _build_assumption(
+        scenario, code, parameters, result.canonical, _ROW_SELECTION_ISSUE
+    )
+    return ParseRecovery(
+        canonical=result.canonical,
+        format_id=fmt,
+        assumptions=[assumption],
+        issues=list(result.issues),
+    )
 
 
 def _invoke_parse_recover(

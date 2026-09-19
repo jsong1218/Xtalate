@@ -77,8 +77,9 @@ def builtin_parsers() -> list[ParserPlugin]:
     v1.4 M52-S1: qe_pw_out, the Quantum ESPRESSO pw.x **output** reader, the fourth
     **parser-only** format (the permanent source-never-target seam, D159/D195) — an output is
     never a conversion target (D195). v1.5 M55-S1: ase_db, the ASE SQLite database — a
-    **read+write** format whose single-file path reads one row and whose multi-row databases
-    refuse on the single-file path (ASEDB_MULTIPLE_ROWS) and fan out under --batch (S3)."""
+    **read+write** format whose single-file path reads one row as a single-frame object and, since
+    v2.0 M73-S5, reads a multi-row database through as one variable-N object (or fans out per row
+    under --batch, S3)."""
     return [
         XyzParser(),
         ExtxyzParser(),

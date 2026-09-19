@@ -191,6 +191,21 @@ def test_non_fixatoms_constraint_is_carried_with_warning() -> None:
     assert kwargs["pairs"] == [[0, 1]]
 
 
+# --- variable-N read-through (M73: the constant-N refusal is retired) ------------------
+
+
+def test_variable_atom_count_reads_through_per_frame() -> None:
+    # Schema 2.0.0 (M72) lifted the constant-N invariant and M73 retired the reader refusal: a
+    # .traj whose images have different atom counts (an adsorption run that grows the slab)
+    # parses, each frame carrying its own atom count (P3 — a frame's N is the value it has).
+    small = Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.9]])
+    large = Atoms("H3", positions=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.9], [0.0, 0.0, 1.8]])
+    result = parse_bytes(_parser(), _traj_bytes(small, large), filename="relax.traj")
+    obj = result.canonical
+    assert [len(f.atoms.symbols) for f in obj.frames] == [2, 3]
+    assert not any(i.code == "ASE_TRAJ_VARIABLE_ATOM_COUNT" for i in result.issues)
+
+
 # --- ASE-version canary (M14 deliverable 3, D59) --------------------------------------
 
 

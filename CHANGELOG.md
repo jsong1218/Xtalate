@@ -32,6 +32,42 @@ Schema version: 2.0.0
   opaque category key), so constant-N conversion output is byte-identical and the published vocabulary
   is untouched.
 
+- **The engine, SDK, and reports now answer "which frame's N?" everywhere (M73).** Validation
+  applies its species-reorder permutation map *per frame*, against each frame's own atom count — a
+  map sized to one frame falls back to identity on a differently-sized frame rather than crashing, so
+  a variable-N trajectory validates frame-by-frame (M73-S1). The streaming SDK moved
+  `custom_per_atom` off `StreamHeader` onto each `StreamFrame.frame` (a per-frame quantity belongs on
+  the frame it describes), completing the M72 relocation on the streaming path and re-proving the
+  identity theorem — streamed report equals materialized report, byte for byte — under variable N
+  (M73-S2). The Capability Matrix gained a `supports_variable_atom_count` axis: a constant-N target
+  format declares it `False` and refuses a variable-N source at pre-flight with a `frame_selection`
+  recovery offer, before any bytes are written (M73-S3, **P5**).
+- **A multi-row ASE `.db` reads through as one variable-N object, and mixed-composition assembles
+  are validated whole (M73-S5).** With the constant-N invariant lifted, a multi-row `.db` is a sound
+  Canonical Object: each row maps to a frame at its own atom count, with every per-row key-value /
+  data / calculator carry landing per-frame (None-padded across the rows). The single-file
+  `ASEDB_MULTIPLE_ROWS` reader refusal is retired; the two honest single-structure escape hatches
+  stay — `asedb_row_selection=index,row=<i>` pulls one row through as a standalone structure, and
+  `--batch` still fans a multi-row `.db` out to N per-row conversions (the batch now detects the
+  multi-row source by its frame count and re-triggers the M55 fan-out, preserving its semantics).
+  Because a mixed-composition `assemble` output now re-parses as one variable-N object, the batch
+  additionally validates the assembled whole against a stacked-contributions reference
+  (`BatchReport.whole_object_validation`), proving the round-trip on top of the per-source reports;
+  the dataset-level note records the variable-N property rather than apologizing for an
+  unvalidatable whole.
+
+### Removed
+
+- **Retired the constant-N reader refusals (M73-S4).** With the constant-N invariant lifted (schema
+  `2.0.0`, M72), a trajectory whose frames differ in atom count is now a first-class read, each frame
+  carrying its own count (**P3** — a frame's N is the value it has). The three parser refusals are
+  gone: `EXTXYZ_VARIABLE_ATOM_COUNT` (first raised v0.1), `LAMMPSDUMP_VARIABLE_ATOM_COUNT` (first
+  raised v1.3), and `ASE_TRAJ_VARIABLE_ATOM_COUNT` (first raised v0.3). A variable-N deposition dump
+  and a variable-N extXYZ trajectory now round-trip and validate per frame. **XDATCAR keeps its
+  refusal** (`XDATCAR_VARIABLE_ATOM_COUNT`) — the format writes one element/count header shared by
+  every configuration, so it genuinely cannot represent a varying atom count; the refusal now cites
+  that format constraint, not the retired canonical-model invariant.
+
 ### Migration
 
 - A real `1.0.0 → 2.0.0` migration carries stored 1.x objects forward: the single root-level

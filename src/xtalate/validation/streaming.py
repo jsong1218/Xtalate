@@ -129,7 +129,6 @@ class StreamingValidator:
                 tags=h.tags,
                 annotations=h.annotations,
                 custom_global=h.custom_global,
-                custom_per_atom=h.custom_per_atom,
             )
 
     def observe_pair(self, i: int, expected: StreamFrame, actual: StreamFrame) -> None:

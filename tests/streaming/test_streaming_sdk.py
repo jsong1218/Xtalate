@@ -82,8 +82,15 @@ def test_header_from_object_splits_frame_independent_metadata() -> None:
     header = StreamHeader.from_object(obj)
     assert header.tags == ["a"]
     assert header.custom_global == {"g": 1}
-    assert header.custom_per_atom == {"lab": ["x", "y"]}
+    assert not hasattr(header, "custom_per_atom")
     assert header.simulation is not None and header.simulation.source_code == "vasp"
+
+
+def test_custom_per_atom_rides_each_frame() -> None:
+    obj = _obj()
+    stream = stream_of(obj)
+    for sf in stream.frames():
+        assert sf.frame.custom_per_atom == {"lab": ["x", "y"]}
 
 
 def test_single_frame_stream_materializes_without_trajectory() -> None:

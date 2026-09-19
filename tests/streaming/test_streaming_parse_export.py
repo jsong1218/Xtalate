@@ -76,15 +76,16 @@ def test_mid_stream_truncated_frame_raises_at_that_frame() -> None:
     assert any(i.location == "frame 2" for i in exc.value.issues)
 
 
-def test_mid_stream_variable_atom_count_raises() -> None:
-    good = _FRAME.format(e="-1.0")
+def test_mid_stream_variable_atom_count_streams() -> None:
+    # Schema 2.0.0 (M72) + M73: a mid-stream atom-count change no longer refuses — the trajectory
+    # streams, each frame carrying its own atom count (P3). This was a refusal fixture asserting
+    # EXTXYZ_VARIABLE_ATOM_COUNT; it is kept as evidence, now proving the variable-N read-through.
+    good = _FRAME.format(e="-1.0")  # 3 atoms
     variable = "2\nProperties=species:S:1:pos:R:3\nO 0.0 0.0 0.0\nH 1.0 0.0 0.0\n"
     data = (good + variable).encode()
-    it = ExtxyzParser().parse_stream(io.BytesIO(data), filename="t.xyz").frames()
-    next(it)
-    with pytest.raises(ParseError) as exc:
-        next(it)
-    assert any(i.code == "EXTXYZ_VARIABLE_ATOM_COUNT" for i in exc.value.issues)
+    obj, issues = materialize(ExtxyzParser().parse_stream(io.BytesIO(data), filename="t.xyz"))
+    assert [len(f.atoms.symbols) for f in obj.frames] == [3, 2]
+    assert not any(i.code == "EXTXYZ_VARIABLE_ATOM_COUNT" for i in issues)
 
 
 def test_non_integer_count_line_raises() -> None:

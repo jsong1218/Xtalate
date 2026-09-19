@@ -4,10 +4,12 @@ Mirror of ``tests/parsers/test_ase_traj.py``: ASE always hands back a fully-popu
 so the parser's job is to turn the library's invented defaults — a zero cell, zeroed momenta,
 atomic-number-derived masses, generated ``id``/``ctime``/``mtime``/``user``, an empty key-value
 dict — back into ``None``/absence. The ``.db``-specific obligations are pinned here too: the
-**multi-row refusal** (``ASEDB_MULTIPLE_ROWS``, recoverable per row via the
-``asedb_row_selection`` scenario) and the **key-value carry** (per-row pairs + the ``data``
-blob → ``user_metadata.custom_global['ase_db:<key>']`` with ``ASEDB_KV_CARRIED`` warnings —
-carried, never interpreted).
+**multi-row read** (since M73-S5 every row is a frame of one **variable-N** object; the
+``asedb_row_selection`` scenario still pulls one row through as a standalone structure via
+``parse_recover``) and the **key-value carry** (per-row pairs + the ``data`` blob →
+``user_metadata.custom_global['ase_db:<key>']`` for a single-row object, or None-padded
+``custom_per_frame`` for a multi-row one, each with ``ASEDB_KV_CARRIED`` warnings — carried,
+never interpreted).
 
 The final tests are the **ASE-version canary** (D59): the installed ASE satisfies the
 ``pyproject.toml`` pin and the wrapped version appears in ``provenance.history[0].parser_version``.
@@ -216,7 +218,7 @@ def test_data_blob_carried_into_custom_global() -> None:
     assert any(i.code == "ASEDB_KV_CARRIED" for i in result.issues)
 
 
-# --- the multi-row refusal + asedb_row_selection (the M55 spine) -----------------------
+# --- multi-row → one variable-N object + asedb_row_selection (M55 → M73-S5) -------------
 
 
 def _two_rows() -> bytes:
@@ -225,33 +227,26 @@ def _two_rows() -> bytes:
     return _db_bytes((a, {"label": "first"}, {}), (b, {"label": "second"}, {}))
 
 
-def test_multi_row_db_refuses_on_the_single_file_path() -> None:
-    with pytest.raises(ParseError) as excinfo:
-        parse_bytes(_parser(), _two_rows(), filename="sample.db")
-    assert excinfo.value.issues[0].code == "ASEDB_MULTIPLE_ROWS"
-    assert excinfo.value.issues[0].recovery_hint == "asedb_multiple_rows"
-    assert excinfo.value.issues[0].location == "rows 2"
-    assert "2 rows" in excinfo.value.issues[0].message
-    assert "asedb_row_selection" in excinfo.value.issues[0].message
-    assert "--batch" in excinfo.value.issues[0].message
+def test_multirow_db_parses_as_single_variable_n_object() -> None:
+    # M73-S5: schema 2.0 lifted the constant-N invariant, so a multi-row .db no longer refuses on
+    # the single-file path — every row reads through as a frame of one variable-N object, each at
+    # its own atom count (the two rows differ: H2 then He).
+    obj = parse_bytes(_parser(), _two_rows(), filename="sample.db").canonical
+    assert len(obj.frames) == 2
+    assert obj.trajectory is not None  # a multi-frame object carries trajectory metadata
+    assert obj.frames[0].atoms.symbols == ["H", "H"]
+    assert obj.frames[1].atoms.symbols == ["He"]
+    assert len({len(f.atoms.symbols) for f in obj.frames}) == 2  # genuinely variable N
 
 
-def _multi_row_refusal() -> ParseError:
-    try:
-        parse_bytes(_parser(), _two_rows(), filename="sample.db")
-    except ParseError as exc:
-        return exc
-    raise AssertionError("expected ASEDB_MULTIPLE_ROWS")
-
-
-def test_multi_row_refusal_is_recoverable_and_names_both_resolutions() -> None:
-    exc = _multi_row_refusal()
-    assert exc.issues[0].code == "ASEDB_MULTIPLE_ROWS"
-    assert exc.issues[0].severity == "error"
-    assert exc.issues[0].recovery_hint == "asedb_multiple_rows"
-    assert exc.issues[0].location == "rows 2"
-    assert "asedb_row_selection" in exc.issues[0].message
-    assert "--batch" in exc.issues[0].message
+def test_multirow_kv_carry_is_per_frame_none_padded() -> None:
+    # A per-row key-value pair is frame-local, so a multi-row object routes each row's carry to
+    # custom_per_frame None-padded across the rows (never object-global custom_global), with the
+    # keys in first-seen order — nothing is dropped and nothing collapses one row's value onto
+    # another's.
+    obj = parse_bytes(_parser(), _two_rows(), filename="sample.db").canonical
+    assert obj.user_metadata.custom_global == {}
+    assert obj.user_metadata.custom_per_frame["ase_db:label"] == ["first", "second"]
 
 
 def test_asedb_row_selection_resolves_to_that_one_row() -> None:
@@ -295,8 +290,9 @@ def test_asedb_row_selection_out_of_range_refuses() -> None:
 
 
 def test_asedb_row_selection_all_is_the_batch_fan_out_not_a_single_file_resolution() -> None:
-    # `all` is offered (the refusal report shows it) but resolving it on the single-file path
-    # refuses: N rows can never become one Canonical Object (constant-N, Part 2 §3.2).
+    # `all` is offered (the report shows it) but resolving it through parse_recover on the
+    # single-file path refuses: `all` is the --batch fan-out, not a single-file resolution — the
+    # whole multi-row db already reads through as one variable-N object via plain `parse` (M73-S5).
     with pytest.raises(ParseError) as excinfo:
         _parser().parse_recover(
             io.BytesIO(_two_rows()),
@@ -338,12 +334,12 @@ def test_data_kv_colliding_with_the_row_blob_is_escalated_not_overwritten() -> N
     assert [i.code for i in result.issues].count("ASEDB_KV_DATA_COLLISION") == 1
 
 
-def test_multi_row_refusal_reads_ids_only_and_defers_full_row_decode() -> None:
-    # ASEDB-4 (review R5): the multi-row refusal must not force ASE to decode every row's array
-    # blobs just to count — that is unbounded work proportional to dataset size on a service
-    # accepting arbitrary uploads. Proof by corruption: a row whose positions blob is garbage
-    # (would fail any full decode) must not prevent the id-only refusal, and a recovery selecting
-    # an *intact* row must still succeed — full row decode is deferred to exactly the chosen row.
+def test_row_selection_still_decodes_only_the_chosen_row_despite_a_corrupt_sibling() -> None:
+    # ASEDB-4 escape hatch, restated for M73-S5. The whole-object read now materializes every row
+    # (schema 2.0 made the rows-as-frames reading sound), so a corrupted row makes the single-file
+    # read refuse ASEDB_MALFORMED — but the single-row escape hatch (asedb_row_selection=index)
+    # still decodes exactly the chosen row: selecting an *intact* row succeeds without ever touching
+    # the corrupted one, the bounded-work path a service uses to pull one structure from a huge db.
     with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
         db = connect(tmp.name, use_lock_file=False)
         for _ in range(3):
@@ -354,11 +350,10 @@ def test_multi_row_refusal_reads_ids_only_and_defers_full_row_decode() -> None:
         con.close()
         data = Path(tmp.name).read_bytes()
     parser = _parser()
-    # The refusal succeeds off ids alone, despite the corrupted first row.
+    # The whole-object read now decodes every row, so the corrupted first row surfaces as a refusal.
     with pytest.raises(ParseError) as excinfo:
         parse_bytes(parser, data, filename="sample.db")
-    assert excinfo.value.issues[0].code == "ASEDB_MULTIPLE_ROWS"
-    assert excinfo.value.issues[0].location == "rows 3"
+    assert excinfo.value.issues[0].code == "ASEDB_MALFORMED"
     # Recovery of the *intact* row (index 1) decodes only it; the corrupted row is never touched.
     result = parser.parse_recover(
         io.BytesIO(data),

@@ -74,11 +74,12 @@ class AseTrajExporter(ExporterPlugin):
         self, header: StreamHeader, frames: Iterator[StreamFrame], stream: BinaryIO
     ) -> None:
         """Write each frame's ULM block as it arrives (M12/M14), holding at most one frame resident.
-        The object-level ``custom_per_atom`` columns ride on the header; per-frame comment metadata
-        rides on each ``StreamFrame``. Not closed, for the same reason as ``export``."""
+        The per-atom ``custom_per_atom`` columns ride on each ``StreamFrame.frame`` (schema 2.0.0,
+        M73), sized to that frame's own N; per-frame comment metadata rides on each ``StreamFrame``.
+        Not closed, for the same reason as ``export``."""
         writer = TrajectoryWriter(stream, "w")
         for sf in frames:
-            writer.write(self._atoms_from(sf.frame, header.custom_per_atom, sf.per_frame_custom))
+            writer.write(self._atoms_from(sf.frame, sf.frame.custom_per_atom, sf.per_frame_custom))
 
     def _atoms_from(
         self,
@@ -220,6 +221,9 @@ class AseTrajExporter(ExporterPlugin):
                 ),
             },
             max_frames=None,
+            # Each ASE image carries its own atom count, so frames of differing N round-trip
+            # (v2.0 M73-S3): a variable-N trajectory needs no frame_selection recovery here.
+            supports_variable_atom_count=True,
             required_fields=["atoms.symbols", "atoms.positions"],
             allows_open_boundaries=True,  # ASE writes pbc; an open cell is expressible.
             representable_constraint_kinds=["fixed_atoms"],

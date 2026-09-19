@@ -335,7 +335,8 @@ def _check_species(
         if len(exp) != len(got):
             mismatches += max(len(exp), len(got))
             continue
-        order = perm if perm is not None else list(range(len(exp)))
+        fp = _perm_for(perm, len(exp))
+        order = fp if fp is not None else list(range(len(exp)))
         mismatches += sum(1 for j in range(len(got)) if exp[order[j]] != got[j])
     status = "fail" if mismatches else "pass"
     measured: dict[str, Any] = {
@@ -373,7 +374,8 @@ def _check_positions_rmsd(
     rmsds: list[float] = []
     max_disp = 0.0
     for i in range(n):
-        exp = _permuted(np.asarray(expected.frames[i].atoms.positions, dtype=float), perm)
+        arr = np.asarray(expected.frames[i].atoms.positions, dtype=float)
+        exp = _permuted(arr, _perm_for(perm, arr.shape[0]))
         got = np.asarray(canonical.frames[i].atoms.positions, dtype=float)
         if exp.shape != got.shape:
             return _shape_fail("positions_rmsd", ["atoms.positions"], exp.shape, got.shape)
@@ -536,7 +538,7 @@ def _check_numeric_fields(
             e = np.asarray(ev, dtype=float)
             g = np.asarray(gv, dtype=float)
             if kind == "per_atom":
-                e = _permuted(e, perm)
+                e = _permuted(e, _perm_for(perm, e.shape[0]))
             if e.shape != g.shape:
                 missing = True
                 continue
@@ -699,6 +701,19 @@ def _permuted(arr: np.ndarray, perm: list[int] | None) -> np.ndarray:
         return arr
     reordered: np.ndarray = arr[np.asarray(perm)]
     return reordered
+
+
+def _perm_for(perm: list[int] | None, n: int) -> list[int] | None:
+    """The exporter's permutation map restricted to a frame of ``n`` atoms (M73).
+
+    The map is object-level (``exporter.atom_permutation``) but under variable N (schema 2.0.0)
+    frames differ in size; a map sized to one frame's N must not reorder a frame of a different N.
+    A non-identity map only arises from species-grouping exporters, which are constant-N-only and
+    refuse variable-N at pre-flight — so a length mismatch means "this frame is not the map's
+    domain": apply identity, never index out of range (Part 5 §2)."""
+    if perm is not None and len(perm) == n:
+        return perm
+    return None
 
 
 def _field_value(frame: Any, path: str) -> Any:

@@ -37,11 +37,11 @@ _EXPECTED_CLASSES = {
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
-    # M55: SELECTIVE_REDUCTIVE — a multi-row ASE `.db` refuses on the single-file path
-    # (ASEDB_MULTIPLE_ROWS, recovery_hint="asedb_multiple_rows", parse-time like
-    # missing_species); which row survives changes the scientific meaning, so an explicit
-    # `index,row=<i>` choice is required; `all` is the batch fan-out (M55-S3), never a
-    # single-file resolution into one object.
+    # M55/M73-S5: SELECTIVE_REDUCTIVE — pulling one row from a multi-row ASE `.db` as a standalone
+    # structure; which row survives changes the scientific meaning, so an explicit `index,row=<i>`
+    # choice is required. Since M73-S5 `parse` reads a multi-row db through as one variable-N object
+    # (no longer parse-time-blocking); `all` is the batch fan-out (M55-S3), never a single-file
+    # resolution into one object.
     "asedb_row_selection": HazardClass.SELECTIVE_REDUCTIVE,
 }
 
@@ -52,8 +52,8 @@ def test_catalog_is_complete_and_classified() -> None:
 
 
 def test_asedb_row_selection_offers_index_and_all() -> None:
-    # M55: `index` re-parses one row on the single-file path; `all` is the batch fan-out —
-    # offered so the refusal report can name it, never a single-file resolution into one object.
+    # M55/M73-S5: `index` pulls one row out as a standalone structure; `all` is the batch fan-out —
+    # offered so the report can name it, never a single-file resolution into one object.
     assert available_options("asedb_row_selection") == ["index", "all"]
 
 

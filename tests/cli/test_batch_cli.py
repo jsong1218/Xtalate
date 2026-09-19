@@ -162,7 +162,7 @@ def test_batch_assemble_writes_one_artifact(
     assert "converted [passed]" in human
     assert artifact.is_file() and artifact.read_bytes()
     # The mixed-composition dataset-level note is part of the human view (never a per-file loss).
-    assert "EXTXYZ_VARIABLE_ATOM_COUNT" in human
+    assert "variable atom counts" in human
 
 
 # --- multi-structure container fan-out through the CLI (M55-S3) --------------------------------

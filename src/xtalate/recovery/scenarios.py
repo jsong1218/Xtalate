@@ -130,13 +130,14 @@ SCENARIO_HAZARD: dict[str, HazardClass] = {
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
-    # M55: a multi-row ASE `.db` refuses on the single-file path (ASEDB_MULTIPLE_ROWS) and
-    # resolves per row; SELECTIVE_REDUCTIVE — which row survives changes the scientific meaning,
-    # so an explicit choice is required (the frame_selection no-default logic, P4, applied to
-    # rows as independent structures, D206). Parse-time-blocking: the refusal fires from the
-    # parser (recovery_hint="asedb_multiple_rows"), exactly like missing_species /
-    # ambiguous_units. `index` re-parses one row; `all` is the batch fan-out (M55-S3) — never a
-    # single-file resolution into one object (rows-as-frames breaks constant-N, Part 2 §3.2).
+    # M55/M73-S5: pulling one row out of a multi-row ASE `.db` as a standalone structure;
+    # SELECTIVE_REDUCTIVE — which row survives changes the scientific meaning, so an explicit
+    # choice is required (the frame_selection no-default logic, P4, applied to rows as independent
+    # structures, D206). Since M73-S5 `parse` no longer refuses a multi-row db — it reads every row
+    # as a frame of one variable-N object — so this scenario is no longer parse-time-blocking; the
+    # conversion layer routes an explicit `asedb_row_selection` choice straight to parse_recover so
+    # the choice is honoured (P1). `index` re-parses one row; `all` is the batch fan-out (M55-S3,
+    # re-triggered by frame_count>1 detection, M73-S5) — never a single-file resolution.
     "asedb_row_selection": HazardClass.SELECTIVE_REDUCTIVE,
 }
 
@@ -249,12 +250,12 @@ def available_options(
         # the parser refuses it as unsupported rather than offering it here.
         return ["atomic", "charge", "full"]
     if scenario == "asedb_row_selection":
-        # M55: `index` re-parses exactly one row (parameter `row`, a 0-based ordinal in the
-        # database's insertion order — the ids the refusal message lists are informational for
-        # the human resolver). `all` is the batch fan-out (--batch converts every row to its own
-        # per-row conversion); on the single-file path an `all` choice refuses, because N rows
-        # can never become one Canonical Object (constant-N, Part 2 §3.2) — offering it here is
-        # the honest option-list for the refusal report (Part 4 §3.3).
+        # M55/M73-S5: `index` re-parses exactly one row as a standalone structure (parameter
+        # `row`, a 0-based ordinal in the database's insertion order — the ids the message lists
+        # are informational for the human resolver). `all` is the batch fan-out (--batch converts
+        # every row to its own per-row conversion); on the single-file path an `all` choice
+        # refuses — the whole multi-row db already reads through as one variable-N object (M73-S5),
+        # so `all` here would be an ambiguous no-op. Both stay the honest option-list (Part 4 §3.3).
         return ["index", "all"]
     if scenario == "missing_species":
         # Parse-time scenario, resolved in Slice 2: an ordered symbol / type→element map, or the

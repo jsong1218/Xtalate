@@ -191,6 +191,7 @@ def build_preflight(
         frame_count=source.frame_count,
         has_constraints=_has_constraints(source),
         partial_occupancy=partial_occupancy_count(source.frames[0].atoms.occupancies),
+        variable_atom_count=len({len(f.atoms.symbols) for f in source.frames}) > 1,
         matrix=matrix,
         target_format_id=target_format_id,
         output_multifile=output_multifile,
@@ -204,6 +205,7 @@ def build_preflight_from_presence(
     frame_count: int,
     has_constraints: bool,
     partial_occupancy: int,
+    variable_atom_count: bool = False,
     matrix: CapabilityMatrix,
     target_format_id: str,
     output_multifile: bool = True,
@@ -211,13 +213,15 @@ def build_preflight_from_presence(
 ) -> PreflightDiff:
     """The presence-driven core of the pre-flight diff (M12).
 
-    ``build_preflight`` reads exactly four things from the source object — its ``field_presence``,
-    its ``frame_count``, whether any frame carries constraints, and how many atoms carry partial
-    occupancy — and this function is that logic expressed over those four inputs directly. The
-    streaming Conversion path derives all four single-pass (``schema.PresenceAccumulator`` +
-    frame/constraint counters + the header's ``custom_per_atom``) and calls here, so a streamed
-    conversion and a materialized one produce the *identical* diff — and therefore the identical
-    Conversion Report (standing rule 3: streamed and materialized reports never diverge).
+    ``build_preflight`` reads exactly five things from the source object — its ``field_presence``,
+    its ``frame_count``, whether any frame carries constraints, how many atoms carry partial
+    occupancy, and whether its frames differ in atom count (variable N, v2.0 M73-S3) — and this
+    function is that logic expressed over those five inputs directly. The streaming Conversion path
+    derives all five single-pass (``schema.PresenceAccumulator`` — which now tracks the per-atom key
+    set, per-frame present counts, **and** ``variable_atom_count`` from the frames themselves — plus
+    frame/constraint counters), so a streamed conversion and a materialized one produce the
+    *identical* diff — and therefore the identical Conversion Report (standing rule 3: streamed and
+    materialized reports never diverge).
 
     They stay *scalars* on purpose. Handing this function the object would let the two paths drift
     the moment one of them had something the other did not.
@@ -399,11 +403,29 @@ def build_preflight_from_presence(
     # Recovery triggers (Part 3 §4.3 rules 3–4, Part 4 §3.3). Detection order does not fix
     # resolution order — the Recovery Engine resolves in its own dependency order (frame_selection
     # before the bounding box computed on the selected frame).
-    if caps.max_frames is not None and frame_count > caps.max_frames:
+    # The variable-N trigger (v2.0 M73-S3): a source whose frames differ in atom count against a
+    # target whose layout is fixed-composition (`supports_variable_atom_count=False` — POSCAR /
+    # CONTCAR / XDATCAR / deepmd_npy). The format cannot express varying N, so the conversion is
+    # refused with the **same** `frame_selection` recovery the frame-cap uses — pick one frame (a
+    # single fixed-N structure) or split into per-frame files. It is never padded, masked, or
+    # truncated to a single N: ghost atoms are a silent fabrication (P1). Keyed on the target's
+    # declared capability, read directly from the declaration — not a hard-coded format list (P6).
+    # Detection order does not fix resolution order.
+    needs_frame_reduction = caps.max_frames is not None and frame_count > caps.max_frames
+    variable_n_refused = variable_atom_count and not caps.supports_variable_atom_count
+    if needs_frame_reduction or variable_n_refused:
+        if variable_n_refused:
+            detail = (
+                f"source frames differ in atom count → target format {target_format_id!r} "
+                "holds one fixed composition; select a single frame or split per frame "
+                "(never padded or truncated to one N)"
+            )
+        else:
+            detail = f"{frame_count} frames → target holds at most {caps.max_frames}"
         diff.unresolved.append(
             UnresolvedScenario(
                 scenario="frame_selection",
-                detail=f"{frame_count} frames → target holds at most {caps.max_frames}",
+                detail=detail,
                 options=_scenario_options(
                     "frame_selection", caps, output_multifile=output_multifile
                 ),
