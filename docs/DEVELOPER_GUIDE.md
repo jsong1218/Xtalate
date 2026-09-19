@@ -412,6 +412,40 @@ Together they are what gives the frozen-SDK stability promise below mechanical t
 > covers the public SDK only — the `_`-prefixed internal surface is not part of the contract — and a
 > breaking change waits for 2.0, with migration notes.
 
+#### Migrating a streaming plugin to the 2.0 SDK: per-atom columns move to the frame
+
+The one breaking SDK change the 2.0 major spends is in the **streaming surface**. Through 1.x every
+frame of a stream shared one atom count N, so per-atom custom columns (`custom_per_atom`) rode the
+object-level `StreamHeader` once and `materialize()` distributed them onto every frame. Schema 2.0
+lets a stream's frames differ in atom count, so a per-atom column is no longer an object-level fact —
+its length is *a frame's* N. `StreamHeader.custom_per_atom` is therefore **removed**, and each
+`StreamFrame` carries its own per-atom columns on the frame it wraps.
+
+A streaming **parser** must write per-atom columns onto each `StreamFrame.frame` it yields, not once
+onto the header:
+
+```python
+# 1.x (removed) — per-atom columns on the header, one set for the whole stream
+header = StreamHeader(..., custom_per_atom={"charge": charges})
+yield header
+for frame in frames:
+    yield StreamFrame(frame=frame)
+
+# 2.0 — the header holds only frame-invariant object metadata; per-atom columns ride each frame
+yield StreamHeader(...)  # trajectory / simulation / tags / annotations / custom_global / provenance
+for frame, charges in frames_with_charges:
+    frame = frame.model_copy(update={"custom_per_atom": {"charge": charges}})
+    yield StreamFrame(frame=frame)
+```
+
+A streaming **exporter** or any consumer that read `header.custom_per_atom` reads
+`stream_frame.frame.custom_per_atom` instead — each frame is now self-describing, so there is no
+header column set to distribute. `StreamHeader` keeps exactly the frame-invariant fields
+(`trajectory`, `simulation`, `tags`, `annotations`, `custom_global`, `provenance`); `custom_per_frame`
+(first dimension = frame count) and `custom_global` are unaffected by the change. Both first-party
+reference plugins (`plugins/example-format`, `plugins/xtalate-analysis-composition`) already conform,
+and their CI canaries are the tripwire that catches a plugin still reading the removed header field.
+
 ### 5.4 Adding a recovery scenario
 
 Formats are the plugin seam; **recovery scenarios are the core seam** — a scenario changes what the
