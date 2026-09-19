@@ -1,7 +1,8 @@
 """Capability table-sync for the `ase_db` rows (M55-S1 read side; extended to write in S2).
 
 M55 adds ``ase_db`` as the fourth ASE-backed format (MASTER_SPEC Part 3 §3). Its read side
-mirrors ``ase_traj``: a single-row database parses to one structure, ``electronic.stress`` is
+mirrors ``ase_traj``: a single-row database parses to one structure and a multi-row one to a
+single variable-N object (M73-S5, so ``max_frames`` is uncapped), ``electronic.stress`` is
 PARTIAL with the scenario note (carried until the ``ambiguous_stress_convention`` recovery
 resolves the sign convention — D18/D163), the carry key joins the shared stress-carry key set,
 and the per-row key-value carry makes ``user_metadata.custom_global`` FULL. This pins the
@@ -26,11 +27,13 @@ def test_ase_db_read_declares_stress_partial_with_the_scenario_note() -> None:
     assert "ambiguous_stress_convention" in cap.notes
 
 
-def test_ase_db_read_is_single_structure_and_names_the_stress_carry() -> None:
+def test_ase_db_read_is_uncapped_and_names_the_stress_carry() -> None:
     caps = default_registry().get_parser("ase_db").capabilities()
     assert caps.format_id == "ase_db"
     assert caps.direction == "read"
-    assert caps.max_frames == 1  # one row → one structure; multi-row refuses ASEDB_MULTIPLE_ROWS
+    # M73-S5: a multi-row db reads every row as a frame of one variable-N object (schema 2.0), so
+    # the reader is no longer capped at one frame; the frame cap bounds a huge db elsewhere.
+    assert caps.max_frames is None
     # The read declaration names the custom key the parser carries stress under (D18), so the
     # Validation Engine can find a planned field's value in the re-parse (D151).
     assert caps.carried_field_keys == {"electronic.stress": "ase_db:stress"}

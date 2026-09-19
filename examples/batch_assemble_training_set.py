@@ -20,10 +20,11 @@ converts what it is given, completely and reported — it never decides which fr
 
 The sources differ in composition (H₂O vs. Si), so the assembled artifact is a **valid MLIP
 training set with variable N across frames** — a real property of the file, stated in the
-report's dataset-level note (a single-object re-parse of the whole file would refuse
-``EXTXYZ_VARIABLE_ATOM_COUNT``; per-file validations of each contribution stay green). The
-example prints that note verbatim — **zero silently absorbed anomalies**: every per-file
-outcome and every dataset-level statement is printed, never elided.
+report's dataset-level note. Since schema 2.0 (M72) and the retired reader refusal (M73), a
+single-object re-parse of the whole file **succeeds** as one variable-N trajectory, and the
+report's whole-object validation confirms the round-trip; per-file validations of each
+contribution stay green too. The example prints that note verbatim — **zero silently absorbed
+anomalies**: every per-file outcome and every dataset-level statement is printed, never elided.
 
 Nothing here is bespoke to these four files: the same :func:`run_batch` converts any
 manifest — this script's ``SOURCES`` list is the whole "directory of files" the roadmap's

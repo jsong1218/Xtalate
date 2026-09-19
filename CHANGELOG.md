@@ -42,6 +42,19 @@ Schema version: 2.0.0
   (M73-S2). The Capability Matrix gained a `supports_variable_atom_count` axis: a constant-N target
   format declares it `False` and refuses a variable-N source at pre-flight with a `frame_selection`
   recovery offer, before any bytes are written (M73-S3, **P5**).
+- **A multi-row ASE `.db` reads through as one variable-N object, and mixed-composition assembles
+  are validated whole (M73-S5).** With the constant-N invariant lifted, a multi-row `.db` is a sound
+  Canonical Object: each row maps to a frame at its own atom count, with every per-row key-value /
+  data / calculator carry landing per-frame (None-padded across the rows). The single-file
+  `ASEDB_MULTIPLE_ROWS` reader refusal is retired; the two honest single-structure escape hatches
+  stay — `asedb_row_selection=index,row=<i>` pulls one row through as a standalone structure, and
+  `--batch` still fans a multi-row `.db` out to N per-row conversions (the batch now detects the
+  multi-row source by its frame count and re-triggers the M55 fan-out, preserving its semantics).
+  Because a mixed-composition `assemble` output now re-parses as one variable-N object, the batch
+  additionally validates the assembled whole against a stacked-contributions reference
+  (`BatchReport.whole_object_validation`), proving the round-trip on top of the per-source reports;
+  the dataset-level note records the variable-N property rather than apologizing for an
+  unvalidatable whole.
 
 ### Removed
 

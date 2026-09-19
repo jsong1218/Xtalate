@@ -276,17 +276,20 @@ this exact pairing pattern.
 
 Some formats are **datasets**: one file holds many independent structures, possibly of different
 composition (an ASE `.db` with many rows; DeePMD's grouped `.npy` next). The load-bearing rule is
-that **a dataset is aggregation, not a new model** — the rows are *not* a trajectory, and folding them
-into one Canonical Object's frames would break constant-N (Part 2 §3.2) and mislabel a dataset as one
-structure. So a dataset format:
+that **a dataset is aggregation, not a new model** — the rows are *not* a time trajectory. Since
+schema 2.0 (v2.0 M72) lifted the constant-N invariant, a multi-structure file of differing
+composition is a sound Canonical Object: rows map to frames, each keeping its own atom count
+(Part 2 §3.2). So a dataset format:
 
-- **Parses one structure as one Canonical Object**, and **refuses** a multi-structure file on the
-  single-file path with a *recoverable* issue that names the count (`ase_db` raises
-  `ASEDB_MULTIPLE_ROWS` with `location="rows N"`). The refusal is resolved by a `frame_selection`-style
-  scenario (`asedb_row_selection`: `index` picks one row, `all` is the batch fan-out) — which row you
-  keep changes the science, so it is an explicit recorded choice, never guessed (P4). The batch layer
-  detects exactly that refusal code and **fans the file out** into N per-row conversions; you write no
-  batch code — implementing the refusal-with-count is the whole contract.
+- **Reads one structure as one single-frame Canonical Object**, and a multi-structure file as one
+  **variable-N** object — each row a frame at its own atom count, every per-row carry landing
+  per-frame (None-padded across the rows). Before v2.0 the single-file path refused a multi-row
+  file (`ase_db` raised `ASEDB_MULTIPLE_ROWS`); that reader refusal is retired (v2.0 M73-S5). Two
+  honest single-structure escape hatches remain: `--recover asedb_row_selection=index,row=<i>`
+  pulls one row through as a standalone structure (which row you keep changes the science, so it is
+  an explicit recorded choice, never guessed, P4), and `--batch` **fans the file out** into N
+  per-row conversions. The batch layer detects a multi-row source by its frame count (`frame_count
+  > 1` on an `ase_db` parse) and re-triggers the per-row fan-out; you write no batch code.
 - **To be an `assemble` target** (combine N sources into one dataset file), declare
   `FormatCapabilities.assemble_capable=True` **and** override `ExporterPlugin.assemble(contributions,
   stream)`, together — the flag without the method (or vice versa) is a mistake. `assemble` is handed
@@ -296,7 +299,11 @@ structure. So a dataset format:
   row per `canonical` and appends). The capability is **orthogonal to `max_frames`** — a
   single-structure target (`max_frames=1`, like `ase_db`) is still assemble-capable, and a
   trajectory target (`max_frames=None`, like XDATCAR) is *not* assemble-capable unless it opts in.
-  Validation stays per contribution; the batch never validates the assembled whole.
+  Validation stays per contribution; since v2.0 M73-S5 the batch **also** validates the assembled
+  whole — a mixed-composition `assemble` output now re-parses as one variable-N object, so the
+  batch stacks the contributions into an expected reference and diffs the re-parsed whole against
+  it (`BatchReport.whole_object_validation`), proving the round-trip on top of the per-source
+  reports.
 
 **Aggregation, not curation (the boundary, restated for dataset formats).** A dataset format converts
 and reports every structure it is given, completely — it does **not** select, split, dedup, or filter
@@ -653,9 +660,11 @@ concatenates the per-source output bytes verbatim, so the assembled file is byte
 the individual conversions; ASE `.db` (assemble-capable) appends one row per source into one database.
 A target that does not declare the capability (POSCAR, XDATCAR, …) refuses `assemble` with a clear
 message; there is never a silent fallback to per-file. Validation stays **per contribution** (each
-source converts and validates on its ordinary path — the assembled whole is never the validation
-unit), and a mixed-composition assemble surfaces an honest dataset-level note (extXYZ's
-`EXTXYZ_VARIABLE_ATOM_COUNT`), never a per-file loss.
+source converts and validates on its ordinary path), and since v2.0 M73-S5 the batch **also**
+validates the assembled whole: a mixed-composition assemble re-parses as one variable-N object, so
+the batch diffs the re-parsed whole against a stacked-contributions reference
+(`BatchReport.whole_object_validation`). The mixed-composition property is surfaced as an honest
+dataset-level note (variable atom counts across frames), never a per-file loss.
 
 **Directory assemble (M56-S3, D214).** A directory-format target (``deepmd_npy``) assembles through
 the directory analogue of the same seam: it declares ``assemble_capable`` **and** overrides
@@ -671,11 +680,12 @@ separate systems — Xtalate never silently reorders atoms to force a merge (ide
 ``atom_permutation``).
 
 **Multi-structure container inputs fan out.** A source that holds many independent structures — a
-multi-row ASE `.db`, which refuses `ASEDB_MULTIPLE_ROWS` on the single-file path because a dataset is
-aggregation, not one Canonical Object — **fans out** under `--batch` into N ordinary per-row
-conversions in the one `BatchReport` (each an explicit, recorded `asedb_row_selection=index` choice
-keyed `<path>::row=<i>`, each embedded report byte-identical to converting that row alone). So the two
-dataset containers are symmetric: assemble N sources **into** a `.db`, and fan a multi-row `.db` back
+multi-row ASE `.db`, which since v2.0 M73-S5 reads through on the single-file path as one variable-N
+object — **fans out** under `--batch` into N ordinary per-row conversions in the one `BatchReport`
+(the batch detects the multi-row source by its frame count and re-triggers the fan-out; each row is
+an explicit, recorded `asedb_row_selection=index` choice keyed `<path>::row=<i>`, each embedded
+report byte-identical to converting that row alone). So the two dataset containers are symmetric:
+assemble N sources **into** a `.db`, and fan a multi-row `.db` back
 **out** — `extxyz ↔ ase_db` translation runs both directions. This is the seam every future
 multi-structure format (DeePMD next) rides; declaring `assemble_capable` is all a new dataset target
 needs to join it.
