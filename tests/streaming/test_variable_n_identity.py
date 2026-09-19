@@ -6,16 +6,14 @@ onto each frame and M73 relocated it off ``StreamHeader`` onto each ``StreamFram
 trajectory whose frames have *different* atom counts must still round-trip identically through the
 streaming and materialized paths.
 
-This is ``xfail`` until M73-S4 retires the extXYZ constant-N reader refusal; the parse currently
-refuses a variable-N trajectory before either path can run. S4 flips the marker off.
+M73-S4 retired the extXYZ constant-N reader refusal, so a variable-N trajectory parses and this
+theorem holds for real (the marker that guarded it until S4 is gone).
 """
 
 from __future__ import annotations
 
 import io
 from typing import Any
-
-import pytest
 
 from xtalate.conversion.engine import ConversionEngine
 from xtalate.parsers.extxyz import ExtxyzParser
@@ -47,10 +45,6 @@ def _norm(report: Any) -> dict[str, object]:
     return d
 
 
-@pytest.mark.xfail(
-    reason="variable-N extXYZ reader refusal retired in M73-S4; identity re-proven then",
-    strict=False,
-)
 def test_streamed_report_equals_materialized_variable_n() -> None:
     engine = ConversionEngine(default_registry())
     src = ExtxyzParser().parse(io.BytesIO(_VARIABLE_N), filename="t.xyz").canonical

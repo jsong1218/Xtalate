@@ -81,6 +81,7 @@ def test_variable_n_source_to_poscar_refuses_at_preflight_with_frame_selection()
     )
     assert result.report.status == "refused"
     assert result.output is None
+    assert result.report.refusal is not None
     scenarios = result.report.refusal["unresolved_scenarios"]
     assert any(s["scenario"] == "frame_selection" for s in scenarios)
     detail = next(s for s in scenarios if s["scenario"] == "frame_selection")["detail"]
@@ -94,6 +95,7 @@ def test_variable_n_to_xdatcar_refuses_even_though_xdatcar_keeps_frames() -> Non
         _variable_n_source(), source_format_id="extxyz", target_format_id="xdatcar"
     )
     assert result.report.status == "refused"
+    assert result.report.refusal is not None
     scenarios = result.report.refusal["unresolved_scenarios"]
     assert any(s["scenario"] == "frame_selection" for s in scenarios)
 
@@ -120,6 +122,7 @@ def test_variable_n_to_extxyz_is_not_refused_on_the_axis() -> None:
         _variable_n_source(), source_format_id="extxyz", target_format_id="extxyz"
     )
     if result.report.status == "refused":
+        assert result.report.refusal is not None
         scenarios = result.report.refusal["unresolved_scenarios"]
         assert all("differ in atom count" not in s.get("detail", "") for s in scenarios)
 
@@ -131,6 +134,7 @@ def test_constant_n_source_to_poscar_does_not_fire_the_variable_n_axis() -> None
         _constant_n_source(), source_format_id="extxyz", target_format_id="poscar"
     )
     assert result.report.status == "refused"
+    assert result.report.refusal is not None
     scenarios = result.report.refusal["unresolved_scenarios"]
     fs = next(s for s in scenarios if s["scenario"] == "frame_selection")
     assert "differ in atom count" not in fs["detail"]

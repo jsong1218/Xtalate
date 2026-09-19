@@ -164,10 +164,10 @@ class AseTrajParser(ParserPlugin):
         first = _read_image(reader, 0)
         n_atoms = len(first)
         custom_per_atom = _collect_custom_columns(first)
-        # Coerce the frame-invariant column set once and attach it onto each streamed frame — since
-        # the M73 SDK major ``custom_per_atom`` rides each ``StreamFrame.frame``, not the header
-        # (Part 2 §3.10). ase_traj streaming remains constant-N (the gate below still refuses
-        # divergence), so frame 0's column set fits every frame.
+        # Coerce frame 0's per-atom column set once. Under constant N it is frame-invariant, so this
+        # coerced set rides every frame (a varying column warns once); under variable N (M73) each
+        # frame carries its own columns instead (the frame loop below). ``custom_per_atom`` rides
+        # each ``StreamFrame.frame``, not the header, since the M73 SDK major (Part 2 §3.10).
         coerced_per_atom = coerce_per_atom(custom_per_atom)
         provenance = build_provenance(
             format_id=FORMAT_ID,
@@ -188,19 +188,19 @@ class AseTrajParser(ParserPlugin):
 
         def _frames() -> Iterator[StreamFrame]:
             warned_columns: set[str] = set()
-            yield self._stream_frame(first, 0, n_atoms, coerced_per_atom, issues)
+            yield self._stream_frame(first, 0, coerced_per_atom, issues)
             for index in range(1, n_images):
                 atoms = _read_image(reader, index)
-                if len(atoms) != n_atoms:
-                    raise _error(
-                        "ASE_TRAJ_VARIABLE_ATOM_COUNT",
-                        f"frame {index} has {len(atoms)} atoms but frame 0 has {n_atoms}; the "
-                        "canonical model requires a constant atom count across frames "
-                        "(Part 2 §3.2)",
-                        location=f"frame {index}",
-                    )
-                _check_columns_consistent(atoms, custom_per_atom, warned_columns, issues)
-                yield self._stream_frame(atoms, index, n_atoms, coerced_per_atom, issues)
+                # Schema 2.0.0 (M72) + M73: a variable-N trajectory streams, each frame carrying its
+                # own atom count (P3). A frame matching frame 0's N reuses frame 0's coerced column
+                # set (and a varying column warns once) — unchanged constant-N behaviour; a frame
+                # whose N differs carries its own columns, sized to its own N.
+                if len(atoms) == n_atoms:
+                    _check_columns_consistent(atoms, custom_per_atom, warned_columns, issues)
+                    frame_per_atom = coerced_per_atom
+                else:
+                    frame_per_atom = coerce_per_atom(_collect_custom_columns(atoms))
+                yield self._stream_frame(atoms, index, frame_per_atom, issues)
 
         return FrameStream(header, _frames(), issues=issues)
 
@@ -208,15 +208,14 @@ class AseTrajParser(ParserPlugin):
         self,
         atoms: Atoms,
         index: int,
-        n_atoms: int,
         coerced_per_atom: dict[str, Any],
         issues: list[ParseIssue],
     ) -> StreamFrame:
         """Build one ``StreamFrame`` from one ASE image, reusing the per-field mappers so streamed
-        and materialized frames are identical. ``coerced_per_atom`` is the frame-invariant per-atom
-        column set (coerced once) written onto this frame — the streaming mirror of the whole-file
-        ``attach_per_atom`` (M73)."""
-        mapped, carried = _partition_calc(atoms, n_atoms, index, issues)
+        and materialized frames are identical. ``coerced_per_atom`` is this frame's per-atom column
+        set (coerced) written onto this frame — the streaming mirror of the whole-file
+        ``attach_per_atom`` (M73). The per-atom-scalar check reads this frame's own N."""
+        mapped, carried = _partition_calc(atoms, len(atoms), index, issues)
         charges, magmoms = self._electronic_arrays(atoms, mapped, index, issues, carried)
         constraints, carried_constraints = self._build_constraints(atoms, index, issues)
         per_frame_custom: dict[str, Any] = {}

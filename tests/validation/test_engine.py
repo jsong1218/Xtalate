@@ -134,6 +134,47 @@ def test_worked_example_check_outcomes_match_spec() -> None:
     assert result.validation.tolerance_profile["name"] == "default"
 
 
+# --- variable-N round-trip validates per frame (M73) ---------------------------------------------
+
+_VARIABLE_N_EXTXYZ = (
+    b"3\n"
+    b'Lattice="6.0 0.0 0.0 0.0 6.0 0.0 0.0 0.0 6.0" '
+    b'Properties=species:S:1:pos:R:3 pbc="T T T"\n'
+    b"O 0.0 0.0 0.0\n"
+    b"H 0.9 0.0 0.0\n"
+    b"H 0.0 0.9 0.0\n"
+    b"4\n"
+    b'Lattice="6.0 0.0 0.0 0.0 6.0 0.0 0.0 0.0 6.0" '
+    b'Properties=species:S:1:pos:R:3 pbc="T T T"\n'
+    b"O 0.0 0.0 0.0\n"
+    b"O 3.0 0.0 0.0\n"
+    b"H 0.9 0.0 0.0\n"
+    b"H 3.9 0.0 0.0\n"
+)
+
+
+def test_variable_n_extxyz_roundtrips_and_validates_per_frame() -> None:
+    # A variable-N extXYZ trajectory (3 then 4 atoms) round-trips extXYZ -> canonical -> extXYZ and
+    # validates green: every check compares frame-by-frame at each frame's own N (M73 / Part 5 §2).
+    reg = _registry()
+    source = (
+        reg.get_parser("extxyz").parse(io.BytesIO(_VARIABLE_N_EXTXYZ), filename="t.xyz").canonical
+    )
+    assert [len(f.atoms.symbols) for f in source.frames] == [3, 4]
+
+    result = ConversionEngine(reg).convert(
+        source, source_format_id="extxyz", target_format_id="extxyz"
+    )
+    assert result.report.status == "completed"
+    vr = result.validation
+    assert vr is not None
+    assert vr.status == "passed"
+    assert _check(result, "atom_count").status == "pass"
+    assert _check(result, "species_preservation").status == "pass"
+    assert _check(result, "positions_rmsd").status == "pass"
+    assert _check(result, "frame_count").measured == {"expected": 2, "found": 2}
+
+
 # --- negative tests: a broken exporter is caught (deliverable 7) ----------------------------------
 
 

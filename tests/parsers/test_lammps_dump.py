@@ -219,21 +219,33 @@ def test_per_frame_column_variance_warns_once_per_column() -> None:
     assert np.asarray(carried).tolist() == [5.0, 6.0]
 
 
-# --- constant-N measured refusal -----------------------------------------------------
+# --- variable-N read-through (M73: the constant-N refusal is retired) ------------------
 
 
-def test_variable_atom_count_refuses_with_measured_counts() -> None:
+def test_variable_atom_count_reads_through_per_frame() -> None:
+    # A deposition-shaped dump: frame 1 grows the population 2 -> 3. Schema 2.0.0 (M72) lifted
+    # the constant-N invariant and M73 retired the reader refusal, so the trajectory parses,
+    # each frame carrying its own atom count (P3 — a frame's N is the value it has).
     dump = _source("metal-ortho-declared").replace(
-        b"ITEM: TIMESTEP\n10\nITEM: NUMBER OF ATOMS\n2",
-        b"ITEM: TIMESTEP\n10\nITEM: NUMBER OF ATOMS\n3",
+        b"ITEM: TIMESTEP\n10\nITEM: NUMBER OF ATOMS\n2\n"
+        b"ITEM: BOX BOUNDS pp pp pp\n0 20\n0 20\n0 20\n"
+        b"ITEM: ATOMS id element x y z vx vy vz c_pe\n"
+        b"1 Si 1.5 2.5 3.5 0.11 0.21 0.31 5.0\n"
+        b"2 O 4.0 5.0 6.0 -0.11 -0.21 -0.31 6.0\n",
+        b"ITEM: TIMESTEP\n10\nITEM: NUMBER OF ATOMS\n3\n"
+        b"ITEM: BOX BOUNDS pp pp pp\n0 20\n0 20\n0 20\n"
+        b"ITEM: ATOMS id element x y z vx vy vz c_pe\n"
+        b"1 Si 1.5 2.5 3.5 0.11 0.21 0.31 5.0\n"
+        b"2 O 4.0 5.0 6.0 -0.11 -0.21 -0.31 6.0\n"
+        b"3 O 7.0 8.0 9.0 0.0 0.0 0.0 7.0\n",
     )
-    with pytest.raises(ParseError) as exc:
-        PARSER.parse(io.BytesIO(dump), filename="dump.lammpstrj")
-    issue = exc.value.issues[0]
-    assert issue.code == "LAMMPSDUMP_VARIABLE_ATOM_COUNT"
-    assert "frame 1 declares 3 atoms but frame 0 declares 2" in issue.message
-    assert "Per-frame counts seen: [2, 3]" in issue.message
-    assert "never padded or truncated" in issue.message
+    result = PARSER.parse(io.BytesIO(dump), filename="dump.lammpstrj")
+    obj = result.canonical
+    assert obj.frame_count == 2
+    assert [len(f.atoms.symbols) for f in obj.frames] == [2, 3]
+    assert list(obj.frames[1].atoms.symbols) == ["Si", "O", "O"]
+    codes = {i.code for i in result.issues}
+    assert "LAMMPSDUMP_VARIABLE_ATOM_COUNT" not in codes
 
 
 def test_constant_atom_count_two_frames_parse_cleanly() -> None:
