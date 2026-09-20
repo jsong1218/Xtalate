@@ -6,8 +6,8 @@ becomes a first-class write-side capability — ``supports_variable_atom_count``
 the pre-flight, never inferred from a hard-coded format list (P6). This pins the declarations the
 Part 3 §4.2 write column must match (the table-sync discipline, Part 8 §1.1):
 
-* extXYZ, ASE ``.traj``, LAMMPS dump, and ASE ``.db`` write a fresh atom count per frame/row, so
-  they hold variable N — ``True``.
+* extXYZ, ASE ``.traj``, LAMMPS dump, ASE ``.db``, and H5MD write a fresh atom count per
+  frame/row (H5MD via a per-step VLEN element, M74), so they hold variable N — ``True``.
 * XYZ, POSCAR, CONTCAR, CIF, XDATCAR write one fixed composition (POSCAR/CONTCAR a single
   structure; XDATCAR one header count shared by every frame), so they stay constant-N — ``False``.
 
@@ -24,7 +24,7 @@ from xtalate.registry import default_registry
 MATRIX = default_registry().capability_matrix()
 _REGISTRY = default_registry()
 
-_VARIABLE_N_CAPABLE = ["extxyz", "ase_traj", "lammps_dump", "ase_db"]
+_VARIABLE_N_CAPABLE = ["extxyz", "ase_traj", "lammps_dump", "ase_db", "h5md"]
 _CONSTANT_N_ONLY = ["xyz", "poscar", "contcar", "cif", "xdatcar"]
 
 
