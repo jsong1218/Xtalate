@@ -1,0 +1,14 @@
+case: npt-triclinic-2frame
+format_id: h5md
+source_file: sample.h5
+expected_canonical: expected.canonical.json
+canonical_schema_version: "2.0.0"
+sha256: "3aa145f11f3340ab5b19cbb4e8ab6e882386d960d64c72b2ecbb18ee221588aa"
+expected_sha256: "e613a08703539f23f5b1c369bcabb88a4b81dcb368aadedca1175a2120c83266"
+origin:
+  kind: synthetic
+  source: >-
+    Hand-authored for M74-S4 via tests/golden/h5md/_generate.py (raw h5py, HDF5 container).
+  license: "Apache-2.0"
+notes: >-
+  The time-dependent-box anchor: a 2-atom cell that shears to triclinic between frames, written as a time-dependent box/edges group with a full 3x3 matrix per step. It exercises the time-dependent box reader, the 3x3 edges path, and the /h5md/creator provenance note. Bare positions + fixed species otherwise, so only the cell varies.

@@ -17,6 +17,25 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 2.0.0
 
+### Added
+
+- **H5MD read *and* write — the eighth first-party format and the first binary variable-N container
+  (M74).** Xtalate now reads and writes the community HDF5 interchange layout: `/particles/<group>`
+  positions, species, velocities, forces, masses, charges, and box (fixed-in-time or time-dependent,
+  cuboid shorthand or full 3×3), plus `/observables`. Its per-step VLEN layout expresses a trajectory
+  whose atom count changes frame to frame, so a variable-N source round-trips through H5MD natively.
+  Units are laundered at the boundary: a recognized `unit` attribute converts to canonical units and
+  is recorded in `provenance.source_units`; an **unknown** unit is passed through verbatim with an
+  `H5MD_UNKNOWN_UNIT` warning; an **absent** unit is passed through verbatim without claiming
+  canonical units (**P3**). The `potential_energy` observable maps to `electronic.total_energy`;
+  every other observable is carried verbatim into `user_metadata.custom_per_frame` under an
+  `h5md:<name>` key (round-tripping back on export — nothing is dropped, **P1**). A file carrying
+  more than one `/particles` subgroup is **refused** (`H5MD_MULTIPLE_PARTICLE_GROUPS`, naming the
+  groups) rather than silently narrowed to one; a torn tail is recoverable via
+  `truncate_at_last_valid_frame`. The parser is frame-lazy (peak memory tracks the resident frame,
+  not the frame count, proven at 10⁴ frames). Adds one isolated runtime dependency, `h5py`, confined
+  to the H5MD parser/exporter by an import-linter contract. **Schema stays `2.0.0`.**
+
 ### Changed
 
 - **Canonical schema major `1.0.0 → 2.0.0`: the constant-N invariant is lifted.** A

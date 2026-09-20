@@ -70,6 +70,9 @@ def test_builtins_register_without_error() -> None:
         "ase_db",
         # M56-S1: DeePMD-kit NumPy system directory parser.
         "deepmd_npy",
+        # M74-S1: H5MD (HDF5 for molecular data) lands read+write in one milestone — the eighth
+        # first-party format and the variable-N proof against a real binary container.
+        "h5md",
     }
     # Asymmetric since M42 slice 2: vasprun is the first parser-only format (D159) — Xtalate
     # reads it but does not write it; OUTCAR (M43) is the second — the permanent source-never-
@@ -97,6 +100,9 @@ def test_builtins_register_without_error() -> None:
         # M56-S2: the deepmd_npy exporter lands with the directory write seam (export_dir + the
         # directory-output result surface) — a full read+write directory format.
         "deepmd_npy",
+        # M74-S1: the H5MD exporter lands alongside the parser in one milestone — a full read+write
+        # binary format that writes variable-N trajectories natively (per-step VLEN).
+        "h5md",
     }
 
 
@@ -132,7 +138,12 @@ def test_every_builtin_records_the_package_version_in_provenance(format_id: str)
 #: ``test_every_builtin_records_the_package_version_in_provenance`` above. ``deepmd_npy`` joins
 #: them for the same reason (M56-S1): its ``_PARSER_VERSION`` is a module-level constant built
 #: from ``xtalate.__version__`` at import time — verified, not assumed, before adding it here.
-_LATE_BOUND_VERSION = sorted(set(_BUILTIN_GOLDEN_FORMATS) - {"ase_traj", "ase_db", "deepmd_npy"})
+#: ``h5md`` joins them for the same reason (M74): its ``_PARSER_VERSION`` is a module-level
+#: constant folding in ``h5py.__version__`` at import time (D59 precedent), so a runtime patch
+#: cannot reach it.
+_LATE_BOUND_VERSION = sorted(
+    set(_BUILTIN_GOLDEN_FORMATS) - {"ase_traj", "ase_db", "deepmd_npy", "h5md"}
+)
 
 
 @pytest.mark.parametrize("format_id", _LATE_BOUND_VERSION)

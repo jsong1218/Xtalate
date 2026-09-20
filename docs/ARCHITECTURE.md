@@ -259,6 +259,23 @@ and the wrap fold is idempotent at every precision with the R5 warning suppresse
 application. The schema stays `1.0.0` (`operation="repair"` was reserved vocabulary in the 1.x
 schema; activating it changes no shape), and the package reaches `1.7.0`.
 
+The v2.0 line is **Variable N**: the canonical schema's major `1.0.0 → 2.0.0` bump lifts the
+constant-N invariant, so a `CanonicalObject`'s frames may differ in atom count (each frame validates
+its own N; per-atom custom columns relocate onto the frame they describe), and every engine
+component — validation, the streaming SDK, the Capability Matrix / pre-flight, the reports — answers
+"which frame's N?" A constant-N *target* declares `supports_variable_atom_count = False` and refuses
+a variable-N source at pre-flight with a `frame_selection` recovery, never by padding ghost atoms
+(**P1**). On that axis the line adds **H5MD** (`src/xtalate/parsers/h5md.py`,
+`src/xtalate/exporters/h5md.py`) — the eighth first-party read+write format and the first binary
+variable-N container: the community HDF5 interchange layout, whose per-step VLEN storage expresses a
+trajectory whose atom count changes frame to frame natively. `h5py` is confined to those two modules
+by a dedicated import-linter contract (the ASE-isolation precedent), and the streaming parser is
+frame-lazy, so a 10⁴-frame H5MD converts at roughly constant memory. Units are laundered at the read
+boundary (recognized → converted + recorded in `source_units`; unknown → verbatim + a warning;
+absent → verbatim, no claim of canonical units), the `potential_energy` observable maps to
+`total_energy` while every other observable is carried under an `h5md:<name>` key, and a file with
+more than one `/particles` group is refused rather than silently narrowed.
+
 CIF is the one format whose reader is a **package rather than a module**
 (`src/xtalate/parsers/cif/`), split into four stages with a one-way data flow: tokens (`_lexer`) →
 a format-shaped document (`_document`) → CIF-level invariants (`_validate`, with `_symmetry` for

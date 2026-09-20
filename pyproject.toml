@@ -41,6 +41,12 @@ dependencies = [
     "ase>=3.29,<4",
     "pyyaml>=6",
     "defusedxml>=0.7.1",
+    # h5py backs the H5MD binary container (v2.0 M74, DECISIONS.md D-DEP): the HDF5 layout for
+    # molecular data. Confined to the two H5MD parser/exporter modules by the forbidden contract
+    # below, exactly as the D17 precedent confines a heavy I/O dependency to its format boundary —
+    # a bespoke `xtalate.h5` layout was rejected (inventing a container where a community standard
+    # exists is the opposite of complementing existing tools).
+    "h5py>=3.11,<4",
 ]
 
 [project.optional-dependencies]
@@ -209,6 +215,15 @@ module = ["pymatgen.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
+# h5py ships a py.typed marker but leaves much of its Dataset/Group/File surface loosely typed,
+# which trips --strict `no-untyped-call` at the h5py call sites (like ASE, D7/D-DEP). The H5MD
+# parser/exporter confine h5py to their two modules and convert its values to concrete numpy/schema
+# types at the boundary, so `Any` never escapes; here we simply let the untyped import resolve.
+[[tool.mypy.overrides]]
+module = ["h5py.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Coverage as a promoted PR gate (v0.2 M11; MASTER_SPEC Part 8 §5 / Part 10 §1 deferral
@@ -246,6 +261,11 @@ source = ["xtalate"]
 # and imports it freely; the reverse is forbidden by the contract below, encoding Part 1 §2 (the
 # API is a presenter over the library — nothing in the library may import the service).
 root_packages = ["xtalate", "backend", "xtalate_examplefmt", "xtalate_analysis_composition"]
+# Graph external packages as nodes so a `forbidden` contract can name one (v2.0 M74): the h5py
+# isolation below confines an external dependency, which the graph can only check when external
+# modules appear in it. Internal `layers`/`forbidden` contracts reference only `xtalate.*`/`backend`
+# nodes, so they are unaffected by this.
+include_external_packages = true
 
 # The service depends on the library, never the reverse (v0.5 M21; Part 1 §2). Stated as a
 # `forbidden` contract rather than a layer of the graph above because `backend` is a separate root
@@ -256,6 +276,21 @@ name = "Library never imports the service (v0.5 M21, Part 1 §2)"
 type = "forbidden"
 source_modules = ["xtalate"]
 forbidden_modules = ["backend"]
+
+# h5py is the HDF5 backend for the H5MD binary container (v2.0 M74, DECISIONS.md D-DEP). Exactly
+# as the D17 ASE precedent confines a heavy scientific I/O dependency to the two modules of its
+# format boundary, no `xtalate` module may reach h5py except the H5MD parser and exporter. The
+# moment a stray `import h5py` appears elsewhere under `src/`, `lint-imports` fails.
+[[tool.importlinter.contracts]]
+name = "h5py is confined to the H5MD parser/exporter (D-DEP; the D17 ASE precedent)"
+type = "forbidden"
+source_modules = ["xtalate"]
+forbidden_modules = ["h5py"]
+allow_indirect_imports = false
+ignore_imports = [
+    "xtalate.parsers.h5md -> h5py",
+    "xtalate.exporters.h5md -> h5py",
+]
 
 [[tool.importlinter.contracts]]
 name = "Acyclic dependency direction (P2, Part 1 §5.1)"

@@ -90,8 +90,20 @@ _OUTCAR_HEAD = (
     b"  0 0 10 0 0 0.1\n\n"
 )
 
+#: The 8-byte HDF5 superblock signature every HDF5 file opens with. Prefixing garbage with it clears
+#: the H5MD sniff/magic guard and reaches ``h5py.File``'s open, where a corrupt container must fail
+#: through ``H5MD_MALFORMED_STRUCTURE`` (an OSError normalised to ParseError) rather than leak.
+_HDF5_MAGIC = b"\x89HDF\r\n\x1a\n"
+
 _TAILORED: dict[str, list[tuple[str, bytes]]] = {
     "deepmd_npy": [("directory_marker", b"type.raw\n0\nset.000/coord.npy")],
+    # M74-S1: the H5MD parser — the HDF5 magic followed by a broken superblock/body, so the bytes
+    # reach h5py's open (OSError -> H5MD_MALFORMED_STRUCTURE) not the sniff guard.
+    "h5md": [
+        ("magic_only", _HDF5_MAGIC),
+        ("truncated_superblock", _HDF5_MAGIC + b"\x00\x08\x08\x00" + b"\xff" * 32),
+        ("magic_then_text", _HDF5_MAGIC + b"not really an hdf5 file\n"),
+    ],
     "xyz": [
         ("count_gt_atoms", b"5\ncomment\nH 0 0 0\nH 1 1 1\n"),
         ("nonnumeric_coord", b"1\nc\nH x y z\n"),

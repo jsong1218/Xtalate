@@ -15,6 +15,7 @@ from xtalate.exporters.ase_traj import AseTrajExporter, make_ase_traj_exporter
 from xtalate.exporters.cif import CifExporter, make_cif_exporter
 from xtalate.exporters.deepmd_npy import DeepmdNpyExporter, make_deepmd_npy_exporter
 from xtalate.exporters.extxyz import ExtxyzExporter
+from xtalate.exporters.h5md import H5MDExporter, make_h5md_exporter
 from xtalate.exporters.lammps_data import LammpsDataExporter, make_lammps_data_exporter
 from xtalate.exporters.lammps_dump import LammpsDumpExporter, make_lammps_dump_exporter
 from xtalate.exporters.poscar import (
@@ -33,6 +34,7 @@ __all__ = [
     "CifExporter",
     "DeepmdNpyExporter",
     "ExtxyzExporter",
+    "H5MDExporter",
     "LammpsDataExporter",
     "LammpsDumpExporter",
     "PoscarExporter",
@@ -44,6 +46,7 @@ __all__ = [
     "make_ase_traj_exporter",
     "make_cif_exporter",
     "make_deepmd_npy_exporter",
+    "make_h5md_exporter",
     "make_contcar_exporter",
     "make_lammps_data_exporter",
     "make_lammps_dump_exporter",
@@ -71,4 +74,5 @@ def builtin_exporters() -> list[ExporterPlugin]:
         make_deepmd_npy_exporter(),
         make_qe_pw_in_exporter(),
         make_ase_db_exporter(),
+        make_h5md_exporter(),
     ]

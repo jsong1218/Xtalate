@@ -171,3 +171,13 @@ def normalize_symbol(raw: str) -> str | None:
 def atomic_number(symbol: str) -> int:
     """Atomic number for ``symbol``. Raises ``KeyError`` for an unknown symbol."""
     return SYMBOL_TO_Z[symbol]
+
+
+def symbol_for(z: int) -> str:
+    """Element symbol for atomic number ``z`` (the inverse of :func:`atomic_number`); ``0`` → the
+    reserved ``"X"``. Raises ``KeyError`` for a ``z`` outside the table. Exists so a parser that
+    reads an integer-species container (H5MD stores species as atomic numbers, M74) can recover the
+    canonical ``symbols`` without reaching into the private ``_SYMBOLS`` table."""
+    if not 0 <= z < len(_SYMBOLS):
+        raise KeyError(z)
+    return _SYMBOLS[z]

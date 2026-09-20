@@ -557,3 +557,73 @@ def write_ase_traj_trajectory(path: Path, *, n_frames: int, n_atoms: int, seed: 
     finally:
         writer.close()
     return path
+
+
+_ATOMIC_NUMBER = {"Si": 14, "O": 8}
+
+
+def write_h5md_trajectory(path: Path, *, n_frames: int, n_atoms: int, seed: int = 1234) -> Path:
+    """Write a deterministic ``n_frames × n_atoms`` H5MD ``.h5`` to ``path``, filling one VLEN row
+    at a time.
+
+    Uses the per-step VLEN layout the parser reads (``position``/``force`` as length-T VLEN arrays,
+    each row a frame flattened to ``(N*3,)``), so the streaming read genuinely slices one frame from
+    the open HDF5 file rather than materializing the trajectory — the read side of the M74
+    streaming-memory proof. ``species`` is a fixed-in-time dataset and the box a fixed cuboid, so
+    every frame converts to extXYZ with no recovery and the streamed and materialized paths are
+    byte-identical. Positions/forces drift smoothly per frame, reproducible from
+    ``(seed, n_frames, n_atoms)``.
+    """
+    # Import h5py lazily: the streaming seeds are import-light by default, and only this generator
+    # (and the H5MD parser it feeds) needs the HDF5 stack.
+    import h5py
+
+    symbols = [_SYMBOLS[a % len(_SYMBOLS)] for a in range(n_atoms)]
+    species = np.asarray([_ATOMIC_NUMBER[s] for s in symbols], dtype=np.int64)
+    with h5py.File(str(path), "w") as fh:
+        h5md = fh.create_group("h5md")
+        h5md.attrs["version"] = np.asarray((1, 1), dtype=np.int64)
+        grp = fh.create_group("particles/all")
+        pos_grp = grp.create_group("position")
+        pos_grp.create_dataset("step", data=np.arange(n_frames, dtype=np.int64))
+        pos_grp.create_dataset("time", data=np.arange(n_frames, dtype=np.float64))
+        pos_value = pos_grp.create_dataset(
+            "value", shape=(n_frames,), dtype=h5py.vlen_dtype(np.float64)
+        )
+        pos_value.attrs["unit"] = "Angstrom"
+        force_grp = grp.create_group("force")
+        force_grp.create_dataset("step", data=np.arange(n_frames, dtype=np.int64))
+        force_grp.create_dataset("time", data=np.arange(n_frames, dtype=np.float64))
+        force_value = force_grp.create_dataset(
+            "value", shape=(n_frames,), dtype=h5py.vlen_dtype(np.float64)
+        )
+        force_value.attrs["unit"] = "eV/Angstrom"
+        grp.create_dataset("species", data=species)
+        box = grp.create_group("box")
+        box.create_dataset("edges", data=np.array([20.0, 20.0, 20.0]))
+        box.create_dataset("boundary", data=np.array([b"periodic", b"periodic", b"periodic"]))
+        obs = fh.create_group("observables")
+        pe_grp = obs.create_group("potential_energy")
+        pe_grp.create_dataset("step", data=np.arange(n_frames, dtype=np.int64))
+        pe_grp.create_dataset("time", data=np.arange(n_frames, dtype=np.float64))
+        pe_value = pe_grp.create_dataset("value", shape=(n_frames,), dtype=np.float64)
+        pe_value.attrs["unit"] = "eV"
+        for f in range(n_frames):
+            positions = np.empty((n_atoms, 3), dtype=np.float64)
+            forces = np.empty((n_atoms, 3), dtype=np.float64)
+            for a in range(n_atoms):
+                base = (seed * 131 + a * 17 + f * 7) % 1000 / 100.0
+                positions[a] = (
+                    (base + 0.01 * f) % 20.0,
+                    (base * 1.3 + 0.02 * a) % 20.0,
+                    (base * 0.7 + 0.005 * f) % 20.0,
+                )
+                forces[a] = (
+                    math.sin(base + f * 0.01),
+                    math.cos(base + a * 0.01),
+                    math.sin(base * 0.5),
+                )
+            pos_value[f] = positions.reshape(-1)
+            force_value[f] = forces.reshape(-1)
+            pe_value[f] = -1.0 * n_atoms + 0.001 * f
+    return path

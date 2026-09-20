@@ -16,6 +16,7 @@ from xtalate.parsers.ase_traj import AseTrajParser, make_ase_traj_parser
 from xtalate.parsers.cif import CifParser, make_cif_parser
 from xtalate.parsers.deepmd_npy import DeepmdNpyParser, make_deepmd_npy_parser
 from xtalate.parsers.extxyz import ExtxyzParser
+from xtalate.parsers.h5md import H5MDParser, make_h5md_parser
 from xtalate.parsers.lammps_data import LammpsDataParser, make_lammps_data_parser
 from xtalate.parsers.lammps_dump import LammpsDumpParser, make_lammps_dump_parser
 from xtalate.parsers.outcar import OutcarParser, make_outcar_parser
@@ -34,6 +35,7 @@ __all__ = [
     "DeepmdNpyParser",
     "make_ase_db_parser",
     "ExtxyzParser",
+    "H5MDParser",
     "LammpsDataParser",
     "LammpsDumpParser",
     "OutcarParser",
@@ -48,6 +50,7 @@ __all__ = [
     "make_ase_traj_parser",
     "make_cif_parser",
     "make_deepmd_npy_parser",
+    "make_h5md_parser",
     "make_contcar_parser",
     "make_lammps_data_parser",
     "make_lammps_dump_parser",
@@ -96,4 +99,5 @@ def builtin_parsers() -> list[ParserPlugin]:
         make_lammps_data_parser(),
         make_qe_pw_in_parser(),
         make_qe_pw_out_parser(),
+        make_h5md_parser(),
     ]

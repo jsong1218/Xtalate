@@ -14,6 +14,8 @@ rather than an anecdote. Ten benchmarks reproduce the spec's performance table e
 * ``parse_lammpsdump_10k`` — parse a LAMMPS dump, 10,000 frames × 100 atoms — ≤ 30 s, ≤ 2 GB.
 * ``convert_lammpsdump_to_extxyz_10k`` — the deployment-format→MLIP conversion, same file —
   ≤ 90 s, ≤ 2 GB.
+* ``parse_h5md_10k`` — parse an H5MD ``.h5``, 10,000 frames × 100 atoms (M74) — ≤ 30 s, ≤ 2 GB.
+* ``convert_h5md_to_extxyz_10k`` — the HDF5-interchange→MLIP conversion, same file — ≤ 90 s, ≤ 2 GB.
 * ``convert_extxyz_roundtrip_1k`` — extXYZ 1,000 × 1,000 identity round-trip — ≤ 60 s, ≤ 3 GB.
 * ``frame_limit_ceiling`` — 100,000-frame file (the ``06 §5`` cap) — completes, sub-linear memory.
 * ``preflight_latency`` — pre-flight diff on a parsed 10k-frame object — ≤ 1 s (feels instant).
@@ -70,6 +72,7 @@ from typing import Any
 
 from tests.streaming._generators import (
     write_extxyz_trajectory,
+    write_h5md_trajectory,
     write_lammps_dump_trajectory,
     write_outcar_trajectory,
     write_qe_pw_out_trajectory,
@@ -276,6 +279,45 @@ def _bench_convert_lammpsdump_to_extxyz_10k(workdir: Path, scale: str) -> dict[s
     src = write_lammps_dump_trajectory(
         workdir / "dump.lammpstrj", n_frames=sz.n_frames, n_atoms=sz.n_atoms
     )
+    _cli_ok(
+        [
+            "convert",
+            str(src),
+            "--to",
+            "extxyz",
+            "-o",
+            str(workdir / "out.xyz"),
+            "--validation-report",
+            str(workdir / "validation.json"),
+        ]
+    )
+    return {"frames": float(sz.n_frames), "atoms": float(sz.n_atoms)}
+
+
+def _bench_parse_h5md_10k(workdir: Path, scale: str) -> dict[str, float]:
+    """Materialize a full 10k-frame H5MD ``.h5`` — the ``∝ frames`` cost the ≤2 GB bound guards.
+
+    H5MD is the community HDF5 interchange container, so its ordinary size at MD scale is a full
+    trajectory; the parser is frame-lazy (``h5py`` random access) but ``parse`` materializes, so
+    this measures the whole-object cost. The generated fixture writes ``position``/``force``
+    per-step VLEN arrays (the variable-N layout), so this is also the read cost of the format's
+    headline layout, not a constant-N shortcut."""
+    sz = _sized(scale, full=Scale(10_000, 100), micro=Scale(20, 8))
+    src = write_h5md_trajectory(workdir / "traj.h5", n_frames=sz.n_frames, n_atoms=sz.n_atoms)
+    parser = default_registry().get_parser("h5md")
+    with src.open("rb") as fh:
+        obj = parser.parse(fh, filename=src.name).canonical
+    return {"frames": float(obj.frame_count), "atoms": float(sz.n_atoms)}
+
+
+def _bench_convert_h5md_to_extxyz_10k(workdir: Path, scale: str) -> dict[str, float]:
+    """The HDF5-interchange → MLIP conversion at 10⁴ scale, via the real CLI with validation:
+    parse → convert → re-parse-and-diff. The generated file carries canonical units and a fixed
+    box, so no recovery preset is needed; the ``--validation-report`` flag forces the
+    post-conversion re-parse, so this is the end-to-end pipeline cost of exporting an interchange
+    trajectory to a label-complete training file, not just the write."""
+    sz = _sized(scale, full=Scale(10_000, 100), micro=Scale(20, 8))
+    src = write_h5md_trajectory(workdir / "traj.h5", n_frames=sz.n_frames, n_atoms=sz.n_atoms)
     _cli_ok(
         [
             "convert",
@@ -687,6 +729,16 @@ BENCHMARKS: tuple[Benchmark, ...] = (
     Benchmark(
         "convert_lammpsdump_to_extxyz_10k",
         _bench_convert_lammpsdump_to_extxyz_10k,
+        (Budget("wall_seconds", 90.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
+    ),
+    Benchmark(
+        "parse_h5md_10k",
+        _bench_parse_h5md_10k,
+        (Budget("wall_seconds", 30.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
+    ),
+    Benchmark(
+        "convert_h5md_to_extxyz_10k",
+        _bench_convert_h5md_to_extxyz_10k,
         (Budget("wall_seconds", 90.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
     ),
     Benchmark(

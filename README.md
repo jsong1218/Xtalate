@@ -66,6 +66,7 @@ Full [CLI reference](docs/cli.md) · [library example](examples/convert_extxyz_t
 | Quantum ESPRESSO pw.x input | ✓ | ✓ | Namelists + cards |
 | ASE `.db` | ✓ | ✓ | Multi-structure dataset |
 | DeePMD-kit npy | ✓ | ✓ | Directory system; MLIP training layout |
+| H5MD | ✓ | ✓ | HDF5 trajectory; variable atom count per frame |
 | vasprun.xml | ✓ | — | VASP output (source only) |
 | OUTCAR | ✓ | — | VASP output; per-atom magnetic moments |
 | Quantum ESPRESSO pw.x output | ✓ | — | QE output (source only) |
