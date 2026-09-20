@@ -192,3 +192,65 @@ def canonical_objects(draw: st.DrawFn) -> CanonicalObject:
         },
     }
     return CanonicalObject.model_validate(data)
+
+
+@st.composite
+def variable_n_canonical_objects(draw: st.DrawFn) -> CanonicalObject:
+    """A randomized valid Canonical Object whose frames may differ in atom count (schema 2.0.0).
+
+    ``canonical_objects`` draws a single ``n`` for every frame — a constant-N object, the shape a
+    real parser emits for a fixed-topology trajectory. This strategy instead draws a **per-frame**
+    atom count ``n_i``, so frames genuinely differ in N, and sizes each frame's per-atom arrays —
+    positions, masses, velocities, forces, charges, moments, constraints, and each
+    ``custom_per_atom`` column — at that frame's own ``n_i``. Constant N is reachable as the special
+    case where every ``n_i`` happens to be equal, so this is a strict superset of
+    ``canonical_objects``, added for the M75 corpus-scale property sweep. It exercises the report
+    machinery over variable-N objects; value ranges stay tame for the same reason stage 2 does
+    (presence, not numerics, is what the properties probe).
+
+    Atom identity is a **shared base sliced to a prefix**, not an independent per-frame symbol draw.
+    The canonical model requires constant atom identity *by index* across frames (Part 2 §3.2): an
+    atom at a given index keeps its species in every frame that contains it — a variable-N
+    trajectory adds or removes atoms at the tail (grand-canonical / deposition), it never
+    transmutes an atom in place. Drawing symbols per frame independently would produce a
+    same-N-but-different-species pair (H at index 0 in one frame, C at index 0 in another), which
+    the model forbids and a re-parse correctly refuses; slicing one ``base`` list to each frame's
+    ``n_i`` guarantees index-consistent identity while still letting the count genuinely vary.
+    """
+    f = draw(st.integers(min_value=1, max_value=3))
+    counts = [draw(st.integers(min_value=1, max_value=4)) for _ in range(f)]
+    base = draw(st.lists(st.sampled_from(_ELEMENTS), min_size=max(counts), max_size=max(counts)))
+    frames: list[dict[str, Any]] = []
+    for i, n_i in enumerate(counts):
+        symbols_i = base[:n_i]
+        frame = draw(_frame(i, symbols_i, n_i))
+        # custom_per_atom is per-frame in 2.0.0 and must match this frame's own N (not a shared,
+        # frame-invariant map as in the constant-N strategy).
+        frame["custom_per_atom"] = draw(
+            st.dictionaries(_keys, st.lists(_floats, min_size=n_i, max_size=n_i), max_size=2)
+        )
+        frames.append(frame)
+
+    data: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "frames": frames,
+        "trajectory": ({"timestep": draw(_pos_floats)} if draw(st.booleans()) else None),
+        "simulation": draw(_simulation()),
+        "provenance": {
+            "source_filename": draw(st.none() | st.just("generated.dat")),
+            "source_format": "extxyz",
+            "original_coordinate_system": "cartesian",
+            "source_units": {},
+            "parse_notes": [],
+            "history": [],
+        },
+        "user_metadata": {
+            "tags": draw(st.lists(_keys, max_size=3, unique=True)),
+            "annotations": draw(st.dictionaries(_keys, _text, max_size=2)),
+            "custom_global": draw(st.dictionaries(_keys, _scalars, max_size=2)),
+            "custom_per_frame": draw(
+                st.dictionaries(_keys, st.lists(_floats, min_size=f, max_size=f), max_size=2)
+            ),
+        },
+    }
+    return CanonicalObject.model_validate(data)
