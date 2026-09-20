@@ -1,0 +1,14 @@
+case: co2-nvt-3frame
+format_id: h5md
+source_file: sample.h5
+expected_canonical: expected.canonical.json
+canonical_schema_version: "2.0.0"
+sha256: "d09cfe99dff1b1495c00df101f07692448e638b9f20562e708c8cb9f38cdc032"
+expected_sha256: "c373b509c684c87d8e1c4449da7d7cfc9d43d437adfdf50793de1390c7063842"
+origin:
+  kind: synthetic
+  source: >-
+    Hand-authored for M74-S4 via tests/golden/h5md/_generate.py (raw h5py, HDF5 container).
+  license: "Apache-2.0"
+notes: >-
+  The all-fields constant-N anchor: a CO2 molecule over 3 frames carrying per-frame positions, velocities, forces and charges, fixed isotope masses, a fixed cubic box, and a potential-energy series, all in canonical units so nothing is converted. Proves the field map (position/species/velocity/force/mass/charge/box/observables) end to end and that a fixed-in-time species/mass dataset and a cuboid-shorthand box read correctly. Enrolled as the round-trip matrix source.

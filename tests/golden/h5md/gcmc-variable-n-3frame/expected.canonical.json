@@ -1,0 +1,313 @@
+{
+  "schema_version": "2.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Ar",
+          "Ar"
+        ],
+        "atomic_numbers": [
+          18,
+          18
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            3.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            12.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            12.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            12.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.01,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.01,
+            0.0
+          ]
+        ],
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -5.0,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      },
+      "custom_per_atom": {}
+    },
+    {
+      "index": 1,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Ar",
+          "Ar",
+          "Ar"
+        ],
+        "atomic_numbers": [
+          18,
+          18,
+          18
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            3.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            3.0,
+            0.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            12.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            12.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            12.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.01,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.01,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.01
+          ]
+        ],
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -7.5,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      },
+      "custom_per_atom": {}
+    },
+    {
+      "index": 2,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "Ar",
+          "Ar",
+          "Ar",
+          "Ar"
+        ],
+        "atomic_numbers": [
+          18,
+          18,
+          18,
+          18
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            3.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            3.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            3.0
+          ]
+        ],
+        "masses": null,
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            12.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            12.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            12.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.01,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.01,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.01
+          ],
+          [
+            0.02,
+            0.0,
+            0.0
+          ]
+        ],
+        "forces": null,
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -10.0,
+        "stress": null,
+        "charges": null,
+        "magnetic_moments": null,
+        "total_spin": null
+      },
+      "custom_per_atom": {}
+    }
+  ],
+  "trajectory": {
+    "timestep": null
+  },
+  "simulation": null,
+  "provenance": {
+    "source_filename": "sample.h5",
+    "source_format": "h5md",
+    "source_units": {
+      "positions": "Angstrom",
+      "velocities": "Angstrom/fs",
+      "total_energy": "eV"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "read via h5py 3.16.0; H5MD per-step elements read with each frame's own atom count (P3).",
+      "H5MD file created by gcmc-sampler"
+    ],
+    "history": [
+      {
+        "timestamp": "2026-09-20T04:28:46Z",
+        "operation": "parse",
+        "source_format": "h5md",
+        "target_format": null,
+        "tool_version": "1.8.0",
+        "parser_version": "h5md-parser 1.8.0 (h5py 3.16.0)",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {},
+    "custom_per_frame": {
+      "h5md:temperature": [
+        300.0,
+        300.0,
+        300.0
+      ]
+    }
+  }
+}

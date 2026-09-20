@@ -138,7 +138,12 @@ def test_every_builtin_records_the_package_version_in_provenance(format_id: str)
 #: ``test_every_builtin_records_the_package_version_in_provenance`` above. ``deepmd_npy`` joins
 #: them for the same reason (M56-S1): its ``_PARSER_VERSION`` is a module-level constant built
 #: from ``xtalate.__version__`` at import time — verified, not assumed, before adding it here.
-_LATE_BOUND_VERSION = sorted(set(_BUILTIN_GOLDEN_FORMATS) - {"ase_traj", "ase_db", "deepmd_npy"})
+#: ``h5md`` joins them for the same reason (M74): its ``_PARSER_VERSION`` is a module-level
+#: constant folding in ``h5py.__version__`` at import time (D59 precedent), so a runtime patch
+#: cannot reach it.
+_LATE_BOUND_VERSION = sorted(
+    set(_BUILTIN_GOLDEN_FORMATS) - {"ase_traj", "ase_db", "deepmd_npy", "h5md"}
+)
 
 
 @pytest.mark.parametrize("format_id", _LATE_BOUND_VERSION)

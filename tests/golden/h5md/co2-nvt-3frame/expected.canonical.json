@@ -1,0 +1,382 @@
+{
+  "schema_version": "2.0.0",
+  "frames": [
+    {
+      "index": 0,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "C",
+          "O",
+          "O"
+        ],
+        "atomic_numbers": [
+          6,
+          8,
+          8
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.16
+          ],
+          [
+            0.0,
+            0.0,
+            -1.16
+          ]
+        ],
+        "masses": [
+          12.011,
+          15.999,
+          15.999
+        ],
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            10.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.01,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.01,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.01
+          ]
+        ],
+        "forces": [
+          [
+            0.0,
+            0.0,
+            0.5
+          ],
+          [
+            0.0,
+            0.0,
+            -0.25
+          ],
+          [
+            0.0,
+            0.0,
+            -0.25
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -100.0,
+        "stress": null,
+        "charges": [
+          0.5,
+          -0.25,
+          -0.25
+        ],
+        "magnetic_moments": null,
+        "total_spin": null
+      },
+      "custom_per_atom": {}
+    },
+    {
+      "index": 1,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "C",
+          "O",
+          "O"
+        ],
+        "atomic_numbers": [
+          6,
+          8,
+          8
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            0.02
+          ],
+          [
+            0.0,
+            0.0,
+            1.17
+          ],
+          [
+            0.0,
+            0.0,
+            -1.15
+          ]
+        ],
+        "masses": [
+          12.011,
+          15.999,
+          15.999
+        ],
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            10.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.02,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.02,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.02
+          ]
+        ],
+        "forces": [
+          [
+            0.0,
+            0.0,
+            0.4
+          ],
+          [
+            0.0,
+            0.0,
+            -0.2
+          ],
+          [
+            0.0,
+            0.0,
+            -0.2
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -100.5,
+        "stress": null,
+        "charges": [
+          0.4,
+          -0.2,
+          -0.2
+        ],
+        "magnetic_moments": null,
+        "total_spin": null
+      },
+      "custom_per_atom": {}
+    },
+    {
+      "index": 2,
+      "time": null,
+      "atoms": {
+        "symbols": [
+          "C",
+          "O",
+          "O"
+        ],
+        "atomic_numbers": [
+          6,
+          8,
+          8
+        ],
+        "positions": [
+          [
+            0.0,
+            0.0,
+            -0.01
+          ],
+          [
+            0.0,
+            0.0,
+            1.18
+          ],
+          [
+            0.0,
+            0.0,
+            -1.17
+          ]
+        ],
+        "masses": [
+          12.011,
+          15.999,
+          15.999
+        ],
+        "occupancies": null
+      },
+      "cell": {
+        "lattice_vectors": [
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            10.0
+          ]
+        ],
+        "pbc": [
+          true,
+          true,
+          true
+        ],
+        "space_group": null
+      },
+      "dynamics": {
+        "velocities": [
+          [
+            0.03,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.03,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.03
+          ]
+        ],
+        "forces": [
+          [
+            0.0,
+            0.0,
+            0.3
+          ],
+          [
+            0.0,
+            0.0,
+            -0.15
+          ],
+          [
+            0.0,
+            0.0,
+            -0.15
+          ]
+        ],
+        "constraints": null
+      },
+      "electronic": {
+        "total_energy": -100.2,
+        "stress": null,
+        "charges": [
+          0.3,
+          -0.15,
+          -0.15
+        ],
+        "magnetic_moments": null,
+        "total_spin": null
+      },
+      "custom_per_atom": {}
+    }
+  ],
+  "trajectory": {
+    "timestep": null
+  },
+  "simulation": null,
+  "provenance": {
+    "source_filename": "sample.h5",
+    "source_format": "h5md",
+    "source_units": {
+      "positions": "Angstrom",
+      "velocities": "Angstrom/fs",
+      "forces": "eV/Angstrom",
+      "masses": "u",
+      "charges": "e",
+      "total_energy": "eV"
+    },
+    "original_coordinate_system": "cartesian",
+    "parse_notes": [
+      "read via h5py 3.16.0; H5MD per-step elements read with each frame's own atom count (P3).",
+      "H5MD file created by h5md-tools 0.3.1"
+    ],
+    "history": [
+      {
+        "timestamp": "2026-09-20T04:28:46Z",
+        "operation": "parse",
+        "source_format": "h5md",
+        "target_format": null,
+        "tool_version": "1.8.0",
+        "parser_version": "h5md-parser 1.8.0 (h5py 3.16.0)",
+        "assumptions": []
+      }
+    ]
+  },
+  "user_metadata": {
+    "tags": [],
+    "annotations": {},
+    "custom_global": {},
+    "custom_per_frame": {}
+  }
+}

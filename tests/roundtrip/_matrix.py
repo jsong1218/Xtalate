@@ -116,6 +116,15 @@ _GOLDEN_DIRS: dict[str, tuple[str, str]] = {
     # seam + the carried numbering; every hop into it exercises `export_dir` (one set.000, no
     # split) + the virial inverse. As a target its `max_frames=None` needs no frame_selection.
     "deepmd_npy": ("deepmd_npy/labeled-single-set", "system"),
+    # M74: H5MD — the eighth first-party format and the first binary variable-N container — enrols
+    # as a full source *and* target. The CO2 NVT anchor is the matrix source: a 3-frame constant-N
+    # trajectory carrying the full label set (energy + forces + velocities + masses + charges) plus
+    # a fixed cuboid box, all in canonical units, so it bare-parses without recovery and every hop
+    # out of it exercises the H5MD read against constant-N targets. As a target its max_frames=None
+    # needs no frame_selection, and its per-step VLEN layout writes a variable-N source natively
+    # (supports_variable_atom_count=True) — the variable-N and time-dependent-box goldens are pinned
+    # in the dedicated golden + exporter suites rather than the matrix, which reads sources bare.
+    "h5md": ("h5md/co2-nvt-3frame", "sample.h5"),
 }
 
 # Capability paths that are never round-trip content: provenance records *how* a file was read

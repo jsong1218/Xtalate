@@ -30,6 +30,7 @@ from pathlib import Path
 from tests.streaming._generators import (
     write_ase_traj_trajectory,
     write_extxyz_trajectory,
+    write_h5md_trajectory,
     write_lammps_dump_trajectory,
     write_outcar_trajectory,
     write_qe_pw_out_trajectory,
@@ -215,4 +216,22 @@ def test_lammps_dump_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
     material_peak = _peak_traced_bytes(
         lambda: _materialize(src, out_material, "lammps_dump", "extxyz")
     )
+    _assert_sublinear(stream_peak, material_peak, out_stream, out_material)
+
+
+def test_h5md_conversion_is_sublinear_in_frames(tmp_path: Path) -> None:
+    """The M74 H5MD gate: H5MD is HDF5, the community's scale container for MD, so a 10⁴-frame
+    ``.h5`` must stream to extXYZ with peak memory bounded by one frame — not the frame count.
+    The fixture writes ``position``/``force`` as per-step VLEN arrays (the variable-N layout the
+    parser reads), so this proves the VLEN read path genuinely slices one frame from the open
+    ``h5py.File`` rather than materializing the trajectory. Same contrast as the LAMMPS-dump proof,
+    driven through the H5MD streaming parser (M74; D56 at scale)."""
+    # 10⁴ frames at a modest per-frame atom count keeps the tracemalloc-traced run at the
+    # LAMMPS-dump proof's cost while forcing the frame-lazy read to earn the sub-linear bound.
+    src = write_h5md_trajectory(tmp_path / "traj.h5", n_frames=10_000, n_atoms=10)
+    out_stream = tmp_path / "h5md_stream.xyz"
+    out_material = tmp_path / "h5md_material.xyz"
+
+    stream_peak = _peak_traced_bytes(lambda: _stream(src, out_stream, "h5md", "extxyz"))
+    material_peak = _peak_traced_bytes(lambda: _materialize(src, out_material, "h5md", "extxyz"))
     _assert_sublinear(stream_peak, material_peak, out_stream, out_material)

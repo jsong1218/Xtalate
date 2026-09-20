@@ -135,6 +135,27 @@ Each entry is labelled with the corpus it belongs to, since the two carry differ
 - **License:** Apache-2.0
 - **Source:** Hand-authored for M42-S4 (RF-4): H2 in a 4 A cubic cell carrying energy=, a per-atom forces= column, and a 6-number Voigt stress= (ASE order xx,yy,zz,yz,xz,xy) — the spelling ASE's extXYZ reader refuses outright without the parser's 6-number expansion.
 
+## `h5md` / `co2-nvt-3frame` (golden)
+
+- **Source file:** `sample.h5`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M74-S4 via tests/golden/h5md/_generate.py (raw h5py, HDF5 container).
+
+## `h5md` / `gcmc-variable-n-3frame` (golden)
+
+- **Source file:** `sample.h5`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M74-S4 via tests/golden/h5md/_generate.py (raw h5py, HDF5 container).
+
+## `h5md` / `npt-triclinic-2frame` (golden)
+
+- **Source file:** `sample.h5`
+- **Origin:** synthetic
+- **License:** Apache-2.0
+- **Source:** Hand-authored for M74-S4 via tests/golden/h5md/_generate.py (raw h5py, HDF5 container).
+
 ## `lammps_data` / `atomic-metal-ortho` (golden)
 
 - **Source file:** `structure.data`
