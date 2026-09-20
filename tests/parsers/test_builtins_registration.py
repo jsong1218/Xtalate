@@ -70,6 +70,9 @@ def test_builtins_register_without_error() -> None:
         "ase_db",
         # M56-S1: DeePMD-kit NumPy system directory parser.
         "deepmd_npy",
+        # M74-S1: H5MD (HDF5 for molecular data) lands read+write in one milestone — the eighth
+        # first-party format and the variable-N proof against a real binary container.
+        "h5md",
     }
     # Asymmetric since M42 slice 2: vasprun is the first parser-only format (D159) — Xtalate
     # reads it but does not write it; OUTCAR (M43) is the second — the permanent source-never-
@@ -97,6 +100,9 @@ def test_builtins_register_without_error() -> None:
         # M56-S2: the deepmd_npy exporter lands with the directory write seam (export_dir + the
         # directory-output result surface) — a full read+write directory format.
         "deepmd_npy",
+        # M74-S1: the H5MD exporter lands alongside the parser in one milestone — a full read+write
+        # binary format that writes variable-N trajectories natively (per-step VLEN).
+        "h5md",
     }
 
 

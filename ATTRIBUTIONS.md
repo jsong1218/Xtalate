@@ -22,8 +22,9 @@ those licenses carry can never silently lapse.
 
 ## Core runtime dependencies (`pip install xtalate`)
 
-The pure library + CLI. Kept deliberately small (`docs/private/DECISIONS.md` D4/D7): four
-dependencies, including one secure XML parser and the sole scientific-I/O workhorse.
+The pure library + CLI. Kept deliberately small (`docs/private/DECISIONS.md` D4/D7): a secure XML
+parser, the sole scientific-I/O workhorse, and the HDF5 container library the H5MD format reads and
+writes through.
 
 | Distribution | Declared floor | License (SPDX) |
 |---|---|---|
@@ -32,6 +33,7 @@ dependencies, including one secure XML parser and the sole scientific-I/O workho
 | [ase](https://gitlab.com/ase/ase) | `>=3.29,<4` | LGPL-2.1-or-later |
 | [PyYAML](https://github.com/yaml/pyyaml) | `>=6` | MIT |
 | [defusedxml](https://github.com/tiran/defusedxml) | `>=0.7.1` | PSF-2.0 |
+| [h5py](https://github.com/h5py/h5py) | `>=3.11,<4` | BSD-3-Clause |
 
 **defusedxml is the secure XML dependency** for the untrusted `vasprun.xml` parser; it runs in
 library code before any optional service layer is involved. **ASE is the sole scientific dependency**
@@ -40,7 +42,10 @@ parser/exporter and the ASE `.traj` format, and nothing else in the core reaches
 was evaluated and rejected (D4/D7) to keep the dependency surface — and the attack/CVE surface
 (risk R10) — minimal. ASE is **LGPL-2.1-or-later**: Xtalate imports it as an ordinary library
 (dynamic use), which the LGPL permits without Xtalate's own Apache-2.0 licensing being affected;
-Xtalate ships no modified copy of ASE.
+Xtalate ships no modified copy of ASE. **h5py** (v2.0 M74) is the HDF5 binding backing the H5MD
+parser/exporter and nothing else — an import-linter `forbidden` contract confines it to those two
+modules, the same isolation ASE has (`docs/private/DECISIONS.md` D17 precedent). It is
+BSD-3-Clause; the HDF5 C library it wraps is distributed under a BSD-style license.
 
 ## `service` optional dependencies (`pip install xtalate[service]`)
 
