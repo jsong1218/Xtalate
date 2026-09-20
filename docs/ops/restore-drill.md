@@ -18,11 +18,14 @@ The database is the durable artifact — the conversion and validation reports, 
    from base is separately unit-proven in `tests/backend/db/test_migrations.py`.
 3. **The service reads the restored data** — row counts round-trip and the ORM opens against the
    scratch database (proving the app starts against a restored instance, not just that bytes loaded).
-4. **The canonical-object schema migration works** (`0.1.0 → 1.0.0`, M35 / D114). This is a
-   *distinct, library-level* guarantee (`xtalate.schema.migrations`) — the backend stores report
-   bodies verbatim and never migrates them on read — but a restored instance's library must still
-   read any pre-1.0 persisted Canonical Objects, so the drill demonstrates it end-to-end
-   (unit-proven in `tests/schema/test_migrations.py`).
+4. **The canonical-object schema migration works** across the full emitted chain
+   (`0.1.0 → 1.0.0 → 2.0.0`, M35 / D114, M72). This is a *distinct, library-level* guarantee
+   (`xtalate.schema.migrations`) — the backend stores report bodies verbatim and never migrates them
+   on read — but a restored instance's library must still read any pre-2.0 persisted Canonical
+   Objects, so the drill migrates a real `0.1.0` object the whole way to the current schema
+   (`xtalate.schema.SCHEMA_VERSION`, so it never goes stale) and confirms the single recorded
+   `migrate` transition (unit-proven in `tests/schema/test_migrations.py` and
+   `tests/schema/test_migration_drill.py`).
 
 ## The command
 
