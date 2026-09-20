@@ -94,6 +94,54 @@ Schema version: 2.0.0
   all frames), recorded with one `operation="migrate"` provenance record. The migration registry chain
   is now `0.1.0 → 1.0.0 → 2.0.0`; older stored objects load through the full chain.
 
+### Verified — corpus-scale (M75)
+
+M75 adds **no behaviour**: it proves the schema-`2.0.0` / variable-N / H5MD work of M72–M74 correct
+at corpus scale and **closes the refusal "evidence file"** the ladder kept open since v1.3 — every
+"this trajectory is real and we cannot represent it, here is why" is now demonstrated as either
+convertible or still-refused-with-a-reason, as committed test assets rather than deleted notes.
+
+- **Report-completeness and absence-conformance properties now range over variable-N objects.** The
+  `hypothesis` generator draws trajectories whose per-frame atom count varies (a shared base sliced to
+  each frame's prefix, so atom identity stays index-consistent — Part 2 §3.2), and re-proves that a
+  Conversion Report accounts for every field and that absence stays absence (**P1**/**P3**) under
+  variable N.
+- **The migration drill is widened to every emitted schema version, and the restore drill exercises
+  the full chain.** A stored object authored at each of `0.1.0`, `1.0.0`, `2.0.0` migrates forward to
+  current with exactly one recorded `migrate` transition (none when already current), and the whole
+  golden corpus loads green through the chain — one named release gate. `scripts/restore-drill.sh`
+  step 6 now reads its expected endpoint from `xtalate.schema.SCHEMA_VERSION` and demonstrates a real
+  `0.1.0 → 2.0.0` canonical migration on a restored instance, so the drill never goes stale at a
+  future major.
+- **A variable-N two-hop matrix drives the grand-canonical H5MD golden into every write target**
+  (nightly), and a `migrate_10k` benchmark confirms a `1.0.0 → 2.0.0` migration of a 10⁴-frame object
+  stays corpus-scale-viable (measured, not gated).
+
+**Refusal retirement.** Every reader refusal M73 retired, the release that first recorded it, and
+where its now-reads-through is demonstrated:
+
+| Refusal code | First recorded | Now demonstrated by |
+|---|---|---|
+| `EXTXYZ_VARIABLE_ATOM_COUNT` | v0.1 | evidence-closure: a 1→2-atom extXYZ trajectory |
+| `ASE_TRAJ_VARIABLE_ATOM_COUNT` | v0.3 | M73 `tests/parsers/test_ase_traj.py` (variable-N `.traj`) |
+| `LAMMPSDUMP_VARIABLE_ATOM_COUNT` | v1.3 | evidence-closure: the deposition wild dump |
+| `ASEDB_MULTIPLE_ROWS` | v0.3 | evidence-closure: a multi-row ASE `.db` read whole |
+
+**Evidence closure.** The refusal "evidence file" outcomes, each a committed asset in
+`tests/test_evidence_closure.py`:
+
+| Trajectory class | Source asset | Outcome |
+|---|---|---|
+| grand-canonical (2→3→4 atoms) | H5MD `gcmc-variable-n-3frame` golden | convertible → extXYZ, validates per frame |
+| deposition (3→4→4 atoms) | LAMMPS `dump-variable-n-deposition` wild dump | convertible → extXYZ, validates per frame |
+| variable-N extXYZ (1→2 atoms) | inline, mirrors `tests/parsers/test_extxyz.py` | convertible → extXYZ, validates per frame |
+| multi-row ASE `.db` (H2 then He) | built as `tests/parsers/test_ase_db.py` does | convertible → extXYZ, validates per frame |
+| any constant-N target (POSCAR/CONTCAR/XDATCAR/CIF) | any variable-N source | still refused at pre-flight, offering `frame_selection` — **never** padded, masked, or truncated to one N |
+
+A structural companion (`test_no_code_path_pads_masks_or_truncates_n`) asserts the *absence* of any
+ghost-atom code path in `src/xtalate/` by construction, so the no-ghost-atoms rule (M73) stays a
+citable guarantee and not just a behavioural one.
+
 ## [1.8.0] — 2026-09-13
 
 Schema version: 1.0.0
