@@ -1,7 +1,7 @@
 # Xtalate
 
 [![CI](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml/badge.svg)](https://github.com/jsong1218/Xtalate/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.8.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](CHANGELOG.md)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -74,6 +74,8 @@ Full [CLI reference](docs/cli.md) · [library example](examples/convert_extxyz_t
 Read-only formats are conversion *sources*, never targets — a code's output is never something Xtalate writes back. In-memory adapters also translate pymatgen `Structure`/`Molecule` objects (`pip install "xtalate[pymatgen]"`), and **CP2K** is available through the community-plugin seam. Any pair of read+write formats converts; the nightly suite runs the full n×n matrix.
 
 These formats close the MLIP data loop end to end — **relabel** production frames with DFT (`OUTCAR`/`vasprun.xml`/QE output → extended XYZ), **assemble** them into a dataset (`ase_db`, `deepmd_npy`), and **deploy** back to an engine (LAMMPS) — every arrow a reported, validated conversion.
+
+As of **v2.0**, Xtalate represents, converts, validates, and honestly reports every trajectory class the MLIP era produces — **fixed-N and variable-N, text and binary, file and dataset** — with contracts re-frozen at `2.0`. A trajectory whose atom count changes frame to frame (grand-canonical, deposition, mixed-composition) reads and round-trips per frame; a format that genuinely cannot express a varying count still **refuses** at pre-flight and offers `frame_selection` — never a padded or truncated frame. This is measured, not promised: the round-trips and refusals are pinned as committed test assets (the closed refusal "evidence file").
 
 ## What every conversion gives you
 
