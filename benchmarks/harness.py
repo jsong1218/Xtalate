@@ -709,10 +709,11 @@ def _bench_batch_convert_100_files(workdir: Path, scale: str) -> dict[str, float
 
 def _bench_parse_asedb_1k_rows(workdir: Path, scale: str) -> dict[str, float]:
     """Parse an ASE SQLite ``.db`` at 1,000-row scale (M55-S1): the whole-file read via
-    ``ase.db`` ``select()`` — a multi-row database's honest terminal outcome is the recoverable
-    ``ASEDB_MULTIPLE_ROWS`` refusal (a dataset is aggregation, never one Canonical Object), and
-    the read that reaches it is exactly what this measures. Generated, never committed: the
-    database is written here with ``ase.db`` itself, the same library the parser reads."""
+    ``ase.db`` ``select()`` into one variable-N Canonical Object, one frame per row. M73 retired
+    the ``ASEDB_MULTIPLE_ROWS`` refusal — schema 2.0.0 lifted the constant-N invariant, so a
+    multi-row database reads through as a variable-N trajectory rather than being refused — and
+    that read is exactly what this measures. Generated, never committed: the database is written
+    here with ``ase.db`` itself, the same library the parser reads."""
     sz = _sized(scale, full=Scale(1_000, 8), micro=Scale(20, 4))
     n_rows, n_atoms = sz.n_frames, sz.n_atoms  # n_frames doubles as the row count here
     from ase import Atoms
@@ -723,16 +724,13 @@ def _bench_parse_asedb_1k_rows(workdir: Path, scale: str) -> dict[str, float]:
     for _ in range(n_rows):
         db.write(Atoms("H" * n_atoms, positions=[[float(i), 0.0, 0.0] for i in range(n_atoms)]))
     parser = default_registry().get_parser("ase_db")
-    from xtalate.sdk.results import ParseError
 
     with db_path.open("rb") as fh:
-        try:
-            parser.parse(fh, filename=db_path.name)
-        except ParseError as exc:  # the multi-row terminal outcome, by design
-            if not any(issue.code == "ASEDB_MULTIPLE_ROWS" for issue in exc.issues):
-                raise
-        else:
-            raise AssertionError("a 1k-row .db parsed as a single object — the refusal is missing")
+        result = parser.parse(fh, filename=db_path.name)
+    # A loud canary if the read ever silently drops rows: one frame per row, no aggregation lost.
+    n_frames = len(result.canonical.frames)
+    if n_frames != n_rows:
+        raise AssertionError(f"expected {n_rows} frames from a {n_rows}-row .db, got {n_frames}")
     return {"rows": float(n_rows), "atoms": float(n_atoms)}
 
 
