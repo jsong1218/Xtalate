@@ -177,6 +177,8 @@ Xtalate follows [Semantic Versioning](https://semver.org/). Within a major serie
 
 The product version and the on-the-wire `schema_version` move on separate axes: the schema version bumps only when the model changes, and always behind a real migration that carries older stored objects forward with a recorded `migrate` step — never silently.
 
+Upgrading across a major (the schema's shape changing)? See the [migration guide](docs/MIGRATION.md). For most users a major is still a `pip install -U`: stored objects migrate forward on load, and constant-N work is byte-identical.
+
 ## Development
 
 ```bash
