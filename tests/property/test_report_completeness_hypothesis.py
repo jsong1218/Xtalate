@@ -79,3 +79,43 @@ def test_report_is_complete_over_random_objects(source: CanonicalObject) -> None
         )
         p2 = _properties.absence_violations(report, reparsed)
         assert not p2, f"->{target}: absence conformance violated: {p2}"
+
+
+@given(source=_strategies.variable_n_canonical_objects())
+def test_report_is_complete_over_variable_n_objects(source: CanonicalObject) -> None:
+    # M75 corpus-scale generalization: the same two properties must hold when frames differ in
+    # atom count (schema 2.0.0), not only for constant-N objects. Same engine path, targets,
+    # presets, and strict tolerance as the constant-N sweep above; the source id stays `extxyz`
+    # (the widest FULL read surface) for the identical reason. A target that cannot express
+    # variable N reaches a *refused* report through the pre-flight path — a completed job with a
+    # reason, so it is in-scope for the completeness invariant (Property 1), not an error to filter.
+    for target in _TARGETS:
+        result = _ENGINE.convert(
+            source,
+            source_format_id="extxyz",
+            target_format_id=target,
+            mode="permissive",
+            recovery_choices=_PRESETS,
+            tolerance_profile=_STRICT,
+        )
+        report = result.report
+
+        p1 = _properties.completeness_violations(source, report)
+        assert not p1, f"->{target} status={report.status}: completeness violated: {p1}"
+
+        if report.status == "refused":
+            assert report.refusal is not None
+            continue
+        assert result.output is not None or result.output_dir is not None, (
+            f"->{target}: completed report but no output bytes or directory map"
+        )
+        assert result.canonical_out is not None
+        reparsed = _properties.reparse_output(
+            _REGISTRY,
+            target,
+            result.output or b"",
+            result.canonical_out,
+            output_dir=result.output_dir,
+        )
+        p2 = _properties.absence_violations(report, reparsed)
+        assert not p2, f"->{target}: absence conformance violated: {p2}"

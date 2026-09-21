@@ -18,11 +18,12 @@
 #      tests/backend/db/test_migrations.py.
 #   4. Confirms the service can read the restored data (row counts round-trip; the ORM opens against
 #      the scratch DB).
-#   5. Separately demonstrates the *canonical-object* schema migration (0.1.0 → 1.0.0, M35 / D114) —
-#      a distinct, library-level guarantee (xtalate.schema.migrations), NOT triggered by the DB
-#      restore (the backend stores report bodies verbatim and never migrates them on read). Included
-#      here because a restored instance's library must still read any pre-1.0 persisted Canonical
-#      Objects; unit-proven in tests/schema/test_migrations.py.
+#   5. Separately demonstrates the *canonical-object* schema migration across the full emitted chain
+#      (0.1.0 → 1.0.0 → 2.0.0; M35 / D114, M72) — a distinct, library-level guarantee
+#      (xtalate.schema.migrations), NOT triggered by the DB restore (the backend stores report bodies
+#      verbatim and never migrates them on read). Included here because a restored instance's library
+#      must still read any pre-2.0 persisted Canonical Objects; unit-proven in
+#      tests/schema/test_migrations.py and tests/schema/test_migration_drill.py.
 #   6. Drops the scratch database (unless KEEP_SCRATCH=1).
 #
 # Needs only `docker compose` and the running stack — no host Python, no psql on the host — so it is
@@ -133,19 +134,23 @@ with sm() as s:
 print(f"ORM opened scratch db and read conversions: {n}")
 ' || fail "the service ORM could not read the restored database"
 
-  log "6. canonical schema migration — 0.1.0 -> 1.0.0 (library-level, separate from the DB restore)"
+  log "6. canonical schema migration — full 0.1.0 -> 2.0.0 chain (library-level, separate from the DB restore)"
   # Pipe a real 0.1.0 Canonical Object (a golden fixture) through load_canonical and confirm it is
-  # carried to the current schema and stamped. This is NOT part of the DB restore — the backend never
-  # migrates stored report bodies — but a restored instance's library must read pre-1.0 objects.
+  # carried the whole way to the *current* schema and stamped with a single migrate record spanning
+  # the chain. This is NOT part of the DB restore — the backend never migrates stored report bodies —
+  # but a restored instance's library must read any pre-2.0 object. The expected endpoint is read from
+  # xtalate.schema.SCHEMA_VERSION, so this drill never goes stale when a future major is added.
   $COMPOSE exec -T "$BACKEND_SERVICE" python -c '
 import sys, json
+from xtalate.schema import SCHEMA_VERSION
 from xtalate.schema.migrations import load_canonical
 raw = sys.stdin.read()
 before = json.loads(raw)["schema_version"]
 obj = load_canonical(raw)
 recs = [r for r in obj.provenance.history if r.operation == "migrate"]
-assert obj.schema_version == "1.0.0", obj.schema_version
+assert obj.schema_version == SCHEMA_VERSION, obj.schema_version
 assert len(recs) == 1, recs
+assert recs[-1].assumptions[0] == f"Migrated canonical schema {before} → {SCHEMA_VERSION}.", recs[-1].assumptions[0]
 print(f"canonical object migrated {before} -> {obj.schema_version}; recorded: {recs[-1].assumptions[0]}")
 ' < tests/golden/xyz/water-traj/expected.canonical.json || fail "canonical migration did not run"
 

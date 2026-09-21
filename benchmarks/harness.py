@@ -17,6 +17,7 @@ rather than an anecdote. Ten benchmarks reproduce the spec's performance table e
 * ``parse_h5md_10k`` — parse an H5MD ``.h5``, 10,000 frames × 100 atoms (M74) — ≤ 30 s, ≤ 2 GB.
 * ``convert_h5md_to_extxyz_10k`` — the HDF5-interchange→MLIP conversion, same file — ≤ 90 s, ≤ 2 GB.
 * ``convert_extxyz_roundtrip_1k`` — extXYZ 1,000 × 1,000 identity round-trip — ≤ 60 s, ≤ 3 GB.
+* ``migrate_10k`` — migrate a 10,000-frame schema-1.0.0 object to current (M72) — ≤ 30 s, ≤ 2 GB.
 * ``frame_limit_ceiling`` — 100,000-frame file (the ``06 §5`` cap) — completes, sub-linear memory.
 * ``preflight_latency`` — pre-flight diff on a parsed 10k-frame object — ≤ 1 s (feels instant).
 
@@ -388,6 +389,56 @@ def _bench_preflight_latency(workdir: Path, scale: str) -> dict[str, float]:
     build_preflight(obj, matrix, "poscar")
     preflight_seconds = time.perf_counter() - start
     return {"frames": float(obj.frame_count), "preflight_seconds": preflight_seconds}
+
+
+def _bench_migrate_10k(workdir: Path, scale: str) -> dict[str, float]:
+    """Migrate a 10⁴-frame schema-1.0.0 object forward to current (2.0.0) — the corpus-scale cost of
+    the ``1.0.0 → 2.0.0`` step (M72), which relocates the root ``custom_per_atom`` column onto
+    *every* frame (a deep copy per frame). A restored pre-2.0 trajectory of MD length passes through
+    exactly this path on load, so this measures whether the relocation stays linear in frames and
+    bounded in memory rather than blowing up on a real dataset.
+
+    Built in memory (not from disk): a constant-N 1.0.0 object with a root per-atom column is the
+    pre-2.0 shape the relocation has real work on. Only ``migrate`` itself is timed
+    (``migrate_seconds``); the object build is outside that region. ``wall_seconds`` (build +
+    migrate) carries the plan's ≤30 s budget, and peak RSS the ≤2 GB bound — the input mapping plus
+    the deep-copied migrated result are both resident at the peak, the number the bound guards."""
+    from xtalate.schema.migrations import migrate
+
+    sz = _sized(scale, full=Scale(10_000, 100), micro=Scale(20, 8))
+    n_frames, n_atoms = sz.n_frames, sz.n_atoms
+    symbols = ["H"] * n_atoms
+    frames = [
+        {
+            "index": i,
+            "atoms": {
+                "symbols": list(symbols),
+                "positions": [[float(j), 0.0, 0.0] for j in range(n_atoms)],
+            },
+        }
+        for i in range(n_frames)
+    ]
+    obj = {
+        "schema_version": "1.0.0",
+        "frames": frames,
+        "provenance": {
+            "source_filename": "restored.dat",
+            "source_format": "extxyz",
+            "original_coordinate_system": "cartesian",
+            "history": [],
+        },
+        "user_metadata": {"custom_per_atom": {"src:col": [float(j) for j in range(n_atoms)]}},
+    }
+    gc.collect()
+    start = time.perf_counter()
+    migrated = migrate(obj)
+    migrate_seconds = time.perf_counter() - start
+    assert migrated["schema_version"] == "2.0.0", migrated["schema_version"]
+    return {
+        "frames": float(n_frames),
+        "atoms": float(n_atoms),
+        "migrate_seconds": migrate_seconds,
+    }
 
 
 def _process_rss_bytes(pid: int) -> int:
@@ -785,6 +836,14 @@ BENCHMARKS: tuple[Benchmark, ...] = (
     Benchmark(
         "parse_asedb_1k_rows",
         _bench_parse_asedb_1k_rows,
+        (Budget("wall_seconds", 30.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
+    ),
+    # The M72 schema migration at 10⁴-frame scale: the 1.0.0 → 2.0.0 custom_per_atom relocation on a
+    # real MD-length trajectory. wall_seconds carries the ≤30 s budget; migrate_seconds is the timed
+    # relocation itself (measured-only); peak RSS the ≤2 GB bound (input + deep-copied result).
+    Benchmark(
+        "migrate_10k",
+        _bench_migrate_10k,
         (Budget("wall_seconds", 30.0, "s"), Budget("peak_rss_bytes", 2 * _GiB, "bytes")),
     ),
 )
