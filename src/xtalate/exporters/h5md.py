@@ -117,11 +117,18 @@ class H5MDExporter(ExporterPlugin):
 
     @staticmethod
     def _time_axes(group: h5py.Group, frames: list[Frame]) -> None:
-        """Write the ``step``/``time`` datasets shared by every time-dependent element."""
+        """Write the ``step`` dataset shared by every time-dependent element, and the *optional*
+        ``time`` dataset only when every frame carries an absolute time.
+
+        H5MD makes ``time`` optional beside the required ``step``. When the source stated no frame
+        time, the ``time`` axis is omitted rather than fabricated from the step index (P3): writing
+        ``float(index)`` would hand a reader a fabricated physical time indistinguishable from a
+        real one. A mixed present/absent time never reaches here — ``unrepresentable`` refuses
+        it."""
         group.create_dataset("step", data=np.arange(len(frames), dtype=np.int64))
-        group.create_dataset(
-            "time", data=np.asarray([_frame_time(fr, i) for i, fr in enumerate(frames)])
-        )
+        if all(fr.time is not None for fr in frames):
+            times = [float(fr.time) for fr in frames if fr.time is not None]
+            group.create_dataset("time", data=np.asarray(times, dtype=np.float64))
 
     def _write_positions(self, particles: h5py.Group, frames: list[Frame]) -> None:
         """``position/{step,time,value}`` with ``value`` a per-step VLEN of flattened (N_t*3,)
@@ -238,6 +245,7 @@ class H5MDExporter(ExporterPlugin):
             ("charges", lambda fr: fr.electronic.charges),
             ("a total energy", lambda fr: fr.electronic.total_energy),
             ("a simulation cell", lambda fr: fr.cell),
+            ("a frame time", lambda fr: fr.time),
         ):
             if _presence(frames, getter) == "mixed":
                 return (
@@ -273,6 +281,10 @@ class H5MDExporter(ExporterPlugin):
                 "dynamics.velocities": full,
                 "dynamics.forces": full,
                 "electronic.charges": full,
+                "frame.time": FieldCapability(
+                    level=CapabilityLevel.FULL,
+                    notes="Written as each element's /time axis when every frame carries one.",
+                ),
                 "electronic.total_energy": FieldCapability(
                     level=CapabilityLevel.FULL, notes="Written to /observables/potential_energy."
                 ),
@@ -292,12 +304,6 @@ class H5MDExporter(ExporterPlugin):
             allows_open_boundaries=True,
             native_coordinate_system="cartesian",
         )
-
-
-def _frame_time(frame: Frame, index: int) -> float:
-    """A frame's absolute time when the source stated it, else its index as the step-time — H5MD
-    requires a ``time`` dataset alongside ``step`` even when the source declared none."""
-    return float(frame.time) if frame.time is not None else float(index)
 
 
 def make_h5md_exporter() -> H5MDExporter:

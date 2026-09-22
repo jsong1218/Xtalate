@@ -18,15 +18,20 @@ dimension, so N is read per frame. A constant-N ``[T, N, D]`` ``value`` reads th
 
 **Fields (§4).** ``position``/``species`` → ``atoms``; ``velocity`` → ``dynamics.velocities``;
 ``force`` → ``dynamics.forces``; ``mass`` → ``atoms.masses`` (u); ``charge`` →
-``electronic.charges`` (e); ``box`` → ``cell``; the ``/observables/potential_energy`` series →
+``electronic.charges`` (e); ``box`` → ``cell``; each time-dependent element's optional ``time`` axis
+→ ``frame.time`` (fs, read from ``position``); the ``/observables/potential_energy`` series →
 ``electronic.total_energy`` (eV); every other ``/observables/<name>`` series →
 ``user_metadata.custom_per_frame['h5md:<name>']``. Absent optional groups launder to absence, never
-to zeros or defaults (P3); ``unit`` attributes are honored when present, their absence recorded
-rather than assumed (P4), and an unrecognized unit is carried verbatim under a loud warning rather
-than silently reinterpreted (P1).
+to zeros or defaults (P3) — a source with no ``time`` axis yields ``frame.time = None``, never a
+step index dressed up as physics; ``unit`` attributes are honored when present, their absence
+recorded rather than assumed (P4), and an unrecognized unit is carried verbatim under a loud warning
+rather than silently reinterpreted (P1). A per-atom ``mass``/``charge`` whose length disagrees with
+a frame's atom count is dropped under a warning (``H5MD_INCONSISTENT_MASS``/``_CHARGE``), never
+silently (P1).
 
 **Torn tails.** A run killed mid-write leaves ``step``/``time`` preallocated longer than the flushed
-``value``. That is refused by default (``H5MD_TRUNCATED`` with the shared
+``value``. This is checked across *every* time-dependent element (a torn ``velocity`` or
+``observables`` tail is just as truncated): refused by default (``H5MD_TRUNCATED`` with the shared
 ``truncate_at_last_valid_frame`` hint) and recovered — via ``parse_recover`` — to the complete-frame
 prefix, the dropped tail recorded as a warning so it is never silent (the xdatcar/outcar/qe pattern,
 D166).
@@ -106,6 +111,7 @@ _VELOCITY: dict[str, float] = {
 _FORCE: dict[str, float] = {"ev/angstrom": 1.0, "ev/a": 1.0}
 _MASS: dict[str, float] = {"u": 1.0, "amu": 1.0, "da": 1.0, "dalton": 1.0, "g/mol": 1.0}
 _CHARGE: dict[str, float] = {"e": 1.0, "elementary_charge": 1.0}
+_TIME: dict[str, float] = {"fs": 1.0, "femtosecond": 1.0, "ps": 1000.0, "picosecond": 1000.0}
 _ENERGY: dict[str, float] = {
     "ev": 1.0,
     "hartree": 27.211386245988,
@@ -123,6 +129,7 @@ _UNITS: dict[str, tuple[str, dict[str, float]]] = {
     "masses": ("u", _MASS),
     "charges": ("e", _CHARGE),
     "total_energy": ("eV", _ENERGY),
+    "time": ("fs", _TIME),
 }
 
 
@@ -170,6 +177,29 @@ def _refuse_if_too_many_atoms(declared_n: int, *, location: str) -> None:
         )
 
 
+def _warn_length_mismatch(
+    issues: list[ParseIssue], warned: set[str], code: str, quantity: str, arr: np.ndarray, n: int
+) -> None:
+    """Record that a per-atom ``quantity`` was dropped because its length did not match the frame's
+    atom count, rather than dropping it silently (P1). A fixed-in-time per-atom array cannot apply
+    to a variable-N trajectory, and this is exactly the loss the report must surface. De-duped by
+    code so a mismatch that recurs every frame is reported once."""
+    if code in warned:
+        return
+    warned.add(code)
+    issues.append(
+        ParseIssue(
+            severity="warning",
+            code=code,
+            message=(
+                f"{quantity} has {arr.shape[0]} value(s) but the frame has {n} atom(s); "
+                f"{quantity} dropped where the lengths disagree — verify the source (P1)"
+            ),
+            location=quantity,
+        )
+    )
+
+
 def _unit_of(dataset: h5py.Dataset) -> str | None:
     """The ``unit`` attribute on a dataset, decoded, or ``None`` when the source declared none."""
     raw = dataset.attrs.get("unit")
@@ -185,9 +215,12 @@ class _Element:
     dataset). ``at(i)`` returns frame ``i``'s array; a fixed element returns the same array for
     every frame. ``length`` is the flushed step count for a time-dependent element (``None`` when
     fixed), and ``step_len`` the declared step count (from ``step``) used for torn-tail detection.
+    ``time_at(i)`` returns the frame's absolute time when the element declared a ``time`` dataset.
     """
 
     def __init__(self, node: h5py.Group | h5py.Dataset) -> None:
+        self._times: np.ndarray | None = None
+        self.time_unit: str | None = None
         if isinstance(node, h5py.Group):
             self.kind = "timedep"
             value = _get_local(node, "value")
@@ -208,6 +241,12 @@ class _Element:
                 int(step.shape[0]) if isinstance(step, h5py.Dataset) else self.length
             )
             self.unit = _unit_of(self._value)
+            # The element's absolute-time axis (H5MD makes `time` optional beside the required
+            # `step`); read verbatim, its unit resolved by the caller. Absent → no frame time (P3).
+            time_node = _get_local(node, "time") if "time" in node else None
+            if isinstance(time_node, h5py.Dataset):
+                self._times = np.asarray(time_node)
+                self.time_unit = _unit_of(time_node)
         else:
             self.kind = "fixed"
             # A fixed-in-time element is loaded eagerly in full (H2); refuse an absurd declared
@@ -219,10 +258,21 @@ class _Element:
             self.step_len = None
             self.unit = _unit_of(node)
 
+    @property
+    def has_times(self) -> bool:
+        return self._times is not None
+
     def at(self, index: int) -> np.ndarray:
         if self.kind == "fixed":
             return np.asarray(self._fixed)
         return np.asarray(self._value[index])
+
+    def time_at(self, index: int) -> float | None:
+        """This frame's absolute time, or ``None`` when the element declared no ``time`` axis (or it
+        does not reach this frame — a torn time tail, kept non-fatal here)."""
+        if self._times is None or index >= self._times.shape[0]:
+            return None
+        return float(self._times[index])
 
 
 def _resolve(group: h5py.Group, name: str) -> _Element | None:
@@ -262,6 +312,11 @@ class _BoxReader:
     def __init__(self, edges: _Element, pbc: tuple[bool, bool, bool]) -> None:
         self._edges = edges
         self._pbc = pbc
+
+    @property
+    def element(self) -> _Element:
+        """The underlying ``edges`` element, so a time-dependent box joins the torn-tail check."""
+        return self._edges
 
     def at(self, index: int) -> Cell:
         return Cell(lattice_vectors=_edges_to_lattice(self._edges.at(index)), pbc=self._pbc)
@@ -402,8 +457,6 @@ class H5MDParser(ParserPlugin):
             box = _resolve_box(group)
 
             issues: list[ParseIssue] = []
-            n_steps = self._frame_count(position, truncate=truncate, issues_sink=issues)
-
             notes: list[str] = [
                 f"read via h5py {h5py.__version__}; H5MD per-step elements read with each frame's "
                 "own atom count (P3)."
@@ -441,10 +494,31 @@ class H5MDParser(ParserPlugin):
                 )
                 if charge
                 else 1.0,
+                # position carries the trajectory's absolute-time axis; resolve its unit only when
+                # one is declared, else leave the frame time absent rather than fabricate it (P3).
+                "time": _resolve_unit(
+                    "time",
+                    position.time_unit,
+                    notes=notes,
+                    source_units=source_units,
+                    issues=issues,
+                )
+                if position.has_times
+                else 1.0,
             }
             pe_series, other_obs, pe_factor = self._resolve_observables(
                 f, notes=notes, source_units=source_units, issues=issues
             )
+            # Torn-tail detection spans every time-dependent element, not just position: a torn
+            # velocity/force/observable tail is just as truncated, and indexing past its flushed
+            # length would crash rather than refuse. Fixed-in-time elements contribute no length.
+            timedep = [
+                e for e in (position, species, velocity, force, mass, charge, pe_series) if e
+            ]
+            timedep.extend(other_obs.values())
+            if box is not None:
+                timedep.append(box.element)
+            n_steps = self._frame_count(timedep, truncate=truncate, issues_sink=issues)
             creator = self._creator_note(f)
             if creator is not None:
                 notes.append(creator)
@@ -467,6 +541,11 @@ class H5MDParser(ParserPlugin):
             trajectory=TrajectoryMetadata(timestep=None),
         )
 
+        # De-dup key set so a structural mismatch that recurs every frame is reported once, not
+        # per-frame. Appended to the shared `issues` list, which both the streamed and materialized
+        # readings drain identically (the streamed==materialized identity theorem, M73).
+        warned: set[str] = set()
+
         def _frames() -> Iterator[StreamFrame]:
             try:
                 for index in range(n_steps):
@@ -482,6 +561,8 @@ class H5MDParser(ParserPlugin):
                         factors=factors,
                         pe_series=pe_series,
                         pe_factor=pe_factor,
+                        issues=issues,
+                        warned=warned,
                     )
                     per_frame = {
                         f"h5md:{name}": float(elem.at(index).reshape(-1)[0])
@@ -497,16 +578,22 @@ class H5MDParser(ParserPlugin):
 
     @staticmethod
     def _frame_count(
-        position: _Element, *, truncate: bool, issues_sink: list[ParseIssue] | None
+        elements: list[_Element], *, truncate: bool, issues_sink: list[ParseIssue] | None
     ) -> int:
         """The number of complete frames, refusing a torn tail unless recovering.
 
-        A run killed mid-write leaves ``step`` preallocated longer than the flushed ``value``. That
-        is a recoverable torn tail: refused by default (``H5MD_TRUNCATED`` + the truncate hint),
+        A run killed mid-write leaves some element's ``step`` preallocated longer than its flushed
+        ``value``. *Every* time-dependent element is checked, not only ``position``: a torn
+        ``velocity`` or ``observables`` tail is just as truncated, and indexing past its flushed
+        length would crash rather than refuse. The complete-frame count is the smallest flushed
+        length across the time-dependent elements; when it falls short of the largest declared step
+        count the tail is torn — refused by default (``H5MD_TRUNCATED`` + the truncate hint),
         kept-as-prefix under ``truncate`` with a warning so the dropped tail is never silent (P1).
         """
-        flushed = position.length if position.length is not None else 1
-        declared = position.step_len
+        flushed_lengths = [e.length for e in elements if e.length is not None]
+        flushed = min(flushed_lengths) if flushed_lengths else 1
+        declared_lengths = [e.step_len for e in elements if e.step_len is not None]
+        declared = max(declared_lengths) if declared_lengths else None
         # Refuse an absurd frame count from the declared shape (H4) before iterating — the loop
         # touches one frame at a time, but even counting to a fabricated 1e9+ is a denial of
         # service, and max_frames bounds the *emitted* stream, never this precheck.
@@ -515,7 +602,7 @@ class H5MDParser(ParserPlugin):
                 "H5MD_TOO_MANY_FRAMES",
                 f"declares {max(flushed, declared or 0)} frames (ceiling {_MAX_FRAME_COUNT}); "
                 "refused as a likely corrupt or hostile file",
-                location="position/step",
+                location="step",
             )
         if declared is not None and flushed < declared:
             if not truncate:
@@ -554,6 +641,8 @@ class H5MDParser(ParserPlugin):
         factors: dict[str, float],
         pe_series: _Element | None,
         pe_factor: float,
+        issues: list[ParseIssue],
+        warned: set[str],
     ) -> Frame:
         atomic_numbers = species.at(index).reshape(-1)
         symbols = [symbol_for(int(z)) for z in atomic_numbers]
@@ -562,7 +651,10 @@ class H5MDParser(ParserPlugin):
         masses = None
         if mass is not None:
             arr = np.asarray(mass.at(index), dtype=np.float64).reshape(-1) * factors["masses"]
-            masses = arr if arr.shape[0] == n else None
+            if arr.shape[0] == n:
+                masses = arr
+            else:
+                _warn_length_mismatch(issues, warned, "H5MD_INCONSISTENT_MASS", "mass", arr, n)
         atoms = AtomsBlock(symbols=symbols, positions=pos, masses=masses)
 
         dynamics = Dynamics(
@@ -581,11 +673,17 @@ class H5MDParser(ParserPlugin):
         charges = None
         if charge is not None:
             arr = np.asarray(charge.at(index), dtype=np.float64).reshape(-1) * factors["charges"]
-            charges = arr if arr.shape[0] == n else None
+            if arr.shape[0] == n:
+                charges = arr
+            else:
+                _warn_length_mismatch(issues, warned, "H5MD_INCONSISTENT_CHARGE", "charge", arr, n)
         total_energy = (
             float(pe_series.at(index).reshape(-1)[0]) * pe_factor if pe_series is not None else None
         )
         electronic = Electronic(total_energy=total_energy, charges=charges)
+
+        raw_time = position.time_at(index)
+        frame_time = raw_time * factors["time"] if raw_time is not None else None
 
         try:
             return Frame(
@@ -594,6 +692,7 @@ class H5MDParser(ParserPlugin):
                 cell=box.at(index) if box is not None else None,
                 dynamics=dynamics,
                 electronic=electronic,
+                time=frame_time,
             )
         except ValueError as exc:  # keep pydantic shape errors inside the §5 contract
             raise _error(
@@ -695,6 +794,10 @@ class H5MDParser(ParserPlugin):
                 "dynamics.velocities": full,
                 "dynamics.forces": full,
                 "electronic.charges": full,
+                "frame.time": FieldCapability(
+                    level=CapabilityLevel.FULL,
+                    notes="From each time-dependent element's optional /time axis.",
+                ),
                 "electronic.total_energy": FieldCapability(
                     level=CapabilityLevel.FULL, notes="From /observables/potential_energy."
                 ),

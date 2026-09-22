@@ -4,7 +4,7 @@ source_file: sample.h5
 expected_canonical: expected.canonical.json
 canonical_schema_version: "2.0.0"
 sha256: "2ad2a8963053a390a60a906c0302b5c923792d9c334a70ee4054b7dd275c23b1"
-expected_sha256: "7d5ee648c23ddc7bd0c3db19ad9103f5f61d9d84bcba9fac676744990b45a014"
+expected_sha256: "d7723f6eaac05c4ea654df9a09fbf07dbe0e00e2c31096bf4289228107266cff"
 origin:
   kind: synthetic
   source: >-
