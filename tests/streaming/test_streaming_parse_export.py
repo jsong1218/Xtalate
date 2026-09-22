@@ -7,6 +7,7 @@ import io
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 
 from xtalate.exporters.extxyz import ExtxyzExporter
@@ -100,13 +101,17 @@ def test_non_utf8_bytes_raise_encoding_error() -> None:
     assert any(i.code == "EXTXYZ_ENCODING_ERROR" for i in exc.value.issues)
 
 
-def test_streaming_warns_on_varying_per_atom_column() -> None:
-    # A per-atom custom column whose values change between frames warns once (whole-file parity).
+def test_streaming_varying_per_atom_column_is_lossless_per_frame() -> None:
+    # A per-atom custom column whose values change between frames is representable losslessly since
+    # schema 2.0.0 (M72): each StreamFrame carries its own custom_per_atom, so no NOT_REPRESENTABLE
+    # warning fires and each frame keeps its own values (whole-file parity; v2.0 review S2).
     f0 = "2\nProperties=species:S:1:pos:R:3:tag:I:1\nO 0.0 0.0 0.0 1\nH 1.0 0.0 0.0 2\n"
     f1 = "2\nProperties=species:S:1:pos:R:3:tag:I:1\nO 0.0 0.0 0.0 9\nH 1.0 0.0 0.0 8\n"
     stream = ExtxyzParser().parse_stream(io.BytesIO((f0 + f1).encode()), filename="t.xyz")
-    _, issues = materialize(stream)
-    assert any(i.code == "EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE" for i in issues)
+    obj, issues = materialize(stream)
+    assert not any(i.code == "EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE" for i in issues)
+    assert np.asarray(obj.frames[0].custom_per_atom["extxyz:tag"]).tolist() == [1.0, 2.0]
+    assert np.asarray(obj.frames[1].custom_per_atom["extxyz:tag"]).tolist() == [9.0, 8.0]
 
 
 # --- qe_pw_out: the M52 streaming gate (10⁴-step scale; D197) ---------------------------

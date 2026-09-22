@@ -168,6 +168,25 @@ def test_stress_carried_not_mapped_to_electronic_stress() -> None:
     assert "ase_traj:stress" in obj.user_metadata.custom_per_frame
 
 
+def test_varying_per_atom_array_is_lossless_per_frame() -> None:
+    # A custom per-atom column whose values change between frames is representable losslessly since
+    # schema 2.0.0 (M72): each frame carries its own custom_per_atom, so the diverging frame keeps
+    # ITS OWN values and no NOT_REPRESENTABLE warning fires (v2.0 review S2). ASE's .traj (ULM)
+    # container only persists a fixed set of per-atom arrays — arbitrary set_array() columns are
+    # dropped by ASE itself — so this exercises `tags`, a genuine non-reserved column ASE DOES
+    # persist and the parser carries to ase_traj:tags.
+    a0 = Atoms("H2", positions=[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    a0.set_tags(np.array([5, 7]))
+    a1 = Atoms("H2", positions=[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    a1.set_tags(np.array([9, 3]))
+    result = parse_bytes(_parser(), _traj_bytes(a0, a1), filename="relax.traj")
+    codes = {i.code for i in result.issues}
+    assert "ASE_TRAJ_PER_FRAME_COLUMN_NOT_REPRESENTABLE" not in codes
+    frames = result.canonical.frames
+    assert np.asarray(frames[0].custom_per_atom["ase_traj:tags"]).tolist() == [5.0, 7.0]
+    assert np.asarray(frames[1].custom_per_atom["ase_traj:tags"]).tolist() == [9.0, 3.0]
+
+
 def test_non_fixatoms_constraint_is_carried_with_warning() -> None:
     # Only FixAtoms is modelled in v0.3 (M14 cut line, D58): a FixBondLength must not fabricate a
     # canonical constraint, and the parser must warn rather than drop it silently (P1). The

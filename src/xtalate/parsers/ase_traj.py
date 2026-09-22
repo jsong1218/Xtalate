@@ -142,13 +142,13 @@ class AseTrajParser(ParserPlugin):
 
         ASE's ``TrajectoryReader`` gives random access to a ``.traj`` without materializing the
         whole trajectory, so the first image is read to establish the object-level header
-        (provenance, frame-invariant ``custom_per_atom``) and every image is yielded lazily by
-        index — peak memory tracks one frame, not the frame count.
+        (provenance, trajectory) and every image is yielded lazily by index — peak memory tracks
+        one frame, not the frame count.
 
-        The constant-atom-count invariant (Part 2 §3.2) and the object-level ``custom_per_atom``
-        set are established from frame 0 and re-checked as later frames arrive, mirroring the
-        extXYZ streaming parser. A per-atom column or ASE constraint that first appears (or varies)
-        in a later frame is a documented streaming nuance (D56): the header is derived from frame 0.
+        Each frame carries its own ``custom_per_atom`` set, collected from that frame's own arrays
+        (Part 2 §3.10), so a per-atom column that varies across frames is lossless whether or not N
+        is constant — mirroring the extXYZ streaming parser (v2.0 review). Variable N (M73) is a
+        per-frame atom count; the header is still derived from frame 0.
         """
         issues: list[ParseIssue] = []
         try:
@@ -162,13 +162,10 @@ class AseTrajParser(ParserPlugin):
             raise _error("ASE_TRAJ_EMPTY", "file contains no frames")
 
         first = _read_image(reader, 0)
-        n_atoms = len(first)
-        custom_per_atom = _collect_custom_columns(first)
-        # Coerce frame 0's per-atom column set once. Under constant N it is frame-invariant, so this
-        # coerced set rides every frame (a varying column warns once); under variable N (M73) each
-        # frame carries its own columns instead (the frame loop below). ``custom_per_atom`` rides
-        # each ``StreamFrame.frame``, not the header, since the M73 SDK major (Part 2 §3.10).
-        coerced_per_atom = coerce_per_atom(custom_per_atom)
+        # ``custom_per_atom`` rides each ``StreamFrame.frame``, not the header, since the M73 SDK
+        # major (Part 2 §3.10). Each frame collects its own per-atom column set (the frame loop
+        # below), so a column that varies across frames is lossless whether or not N is constant.
+        coerced_per_atom = coerce_per_atom(_collect_custom_columns(first))
         provenance = build_provenance(
             format_id=FORMAT_ID,
             filename=filename,
@@ -187,19 +184,13 @@ class AseTrajParser(ParserPlugin):
         )
 
         def _frames() -> Iterator[StreamFrame]:
-            warned_columns: set[str] = set()
             yield self._stream_frame(first, 0, coerced_per_atom, issues)
             for index in range(1, n_images):
                 atoms = _read_image(reader, index)
-                # Schema 2.0.0 (M72) + M73: a variable-N trajectory streams, each frame carrying its
-                # own atom count (P3). A frame matching frame 0's N reuses frame 0's coerced column
-                # set (and a varying column warns once) — unchanged constant-N behaviour; a frame
-                # whose N differs carries its own columns, sized to its own N.
-                if len(atoms) == n_atoms:
-                    _check_columns_consistent(atoms, custom_per_atom, warned_columns, issues)
-                    frame_per_atom = coerced_per_atom
-                else:
-                    frame_per_atom = coerce_per_atom(_collect_custom_columns(atoms))
+                # Each frame carries its own per-atom columns (M72) — collected from its own arrays,
+                # constant-N or not, so a column that varies across frames is lossless with no
+                # warning (P1). Matches the materialized read exactly (identity theorem).
+                frame_per_atom = coerce_per_atom(_collect_custom_columns(atoms))
                 yield self._stream_frame(atoms, index, frame_per_atom, issues)
 
         return FrameStream(header, _frames(), issues=issues)
@@ -213,8 +204,8 @@ class AseTrajParser(ParserPlugin):
     ) -> StreamFrame:
         """Build one ``StreamFrame`` from one ASE image, reusing the per-field mappers so streamed
         and materialized frames are identical. ``coerced_per_atom`` is this frame's per-atom column
-        set (coerced) written onto this frame — the streaming mirror of the whole-file
-        ``attach_per_atom`` (M73). The per-atom-scalar check reads this frame's own N."""
+        set (coerced) written onto this frame — the streaming mirror of the whole-file per-frame
+        ``with_per_atom`` (M73). The per-atom-scalar check reads this frame's own N."""
         mapped, carried = _partition_calc(atoms, len(atoms), index, issues)
         charges, magmoms = self._electronic_arrays(atoms, mapped, index, issues, carried)
         constraints, carried_constraints = self._build_constraints(atoms, index, issues)
@@ -517,36 +508,6 @@ def _collect_custom_columns(atoms: Atoms) -> dict[str, Any]:
         else:
             columns[_namespace(name)] = [_as_json(v) for v in values]
     return columns
-
-
-def _check_columns_consistent(
-    atoms: Atoms,
-    frame0_columns: dict[str, Any],
-    warned: set[str],
-    issues: list[ParseIssue],
-) -> None:
-    """Warn once per per-atom column whose values differ from frame 0's: ``custom_per_atom`` is
-    stored once per object (Part 2 §3.10), so a column that varies across frames cannot be
-    represented losslessly and only frame 0's values are carried (mirrors extXYZ)."""
-    for name, array in atoms.arrays.items():
-        if name in _RESERVED_ARRAYS:
-            continue
-        key = _namespace(name)
-        if key in warned or key not in frame0_columns:
-            continue
-        if not np.array_equal(np.asarray(array), np.asarray(frame0_columns[key])):
-            warned.add(key)
-            issues.append(
-                ParseIssue(
-                    severity="warning",
-                    code="ASE_TRAJ_PER_FRAME_COLUMN_NOT_REPRESENTABLE",
-                    message=(
-                        f"per-atom column {name!r} varies across frames; the canonical model "
-                        "stores per-atom custom arrays once per object (Part 2 §3.10), so only the "
-                        "first frame's values are carried"
-                    ),
-                )
-            )
 
 
 def _is_per_atom_scalar(value: Any, n_atoms: int) -> bool:

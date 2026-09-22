@@ -41,12 +41,10 @@ Honesty on the ordinary axes, per the M46 plan and Part 3 §3 n.19:
 * **Absent velocities stay ``None``** (P3): a dump without ``vx vy vz`` columns reads
   ``dynamics.velocities = None``, never zeros.
 * **Generic unmapped columns are carried, never dropped** — any ``compute``/``fix`` output
-  column outside the known set lands in ``user_metadata.custom_per_atom["lammps_dump:<name>"]``
-  with the warning ``LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED`` (the extXYZ
-  ``_collect_custom_columns`` precedent, verbatim). ``custom_per_atom`` is object-level (Part 2
-  §3.10), so a column whose values *vary* across frames cannot be represented losslessly: frame
-  0 is carried and ``LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE`` warns once per diverging
-  column (the extXYZ streaming consistency check, same shape).
+  column outside the known set lands in ``custom_per_atom["lammps_dump:<name>"]`` on each frame
+  with the warning ``LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED`` (fired once, at frame 0). Since schema
+  2.0.0 (M72) ``custom_per_atom`` rides each ``Frame``, so a column whose values *vary* across
+  frames is carried losslessly per frame — no "only frame 0 carried" loss, no warning.
 * **Image flags are a specific, named carry (M46-S3).** A complete ``ix iy iz`` family is
   recognized *specifically* — distinct from the generic carry — and lands in
   ``user_metadata.custom_per_atom["lammps_dump:image_flags"]`` (a ``(N, 3)`` array) with the
@@ -155,7 +153,6 @@ _VARIABLE_SPECIES = "LAMMPSDUMP_VARIABLE_SPECIES"
 _ATOMS_REORDERED = "LAMMPSDUMP_ATOMS_REORDERED"
 _UNMAPPED_CARRIED = "LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED"
 _IMAGE_FLAGS_CARRIED = "LAMMPSDUMP_IMAGE_FLAGS_CARRIED"
-_PER_FRAME_COLUMN = "LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE"
 _UNITS_INTERPRETED = "LAMMPSDUMP_UNITS_INTERPRETED"
 _SPECIES_SUPPLIED = "LAMMPSDUMP_SPECIES_SUPPLIED"
 
@@ -757,10 +754,9 @@ class LammpsDumpParser(ParserPlugin):
             # established (declared vs. recovery-applied) so the two facts stay distinct.
             custom_global={_UNITS_KEY: first.unit_style.code},
         )
-        # Coerce frame 0's per-atom carry columns once. Under constant N they are frame-invariant,
-        # so this one coerced set rides every frame; under variable N (M73) each frame carries its
-        # own carries instead (below). ``custom_per_atom`` rides each ``StreamFrame.frame``, not the
-        # header, since the M73 SDK major (Part 2 §3.10).
+        # Frame 0's per-atom carry columns, coerced. Each later frame collects and coerces its own
+        # (below), so a carry column that varies across frames is lossless. ``custom_per_atom`` sits
+        # on each ``StreamFrame.frame``, not the header, since the M73 SDK major (Part 2 §3.10).
         coerced_carries = coerce_per_atom(carries)
 
         def _frames() -> Iterator[StreamFrame]:
@@ -845,16 +841,11 @@ class LammpsDumpParser(ParserPlugin):
                         "constant atom identity across frames (Part 2 §3.2)",
                         location=f"frame {index}",
                     )
-                # Under constant N the per-atom carries are frame-invariant (frame 0's coerced set
-                # rides every frame, and a varying column warns once). Under variable N a carry is
-                # sized to this frame's own N, so this frame carries its own carries (P1).
-                frame_carries = (
-                    coerced_carries
-                    if header_k.n_atoms == first.n_atoms
-                    else coerce_per_atom(carries_k)
-                )
+                # Each frame carries its own per-atom carries (M72), sized to its own N and read
+                # from its own rows — constant-N or not — so a carry column that varies frame to
+                # frame is lossless, no warning (P1). Matches the materialized read (identity).
                 yield StreamFrame(
-                    frame=with_per_atom(frame_k, frame_carries),
+                    frame=with_per_atom(frame_k, coerce_per_atom(carries_k)),
                     per_frame_custom=_per_frame_custom(header_k),
                 )
                 index += 1
@@ -956,11 +947,11 @@ def _build_frame(
 ) -> tuple[Frame, dict[str, object], list[str], np.ndarray | None]:
     """One snapshot → (Frame, per-atom carries, symbols, sorted id array | None).
 
-    The carries are built for every snapshot (they are needed to compare later snapshots
-    against frame 0), but only frame 0's become the object-level ``custom_per_atom``; the
-    caller passes them in as ``first_carries`` for later snapshots so a column whose values
-    vary across frames warns once per column (``custom_per_atom`` is stored once per object,
-    Part 2 §3.10 — the extXYZ streaming consistency check, same shape).
+    The carries are built for every snapshot and written onto that snapshot's own ``Frame``
+    (schema 2.0.0, M72), so a column whose values vary across frames is carried losslessly per
+    frame (Part 2 §3.10). ``first_carries`` is passed for later snapshots only to gate the
+    ``LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED`` warning to frame 0 (the column layout is constant
+    across frames — enforced by the caller — so one report covers every frame).
 
     When the dump carries an ``id`` column the rows are sorted by it first (LAMMPS does not
     write atoms in a stable order unless ``dump_modify sort id`` is set, so a raw dump would
@@ -1117,35 +1108,6 @@ def _build_frame(
                     location="frame 0",
                 )
             )
-
-    if first_carries is not None and warned is not None:
-        for carry_key, carry_values in carries.items():
-            current = np.asarray(carry_values)
-            # A column present in both frames but of a *different length* is not a varying column —
-            # it is a variable-N frame carrying its own per-atom column (M73), retained losslessly,
-            # so it never triggers the "only frame 0 carried" warning. Only a same-length column
-            # whose values differ (or a column frame 0 lacked) is a frame-invariance loss.
-            reference = first_carries.get(carry_key)
-            same_length_differs = (
-                reference is not None
-                and current.shape == np.asarray(reference).shape
-                and not np.array_equal(current, np.asarray(reference))
-            )
-            if carry_key not in first_carries or same_length_differs:
-                if carry_key not in warned:
-                    warned.add(carry_key)
-                    issues.append(
-                        ParseIssue(
-                            severity="warning",
-                            code=_PER_FRAME_COLUMN,
-                            message=(
-                                f"per-atom column {carry_key!r} varies across frames; the "
-                                "canonical model stores per-atom custom arrays once per object "
-                                "(Part 2 §3.10), so only frame 0's values are carried"
-                            ),
-                            location=f"frame {index}",
-                        )
-                    )
 
     frame = Frame(
         index=index,
