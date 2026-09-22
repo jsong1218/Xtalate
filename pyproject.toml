@@ -79,6 +79,13 @@ service = [
 # bodies so `import xtalate` stays pymatgen-free. A deployment composing Xtalate with
 # pymatgen in one process installs `xtalate[pymatgen]`.
 pymatgen = ["pymatgen>=2024.1"]
+# atheris is the coverage-guided fuzzing engine for the parser/discovery harnesses (v2.0 review,
+# S7; tests/fuzz/fuzz_*.py). Kept OUT of `dev` on purpose: atheris links against a matching libFuzzer
+# and is sensitive to the exact CPython build (it does not install cleanly on every interpreter/OS),
+# so bundling it into `dev` would risk breaking the one CI gate that installs `.[dev]`. The fuzzers
+# run in ClusterFuzzLite's own image and in a local `pip install .[fuzz]` venv, never in the PR gate.
+# It ships no runtime code (the D4/D7 minimal-dependency posture applies to `[project].dependencies`).
+fuzz = ["atheris>=2.3"]
 # hypothesis is a *test-only* dependency (M10 stage 2, DECISIONS.md D50): property-based
 # generation of randomized Canonical Objects with shrinking. It ships no runtime code — the
 # minimal-dependency posture (D4/D7) applies to `[project].dependencies`, not the dev extras.
@@ -221,6 +228,16 @@ follow_imports = "skip"
 # types at the boundary, so `Any` never escapes; here we simply let the untyped import resolve.
 [[tool.mypy.overrides]]
 module = ["h5py.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+# atheris is the coverage-guided fuzzing engine (the `fuzz` extra, S7). It ships no type stubs and
+# does not install on every interpreter/OS (it links libFuzzer), so it is absent from the type-check
+# environment. The two harnesses (tests/fuzz/fuzz_*.py) confine it to `atheris.instrument_imports()`
+# + `atheris.Setup`/`Fuzz` calls; let the untyped import resolve rather than fail the gate on a
+# module that only exists inside the ClusterFuzzLite image.
+[[tool.mypy.overrides]]
+module = ["atheris.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 

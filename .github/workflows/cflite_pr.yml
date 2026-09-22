@@ -1,0 +1,45 @@
+name: cflite-pr
+
+# ClusterFuzzLite on pull requests (v2.0 review, S7). A short, coverage-guided Atheris batch over
+# the parser + discovery harnesses (tests/fuzz/), seeded from the reviewable seed battery. It fuzzes
+# only the code the PR changed (`mode: code-change`) for a bounded budget, so it stays fast.
+#
+# ADVISORY, by design: the job is `continue-on-error`, so a discovered crash annotates the PR (and,
+# via SARIF, the Security tab) without blocking merge. Fuzzing finds robustness defects opportunist-
+# ically; gating merge on a stochastic search would make green depend on luck. The nightly
+# `cflite-batch` run is the deeper, longer sweep.
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/fuzz/**"
+      - ".clusterfuzzlite/**"
+      - ".github/workflows/cflite_pr.yml"
+
+# Least privilege: read the checkout; write SARIF findings to the Security tab. No packages/PR write.
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: cflite-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    continue-on-error: true # advisory — a crash annotates the PR, it never blocks merge
+    steps:
+      - name: Build fuzzers
+        uses: google/clusterfuzzlite/actions/build_fuzzers@52ecc61cb587ee99c26825a112a21abf19c7448c # main @ 2026-02-12
+        with:
+          language: python
+          sanitizer: address
+      - name: Run fuzzers
+        uses: google/clusterfuzzlite/actions/run_fuzzers@52ecc61cb587ee99c26825a112a21abf19c7448c # main @ 2026-02-12
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 120
+          mode: code-change
+          sanitizer: address
+          output-sarif: true

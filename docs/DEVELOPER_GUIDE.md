@@ -96,6 +96,16 @@ All suites run under `pytest`. The layers:
   completeness invariant, also asserted at runtime in the Conversion Engine).
 - **Streaming** (`tests/streaming/`) — proves the frame-chunked engine produces output and a report
   byte-identical to the materialized path ("chunking changes memory, never truth").
+- **Fuzzing** (`tests/fuzz/`) — a curated, deterministic **seed battery** (`test_parser_fuzz.py`)
+  asserting the one parser robustness invariant on adversarial bytes: a parse yields **either** a
+  valid `ParseResult` **or** a `ParseError`, and nothing else (no leaked `ValueError`/`KeyError`/
+  `UnicodeDecodeError`, no crash, no hang, no unbounded allocation). Two Atheris harnesses
+  (`fuzz_parsers.py`, `fuzz_discovery.py`) fuzz the same invariant continuously under ClusterFuzzLite
+  (`.clusterfuzzlite/`, `.github/workflows/cflite_*.yml`) — a short advisory batch on each PR and a
+  longer nightly batch, seeded from the battery via `make_seed_corpus.py`. Atheris is a Linux/CI-only
+  extra (`pip install .[fuzz]`); a crash it reports is a real robustness defect, fixed by routing the
+  escaped exception through the `ParseError` contract in the owning parser — never by weakening the
+  invariant.
 
 The suite enforces a **coverage ratchet** (`--cov-fail-under` in `pyproject.toml`): a floor set
 below current coverage and raised as coverage rises, never lowered to green a PR. When iterating on
