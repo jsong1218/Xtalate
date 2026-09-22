@@ -1,0 +1,41 @@
+# Dependabot — automated dependency-update PRs (v2.0 review, S8). Scorecard's Dependency-Update-Tool
+# check rewards having this configured. Every ecosystem is grouped into a single weekly PR and is
+# review-gated: nothing auto-merges, so the maintainer reviews each bump (the same discipline as the
+# hand-advanced SHA pins before it — see scorecard.yml). Bumps to a pinned GitHub Action arrive here
+# instead of drifting silently; the maintainer updates the `# vX.Y.Z` comment alongside the SHA.
+#
+# NOTE: this governs *lockfile/pin* updates. Runtime dependency *ranges* in pyproject.toml
+# (`[project].dependencies`, and the numpy uncapped-by-design policy, D4) stay maintainer-controlled;
+# Dependabot proposes, it never widens or caps a declared range on its own.
+version: 2
+updates:
+  # GitHub Actions pinned by SHA across ci.yml / main.yml / nightly.yml / scorecard.yml / codeql.yml
+  # / cflite_*.yml. Grouped so a weekly bump is one reviewable PR, not one per action.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  # Python dependencies (the root pyproject.toml: runtime + the service/dev/fuzz extras).
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  # The Next.js Web UI dependencies.
+  - package-ecosystem: npm
+    directory: "/frontend"
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
