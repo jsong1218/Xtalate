@@ -76,6 +76,15 @@ _HDF5_MAGIC = b"\x89HDF\r\n\x1a\n"
 _PARSER_VERSION = f"{FORMAT_ID}-parser {__version__} (h5py {h5py.__version__})"
 _TRUNCATE_HINT = "truncate_at_last_valid_frame"
 
+# Defensive allocation ceilings (v2.0 review, S4). A hostile or corrupt H5MD file can be a few KB on
+# disk yet declare an enormous per-frame particle dimension (H1) or frame count (H4) — chunked,
+# empty, or maxshape datasets write no bytes for the declared shape. The eager count-only precheck
+# and the fixed-in-time full load (H2) would then OOM the reader *before* max_frames can bound
+# anything (max_frames never bounds per-frame size). These caps refuse such a file loudly, before
+# any large np.asarray. They sit far above any real trajectory, so real data is never rejected.
+_MAX_ATOMS_PER_FRAME = 100_000_000
+_MAX_FRAME_COUNT = 100_000_000
+
 # Recognized source unit (normalized: lowercased, stripped) -> multiplicative factor to the
 # canonical unit. The canonical spelling is 1.0. An unrecognized unit is not in the table — it is
 # carried verbatim under a warning, never guessed (P1). Conversion factors are the CODATA/IUPAC
@@ -129,6 +138,38 @@ def _error(
     )
 
 
+def _get_local(group: h5py.Group, name: str) -> h5py.Group | h5py.Dataset | None:
+    """Resolve ``group[name]``, refusing an external link before following it (v2.0 review, S4, H3).
+
+    ``h5py.File(stream, "r")`` on a ``BytesIO`` has no filesystem base, but an
+    ``h5py.ExternalLink`` carries an absolute path (e.g. ``/etc/passwd``) — following it would read
+    an out-of-band file, so we refuse it explicitly rather than trusting the driver to fail. A soft
+    link is in-file by definition and safe. Returns ``None`` when absent (like ``group.get(name)``).
+    """
+    link = group.get(name, getlink=True)
+    if link is None:
+        return None
+    if isinstance(link, h5py.ExternalLink):
+        raise _error(
+            "H5MD_EXTERNAL_LINK",
+            f"{name!r} is an external link to {link.filename!r}; Xtalate will not follow a link "
+            "outside the file",
+            location=name,
+        )
+    return group.get(name)
+
+
+def _refuse_if_too_many_atoms(declared_n: int, *, location: str) -> None:
+    """Refuse a per-frame particle dimension above the ceiling before it is materialized (H1/H2)."""
+    if declared_n > _MAX_ATOMS_PER_FRAME:
+        raise _error(
+            "H5MD_FRAME_TOO_LARGE",
+            f"declares {declared_n} atoms in a frame (ceiling {_MAX_ATOMS_PER_FRAME}); refused "
+            "before allocation to avoid exhausting memory",
+            location=location,
+        )
+
+
 def _unit_of(dataset: h5py.Dataset) -> str | None:
     """The ``unit`` attribute on a dataset, decoded, or ``None`` when the source declared none."""
     raw = dataset.attrs.get("unit")
@@ -149,14 +190,30 @@ class _Element:
     def __init__(self, node: h5py.Group | h5py.Dataset) -> None:
         if isinstance(node, h5py.Group):
             self.kind = "timedep"
-            self._value: h5py.Dataset = node["value"]
+            value = _get_local(node, "value")
+            if not isinstance(value, h5py.Dataset):
+                raise _error(
+                    "H5MD_MALFORMED_STRUCTURE",
+                    "a time-dependent element has no 'value' dataset",
+                    location="value",
+                )
+            self._value: h5py.Dataset = value
+            # A constant-N [T, N, D] value carries the atom count in shape[1]; refuse an absurd one
+            # from the declared shape (H1), before any frame is read (`at()` never allocates it).
+            if self._value.ndim >= 2:
+                _refuse_if_too_many_atoms(int(self._value.shape[1]), location="value")
             self.length: int | None = int(self._value.shape[0])
+            step = _get_local(node, "step") if "step" in node else None
             self.step_len: int | None = (
-                int(node["step"].shape[0]) if "step" in node else self.length
+                int(step.shape[0]) if isinstance(step, h5py.Dataset) else self.length
             )
             self.unit = _unit_of(self._value)
         else:
             self.kind = "fixed"
+            # A fixed-in-time element is loaded eagerly in full (H2); refuse an absurd declared
+            # length from shape metadata before np.asarray materializes it.
+            if node.shape:
+                _refuse_if_too_many_atoms(int(node.shape[0]), location="fixed element")
             self._fixed = np.asarray(node)
             self.length = None
             self.step_len = None
@@ -169,7 +226,7 @@ class _Element:
 
 
 def _resolve(group: h5py.Group, name: str) -> _Element | None:
-    node = group.get(name)
+    node = _get_local(group, name)
     if node is None:
         return None
     return _Element(node)
@@ -211,11 +268,14 @@ class _BoxReader:
 
 
 def _resolve_box(group: h5py.Group) -> _BoxReader | None:
-    box = group.get("box")
-    if box is None or "edges" not in box:
+    box = _get_local(group, "box")
+    if box is None:
         return None
-    edges = _Element(box["edges"])
-    return _BoxReader(edges, _pbc_from_boundary(box.get("boundary")))
+    edges_node = _get_local(box, "edges")
+    if edges_node is None:
+        return None
+    edges = _Element(edges_node)
+    return _BoxReader(edges, _pbc_from_boundary(_get_local(box, "boundary")))
 
 
 def _resolve_unit(
@@ -447,6 +507,16 @@ class H5MDParser(ParserPlugin):
         """
         flushed = position.length if position.length is not None else 1
         declared = position.step_len
+        # Refuse an absurd frame count from the declared shape (H4) before iterating — the loop
+        # touches one frame at a time, but even counting to a fabricated 1e9+ is a denial of
+        # service, and max_frames bounds the *emitted* stream, never this precheck.
+        if max(flushed, declared or 0) > _MAX_FRAME_COUNT:
+            raise _error(
+                "H5MD_TOO_MANY_FRAMES",
+                f"declares {max(flushed, declared or 0)} frames (ceiling {_MAX_FRAME_COUNT}); "
+                "refused as a likely corrupt or hostile file",
+                location="position/step",
+            )
         if declared is not None and flushed < declared:
             if not truncate:
                 raise _error(
@@ -543,14 +613,17 @@ class H5MDParser(ParserPlugin):
         """Split ``/observables`` into ``potential_energy`` (→ ``total_energy``) and everything else
         (→ ``custom_per_frame['h5md:<name>']``). Returns the energy element, the other-observable
         map, and the energy unit factor."""
-        obs = f.get("observables")
+        obs = _get_local(f, "observables")
         if obs is None:
             return None, {}, 1.0
         pe: _Element | None = None
         pe_factor = 1.0
         other: dict[str, _Element] = {}
         for name in obs:
-            elem = _Element(obs[name])
+            node = _get_local(obs, name)
+            if node is None:
+                continue
+            elem = _Element(node)
             if name == "potential_energy":
                 pe = elem
                 pe_factor = _resolve_unit(
@@ -564,10 +637,13 @@ class H5MDParser(ParserPlugin):
     def _creator_note(f: h5py.File) -> str | None:
         """Record ``/h5md/creator`` (the program that wrote the file) as a provenance note — not as
         the simulation ``source_code``, which H5MD does not promise the creator to be."""
-        h5md = f.get("h5md")
+        h5md = _get_local(f, "h5md")
         if h5md is None or "creator" not in h5md:
             return None
-        attrs = h5md["creator"].attrs
+        creator = _get_local(h5md, "creator")
+        if creator is None:
+            return None
+        attrs = creator.attrs
 
         def _text(key: str) -> str | None:
             raw = attrs.get(key)
@@ -585,7 +661,7 @@ class H5MDParser(ParserPlugin):
     def _single_particle_group(f: h5py.File) -> h5py.Group:
         """Return the one ``/particles/<grp>`` group, or refuse. A multi-group file is refused
         rather than silently reading one and dropping the rest (D-MULTIGROUP)."""
-        particles = f.get("particles")
+        particles = _get_local(f, "particles")
         if particles is None:
             raise _error(
                 "H5MD_MISSING_REQUIRED_GROUP",
@@ -598,7 +674,13 @@ class H5MDParser(ParserPlugin):
                 f"file declares {len(names)} particle groups ({', '.join(sorted(names))}); Xtalate "
                 "reads one structure per file and will not silently choose or merge them",
             )
-        return particles[names[0]]
+        group = _get_local(particles, names[0])
+        if group is None:
+            raise _error(
+                "H5MD_MISSING_REQUIRED_GROUP",
+                "file has no /particles group (not an H5MD trajectory)",
+            )
+        return group
 
     def capabilities(self) -> FormatCapabilities:
         full = FieldCapability(level=CapabilityLevel.FULL)
