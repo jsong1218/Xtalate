@@ -988,9 +988,9 @@ class ConversionEngine:
         # — so the streamed validation expected side would demand them back and false-fail where
         # the materialized path passes (standing rule 3). `custom_global` keys are eager in the
         # header, so that refinement is known before the pass. `custom_per_atom` keys ride each
-        # frame (schema 2.0.0, M73), no longer the header, so its refinement is deferred to frame 0
-        # inside `_planned_frames` (frame-invariant for the constant-N streams this path handles —
-        # the reader refusals still gate divergence). `custom_per_frame` is deliberately *not*
+        # frame (schema 2.0.0, M73), no longer the header, so its refinement runs per frame inside
+        # `_planned_frames` (a later frame may introduce a key frame 0 lacks, v2.0 review S3, and
+        # the plan unions them as frames stream). `custom_per_frame` is deliberately *not*
         # refined — and the reason is the streaming-eligibility gate, not the absence of a
         # per-key-classifying target (lammps_dump does per-key-classify custom_per_frame and is a
         # streaming exporter). It is safe only because `streaming_eligible()` rejects every target
@@ -1010,24 +1010,22 @@ class ConversionEngine:
             custom_global=header.custom_global,
         )
         counters = {"frames": 0}
-        per_atom_refined = False
 
         def _planned_frames() -> Any:
-            nonlocal per_atom_refined
             for sf in stream.frames():
-                if not per_atom_refined:
-                    # Refine the custom_per_atom plan from frame 0's keys — they ride each frame
-                    # now (M73), and are frame-invariant for the constant-N streams this path
-                    # handles, so frame 0's set matches the eager header-based refinement this
-                    # replaced and keeps the reported/validation write_plan identical to the
-                    # materialized path (rule 3).
-                    _refine_custom_key_plan(
-                        write_plan,
-                        caps,
-                        "user_metadata.custom_per_atom",
-                        sf.frame.custom_per_atom,
-                    )
-                    per_atom_refined = True
+                # Refine the custom_per_atom plan from THIS frame's keys before filtering it.
+                # Per-atom columns ride each frame (M73) and can vary — a later frame may introduce
+                # a key frame 0 lacks (v2.0 review, S3), so latching at frame 0 would silently drop
+                # it. `_refine_custom_key_plan` only *adds* per-key entries for keys the target can
+                # write (its allowlist/pattern, D69) and never removes, so the plan accumulates the
+                # union of writable keys as frames stream. Filtering frame F against the plan-so-far
+                # keeps exactly {K in F : K writable} — identical to the materialized path filtering
+                # F against the full union (standing rule 3) — with no look-ahead, so sub-linear
+                # memory is untouched. A target with no key restriction early-returns here, keeping
+                # its container-level entry (writes every key) as before.
+                _refine_custom_key_plan(
+                    write_plan, caps, "user_metadata.custom_per_atom", sf.frame.custom_per_atom
+                )
                 present_keys = [k for k, v in sf.per_frame_custom.items() if v is not None]
                 acc.observe_frame(sf.frame, present_keys)
                 counters["frames"] += 1

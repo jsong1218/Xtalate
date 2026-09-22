@@ -36,6 +36,7 @@ from xtalate.validation.engine import (
     _carried_to_canonical,
     _content_matches_values,
     _field_value,
+    _perm_for,
     _permuted,
     _representational_bound,
 )
@@ -172,13 +173,21 @@ class StreamingValidator:
         if len(exp) != len(got):
             self._sp_mismatches += max(len(exp), len(got))
             return
-        order = self._perm if self._perm is not None else list(range(len(exp)))
+        # Restrict the object-level permutation map to THIS frame's N (v2.0 review, S5): under
+        # variable N (schema 2.0.0) a map sized to one frame must not index another frame — mirrors
+        # the batch engine's ``_perm_for``. A non-identity map only arises from constant-N-only
+        # grouping exporters, so a length mismatch means "not this map's domain": apply identity.
+        perm = _perm_for(self._perm, len(exp))
+        order = perm if perm is not None else list(range(len(exp)))
         self._sp_mismatches += sum(1 for j in range(len(got)) if exp[order[j]] != got[j])
 
     def _fold_positions(self, ef: Frame, af: Frame) -> None:
         if self._pos_shape_fail is not None:
             return
-        exp = _permuted(np.asarray(ef.atoms.positions, dtype=float), self._perm)
+        exp = _permuted(
+            np.asarray(ef.atoms.positions, dtype=float),
+            _perm_for(self._perm, len(ef.atoms.symbols)),
+        )
         got = np.asarray(af.atoms.positions, dtype=float)
         if exp.shape != got.shape:
             self._pos_shape_fail = (exp.shape, got.shape)
@@ -231,7 +240,9 @@ class StreamingValidator:
             e = np.asarray(ev, dtype=float)
             g = np.asarray(gv, dtype=float)
             if state["kind"] == "per_atom":
-                e = _permuted(e, self._perm)
+                # Restrict the map to this frame's N under variable N (v2.0 review, S5) — see
+                # ``_fold_species``.
+                e = _permuted(e, _perm_for(self._perm, e.shape[0]))
             if e.shape != g.shape:
                 state["missing"] = True
                 continue
