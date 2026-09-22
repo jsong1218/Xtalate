@@ -76,6 +76,23 @@ text and binary, file and dataset — with contracts re-frozen at `2.0`.
   configuration and genuinely cannot represent a varying atom count; the refusal now cites that format
   constraint, not the retired canonical invariant.
 
+## Fixed and hardened — v1.8 + v2.0 architectural review
+
+The post-release architectural review of the v1.8 and v2.0 work folded into this release (the D64
+in-version review discipline). No public surface changed. Honesty and robustness fixes: the nightly
+`ase_db` benchmark now exercises the M73 variable-N read it claimed to cover (closes #112); per-frame
+per-atom columns are carried losslessly and reported honestly across constant-N and variable-N
+frames (never silently narrowed, **P1**); H5MD reads `frame.time`, reports a mass/charge mismatch
+instead of preferring one source, and treats a torn final step as a reported partial read; and an
+analysis plugin's results are attributed to that plugin alone, with plugin-name collisions guarded.
+
+Security and supply chain: H5MD bounds per-frame size and frame count and refuses HDF5 external links
+*before* allocating; two Atheris fuzzers (parser + discovery) run under ClusterFuzzLite (per-PR
+advisory + nightly batch); a real CodeQL run reaches code scanning; Dependabot proposes grouped,
+review-gated bumps across the Actions/pip/npm ecosystems; and the published CI image is cosign-signed
+with build-provenance attestation. These raise the OpenSSF Scorecard `Fuzzing`, `SAST`,
+`Dependency-Update-Tool`, and `Signed-Releases` checks.
+
 ## Verified — corpus-scale, and the closed evidence file (M75)
 
 M75 adds no behaviour: it proves the M72–M74 work correct at corpus scale and **closes the refusal
@@ -116,7 +133,11 @@ is now `0.1.0 → 1.0.0 → 2.0.0`; older stored objects load through the full c
 [docs/MIGRATION.md](../MIGRATION.md) for the four upgrade paths (stored-corpus owner, API client,
 library user, plugin author).
 
-Full Changelog: [v1.8.0...v2.0.0](https://github.com/jsong1218/Xtalate/compare/v1.8.0...v2.0.0)
+Full Changelog: [v1.7.0...v2.0.0](https://github.com/jsong1218/Xtalate/compare/v1.7.0...v2.0.0)
+
+> **Maintainer note (compare base):** `v1.7.0` is the last tag that currently exists — the `1.8.0`
+> package flip landed on `main` but was never tagged. This link is based on `v1.7.0` so it resolves
+> as-is; if you cut a `v1.8.0` tag before this release, narrow the base to `v1.8.0...v2.0.0`.
 
 The chained version sync points (`pyproject.toml`, `__version__`, `CITATION.cff`, the README version
 badge, and the regenerated `docs/openapi.json`) read `2.0.0`; `frontend/package.json` is deliberately
