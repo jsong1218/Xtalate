@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._dummy_plugins import DummyExporter, DummyParser
+from tests._dummy_plugins import DummyAnalysis, DummyExporter, DummyParser
 from xtalate.capabilities import CapabilityMatrix, InvalidCapabilityDeclaration, Registry
 from xtalate.sdk import CapabilityLevel, FieldCapability
 
@@ -106,3 +106,36 @@ def test_query_unregistered_format_raises() -> None:
     matrix: CapabilityMatrix = Registry().capability_matrix()
     with pytest.raises(KeyError, match="no 'read' capabilities"):
         matrix.get("nope", "read")
+
+
+# --- analysis-plugin namespace guards (v2.0 S6) --------------------------------------------------
+
+
+def test_analysis_plugin_name_colliding_with_a_format_id_is_refused() -> None:
+    """A plugin whose namespace equals a registered format id would share the '<name>:' prefix with
+    that format's parser carry-through, making an annotation unattributable — so it is refused."""
+    reg = Registry()
+    reg.register_parser(DummyParser("lammps_data", fields={"atoms.positions": FULL}))
+    with pytest.raises(ValueError, match=r"collides with a registered format id"):
+        reg.register_analysis_plugin(DummyAnalysis("lammps_data"))
+
+
+@pytest.mark.parametrize("bad", ["", "Composition", "has:colon", "with space"])
+def test_malformed_analysis_plugin_name_is_refused(bad: str) -> None:
+    reg = Registry()
+    with pytest.raises(ValueError, match=r"invalid analysis plugin name"):
+        reg.register_analysis_plugin(DummyAnalysis(bad))
+
+
+def test_duplicate_analysis_plugin_name_is_refused() -> None:
+    reg = Registry()
+    reg.register_analysis_plugin(DummyAnalysis("composition"))
+    with pytest.raises(ValueError, match=r"already registered for name"):
+        reg.register_analysis_plugin(DummyAnalysis("composition"))
+
+
+def test_a_well_formed_distinct_analysis_name_registers() -> None:
+    reg = Registry()
+    reg.register_parser(DummyParser("xyz", fields={"atoms.positions": FULL}))
+    reg.register_analysis_plugin(DummyAnalysis("rdf-analysis"))
+    assert [p.name for p in reg.analysis_plugins()] == ["rdf-analysis"]

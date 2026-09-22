@@ -546,8 +546,8 @@ def _cmd_analyze(args: argparse.Namespace, registry: Registry) -> int:
     presenters. The plugin is looked up by ``name`` in the registry — an unknown name is a caller
     mistake that names the installed set (exit 1), not a refusal; a plugin that breaks containment
     raises :class:`AnalysisError`, handled centrally (exit 1). The results shown are exactly the
-    keys the plugin wrote — its own ``"<name>:"`` namespace, filtered out of ``custom_global`` after
-    the run, the same derivation the HTTP job uses so the two surfaces can never drift.
+    keys the plugin wrote (``run.entries``), the same derivation the HTTP job uses so the two
+    surfaces can never drift.
     """
     installed = {plugin.name: plugin for plugin in registry.analysis_plugins()}
     plugin = installed.get(args.plugin)
@@ -559,13 +559,10 @@ def _cmd_analyze(args: argparse.Namespace, registry: Registry) -> int:
         )
     data = _read_bytes(args.file)
     canonical, _fmt = _parse_source(registry, data, args.file, args.format)
-    annotated = run_analysis(canonical, plugin)
-    prefix = f"{plugin.name}:"
-    results = {
-        key: value
-        for key, value in annotated.user_metadata.custom_global.items()
-        if key.startswith(prefix)
-    }
+    # ``results`` is exactly the plugin's own entries (v2.0 S6, D294): re-scanning the merged
+    # ``custom_global`` by prefix would mis-attribute a pre-existing carry-through key sharing the
+    # plugin's namespace as plugin output. This is the same derivation the HTTP job uses.
+    results = run_analysis(canonical, plugin).entries
     if args.json:
         print(_json({"plugin": plugin.name, "version": plugin.version, "results": results}))
     else:

@@ -73,7 +73,32 @@ class CompositionAnalysis(AnalysisPlugin):
             "composition:atom_count": len(frame.atoms.symbols),
             "composition:mass_density_g_per_cm3": density,
             "composition:density_note": note,
+            "composition:frames_note": _frames_note(canonical),
         }
+
+
+def _frames_note(canonical: CanonicalObject) -> str:
+    """State plainly that every reported figure describes frame 0 only (P1).
+
+    Composition, formula, count, and density are all computed on ``frames[0]``. Under a variable-N
+    trajectory (schema 2.0.0) later frames can carry different atoms, so frame 0 is representative,
+    not universal — this note says so rather than letting a caller assume the numbers hold for the
+    whole trajectory. For a single-frame or constant-N source the note records that too, so the
+    scope of the answer is never left implicit.
+    """
+    n_frames = len(canonical.frames)
+    if n_frames == 1:
+        return "computed on the single frame in the source"
+    counts = {tuple(fr.atoms.symbols) for fr in canonical.frames}
+    if len(counts) == 1:
+        return (
+            f"computed on frame 0; the source has {n_frames} frames but every frame shares frame "
+            "0's atoms, so these figures describe the whole trajectory"
+        )
+    return (
+        f"computed on frame 0 only; the source has {n_frames} frames with differing atom content "
+        "(variable N), so these figures are representative of frame 0 and may not hold for others"
+    )
 
 
 def _density(canonical: CanonicalObject) -> tuple[float | None, str]:
