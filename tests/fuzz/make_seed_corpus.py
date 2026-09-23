@@ -1,10 +1,12 @@
 """Materialize the ClusterFuzzLite seed corpus from the reviewable seed battery (S7).
 
-The deterministic seeds in :mod:`tests.fuzz.test_parser_fuzz` (``_GENERIC`` + ``_TAILORED``) are
-the human-curated starting points a coverage-guided fuzzer mutates from. This script writes each
-one to ``tests/fuzz/corpus/`` as a standalone file, prefixed with the selector byte the harnesses
-(:mod:`fuzz_parsers`) use to choose a parser — so a tailored seed deterministically targets the
-parser it was written for, while libFuzzer's mutations still explore every parser.
+The deterministic seeds in :mod:`tests.fuzz.seeds` (``_GENERIC`` + ``_TAILORED``) are the
+human-curated starting points a coverage-guided fuzzer mutates from. That battery is pure data with
+no ``pytest`` import, so this generator can read it inside the ClusterFuzzLite build image, which
+installs only the pure library. This script writes each seed to ``tests/fuzz/corpus/`` as a
+standalone file, prefixed with the selector byte the harnesses (:mod:`fuzz_parsers`) use to choose a
+parser — so a tailored seed deterministically targets the parser it was written for, while
+libFuzzer's mutations still explore every parser.
 
 ``build.sh`` runs this at image-build time; it is also runnable by hand::
 
@@ -25,7 +27,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tests.fuzz.test_parser_fuzz import _GENERIC, _TAILORED  # noqa: E402
+from tests.fuzz.seeds import _GENERIC, _TAILORED  # noqa: E402
 from xtalate.parsers import builtin_parsers  # noqa: E402
 
 _INDEX = {p.format_id: i for i, p in enumerate(builtin_parsers())}

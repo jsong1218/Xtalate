@@ -22,6 +22,11 @@ dist
 build
 *.egg-info
 tests
+# Exception: the ClusterFuzzLite image (.clusterfuzzlite/Dockerfile) is the one Dockerfile that
+# does `COPY .` with the repo root as its build context, and it needs the Atheris harnesses + the
+# seed battery under tests/fuzz/. The compose (Dockerfile) and hosted-demo (deploy/demo/Dockerfile)
+# images copy explicit paths only — never `COPY .` — so re-including this subtree never enters them.
+!tests/fuzz
 benchmarks
 examples
 # docs/ is a build input for the hosted-demo image's stage A; docs/private/ must never enter a context.
