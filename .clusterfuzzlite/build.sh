@@ -7,8 +7,16 @@
 pip3 install "$SRC/xtalate"
 
 # Compile each harness into a self-contained libFuzzer binary named after the script basename.
-compile_python_fuzzer "$SRC/xtalate/tests/fuzz/fuzz_parsers.py"
-compile_python_fuzzer "$SRC/xtalate/tests/fuzz/fuzz_discovery.py"
+# The harnesses import xtalate.parsers -> ase -> numpy/scipy, and PyInstaller's bundled hooks do
+# not collect these packages' dynamically-imported C-extension submodules (numpy 2.x's
+# `numpy._core`, scipy's `scipy._cyutility`, reached transitively via `ase.dft`) nor ase's data
+# files, so the frozen binary crashes at startup ("No module named 'numpy._core._exceptions'",
+# then "scipy install ... seems broken") and `bad_build_check` rejects it. `--collect-all`
+# (forwarded to PyInstaller by compile_python_fuzzer) pulls each package's submodules, data,
+# binaries, and metadata in whole; the full set is verified by freezing the harness import surface.
+pyinstaller_collect="--collect-all=numpy --collect-all=scipy --collect-all=ase"
+compile_python_fuzzer "$SRC/xtalate/tests/fuzz/fuzz_parsers.py" $pyinstaller_collect
+compile_python_fuzzer "$SRC/xtalate/tests/fuzz/fuzz_discovery.py" $pyinstaller_collect
 
 # Materialize the reviewable seed battery and ship it as each fuzzer's seed corpus. Both harnesses
 # accept the same selector-byte-prefixed bytes, so they share one corpus. ClusterFuzzLite unpacks
