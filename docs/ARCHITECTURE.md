@@ -194,7 +194,7 @@ each is a *consumer* of an existing seam, never a modifier of it (P6):
 | **New file formats** | A `ParserPlugin` and/or `ExporterPlugin` via the Plugin SDK plus the corresponding Capability Matrix declaration. A parser-only source deliberately supplies only the parser side — as `vasprun` and `outcar` do — while read+write formats supply both. Third-party formats are discovered through Python **entry points** (`xtalate.parsers` / `xtalate.exporters`) with no fork or edit to Xtalate. |
 | **Visualization** | **Present (v1.6, M59–M63, D232–D241):** the read-only viewer — the Structure tab (M60), trajectory scrubber (M61), and Compare tab (M62) — consumes the M59 read-only geometry endpoints and the reports; it renders the Canonical Object the engine already parsed and never re-derives a fact (measurement/selection/export are documented omissions; the reports are the accessible record, D241). |
 | **File Repair** | **Present (v1.7, M64–M67, D249–D259):** the Repair Engine (`repair/`) operates Canonical Object → Canonical Object **between parse and pre-flight** (D250), depends on `schema` + `sdk` only, and is orchestrated by `conversion` (the import-linter layer M64 added); each repair is recorded in Provenance and the Conversion Report (the D249 triple) — one pipeline, one report schema, repairs ride ordinary Conversion Reports — and the closed set of four (`wrap_into_cell`, `center`, `deduplicate`, `species_reorder`) sits beside the **transformative** fourth hazard class (Part 4 §3.1, D251). Deliberately **not** built in v1.7: third-party/plugin-provided repair operations — a future SDK surface (impl-plan §4 rule 4); the first-party set is enumerated explicitly. |
-| **Analysis** | Plugins that read a Canonical Object and emit results into namespaced `user_metadata`; they never touch parsers or exporters. |
+| **Analysis** | **Present (v1.8, M68–M71, D267–D273):** an `AnalysisPlugin` reads a Canonical Object and emits results into namespaced `user_metadata` (never touching parsers or exporters), discovered through the `xtalate.analysis` entry-point group on equal footing with the built-ins. The `composition` reference plugin ships as its own installable distribution (`plugins/xtalate-analysis-composition/`), and the surface is exercised over HTTP (`GET /v1/plugins`, `POST /v1/analyze`) and in the Web UI's Analysis tab (M70). Absence honesty holds — an analysis never fills an absent field to compute a result (D270). |
 | **AI assistant** | A reader of the already-machine-readable Discovery/Conversion/Validation reports. |
 
 The through-line: **every future feature consumes an existing seam — the Canonical Object, the
@@ -259,6 +259,16 @@ and the wrap fold is idempotent at every precision with the R5 warning suppresse
 application. The schema stays `1.0.0` (`operation="repair"` was reserved vocabulary in the 1.x
 schema; activating it changes no shape), and the package reaches `1.7.0`.
 
+The v1.8 line is the **Analysis plugin surface** — the third deferred secondary goal to attach at
+its seam. An `AnalysisPlugin` reads a Canonical Object and writes results into a namespaced
+`user_metadata` key, discovered through the `xtalate.analysis` entry-point group with no privileged
+first-party path (M68, D267–D269). The first-party `composition` plugin ships as its own installable
+distribution (`plugins/xtalate-analysis-composition/`, M69, D270) and, crucially, honours absence —
+it never fills an absent field to produce a result. The surface reaches HTTP and the Web UI (`GET
+/v1/plugins`, `POST /v1/analyze`, the Analysis tab; M70, D271–D272), and a third-party plugin built
+only against the frozen public SDK proves the seam (M71, D273). The schema stays `1.0.0` and the
+package reaches `1.8.0`.
+
 The v2.0 line is **Variable N**: the canonical schema's major `1.0.0 → 2.0.0` bump lifts the
 constant-N invariant, so a `CanonicalObject`'s frames may differ in atom count (each frame validates
 its own N; per-atom custom columns relocate onto the frame they describe), and every engine
@@ -266,7 +276,7 @@ component — validation, the streaming SDK, the Capability Matrix / pre-flight,
 "which frame's N?" A constant-N *target* declares `supports_variable_atom_count = False` and refuses
 a variable-N source at pre-flight with a `frame_selection` recovery, never by padding ghost atoms
 (**P1**). On that axis the line adds **H5MD** (`src/xtalate/parsers/h5md.py`,
-`src/xtalate/exporters/h5md.py`) — the eighth first-party read+write format and the first binary
+`src/xtalate/exporters/h5md.py`) — the thirteenth first-party read+write format and the first binary
 variable-N container: the community HDF5 interchange layout, whose per-step VLEN storage expresses a
 trajectory whose atom count changes frame to frame natively. `h5py` is confined to those two modules
 by a dedicated import-linter contract (the ASE-isolation precedent), and the streaming parser is

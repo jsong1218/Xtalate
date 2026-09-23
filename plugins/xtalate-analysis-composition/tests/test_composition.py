@@ -90,7 +90,7 @@ def test_every_returned_key_is_in_the_plugins_namespace() -> None:
 
 def test_run_analysis_merges_namespace_and_appends_analyze_record() -> None:
     source = _water(cell=True, masses=True)
-    annotated = run_analysis(source, CompositionAnalysis())
+    annotated = run_analysis(source, CompositionAnalysis()).canonical
 
     # The plugin's keys land under custom_global; nothing else in user_metadata is touched.
     cg = annotated.user_metadata.custom_global
@@ -104,3 +104,45 @@ def test_run_analysis_merges_namespace_and_appends_analyze_record() -> None:
 
     # The source object is never mutated (the runner hands the plugin a deep copy).
     assert source.user_metadata.custom_global == {}
+
+
+def _single_frame_note_source() -> CanonicalObject:
+    return _water(cell=True, masses=True)
+
+
+def _variable_n_source() -> CanonicalObject:
+    """Two frames with different atom content (variable N, schema 2.0.0): frame 0 is water,
+    frame 1 gains an extra hydrogen."""
+    f0 = Frame(
+        index=0,
+        atoms=AtomsBlock(symbols=["O", "H", "H"], positions=np.zeros((3, 3))),
+    )
+    f1 = Frame(
+        index=1,
+        atoms=AtomsBlock(symbols=["O", "H", "H", "H"], positions=np.zeros((4, 3))),
+    )
+    return CanonicalObject(
+        frames=[f0, f1],
+        provenance=Provenance(
+            source_filename="traj.h5",
+            source_format="h5md",
+            original_coordinate_system="cartesian",
+        ),
+    )
+
+
+def test_frames_note_states_single_frame_scope() -> None:
+    result = CompositionAnalysis().analyze(_single_frame_note_source())
+    assert result["composition:frames_note"] == "computed on the single frame in the source"
+
+
+def test_frames_note_warns_when_atoms_vary_across_frames() -> None:
+    """Under variable N the frame-0 figures are representative, not universal — the note says so
+    in plain language rather than letting a caller assume the whole trajectory (P1)."""
+    result = CompositionAnalysis().analyze(_variable_n_source())
+    note = result["composition:frames_note"]
+    assert isinstance(note, str)
+    assert "variable N" in note and "frame 0" in note
+    # The reported figures are frame 0's water composition, unaffected by the differing frame 1.
+    assert result["composition:formula"] == "H2O"
+    assert result["composition:atom_count"] == 3

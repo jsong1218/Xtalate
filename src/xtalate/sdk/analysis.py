@@ -26,6 +26,7 @@ engine behaviour (impl-plan §4 rule 3).
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from pydantic import JsonValue, ValidationError
 
@@ -34,7 +35,25 @@ from xtalate._time import utc_now
 from xtalate.schema import CanonicalObject, ConversionRecord, UserMetadata
 from xtalate.sdk.plugins import AnalysisPlugin
 
-__all__ = ["AnalysisError", "run_analysis"]
+__all__ = ["AnalysisError", "AnalysisRun", "run_analysis"]
+
+
+@dataclass(frozen=True)
+class AnalysisRun:
+    """The result of one analysis run: the annotated object and the entries the plugin wrote.
+
+    Both are needed and neither can be reconstructed from the other without re-introducing the bug
+    this type exists to kill: ``entries`` is the plugin's own ``"<name>:"`` namespace *exactly as
+    it produced it*, while ``canonical`` also carries any pre-existing carry-through the source
+    happened to leave under the same prefix. A caller that wants "what did the plugin compute"
+    reads ``entries``; a caller that wants "the object plus its annotation" reads ``canonical``.
+    Rebuilding ``entries`` by prefix-scanning ``canonical.user_metadata.custom_global`` — the shape
+    the runner and CLI used before v2.0 — mis-attributes such a colliding carry-through key as
+    plugin output, so this type hands the exact set back rather than inviting the rescan.
+    """
+
+    canonical: CanonicalObject
+    entries: dict[str, JsonValue]
 
 
 class AnalysisError(ValueError):
@@ -49,14 +68,17 @@ class AnalysisError(ValueError):
     """
 
 
-def run_analysis(canonical: CanonicalObject, plugin: AnalysisPlugin) -> CanonicalObject:
-    """Run ``plugin`` against ``canonical`` and return the object with its namespace annotated.
+def run_analysis(canonical: CanonicalObject, plugin: AnalysisPlugin) -> AnalysisRun:
+    """Run ``plugin`` against ``canonical`` and return an :class:`AnalysisRun`.
 
-    A **new** object is returned; the argument is never mutated, whatever the plugin does. The
-    returned object differs from the argument in exactly two places: the keys the plugin wrote,
+    ``AnalysisRun.canonical`` is a **new** object; the argument is never mutated, whatever the
+    plugin does. It differs from the argument in exactly two places: the keys the plugin wrote,
     merged into ``user_metadata.custom_global``, and one appended ``"analyze"``
     ``ConversionRecord`` in ``provenance.history``. Frames, scientific fields, and every other
     ``user_metadata`` entry are untouched — analysis is annotation, never conversion (P5, P6).
+    ``AnalysisRun.entries`` is the plugin's own contribution, returned verbatim so a caller reports
+    *exactly* what the plugin computed rather than re-deriving it by prefix-scanning the merged
+    ``custom_global`` (which would sweep in a colliding carry-through key — the v2.0 S6 fix).
 
     Raises :class:`AnalysisError` — leaving the argument untouched — when the plugin escapes its
     namespace, returns an unserializable value, or raises.
@@ -65,7 +87,7 @@ def run_analysis(canonical: CanonicalObject, plugin: AnalysisPlugin) -> Canonica
     entries = _contained_entries(plugin, results)
     _check_container_accepts(plugin, entries)
     record = _analyze_record(canonical, plugin, keys=sorted(entries))
-    return canonical.model_copy(
+    annotated = canonical.model_copy(
         update={
             "user_metadata": canonical.user_metadata.model_copy(
                 update={"custom_global": {**canonical.user_metadata.custom_global, **entries}}
@@ -75,6 +97,7 @@ def run_analysis(canonical: CanonicalObject, plugin: AnalysisPlugin) -> Canonica
             ),
         }
     )
+    return AnalysisRun(canonical=annotated, entries=entries)
 
 
 def _invoke(canonical: CanonicalObject, plugin: AnalysisPlugin) -> Mapping[str, JsonValue]:

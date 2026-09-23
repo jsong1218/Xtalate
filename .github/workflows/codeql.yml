@@ -1,0 +1,55 @@
+name: codeql
+
+# Real CodeQL static analysis (v2.0 review, S8). Scorecard's SAST check rewards an actual CodeQL
+# run whose results reach the code-scanning dashboard — not merely reusing `upload-sarif` (which
+# scorecard.yml does for its own findings). This workflow analyses both languages in the repo:
+# `python` (the library + FastAPI backend) and `javascript-typescript` (the Next.js frontend).
+#
+# Runs on push/PR to the default branch so a regression is caught at merge, plus a weekly schedule
+# so a newly-published query pack flags existing code even without a push. Every `uses:` is pinned
+# by full commit SHA (Scorecard Pinned-Dependencies); the codeql-action SHA matches the one
+# scorecard.yml already pins, so both advance together.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, Monday 04:27 UTC — an hour after the scorecard run, both off-peak.
+    - cron: "27 4 * * 1"
+
+# Least privilege: read the checkout, write findings to code scanning. Nothing else.
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        with:
+          languages: ${{ matrix.language }}
+
+      # The repo is interpreted (Python + TS); autobuild is a no-op that satisfies the analyze
+      # step's build precondition without a compile step.
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        with:
+          category: "/language:${{ matrix.language }}"

@@ -48,7 +48,6 @@ from ase.stress import voigt_6_to_full_3x3_stress
 from pydantic import JsonValue
 
 from xtalate.parsers._common import (
-    attach_per_atom,
     build_provenance,
     coerce_per_atom,
     decode_text,
@@ -329,21 +328,13 @@ class ExtxyzParser(ParserPlugin):
             )
 
         user_metadata = self._build_user_metadata(atoms_list, carried_calc)
-        # custom_per_atom is per-frame in schema 2.0.0 (M72). When N is constant, extXYZ's
-        # per-atom columns are frame-invariant: one column set is collected (with the
-        # EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE warning when a column varies) and written onto
-        # every frame — unchanged behaviour. When N varies (M73), a per-atom column is sized to
-        # each frame's own N and cannot be one object-wide array, so each frame carries its own
-        # columns, collected from its own arrays — lossless, with no "only frame 0 carried"
-        # compromise (P1).
-        if len({len(a) for a in atoms_list}) == 1:
-            custom_per_atom = self._collect_custom_columns(atoms_list, issues)
-            frames = attach_per_atom(frames, custom_per_atom)
-        else:
-            frames = [
-                with_per_atom(frame, coerce_per_atom(_collect_custom_columns_single(atoms)))
-                for frame, atoms in zip(frames, atoms_list, strict=True)
-            ]
+        # custom_per_atom rides each Frame in schema 2.0.0 (M72), so a per-atom column that varies
+        # across frames is representable losslessly — each frame carries its own columns, collected
+        # from its own arrays, whether or not N is constant (P1: no frame-0 compromise, no warning).
+        frames = [
+            with_per_atom(frame, coerce_per_atom(_collect_custom_columns_single(atoms)))
+            for frame, atoms in zip(frames, atoms_list, strict=True)
+        ]
         provenance = build_provenance(
             format_id=FORMAT_ID,
             filename=filename,
@@ -403,14 +394,10 @@ class ExtxyzParser(ParserPlugin):
             parse_notes.append(
                 "velocities converted from ASE internal units to Å/fs (source 'momenta' column)."
             )
-        # Establish frame 0's Properties= columns. For the constant-N trajectories extXYZ
-        # overwhelmingly holds, these are frame-invariant: the coerced set (below) rides every frame
-        # and a later frame whose column values differ warns once, as it did before M73. A frame
-        # whose N differs (M73 variable-N) collects its own columns in the frame loop instead
-        # (Part 2 §3.10). ``custom_per_atom`` rides each ``StreamFrame.frame``, not the header,
-        # since the M73 SDK major.
-        custom_per_atom = _collect_custom_columns_single(first_atoms)
-        coerced_per_atom = coerce_per_atom(custom_per_atom)
+        # ``custom_per_atom`` rides each ``StreamFrame.frame``, not the header, since the M73 SDK
+        # major, and each frame carries its own per-atom columns (M72) — collected from its own
+        # arrays whether or not N is constant, so a varying column is lossless with no warning.
+        coerced_per_atom = coerce_per_atom(_collect_custom_columns_single(first_atoms))
         provenance = build_provenance(
             format_id=FORMAT_ID,
             filename=filename,
@@ -425,26 +412,15 @@ class ExtxyzParser(ParserPlugin):
         )
 
         def _frames() -> Iterator[StreamFrame]:
-            warned_columns: set[str] = set()
             yield self._stream_frame(
                 first_atoms, first_comment, first_cell, 0, coerced_per_atom, issues
             )
             index = 1
             for block, comment in blocks:
                 atoms = _read_block(block, index)
-                # Schema 2.0.0 (M72) + M73: a variable-N extXYZ trajectory streams, each frame
-                # carrying its own atom count (P3). When a later frame matches frame 0's N,
-                # extXYZ's per-atom columns are frame-invariant, so frame 0's coerced set rides
-                # this frame and a varying column warns once
-                # (EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE) — unchanged constant-N behaviour, and
-                # the streaming mirror of the materialized path. When N differs, a per-atom column
-                # is sized to this frame's N and cannot share frame 0's array, so this frame
-                # carries its own columns, collected from its own arrays.
-                if len(atoms) == len(first_atoms):
-                    _check_columns_consistent(atoms, custom_per_atom, warned_columns, issues)
-                    frame_per_atom = coerced_per_atom
-                else:
-                    frame_per_atom = coerce_per_atom(_collect_custom_columns_single(atoms))
+                # Each frame carries its own per-atom columns (M72) — collected from its own arrays,
+                # constant-N or not, matching the materialized path exactly (identity theorem).
+                frame_per_atom = coerce_per_atom(_collect_custom_columns_single(atoms))
                 cell, _ = self._build_cell(atoms, comment)
                 yield self._stream_frame(atoms, comment, cell, index, frame_per_atom, issues)
                 index += 1
@@ -462,9 +438,9 @@ class ExtxyzParser(ParserPlugin):
     ) -> StreamFrame:
         """Build one ``StreamFrame`` (Frame + its per-frame custom slice) from one ASE image,
         reusing the whole-file per-frame mappers so streamed and materialized frames match.
-        ``coerced_per_atom`` is this frame's per-atom column set (coerced), written onto this frame
-        — the streaming mirror of the whole-file ``attach_per_atom`` (M73). The per-atom-scalar
-        check reads this frame's own N (``len(atoms)``), correct under variable N."""
+        ``coerced_per_atom`` is this frame's per-atom column set (coerced) written onto this frame
+        via :func:`with_per_atom`. The per-atom-scalar check reads this frame's own N
+        (``len(atoms)``), correct under variable N."""
         mapped, carried = _partition_calc(atoms, len(atoms), index, issues)
         per_frame_custom: dict[str, Any] = {}
         for key in atoms.info:
@@ -536,49 +512,6 @@ class ExtxyzParser(ParserPlugin):
         # user_metadata now carries only the object-level per-frame column set.
         custom_per_frame = self._collect_comment_metadata(atoms_list, carried_calc)
         return UserMetadata(custom_per_frame=custom_per_frame)
-
-    @staticmethod
-    def _collect_custom_columns(
-        atoms_list: list[Atoms], issues: list[ParseIssue]
-    ) -> dict[str, Any]:
-        """Arbitrary ``Properties=`` columns → ``custom_per_atom['extxyz:<name>']`` (first dim N).
-
-        ``custom_per_atom`` is object-level (Part 2 §3.10), so a column that *varies* across
-        frames of a trajectory cannot be represented losslessly. Rather than silently keep
-        one frame's values, that is reported as a warning (P1) and frame 0 is carried.
-        """
-        first = atoms_list[0]
-        columns: dict[str, Any] = {}
-        for name, array in first.arrays.items():
-            if name in _RESERVED_ARRAYS:
-                continue
-            values = np.asarray(array)
-            consistent = all(
-                name in a.arrays and np.array_equal(np.asarray(a.arrays[name]), values)
-                for a in atoms_list
-            )
-            if not consistent:
-                issues.append(
-                    ParseIssue(
-                        severity="warning",
-                        code="EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE",
-                        message=(
-                            f"per-atom column {name!r} varies across frames; the canonical model "
-                            "stores per-atom custom arrays once per object (Part 2 §3.10), so only "
-                            "the first frame's values are carried"
-                        ),
-                    )
-                )
-            # Numeric columns are stored as a float64 ndarray (ArrayNx); non-numeric columns (a
-            # string ``:S:`` property such as a per-atom label) are carried as a length-N list of
-            # JSON scalars — the second arm of the custom_per_atom union (Part 2 §3.10). Forcing a
-            # string column through astype(float) previously raised a raw ValueError, escaping the
-            # ParseResult/ParseError contract (§5).
-            if np.issubdtype(values.dtype, np.number):
-                columns[_namespace(name)] = values.astype(float, copy=False)
-            else:
-                columns[_namespace(name)] = [_as_json(v) for v in values]
-        return columns
 
     @staticmethod
     def _collect_comment_metadata(
@@ -802,9 +735,9 @@ def _read_block(block: str, index: int) -> Atoms:
 
 
 def _collect_custom_columns_single(atoms: Atoms) -> dict[str, Any]:
-    """The ``custom_per_atom`` columns of a *single* frame — the streaming analogue of
-    ``_collect_custom_columns`` restricted to one image (frame 0 establishes the object-level set,
-    Part 2 §3.10). Numeric columns become float64 ndarrays; string columns become JSON lists."""
+    """The ``custom_per_atom`` columns of a *single* frame's ASE arrays (Part 2 §3.10). Every frame
+    collects its own set — constant-N or not — so a column that varies across frames is lossless.
+    Numeric columns become float64 ndarrays; string columns become length-N JSON lists."""
     columns: dict[str, Any] = {}
     for name, array in atoms.arrays.items():
         if name in _RESERVED_ARRAYS:
@@ -815,39 +748,6 @@ def _collect_custom_columns_single(atoms: Atoms) -> dict[str, Any]:
         else:
             columns[_namespace(name)] = [_as_json(v) for v in values]
     return columns
-
-
-def _check_columns_consistent(
-    atoms: Atoms,
-    frame0_columns: dict[str, Any],
-    warned: set[str],
-    issues: list[ParseIssue],
-) -> None:
-    """Warn once per column whose values differ from frame 0's, mirroring the whole-file
-    ``EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE`` warning (Part 2 §3.10): ``custom_per_atom`` is
-    stored once per object, so a per-atom column that varies across frames cannot be represented
-    losslessly and only frame 0's values are carried."""
-    for name, array in atoms.arrays.items():
-        if name in _RESERVED_ARRAYS:
-            continue
-        key = _namespace(name)
-        if key in warned or key not in frame0_columns:
-            continue
-        current = np.asarray(array)
-        reference = np.asarray(frame0_columns[key])
-        if not np.array_equal(current, reference):
-            warned.add(key)
-            issues.append(
-                ParseIssue(
-                    severity="warning",
-                    code="EXTXYZ_PER_FRAME_COLUMN_NOT_REPRESENTABLE",
-                    message=(
-                        f"per-atom column {name!r} varies across frames; the canonical model "
-                        "stores per-atom custom arrays once per object (Part 2 §3.10), so only "
-                        "the first frame's values are carried"
-                    ),
-                )
-            )
 
 
 def _is_per_atom_scalar(value: Any, n_atoms: int) -> bool:

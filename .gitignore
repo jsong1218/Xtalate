@@ -248,3 +248,8 @@ _xtalate.db
 
 # Visual brainstorm companion (local, ephemeral)
 .superpowers/
+
+# Fuzzing seed corpus — regenerated from tests/fuzz/make_seed_corpus.py (whose source of truth is
+# the committed seed battery in tests/fuzz/test_parser_fuzz.py) and by ClusterFuzzLite's build.sh.
+# The binary seeds themselves are not committed (v2.0 review, S7).
+tests/fuzz/corpus/

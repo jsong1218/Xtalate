@@ -206,17 +206,22 @@ def test_xu_counterpart_carries_no_image_flags() -> None:
     assert all(i.code != "LAMMPSDUMP_IMAGE_FLAGS_CARRIED" for i in result.issues)
 
 
-def test_per_frame_column_variance_warns_once_per_column() -> None:
+def test_per_frame_column_variance_is_lossless_per_frame() -> None:
+    # A per-atom carry column that varies across frames is representable losslessly since schema
+    # 2.0.0 (M72): each frame carries its own custom_per_atom, so the diverging frame 1 keeps ITS
+    # OWN value — no "only frame 0 carried" loss, and no NOT_REPRESENTABLE warning (v2.0 review S2).
     dump = _source("metal-ortho-declared").replace(
         b"1 Si 1.5 2.5 3.5 0.11 0.21 0.31 5.0",
         b"1 Si 1.5 2.5 3.5 0.11 0.21 0.31 9.0",
     )
     result = PARSER.parse(io.BytesIO(dump), filename="dump.lammpstrj")
     codes = [i.code for i in result.issues]
-    assert codes.count("LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE") == 1
-    # Frame 0's values are carried; the diverging frame 1 is not silently kept.
-    carried = result.canonical.frames[0].custom_per_atom["lammps_dump:c_pe"]
-    assert np.asarray(carried).tolist() == [5.0, 6.0]
+    assert "LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE" not in codes
+    # Frame 0 keeps [5.0, 6.0]; the diverging frame 1 keeps its own [9.0, 6.0] — nothing dropped.
+    f0 = result.canonical.frames[0].custom_per_atom["lammps_dump:c_pe"]
+    f1 = result.canonical.frames[1].custom_per_atom["lammps_dump:c_pe"]
+    assert np.asarray(f0).tolist() == [5.0, 6.0]
+    assert np.asarray(f1).tolist() == [9.0, 6.0]
 
 
 # --- variable-N read-through (M73: the constant-N refusal is retired) ------------------

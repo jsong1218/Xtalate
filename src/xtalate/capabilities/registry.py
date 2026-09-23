@@ -29,6 +29,8 @@ harnesses derive their targets from ``exporters()`` for exactly this reason).
 
 from __future__ import annotations
 
+import re
+
 from xtalate.schema.paths import expand_capability_path, is_valid_path
 from xtalate.sdk import (
     AnalysisPlugin,
@@ -43,6 +45,12 @@ from xtalate.sdk import (
 class InvalidCapabilityDeclaration(ValueError):
     """A plugin declared a capability against an unknown canonical path, or a declaration
     inconsistent with the plugin registering it (mismatched id/direction)."""
+
+
+# A well-formed analysis-plugin namespace: the same lowercase token shape a format_id takes, so a
+# plugin name and a carry-through prefix are drawn from one vocabulary and the collision guard in
+# ``register_analysis_plugin`` is meaningful (v2.0 S6).
+_VALID_ANALYSIS_NAME = re.compile(r"[a-z0-9_-]+")
 
 
 def _validate_and_expand(
@@ -148,16 +156,38 @@ class Registry:
 
         An analysis plugin carries no capability declaration: it reads a Canonical Object and
         annotates its own ``user_metadata`` namespace, so it contributes no Capability Matrix row
-        and is neither a conversion source nor a target. Registration is therefore the duplicate
-        guard plus the name bookkeeping — and, by construction, nothing here can change what
-        ``parsers()``/``exporters()`` report, so a rogue analysis plugin cannot widen the format
-        surface (P6). The duplicate guard is on ``name``, the plugin's namespace: two plugins
-        writing the same namespace is the one collision that would make an annotation
-        unattributable.
+        and is neither a conversion source nor a target. Registration is therefore the name-format
+        check, the collision guard, and the name bookkeeping — and, by construction, nothing here
+        can change what ``parsers()``/``exporters()`` report, so a rogue analysis plugin cannot
+        widen the format surface (P6).
+
+        The name is the plugin's *namespace*: every key it writes is ``"<name>:"``-prefixed and
+        merged into ``custom_global`` beside parser carry-through, which is itself
+        ``"<format_id>:"``-prefixed. Two sources of truth for the same prefix would make an
+        annotation unattributable, so registration refuses a ``name`` that (a) is not a
+        well-formed namespace token (``[a-z0-9_-]+`` — lowercase, no ``:``/whitespace, since a
+        ``:`` or empty name breaks the prefix rule the runner relies on) or (b) collides with any
+        registered parser or exporter ``format_id``, whose carry-through already owns that prefix.
+        A bare ``ValueError`` is raised (the same discipline as the parser/exporter duplicate
+        guards); the discovery layer re-attributes it to the offending distribution as a
+        ``PluginLoadError``.
         """
-        if plugin.name in self._analysis:
-            raise ValueError(f"an analysis plugin is already registered for name {plugin.name!r}")
-        self._analysis[plugin.name] = plugin
+        name = plugin.name
+        if not _VALID_ANALYSIS_NAME.fullmatch(name):
+            raise ValueError(
+                f"invalid analysis plugin name {name!r}: an analysis namespace must be a lowercase "
+                "token matching [a-z0-9_-]+ (no ':', no whitespace, non-empty), because every key "
+                "it writes is prefixed '<name>:' and merged into custom_global"
+            )
+        if name in self._parsers or name in self._exporters:
+            raise ValueError(
+                f"analysis plugin name {name!r} collides with a registered format id of the same "
+                "name, whose parser carry-through already writes the '<name>:' prefix into "
+                "custom_global; choose a distinct namespace so annotations stay attributable"
+            )
+        if name in self._analysis:
+            raise ValueError(f"an analysis plugin is already registered for name {name!r}")
+        self._analysis[name] = plugin
 
     def parsers(self) -> list[ParserPlugin]:
         return list(self._parsers.values())

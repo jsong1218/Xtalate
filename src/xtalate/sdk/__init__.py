@@ -9,7 +9,7 @@ from v1.8 M68 — the third plugin kind, ``AnalysisPlugin``, with its runner
 Implemented in M2.
 """
 
-from xtalate.sdk.analysis import AnalysisError, run_analysis
+from xtalate.sdk.analysis import AnalysisError, AnalysisRun, run_analysis
 from xtalate.sdk.capabilities import (
     CapabilityLevel,
     FieldCapability,
@@ -42,6 +42,7 @@ from xtalate.sdk.stress_carries import STRESS_CARRY_KEYS
 __all__ = [
     "AnalysisError",
     "AnalysisPlugin",
+    "AnalysisRun",
     "AssembleContribution",
     "CapabilityLevel",
     "ExporterPlugin",

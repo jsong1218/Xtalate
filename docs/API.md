@@ -266,8 +266,10 @@ verbatim in its HTTP responses (no parallel DTOs).
 ## 4. Supported formats
 
 Read **and** write: `xyz`, `extxyz`, `poscar`, `contcar`, `xdatcar`, `ase_traj`, `cif`,
-`lammps_dump`, `lammps_data`, `qe_pw_in`, `ase_db`, and `deepmd_npy` (a directory format —
-see the [Developer Guide](DEVELOPER_GUIDE.md) for its `-o DIR` write surface). Read-only /
+`lammps_dump`, `lammps_data`, `qe_pw_in`, `ase_db`, `deepmd_npy` (a directory format —
+see the [Developer Guide](DEVELOPER_GUIDE.md) for its `-o DIR` write surface), and `h5md`
+(the community HDF5 trajectory layout — a binary container that natively expresses a variable
+atom count per frame). Read-only /
 parser-only sources: `vasprun` (VASP `vasprun.xml`), `outcar` (VASP `OUTCAR`), and `qe_pw_out`
 (pw.x output); they are valid conversion sources but never targets. A **dataset is aggregation,
 not a new model**: a multi-row `ase_db` or a multi-frame directory fans out under
@@ -276,6 +278,16 @@ sources — every per-file report is embedded verbatim and tallies are counts, n
 restatements. Third-party formats registered via entry points (see the [Developer
 Guide](DEVELOPER_GUIDE.md)) appear here on equal footing — `xtalate capabilities` always reflects
 the live set.
+
+**Variable atom count (schema `2.0.0`).** A trajectory whose atom count changes frame to frame
+(grand-canonical, deposition, mixed-composition) is first-class: each frame validates its own N,
+and per-atom custom columns relocate onto the frame they describe. Each format declares
+`FormatCapabilities.supports_variable_atom_count`; `extxyz`, `ase_traj`, `ase_db`, `lammps_dump`,
+and `h5md` set it `True`. A target that declares it `False` (`poscar`, `contcar`, `xdatcar`,
+`deepmd_npy` — a single fixed composition) **refuses** a variable-N source at pre-flight and offers
+the `frame_selection` recovery (pick one frame or `split_all`), never padding or truncating to one
+N — ghost atoms are a silent fabrication (**P1**). The refusal is keyed on the target's declared
+capability, not a hard-coded format list.
 
 ## 5. Service (HTTP API)
 

@@ -172,7 +172,11 @@ the single robustness invariant —
 
 - **Continuous / coverage-guided fuzzing** (random byte mutation, e.g. `atheris`/`hypothesis`
   byte-level, run under the nightly extended profile) — the seed corpus is the reviewable seed set it
-  would grow from, not a replacement for it.
+  would grow from, not a replacement for it. **Resolved in the v1.8+v2.0 architectural review (S7):**
+  `tests/fuzz/fuzz_parsers.py` and `tests/fuzz/fuzz_discovery.py` are Atheris harnesses over the same
+  invariant, run by ClusterFuzzLite (`.clusterfuzzlite/`, `.github/workflows/cflite_*.yml`) — a short
+  advisory batch on each PR and a longer nightly batch — seeded from this corpus via
+  `tests/fuzz/make_seed_corpus.py`.
 - **`ase_traj`** has no hand-written malformed-input negative case of its own (it delegates to ASE,
   which the parser normalizes to `ParseError`); the fuzz corpus now covers it, but a dedicated
   regression suite for ASE-delegated failure modes is worth adding.
@@ -193,7 +197,7 @@ not on PyPI and not runtime dependencies — an expected, benign skip.
 |---|---|---|---|
 | F1 | Reconcile `max_frames`/`FRAME_LIMIT_EXCEEDED` docs to reality | M37 S4 | reconciliation: yes; enforcement: no |
 | F1 | Ticket real per-job frame-count enforcement | v1.1 | no |
-| — | Continuous/coverage-guided parser fuzzing under nightly | v1.1 | no |
+| — | Continuous/coverage-guided parser fuzzing under nightly — **done in the v2.0 review (S7):** Atheris + ClusterFuzzLite (`.clusterfuzzlite/`, `cflite_*.yml`) | v1.1 → v2.0 | no |
 | — | Dedicated `ase_traj` malformed-input regression suite | v1.1 | no |
 
 None of the follow-ups is an exploitable defect; F1's documentation reconciliation is the only

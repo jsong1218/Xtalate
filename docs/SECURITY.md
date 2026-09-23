@@ -65,8 +65,9 @@ re-walks (the most recent walk is in [`docs/security/`](security/)).
   per-job wall-clock timeout bounds runaway processing.
 - **Fuzzing is a standing duty.** A parser fuzz seed corpus (`tests/fuzz/`) asserts the
   graceful-failure contract across every format, and randomized property tests exercise the report
-  machinery over generated inputs. Extending the fuzz corpus on every new format is a permanent
-  maintenance duty.
+  machinery over generated inputs. Two Atheris harnesses (`fuzz_parsers.py`, `fuzz_discovery.py`)
+  fuzz the same contract continuously under ClusterFuzzLite — advisory on each PR, a longer batch
+  nightly. Extending the seed corpus on every new format is a permanent maintenance duty.
 
 ### 3. Abuse of a hosted instance — storage/CPU as a free resource
 

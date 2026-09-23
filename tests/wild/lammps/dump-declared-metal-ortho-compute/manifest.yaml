@@ -8,7 +8,6 @@ origin:
   license: "Apache-2.0"
 expectation:
   issue_codes:
-    - LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE
     - LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED
     - LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED
   frame_count: 2
@@ -18,9 +17,10 @@ notes: >-
   with an explicit 'ITEM: UNITS metal' header (no units scenario fires — the declared-vs-
   ambiguous contrast), an orthogonal box, element-labeled atoms, a velocity family, and two
   open-ended compute columns carried to custom_per_atom with
-  LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED. The per-atom potential-energy column c_pe varies across
-  frames, so LAMMPSDUMP_PER_FRAME_COLUMN_NOT_REPRESENTABLE fires once (custom_per_atom is
-  object-level, Part 2 §3.10) while c_centro stays constant. roundtrip: checked — the export
-  writes every carried column back and the re-parse reproduces the object (the reported
-  lammps_dump:type gain excepted, the M47 identity discipline). Authoring follows D167: the
-  section order and ITEM: spellings generalize the committed M46 golden metal-ortho-declared.
+  LAMMPSDUMP_UNMAPPED_COLUMN_CARRIED (once per column, at frame 0). The per-atom potential-energy
+  column c_pe varies across frames; since schema 2.0.0 (M72) custom_per_atom rides each frame, so
+  the varying column is carried losslessly per frame — no NOT_REPRESENTABLE warning (v2.0 review
+  S2) — while c_centro stays constant. roundtrip: checked — the export writes every carried column
+  back and the re-parse reproduces the object (the reported lammps_dump:type gain excepted, the
+  M47 identity discipline). Authoring follows D167: the section order and ITEM: spellings
+  generalize the committed M46 golden metal-ortho-declared.

@@ -7,12 +7,13 @@
 # that appears from an upstream change, e.g. a new advisory, is caught even without a push), plus
 # a manual trigger.
 #
-# Every workflow — ci.yml / main.yml / nightly.yml and this one — pins its actions by full commit
-# SHA (with the version in a trailing comment), which is itself one of the checks Scorecard rewards:
-# an unpinned supply-chain action anywhere would undercut the very thing being measured. The SHAs
-# below are the ones OpenSSF pins in its own scorecard-analysis workflow; bump them (and the comment)
-# together when updating. Because the pins are frozen (there is no Dependabot config), the maintainer
-# advances them by hand when adopting a new action release.
+# Every workflow — ci.yml / main.yml / nightly.yml / codeql.yml / cflite_*.yml and this one — pins
+# its actions by full commit SHA (with the version in a trailing comment), which is itself one of
+# the checks Scorecard rewards: an unpinned supply-chain action anywhere would undercut the very
+# thing being measured. The SHAs below are the ones OpenSSF pins in its own scorecard-analysis
+# workflow; bump them (and the comment) together when updating. Dependabot (`.github/dependabot.yml`,
+# the grouped `github-actions` ecosystem) now proposes pin bumps as review-gated PRs, so a drifting
+# action surfaces as a PR the maintainer reviews rather than needing a manual sweep.
 #
 # KNOWN, ACCEPTED SCORECARD EXCEPTIONS (documented, v1.5 review R10; deliberate policy decision, not
 # an oversight — present both sides and record the choice):
@@ -24,9 +25,13 @@
 #       already SHA/digest-pinned and was confirmed current in the v1.4/v1.5 architectural review; no
 #       open Dependabot alerts exist. Accepted deliberately rather than contorting CI to silence the
 #       probe.
-#   (ii) The solo-maintainer maturity heuristics (`Maintained`, `CII-Best-Practices`, `Fuzzing`,
-#        `Code-Review`). These are intrinsic to a single-maintainer open-source project and are
-#        accepted as-is; they are not resolvable by code or config change.
+#   (ii) The solo-maintainer maturity heuristics (`Maintained`, `CII-Best-Practices`, `Code-Review`,
+#        `Branch-Protection`). These are intrinsic to a single-maintainer open-source project (every
+#        change is authored and merged by the one maintainer, so a second-reviewer gate and a
+#        CII-Best-Practices badge are not applicable) and are accepted as-is; they are not resolvable
+#        by a code or config change. `Fuzzing` was on this list historically but is now RESOLVED:
+#        the v2.0 review added Atheris harnesses run by ClusterFuzzLite (`.clusterfuzzlite/`,
+#        `cflite_*.yml`), and `SAST` is resolved by the real CodeQL run (`codeql.yml`).
 #
 # NOTE for the maintainer: the SARIF upload needs GitHub code scanning enabled for the repo (free on
 # public repositories). `publish_results: true` publishes the score to the OpenSSF API, which is what
@@ -61,7 +66,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
@@ -75,7 +80,7 @@ jobs:
       # Keep the raw SARIF as a short-lived artifact so a run's findings are inspectable even
       # before the code-scanning ingest completes.
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: SARIF file
           path: results.sarif

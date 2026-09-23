@@ -96,6 +96,16 @@ All suites run under `pytest`. The layers:
   completeness invariant, also asserted at runtime in the Conversion Engine).
 - **Streaming** (`tests/streaming/`) — proves the frame-chunked engine produces output and a report
   byte-identical to the materialized path ("chunking changes memory, never truth").
+- **Fuzzing** (`tests/fuzz/`) — a curated, deterministic **seed battery** (`test_parser_fuzz.py`)
+  asserting the one parser robustness invariant on adversarial bytes: a parse yields **either** a
+  valid `ParseResult` **or** a `ParseError`, and nothing else (no leaked `ValueError`/`KeyError`/
+  `UnicodeDecodeError`, no crash, no hang, no unbounded allocation). Two Atheris harnesses
+  (`fuzz_parsers.py`, `fuzz_discovery.py`) fuzz the same invariant continuously under ClusterFuzzLite
+  (`.clusterfuzzlite/`, `.github/workflows/cflite_*.yml`) — a short advisory batch on each PR and a
+  longer nightly batch, seeded from the battery via `make_seed_corpus.py`. Atheris is a Linux/CI-only
+  extra (`pip install .[fuzz]`); a crash it reports is a real robustness defect, fixed by routing the
+  escaped exception through the `ParseError` contract in the owning parser — never by weakening the
+  invariant.
 
 The suite enforces a **coverage ratchet** (`--cov-fail-under` in `pyproject.toml`): a floor set
 below current coverage and raised as coverage rises, never lowered to green a PR. When iterating on
@@ -357,6 +367,45 @@ recorded deterministic mapping (`virial ↔ stress` via stress·volume, D211): r
 `virial.npy → electronic.stress` directly, write maps `stress → virial.npy` **only when both stress
 and a cell are present** (never fabricated, P3); no stress-carry scenario is involved because
 DeePMD's convention is documented, not ambiguous.
+
+### 5.1.6 The binary / variable-N variant (a container whose frames differ in atom count)
+
+`h5md` (M74) is the first **binary** read+write format and the worked example for the schema-`2.0.0`
+variable-N axis: an HDF5 trajectory whose per-step VLEN storage expresses a frame count *and* a
+per-frame atom count natively. Two things make it its own variant:
+
+- **A third-party binary dependency, walled off.** `h5py` is confined to `parsers/h5md.py` and
+  `exporters/h5md.py` by a dedicated `import-linter` contract — the same ASE-isolation precedent
+  (Part 1 §2). A plugin that needs a binary backend does the same: import it only inside the two
+  format modules, never in `schema` or `sdk`, so the backend stays swappable and the core stays
+  dependency-light.
+- **Declare `FormatCapabilities.supports_variable_atom_count = True`** on both the read and write
+  sides. This is the flag the pre-flight reads (not a hard-coded format list, P6): a target that
+  leaves it at its `False` default **refuses** a variable-N source and offers the `frame_selection`
+  recovery, never padding or truncating to one N (P1). A format that genuinely holds one fixed
+  composition (POSCAR/CONTCAR/XDATCAR/DeePMD) leaves it `False`; a format that can express varying N
+  (extXYZ, ASE `.traj`, ASE `.db`, LAMMPS dump, H5MD) sets it `True`.
+
+Because the atom count is a *frame* fact under schema 2.0, a variable-N parser is naturally a
+**streaming** parser: each frame validates its own N, and per-atom columns ride the frame they
+describe, exactly as §5.3's migration shows —
+
+```python
+# A variable-N streaming parser: N and its per-atom columns belong to each frame, not the header.
+yield StreamHeader(...)  # only frame-invariant object metadata
+for step in h5md_steps:                      # each step may have a different atom count
+    frame = build_frame(step)                # frame.positions has this step's N rows
+    frame = frame.model_copy(update={"custom_per_atom": {"h5md:species_id": step.species}})
+    yield StreamFrame(frame=frame)
+```
+
+H5MD also shows the read-boundary discipline a well-behaved binary reader owes: units are laundered
+where they enter (a recognized unit is converted and recorded in `source_units`; an unknown unit is
+passed through verbatim with a warning; an absent unit is passed through with no claim of canonical
+units — P3), a `potential_energy` observable maps to `total_energy` while every other observable is
+carried losslessly under an `h5md:<name>` key, and a file with more than one `/particles` group is
+**refused** rather than silently narrowed (P1). The parser is frame-lazy, so a 10⁴-frame file
+converts at roughly constant memory (the D56 streaming contract).
 
 ### 5.2 Ship it as an installable plugin (no fork)
 
@@ -784,7 +833,7 @@ convenient:
   `[Unreleased]` section that accrues the next release — carries a required `Schema version:` line
   naming the canonical `schema_version` it ships, guarded against `xtalate.schema.SCHEMA_VERSION` by
   `tests/test_changelog_schema_version.py`. The product version and the schema version move under
-  distinct rules (see [Versioning and stability](../README.md#versioning-and-stability)).
+  distinct rules (see [Versioning and stability](../README.md#versioning)).
 - **No AI attribution in commits.** No `Co-Authored-By` AI trailer, no "Generated with…" line, and
   no AI listed as author or contributor in commit metadata, `CITATION.cff`, or release notes — the
   human maintainer is the author of record on every commit.

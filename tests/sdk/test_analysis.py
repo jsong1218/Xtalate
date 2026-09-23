@@ -100,11 +100,15 @@ def test_run_writes_only_the_plugins_namespace_and_touches_nothing_else() -> Non
     original = _obj()
     before = _json(original)
 
-    annotated = run_analysis(
+    run = run_analysis(
         original,
         DummyAnalysis("toy", results={"toy:atom_count": 2, "toy:has_cell": False}),
     )
+    annotated = run.canonical
     after = _json(annotated)
+
+    # The entries are exactly what the plugin returned, not a rescan of the merged custom_global.
+    assert run.entries == {"toy:atom_count": 2, "toy:has_cell": False}
 
     assert after["frames"] == before["frames"]
     assert after["simulation"] == before["simulation"]
@@ -133,10 +137,10 @@ def test_run_writes_only_the_plugins_namespace_and_touches_nothing_else() -> Non
 def test_a_rerun_overwrites_only_the_plugins_own_keys() -> None:
     """A plugin owns its namespace, so a second run replaces its own keys and leaves every other
     entry (user, parser, or a neighbouring plugin) alone."""
-    first = run_analysis(_obj(), DummyAnalysis("toy", results={"toy:score": 1}))
-    other = run_analysis(first, DummyAnalysis("other", results={"other:score": 99}))
+    first = run_analysis(_obj(), DummyAnalysis("toy", results={"toy:score": 1})).canonical
+    other = run_analysis(first, DummyAnalysis("other", results={"other:score": 99})).canonical
 
-    again = run_analysis(other, DummyAnalysis("toy", results={"toy:score": 2}))
+    again = run_analysis(other, DummyAnalysis("toy", results={"toy:score": 2})).canonical
 
     assert again.user_metadata.custom_global == {
         "xyz:comment": "from the source file",
@@ -148,7 +152,7 @@ def test_a_rerun_overwrites_only_the_plugins_own_keys() -> None:
 def test_the_run_appends_an_analyze_record_naming_plugin_version_and_keys() -> None:
     annotated = run_analysis(
         _obj(), DummyAnalysis("toy", version="0.1.0", results={"toy:b": 2, "toy:a": 1})
-    )
+    ).canonical
 
     record = annotated.provenance.history[-1]
     assert record.operation == "analyze"
@@ -163,7 +167,7 @@ def test_the_run_appends_an_analyze_record_naming_plugin_version_and_keys() -> N
 def test_a_plugin_that_writes_no_keys_still_records_its_run() -> None:
     """An analysis run that found nothing to say is still a run: the record says so rather than
     leaving the invocation invisible (D269)."""
-    annotated = run_analysis(_obj(), DummyAnalysis("toy", results={}))
+    annotated = run_analysis(_obj(), DummyAnalysis("toy", results={})).canonical
 
     assert annotated.user_metadata.custom_global == {"xyz:comment": "from the source file"}
     assert annotated.provenance.history[-1].assumptions == [
@@ -177,7 +181,8 @@ def test_analyze_joins_the_reserved_operation_vocabulary() -> None:
     2.0.0 is M72's constant-N/custom_per_atom relocation, unrelated to the analysis vocabulary)."""
     assert SCHEMA_VERSION == "2.0.0"
     assert ConversionRecord.model_fields["operation"].annotation is str
-    assert run_analysis(_obj(), DummyAnalysis("toy")).provenance.history[-1].operation == "analyze"
+    history = run_analysis(_obj(), DummyAnalysis("toy")).canonical.provenance.history
+    assert history[-1].operation == "analyze"
 
 
 # --- containment, adversarially (D268) ------------------------------------------------
@@ -231,7 +236,7 @@ def test_the_plugin_cannot_mutate_the_source_object() -> None:
 
     annotated = run_analysis(
         original, DummyAnalysis("toy", results={"toy:ok": True}, mutate=vandalize)
-    )
+    ).canonical
 
     assert _json(original) == before
     # Only what the plugin *returned* was merged — not what it wrote into its view.

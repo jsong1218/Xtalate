@@ -120,13 +120,10 @@ def test_run_analysis_merges_only_the_namespace_and_records_once() -> None:
     source = _obj(with_cell=True)
     before_history = len(source.provenance.history)
 
-    annotated = run_analysis(source, _plugin())
+    run = run_analysis(source, _plugin())
+    annotated = run.canonical
 
-    written = {
-        k: v
-        for k, v in annotated.user_metadata.custom_global.items()
-        if k.startswith("toyanalysis:")
-    }
+    written = run.entries
     assert set(written) == {
         "toyanalysis:frame_count",
         "toyanalysis:atom_count",
@@ -154,12 +151,12 @@ def test_run_analysis_merges_only_the_namespace_and_records_once() -> None:
 def test_toyanalysis_reports_absent_cell_volume_honestly() -> None:
     """§8.3/P3/P4 on the installed plugin: with a cell, a real number; without one, ``None``
     paired with a plain-language reason — never a fabricated volume."""
-    with_cell = run_analysis(_obj(with_cell=True), _plugin()).user_metadata.custom_global
+    with_cell = run_analysis(_obj(with_cell=True), _plugin()).entries
     assert with_cell["toyanalysis:cell_volume_a3"] == pytest.approx(27.0)
     with_note = with_cell["toyanalysis:cell_volume_note"]
     assert isinstance(with_note, str) and "computed" in with_note
 
-    without_cell = run_analysis(_obj(with_cell=False), _plugin()).user_metadata.custom_global
+    without_cell = run_analysis(_obj(with_cell=False), _plugin()).entries
     assert without_cell["toyanalysis:cell_volume_a3"] is None
     without_note = without_cell["toyanalysis:cell_volume_note"]
     assert isinstance(without_note, str) and "no simulation cell" in without_note

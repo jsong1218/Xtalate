@@ -92,31 +92,16 @@ def coerce_per_atom(custom_per_atom: dict[str, Any]) -> dict[str, Any]:
 def with_per_atom(frame: Frame, coerced: dict[str, Any]) -> Frame:
     """Attach an *already-coerced* per-atom column set onto one ``Frame`` (schema 2.0.0, M72/M73).
 
-    The single-frame companion to :func:`attach_per_atom`, for the streaming path where each
-    ``StreamFrame.frame`` carries its own ``custom_per_atom`` (M73's ``StreamHeader`` relocation).
+    Every parser writes ``custom_per_atom`` per frame — each ``StreamFrame.frame`` (and each
+    materialized ``Frame``) carries its own column set, collected from that frame's own arrays and
+    validated against that frame's N (Part 2 §3.10; the M73 ``StreamHeader`` relocation, extended in
+    the v2.0 review so a column that varies across a constant-N trajectory is lossless too).
     ``model_copy(update=...)`` skips validation, so ``coerced`` must already be a coerced set from
     :func:`coerce_per_atom`. Each frame gets its own dict so a per-frame mutation cannot alias
     another frame's columns. An empty set leaves the frame untouched."""
     if not coerced:
         return frame
     return frame.model_copy(update={"custom_per_atom": dict(coerced)})
-
-
-def attach_per_atom(frames: list[Frame], custom_per_atom: dict[str, Any]) -> list[Frame]:
-    """Write an object-level per-atom column set onto every frame (schema 2.0.0, M72).
-
-    Pre-2.0, ``custom_per_atom`` lived once at the object root because the constant-N invariant
-    guaranteed one atom count for all frames (Part 2 §3.10). Schema 2.0.0 lifts that invariant and
-    relocates the columns onto each ``Frame``, validated against *that* frame's N. A whole-file
-    parser still collects one frame-invariant column set (it produces constant-N objects in M72 —
-    variable-N emission is M73), so it writes the same set onto every frame here: the single place
-    the "same array to every frame" rule lives, so no parser hand-rolls the loop. Each frame gets
-    its own dict so a later per-frame mutation cannot alias another frame's columns. An empty set
-    leaves the frames untouched (no ``custom_per_atom`` to carry)."""
-    coerced = coerce_per_atom(custom_per_atom)
-    if not coerced:
-        return frames
-    return [with_per_atom(f, coerced) for f in frames]
 
 
 def build_provenance(

@@ -1,0 +1,4 @@
+# ClusterFuzzLite project config (v2.0 review, S7).
+# Coverage-guided fuzzing of the parser + discovery surfaces via Atheris, run in CI by the
+# cflite_* workflows. See tests/fuzz/ for the harnesses and the reviewable seed battery.
+language: python

@@ -1,0 +1,35 @@
+name: cflite-batch
+
+# ClusterFuzzLite nightly batch sweep (v2.0 review, S7). The deeper counterpart to the per-PR
+# `cflite-pr` run: a longer, whole-surface Atheris batch over every built-in parser and the
+# discovery engine (tests/fuzz/), seeded from the reviewable seed battery. Scheduled off the PR
+# critical path, alongside the existing nightly matrix (nightly.yml).
+on:
+  schedule:
+    - cron: "0 4 * * *" # 04:00 UTC daily, after the nightly round-trip matrix
+  workflow_dispatch: {}
+
+# Least privilege: the batch only reads the checkout and reports crashes as artifacts.
+permissions:
+  contents: read
+
+concurrency:
+  group: cflite-batch
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build fuzzers
+        uses: google/clusterfuzzlite/actions/build_fuzzers@52ecc61cb587ee99c26825a112a21abf19c7448c # main @ 2026-02-12
+        with:
+          language: python
+          sanitizer: address
+      - name: Run fuzzers
+        uses: google/clusterfuzzlite/actions/run_fuzzers@52ecc61cb587ee99c26825a112a21abf19c7448c # main @ 2026-02-12
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: batch
+          sanitizer: address

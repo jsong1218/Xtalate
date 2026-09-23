@@ -3,7 +3,7 @@
   "frames": [
     {
       "index": 0,
-      "time": null,
+      "time": 0.0,
       "atoms": {
         "symbols": [
           "Si",
@@ -69,7 +69,7 @@
     },
     {
       "index": 1,
-      "time": null,
+      "time": 1.0,
       "atoms": {
         "symbols": [
           "Si",
@@ -148,16 +148,17 @@
     "original_coordinate_system": "cartesian",
     "parse_notes": [
       "read via h5py 3.16.0; H5MD per-step elements read with each frame's own atom count (P3).",
+      "time: the source declared no unit; values read verbatim as fs with no assumed conversion (P4).",
       "H5MD file created by lammps-h5md 2Aug2023"
     ],
     "history": [
       {
-        "timestamp": "2026-09-20T04:28:46Z",
+        "timestamp": "2026-09-22T01:35:58Z",
         "operation": "parse",
         "source_format": "h5md",
         "target_format": null,
-        "tool_version": "1.8.0",
-        "parser_version": "h5md-parser 1.8.0 (h5py 3.16.0)",
+        "tool_version": "2.0.0",
+        "parser_version": "h5md-parser 2.0.0 (h5py 3.16.0)",
         "assumptions": []
       }
     ]

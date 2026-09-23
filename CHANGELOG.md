@@ -5,10 +5,12 @@ All notable changes to Xtalate are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The canonical **schema version** is tracked separately from the package version and moves under its
-own rules (see [Versioning and stability](README.md#versioning-and-stability)). It is `1.0.0` in code
-as of the v1.0 contract freeze; the *package* version reached `1.0.0` at the v1.0 release, and
-objects written by earlier releases carry `schema_version = "0.1.0"` (loaded forward through a real
-migration). Every release entry — and the `[Unreleased]` section that accrues the next one — carries
+own rules (see [Versioning and stability](README.md#versioning)). It is `2.0.0` in code
+as of the v2.0 release — the constant-N invariant lifted behind a real `1.0.0 → 2.0.0` migration (it
+held at `1.0.0` from the v1.0 contract freeze through v1.8). The *package* version reached `1.0.0` at
+the v1.0 release and `2.0.0` at v2.0; objects written by earlier releases carry their original
+`schema_version` (`0.1.0` or `1.0.0`) and are loaded forward through the migration chain
+(`0.1.0 → 1.0.0 → 2.0.0`). Every release entry — and the `[Unreleased]` section that accrues the next one — carries
 a required **`Schema version:`** line stating the canonical `schema_version` it ships; a guard
 (`tests/test_changelog_schema_version.py`) fails CI if that line drifts from
 `xtalate.schema.SCHEMA_VERSION`.
@@ -17,9 +19,30 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 2.0.0
 
+_The next release accrues here._
+
+## [2.0.0] — 2026-09-20
+
+Schema version: 2.0.0
+
+v2.0 — **"Schema 2.0.0 — Variable-N and H5MD"** — does not so much add a feature as **retire a
+refusal**. For five versions the ladder told a class of users "this trajectory is real and we cannot
+represent it — here is exactly why" (a `ParseError` with a `recovery_hint`, never truncation or
+padding); v2.0 is the payment. The canonical schema's constant-N invariant is lifted behind a real
+`1.0.0 → 2.0.0` migration — each frame now carries its own atom count — so grand-canonical,
+deposition, reactive, and mixed-composition trajectories become first-class, and **H5MD** arrives as
+the first binary container that expresses a varying particle number natively. The engine, SDK, and
+reports were audited per-frame-N, the whole change was proven at corpus scale, and the refusal
+"evidence file" the ladder kept open since v1.3 is closed as committed test assets. The one breaking
+change — per-atom custom arrays relocated from root `user_metadata.custom_per_atom` onto each
+`frame.custom_per_atom` — is bundled into this single major; constant-N work is byte-identical and the
+`/v1`, report, and CLI surfaces are unchanged. See the [migration guide](docs/MIGRATION.md): for most
+users a major is a `pip install -U`, because stored objects migrate forward on load. Package `2.0.0`
+on schema `2.0.0`; the git tag and publish are the maintainer's manual, nightly-green-gated step (D52).
+
 ### Added
 
-- **H5MD read *and* write — the eighth first-party format and the first binary variable-N container
+- **H5MD read *and* write — the thirteenth first-party format and the first binary variable-N container
   (M74).** Xtalate now reads and writes the community HDF5 interchange layout: `/particles/<group>`
   positions, species, velocities, forces, masses, charges, and box (fixed-in-time or time-dependent,
   cuboid shorthand or full 3×3), plus `/observables`. Its per-step VLEN layout expresses a trajectory
@@ -86,6 +109,44 @@ Schema version: 2.0.0
   refusal** (`XDATCAR_VARIABLE_ATOM_COUNT`) — the format writes one element/count header shared by
   every configuration, so it genuinely cannot represent a varying atom count; the refusal now cites
   that format constraint, not the retired canonical-model invariant.
+
+### Fixed — v1.8 + v2.0 architectural review
+
+The post-release architectural review of the v1.8 and v2.0 work folded into this release (D64
+in-version review discipline). No public surface changed; the fixes below correct honesty and
+robustness gaps found by reading the shipped code.
+
+- **The nightly benchmark now asserts the M73 variable-N read it claimed to cover.** The `ase_db`
+  benchmark parsed a fixed-N system and never exercised a variable-atom-count read, so a regression
+  in the variable-N path would not have shown up as a benchmark failure; it now reads a variable-N
+  system and asserts the per-frame counts (closes #112).
+- **Per-frame per-atom columns are carried losslessly, and reported honestly.** A constant-N
+  trajectory whose parser attached per-frame per-atom columns kept them through the pipeline (they
+  were previously dropped on the frame boundary), and the engine now reports and preserves per-atom
+  keys across variable-N frames rather than silently narrowing to the first frame's key set (**P1**).
+- **H5MD reads more, invents nothing, and reports mismatch.** `frame.time` is read; a per-particle
+  mass/charge that disagrees between the `/particles` group and a frame is reported rather than
+  silently preferring one; and the torn-tail recovery is extended so a truncated final step is a
+  reported partial read, never a fabricated frame.
+- **Analysis attributes only its own output.** A plugin's results are attributed to that plugin
+  alone, and a plugin-name collision is guarded rather than allowing one plugin's namespace to
+  absorb another's entries.
+
+### Security — v1.8 + v2.0 architectural review
+
+- **H5MD allocates nothing before bounding it.** Per-frame size and frame count are bounded, and an
+  HDF5 external link is refused, *before* any allocation — a malformed or hostile file cannot drive
+  an unbounded read (the M37 hardening posture extended to the new binary reader).
+- **Continuous fuzzing (Scorecard `Fuzzing`).** Two Atheris harnesses — a parser harness and a
+  discovery harness — run under ClusterFuzzLite (`.clusterfuzzlite/`, `cflite_pr.yml` per-PR advisory
+  + `cflite_batch.yml` nightly), each asserting the parser/discovery contract (a valid result or a
+  declared error, nothing else).
+- **Static analysis, dependency updates, and signed releases (Scorecard `SAST` /
+  `Dependency-Update-Tool` / `Signed-Releases`).** A real CodeQL run over both languages
+  (`codeql.yml`) reaches the code-scanning dashboard; Dependabot (`.github/dependabot.yml`) proposes
+  grouped, review-gated pin/dependency bumps across the GitHub Actions, pip, and npm ecosystems; and
+  the published CI image is cosign-signed (keyless OIDC) with build-provenance attestation. A root
+  `SECURITY.md` points at the full policy.
 
 ### Migration
 

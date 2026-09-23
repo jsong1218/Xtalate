@@ -165,14 +165,21 @@ def compute_field_presence(obj: CanonicalObject) -> PresenceMap:
     um = obj.user_metadata
     for key in um.custom_global:
         entries.append(PathPresence(path=f"user_metadata.custom_global['{key}']", status="present"))
-    # custom_per_atom relocated onto each Frame in schema 2.0.0 (M72); the object-level view is
-    # frame 0's (frame-invariant for a constant-N object). The path identifier is stable (§3.10) —
-    # it names the canonical per-atom category, not a live attribute path, and keeps constant-N
-    # presence output identical to pre-2.0.
-    for key in obj.frames[0].custom_per_atom:
-        entries.append(
-            PathPresence(path=f"user_metadata.custom_per_atom['{key}']", status="present")
-        )
+    # custom_per_atom relocated onto each Frame in schema 2.0.0 (M72). A per-atom column can appear
+    # in some frames only (a later frame introducing it, constant-N or not), so the object-level
+    # view is the UNION of keys present in *any* frame, in first-seen order — never frame 0 alone,
+    # which would render a later-frame key invisible to the Discovery Report and the pre-flight diff
+    # (v2.0 review, S3). The path identifier is stable (§3.10) — it names the canonical per-atom
+    # category, not a live attribute path — and for a constant-N object whose columns are
+    # frame-invariant the union equals frame 0's set, so pre-2.0 output is unchanged.
+    seen_per_atom: set[str] = set()
+    for frame in obj.frames:
+        for key in frame.custom_per_atom:
+            if key not in seen_per_atom:
+                seen_per_atom.add(key)
+                entries.append(
+                    PathPresence(path=f"user_metadata.custom_per_atom['{key}']", status="present")
+                )
     for key in um.custom_per_frame:
         entries.append(
             PathPresence(path=f"user_metadata.custom_per_frame['{key}']", status="present")
@@ -226,8 +233,9 @@ class PresenceAccumulator:
         Mirrors the ``_ROOT`` sweep and the custom-global enumeration of ``compute_field_presence``,
         but reads the header's already-separated pieces rather than a whole object.
         ``custom_per_atom`` keys ride each frame in schema 2.0.0 (M73), not the header, so they are
-        captured from the first observed frame (mirroring ``compute_field_presence``'s
-        ``obj.frames[0].custom_per_atom`` — frame-invariant for a constant-N object)."""
+        unioned across the observed frames in ``observe_frame`` (mirroring
+        ``compute_field_presence``'s union over ``obj.frames`` — a later-frame key must not be
+        dropped, v2.0 review S3)."""
         # Reconstruct the minimal shape the _ROOT getters expect: a lightweight stand-in exposing
         # `.trajectory`, `.simulation`, and `.user_metadata` (tags/annotations only — the two
         # enumerated non-custom user-metadata roots). Custom keys are handled separately below.
@@ -257,12 +265,14 @@ class PresenceAccumulator:
         union. ``per_frame_custom_keys`` names the ``custom_per_frame`` keys this frame carries a
         non-``None`` value for; their union across frames becomes the present custom entries."""
         idx = frame.index
-        # custom_per_atom keys ride each frame in schema 2.0.0 (M73). Capture them from the first
-        # observed frame (frame 0), mirroring compute_field_presence's
-        # obj.frames[0].custom_per_atom — frame-invariant for the constant-N objects this
-        # accumulator sees, so frame 0's set is the object-level view.
+        # custom_per_atom keys ride each frame in schema 2.0.0 (M73). Union them across all observed
+        # frames in first-seen order — a per-atom column may appear in a later frame that frame 0
+        # lacks (v2.0 review, S3), so seeding from frame 0 alone would drop it. This matches the
+        # materialized union in compute_field_presence exactly (standing rule 3).
+        for key in frame.custom_per_atom:
+            if key not in self._custom_per_atom_keys:
+                self._custom_per_atom_keys.append(key)
         if self._n_frames == 0:
-            self._custom_per_atom_keys = list(frame.custom_per_atom)
             self._first_n = len(frame.atoms.symbols)
         elif len(frame.atoms.symbols) != self._first_n:
             self._variable_n = True

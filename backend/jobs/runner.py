@@ -377,7 +377,7 @@ def _run_analyze(
     )
 
     try:
-        annotated = run_analysis(parsed.canonical, plugin)
+        run = run_analysis(parsed.canonical, plugin)
     except AnalysisError as exc:
         # A plugin error is a *reported* failure, not a transport fault (D268): a completed job
         # whose report says the plugin failed, the analysis analogue of a refused conversion.
@@ -388,21 +388,17 @@ def _run_analyze(
             message=str(exc),
         )
     else:
-        # The keys this run wrote are exactly the plugin's own ``"<name>:"`` namespace merged into
-        # ``custom_global`` (run_analysis rejects any other key before merging), and the single
-        # ``operation: "analyze"`` record it appended is the last history entry (D269).
-        prefix = f"{plugin.name}:"
-        results = {
-            key: value
-            for key, value in annotated.user_metadata.custom_global.items()
-            if key.startswith(prefix)
-        }
+        # ``results`` is exactly the keys this plugin wrote, taken from ``run.entries`` rather than
+        # re-scanned out of the merged ``custom_global`` — a rescan would sweep in a pre-existing
+        # carry-through key sharing the plugin's namespace and mis-attribute it as plugin output
+        # (v2.0 S6, D294). The single ``operation: "analyze"`` record it appended is the last
+        # history entry on the annotated object (D269).
         report = AnalysisReport(
             status="ok",
             plugin=plugin.name,
             plugin_version=plugin.version,
-            results=results,
-            record=annotated.provenance.history[-1].model_dump(mode="json"),
+            results=run.entries,
+            record=run.canonical.provenance.history[-1].model_dump(mode="json"),
         )
 
     repository.add_report(
