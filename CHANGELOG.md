@@ -19,6 +19,17 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 2.0.0
 
+### Fixed
+
+- **Two coverage-guided-fuzzing crashes hardened into refusals, not silent exceptions.** A POSCAR
+  whose atom-count line sums to zero (e.g. `H O` species with counts `0 0`) crashed in the
+  Cartesian-conversion matmul instead of being refused; `PoscarParser` now raises `POSCAR_MALFORMED`
+  before that step. A vasprun.xml declaring an XML encoding Python's codec registry does not
+  recognize (e.g. `encoding="I-9-O8S581"`) crashed with a raw `LookupError` from `ElementTree`
+  instead of the parser's own error contract; `VasprunParser` now catches `LookupError` alongside
+  `ET.ParseError` and raises `VASPRUN_MALFORMED_XML`. Both were found by the ClusterFuzzLite harness
+  (D295) and are covered by new fuzz seeds and unit tests; neither changes any successful parse.
+
 _The next release accrues here._
 
 ## [2.0.0] — 2026-09-20
