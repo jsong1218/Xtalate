@@ -140,6 +140,10 @@ _TAILORED: dict[str, list[tuple[str, bytes]]] = {
             + b'<varray name="forces" >\n<v> 0.1 0.0 0.0 </v>\n<v> -0.1 0.0 0.0 </v>\n'
             + b"</varray>\n</calculation>\n</vasprun>\n",
         ),
+        (
+            "unknown_encoding",
+            b'<?xml version="1.0" encoding="I-9-O8S581"?>\n<vasprun>\n</vasprun>\n',
+        ),
     ],
     "outcar": [
         ("no_force_table", _OUTCAR_HEAD + b"  energy(sigma->0) = -1.0\n"),

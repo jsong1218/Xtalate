@@ -687,6 +687,13 @@ class VasprunParser(ParserPlugin):
             ) from exc
         except ET.ParseError as exc:
             raise _error("VASPRUN_MALFORMED_XML", f"file is not well-formed XML: {exc}") from exc
+        except LookupError as exc:
+            # A hostile XML declaration can name an encoding Python's codec registry does not know;
+            # ElementTree raises LookupError during feed. Route it through the §5 error contract.
+            raise _error(
+                "VASPRUN_MALFORMED_XML",
+                f"file declares an unknown XML encoding: {exc}",
+            ) from exc
 
         stream_header = _build_stream_header(header, filename)
 

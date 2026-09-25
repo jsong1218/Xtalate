@@ -361,6 +361,16 @@ def test_non_xml_is_vasprun_malformed() -> None:
     assert excinfo.value.issues[0].code == "VASPRUN_MALFORMED_XML"
 
 
+def test_unknown_xml_encoding_is_refused_not_crashed() -> None:
+    # A hostile XML declaration can name an encoding Python's codec registry does not know;
+    # ElementTree raises LookupError during feed. This must surface as the §5 error contract's
+    # VASPRUN_MALFORMED_XML, never leak the raw LookupError (fuzzer-found).
+    data = b'<?xml version="1.0" encoding="I-9-O8S581"?>\n<vasprun>\n</vasprun>\n'
+    with pytest.raises(ParseError) as excinfo:
+        _parse(data)
+    assert excinfo.value.issues[0].code == "VASPRUN_MALFORMED_XML"
+
+
 def test_entity_expansion_is_refused_by_secure_xml_parser() -> None:
     # This deliberately tiny billion-laughs-shaped payload must be refused before entity
     # expansion, rather than being handed to an untrusted stdlib XML parser (HIGH-V2, D190).
