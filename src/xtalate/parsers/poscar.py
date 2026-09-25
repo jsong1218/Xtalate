@@ -291,6 +291,13 @@ class PoscarParser(ParserPlugin):
             )
         cursor += 1
 
+        if n_atoms == 0:
+            raise _error(
+                "POSCAR_MALFORMED",
+                "a POSCAR must declare at least one atom; the atom counts sum to zero",
+                location="line 7",
+            )
+
         # --- coordinates (+ optional selective-dynamics flags) ------------------------
         coords: list[list[float]] = []
         masks: list[list[bool]] = []
