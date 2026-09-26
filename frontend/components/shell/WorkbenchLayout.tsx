@@ -37,8 +37,9 @@ function activeFileIdFrom(pathname: string | null): string | null {
  * every route, rather than being re-rendered per `/f/[file_id]` page. This component owns the two
  * pieces of state `SourceRail` is presentational over: the active file id (derived from the route)
  * and the collapsed flag (persisted like the app's other per-viewer prefs, e.g. the theme). The
- * inspector/status bar remain minimal stubs (`Inspector.tsx`, `StatusBar.tsx`) — their real content
- * lands in Tasks 10–11.
+ * inspector (`Inspector.tsx`, Task 10) and status bar (`StatusBar.tsx`, Task 11) are now both real,
+ * self-contained components — like `SourceRail`, neither takes props from here; each derives its
+ * own route context from `usePathname()`.
  */
 export function WorkbenchLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -97,7 +98,7 @@ export function WorkbenchLayout({ children }: { children: ReactNode }) {
         <Inspector />
       </div>
 
-      {/* Status bar — row 3, full width (Task 11 stub). */}
+      {/* Status bar — row 3, full width. */}
       <StatusBar />
     </div>
   );

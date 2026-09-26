@@ -7,8 +7,10 @@ import { FutureSeams } from "@/components/shell/FutureSeams";
 /**
  * The file-centric workspace shell (UI redesign S2, D244; design spec §3, D-R1/D-R2).
  *
- * Every `/f/[file_id]` tab renders inside one layout: the tabbed main column
- * (`Inspect · Structure · Convert · Report · Analysis`), then the reserved **empty seams** of the
+ * Every `/f/[file_id]` tab renders inside one layout: the tabbed main column — reordered by the
+ * v2.0 addendums workbench redesign (Task 11) to `Report · Structure · Convert · Analysis · Inspect`,
+ * Report leading per the design spec's "Shell architecture" section — then the reserved **empty
+ * seams** of the
  * shell (S6, D247) below the active tab's content — the File Repair action and the Assistant
  * side-panel slot, each an inert "coming later" seat (see `FutureSeams`) — P6.
  *
