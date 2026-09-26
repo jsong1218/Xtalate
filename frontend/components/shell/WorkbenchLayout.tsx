@@ -94,7 +94,7 @@ export function WorkbenchLayout({ children }: { children: ReactNode }) {
           <div className="mx-auto max-w-5xl px-4 py-8">{children}</div>
         </main>
 
-        {/* Inspector — middle-right (Task 10 stub). */}
+        {/* Inspector — middle-right, the real contextual panel (Task 10). */}
         <Inspector />
       </div>
 
