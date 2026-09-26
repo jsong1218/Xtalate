@@ -1,53 +1,110 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pushRecent } from "@/lib/prefs/recents";
 import { SourceRail } from "./SourceRail";
-import type { DiscoveryReport } from "@/lib/report/types";
 
 /**
- * The pinned source rail (UI redesign S2, D244; D-R2): on every workspace tab it keeps the file's
- * facts in view — filename, format + confidence, the counts — and its primary CTA is the guided
- * spine's next step (the Convert tab). The facts come from the same inspection the Inspect tab
- * renders; the rail never makes a second wire call.
+ * The workbench Sources rail (v2.0 addendums, Task 9; design spec §"Shell architecture" — "Session
+ * files with format badges; drop-to-add; collapsible"). It shares its data source with
+ * `RecentsStrip` (this browser's localStorage recents merged with `/v1/history`) — see that
+ * component's test for the merge behavior itself; this test pins the persisted half the same way
+ * (the history query is left to fail fast against no server, exactly like `RecentsStrip.test.tsx`).
  */
-const report: DiscoveryReport = {
-  file: { filename: "relax.traj", size_bytes: 2048, sha256: "ab".repeat(32) },
-  format: { format_id: "ase-trajectory", format_name: "ASE Trajectory", confidence: 0.92 },
-  structure: { frame_count: 3, atom_count: 64, species: ["Si", "O"] },
-  fields: [],
-  extras: [],
-  issues: [],
-  schema_version: "1.0.0",
-};
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
-const { useInspection } = vi.hoisted(() => ({ useInspection: vi.fn() }));
-vi.mock("@/lib/api/useInspection", () => ({ useInspection }));
+function renderRail(
+  props: Partial<{ activeFileId: string | null; collapsed: boolean; onToggle: () => void }> = {},
+) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+  });
+  const onToggle = props.onToggle ?? vi.fn();
+  const utils = render(
+    <QueryClientProvider client={queryClient}>
+      <SourceRail
+        activeFileId={props.activeFileId ?? null}
+        collapsed={props.collapsed ?? false}
+        onToggle={onToggle}
+      />
+    </QueryClientProvider>,
+  );
+  return { onToggle, ...utils };
+}
 
 describe("SourceRail", () => {
-  beforeEach(() => {
-    useInspection.mockReturnValue({ status: "ready", report });
+  it("renders a labeled Sources landmark, distinct from the Inspector", () => {
+    renderRail();
+    expect(screen.getByRole("navigation", { name: "Sources" })).toBeInTheDocument();
   });
 
-  it("pins the source facts: filename, format + confidence, and the counts", () => {
-    render(<SourceRail fileId="file-1" />);
-    expect(screen.getByText("relax.traj")).toBeInTheDocument();
-    expect(screen.getByText(/ASE Trajectory/)).toBeInTheDocument();
-    expect(screen.getByText("(92% confidence)")).toBeInTheDocument();
-    // The counts render as mono values (the S1 DataValue role).
-    expect(screen.getByText("3").className).toContain("font-mono");
-    expect(screen.getByText("64").className).toContain("font-mono");
-    expect(screen.getByText("2.0 KB")).toBeInTheDocument();
+  it("shows the empty state when there are no session files", () => {
+    renderRail();
+    expect(screen.getByText("No files yet. Drop one to begin.")).toBeInTheDocument();
   });
 
-  it("points the guided-spine CTA at the Convert tab", () => {
-    render(<SourceRail fileId="file-1" />);
-    const cta = screen.getByRole("link", { name: "Convert →" });
-    expect(cta).toHaveAttribute("href", "/f/file-1/convert");
-    expect(cta.className).toContain("bg-accent"); // the primary button treatment
+  it("offers a simple add-file affordance in the empty state", () => {
+    renderRail();
+    expect(screen.getByRole("link", { name: /add file/i })).toHaveAttribute("href", "/");
   });
 
-  it("renders a loading state while inspection is pending", () => {
-    useInspection.mockReturnValue({ status: "loading" });
-    render(<SourceRail fileId="file-1" />);
-    expect(screen.getByRole("status")).toHaveTextContent("Loading source…");
+  it("lists a session file with its format badge, linking to its workspace", async () => {
+    pushRecent({
+      key: "f123",
+      href: "/f/f123",
+      filename: "run.extxyz",
+      format_id: "extxyz",
+      last_seen_at: "2026-08-30T00:00:00Z",
+    });
+    renderRail();
+    const link = await screen.findByRole("link", { name: /run\.extxyz/ });
+    expect(link).toHaveAttribute("href", "/f/f123");
+    expect(screen.getByText("extxyz")).toBeInTheDocument();
+  });
+
+  it("marks the active file with aria-current, leaving other files unmarked", async () => {
+    pushRecent({
+      key: "f123",
+      href: "/f/f123",
+      filename: "run.extxyz",
+      format_id: "extxyz",
+      last_seen_at: "2026-08-30T00:00:00Z",
+    });
+    pushRecent({
+      key: "f456",
+      href: "/f/f456",
+      filename: "other.xyz",
+      format_id: "xyz",
+      last_seen_at: "2026-08-30T00:01:00Z",
+    });
+    renderRail({ activeFileId: "f123" });
+    const active = await screen.findByRole("link", { name: /run\.extxyz/ });
+    expect(active).toHaveAttribute("aria-current", "page");
+    const inactive = screen.getByRole("link", { name: /other\.xyz/ });
+    expect(inactive).not.toHaveAttribute("aria-current");
+  });
+
+  it("exposes a collapse toggle button with aria-expanded reflecting the expanded state", () => {
+    const { onToggle } = renderRail({ collapsed: false });
+    const button = screen.getByRole("button", { name: /collapse/i });
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    button.click();
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the file list and shows an expand control when collapsed", async () => {
+    pushRecent({
+      key: "f123",
+      href: "/f/f123",
+      filename: "run.extxyz",
+      format_id: "extxyz",
+      last_seen_at: "2026-08-30T00:00:00Z",
+    });
+    renderRail({ collapsed: true });
+    const button = screen.getByRole("button", { name: /expand/i });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: /run\.extxyz/ })).not.toBeInTheDocument();
   });
 });

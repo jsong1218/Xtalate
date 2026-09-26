@@ -1,7 +1,29 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { StatusBar } from "@/components/shell/StatusBar";
 import { Inspector } from "@/components/shell/Inspector";
 import { Toolbar } from "@/components/shell/Toolbar";
+import { SourceRail } from "@/components/shell/SourceRail";
+import { readJson, writeJson } from "@/lib/prefs/storage";
+
+/** The persisted Sources-rail collapse preference (a per-viewer QoL pref, like the theme). */
+const RAIL_COLLAPSED_KEY = "sources-rail-collapsed";
+
+function isBoolean(v: unknown): v is boolean {
+  return typeof v === "boolean";
+}
+
+/** Extracts the active `file_id` from a `/f/<id>/...` pathname, or `null` off that route — the
+ * same shape as `Toolbar`'s own `activeFileIdFrom` helper, kept local to each caller rather than
+ * shared, since neither imports the other. */
+function activeFileIdFrom(pathname: string | null): string | null {
+  if (!pathname) return null;
+  const match = pathname.match(/^\/f\/([^/]+)/);
+  return match ? match[1] : null;
+}
 
 /**
  * The workbench shell (v2.0 addendums, Task 7; design spec §"Shell architecture").
@@ -11,12 +33,32 @@ import { Toolbar } from "@/components/shell/Toolbar";
  * (the routed page) renders into the center region, which carries the `#main-content` skip-link
  * target that used to live directly in `app/layout.tsx`.
  *
- * This is the *scaffold* slice: the sources rail is a temporary stand-in (see the inline notes
- * below), and the inspector/status bar are minimal stubs (`Inspector.tsx`, `StatusBar.tsx`). The
- * toolbar is the real `Toolbar` component (Task 8). Real content for the remaining regions lands
- * in Tasks 9–11.
+ * The sources rail is now the real, persistent `SourceRail` (Task 9) — it lives here once, for
+ * every route, rather than being re-rendered per `/f/[file_id]` page. This component owns the two
+ * pieces of state `SourceRail` is presentational over: the active file id (derived from the route)
+ * and the collapsed flag (persisted like the app's other per-viewer prefs, e.g. the theme). The
+ * inspector/status bar remain minimal stubs (`Inspector.tsx`, `StatusBar.tsx`) — their real content
+ * lands in Tasks 10–11.
  */
 export function WorkbenchLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const activeFileId = activeFileIdFrom(pathname);
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Hydrate the persisted preference after mount only — SSR has no localStorage, so the first
+  // render always assumes expanded, then syncs to whatever this browser last chose.
+  useEffect(() => {
+    setCollapsed(readJson(RAIL_COLLAPSED_KEY, isBoolean, false));
+  }, []);
+
+  const handleToggle = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      writeJson(RAIL_COLLAPSED_KEY, next);
+      return next;
+    });
+  }, []);
+
   return (
     // min-h-screen, not h-screen: `app/layout.tsx` renders `DemoBanner` as an in-flow sibling
     // ABOVE this shell when NEXT_PUBLIC_DEMO_BANNER is set (the hosted demo), so a fixed h-screen
@@ -34,19 +76,11 @@ export function WorkbenchLayout({ children }: { children: ReactNode }) {
 
       {/* Middle row: sources rail | center | inspector. */}
       <div className="grid grid-cols-[auto_1fr_auto] overflow-hidden">
-        {/* Sources rail — middle-left, an empty placeholder column ONLY (no label, no landmark).
-            `app/f/[file_id]/layout.tsx` already renders the real, populated `<SourceRail
-            fileId=.../>` (an `<aside aria-label="Source file">`) inline as part of `{children}`,
-            which now renders inside this shell's center — so this column must not carry its own
-            "Sources" heading/landmark, or every `/f/[file_id]/*` page would show two competing
-            Sources panels. It exists only to reserve the rail's width/chrome for non-file routes
-            (`/formats`, `/history`, `/docs`) until Task 9 gives it real content.
-            TODO(Task 9): move the real SourceRail into this slot and remove it from
-            f/[file_id]/layout.tsx. */}
-        <div
-          data-testid="wb-sources-placeholder"
-          className="hidden w-56 shrink-0 border-r border-wb-hairline bg-wb-rail md:block"
-        />
+        {/* Sources rail — middle-left, the real persistent SourceRail (Task 9). It used to be a
+            reserved-but-empty placeholder column here while `app/f/[file_id]/layout.tsx` rendered
+            its own per-file `<SourceRail fileId=.../>` inline; that duplicate has been removed
+            (see that layout file) so the "Sources" landmark exists exactly once, for every route. */}
+        <SourceRail activeFileId={activeFileId} collapsed={collapsed} onToggle={handleToggle} />
 
         {/* Center — the only region that swaps per routed page. Carries the skip-link target
             moved here from app/layout.tsx. */}
