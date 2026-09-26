@@ -80,7 +80,7 @@ describe("WorkbenchLayout", () => {
     renderLayout(<p>center</p>);
     expect(screen.getByRole("navigation", { name: "Sources" })).toBeInTheDocument();
     expect(screen.queryByTestId("wb-sources-placeholder")).not.toBeInTheDocument();
-    // Exactly one complementary landmark remains: the Inspector stub.
+    // Exactly one complementary landmark remains: the real Inspector (Task 10, not mocked here).
     expect(screen.getAllByRole("complementary")).toHaveLength(1);
   });
 

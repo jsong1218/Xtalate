@@ -31,12 +31,17 @@ vi.mock("@/lib/api/client", () => ({
 
 // A rough but sufficient emoji detector for the "no emoji glyphs" assertion: the Unicode ranges
 // emoji live in (pictographs, emoticons, transport/map symbols, dingbats, supplemental symbols, and
-// the variation-selector/ZWJ machinery that stitches multi-codepoint emoji together). The loss
-// vocabulary's own glyphs (✓ ✗ ◆ ⚠ ✕ – ⟳) are plain BMP punctuation/arrow/geometric-shape
-// characters outside every one of these ranges, so they never false-positive here.
+// the variation-selector/ZWJ machinery that stitches multi-codepoint emoji together).
+//
+// The `\u{2600}-\u{27BF}` "dingbats/misc symbols" block is the trap here: it also contains the §4
+// loss-vocabulary's own glyphs — ✓ U+2713, ✕ U+2715, ✗ U+2717, ⚠ U+26A0, ⟳ U+27F3 (◆ U+25C6 sits
+// outside this block, in Geometric Shapes, so it needs no carve-out). Those five codepoints are
+// explicitly excluded via the lookahead below, so this is a genuine emoji-only check — it would
+// still catch a real emoji if one ever crept into the sample tiles, and it would *not* false-fail if
+// a vocabulary glyph ever legitimately appeared in the same subtree.
 // eslint-disable-next-line no-misleading-character-class -- intentional: matching emoji code points, not a single grapheme
 const EMOJI_PATTERN =
-  /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}️‍]/u;
+  /[\u{1F300}-\u{1FAFF}]|(?:(?!\u{2713}|\u{2715}|\u{2717}|\u{26A0}|\u{27F3})[\u{2600}-\u{27BF}])|[\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]|\u{FE0F}|\u{200D}/u;
 
 function mockGet(path: string): unknown {
   if (path === "/v1/capabilities") {
@@ -92,6 +97,14 @@ describe("LandingPage (workbench empty state)", () => {
     await renderLanding();
     const picker = screen.getByTestId("sample-picker");
     expect(EMOJI_PATTERN.test(picker.textContent ?? "")).toBe(false);
+  });
+
+  it("the emoji guard itself still catches real emoji but not the §4 loss-vocabulary glyphs", () => {
+    // Proves the pattern above is a genuine emoji-only check, not one that merely happens to pass
+    // because the sample-picker subtree contains no vocabulary glyphs today.
+    expect(EMOJI_PATTERN.test("🎉")).toBe(true);
+    expect(EMOJI_PATTERN.test("Try it \u{1F9EA} now")).toBe(true);
+    expect(EMOJI_PATTERN.test("✓ ✕ ✗ ⚠ ◆ ⟳")).toBe(false);
   });
 
   it("folds the loss vocabulary into a compact legend near the dropzone", async () => {
