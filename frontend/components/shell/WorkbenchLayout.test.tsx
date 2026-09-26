@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkbenchLayout } from "./WorkbenchLayout";
@@ -24,19 +25,41 @@ vi.mock("@/components/shell/SourceRail", () => ({
 const { usePathname } = vi.hoisted(() => ({ usePathname: vi.fn(() => "/") }));
 vi.mock("next/navigation", () => ({ usePathname }));
 
+// The Inspector (Task 10) is not mocked here — this suite exercises its always-mounted landmark
+// alongside the rest of the shell — but it now calls real react-query hooks (`useInspection`,
+// `useFileGeometry`) on a `/f/<id>/...` route, so the transport is stubbed at the typed client (the
+// repo convention — see `Inspector.test.tsx`) and every render needs a `QueryClientProvider`.
+const apiGet = vi.fn();
+const apiPost = vi.fn();
+vi.mock("@/lib/api/client", () => ({
+  apiClient: {
+    GET: (...args: unknown[]) => apiGet(...args),
+    POST: (...args: unknown[]) => apiPost(...args),
+  },
+}));
+
+function renderLayout(children: React.ReactNode) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <WorkbenchLayout>{children}</WorkbenchLayout>
+    </QueryClientProvider>,
+  );
+}
+
 describe("WorkbenchLayout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     usePathname.mockReturnValue("/");
     window.localStorage.clear();
+    apiPost.mockResolvedValue({ data: undefined, error: { code: "NOT_MOCKED" } });
+    apiGet.mockResolvedValue({ data: undefined, error: { code: "NOT_MOCKED" } });
   });
 
   it("renders the five workbench regions", () => {
-    render(
-      <WorkbenchLayout>
-        <p>center</p>
-      </WorkbenchLayout>,
-    );
+    renderLayout(<p>center</p>);
     expect(screen.getByRole("banner")).toBeInTheDocument(); // toolbar
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
     expect(screen.getByRole("complementary")).toBeInTheDocument(); // inspector
@@ -45,11 +68,7 @@ describe("WorkbenchLayout", () => {
   });
 
   it("makes the center region focusable for the skip-link target", () => {
-    render(
-      <WorkbenchLayout>
-        <p>center</p>
-      </WorkbenchLayout>,
-    );
+    renderLayout(<p>center</p>);
     expect(screen.getByRole("main")).toHaveAttribute("tabIndex", "-1");
   });
 
@@ -58,11 +77,7 @@ describe("WorkbenchLayout", () => {
     // task the column was an empty, unlabeled placeholder while `app/f/[file_id]/layout.tsx` (now
     // changed — see that file) rendered its own per-file rail inline; that duplicate is gone, so
     // exactly one "Sources" landmark exists, alongside exactly one Inspector landmark.
-    render(
-      <WorkbenchLayout>
-        <p>center</p>
-      </WorkbenchLayout>,
-    );
+    renderLayout(<p>center</p>);
     expect(screen.getByRole("navigation", { name: "Sources" })).toBeInTheDocument();
     expect(screen.queryByTestId("wb-sources-placeholder")).not.toBeInTheDocument();
     // Exactly one complementary landmark remains: the Inspector stub.
@@ -71,11 +86,7 @@ describe("WorkbenchLayout", () => {
 
   it("derives the active file id from the route and passes it to SourceRail", () => {
     usePathname.mockReturnValue("/f/file-42/structure");
-    render(
-      <WorkbenchLayout>
-        <p>center</p>
-      </WorkbenchLayout>,
-    );
+    renderLayout(<p>center</p>);
     expect(sourceRailProps).toHaveBeenCalledWith(
       expect.objectContaining({ activeFileId: "file-42" }),
     );
@@ -83,20 +94,12 @@ describe("WorkbenchLayout", () => {
 
   it("passes no active file id off a /f/ route", () => {
     usePathname.mockReturnValue("/formats");
-    render(
-      <WorkbenchLayout>
-        <p>center</p>
-      </WorkbenchLayout>,
-    );
+    renderLayout(<p>center</p>);
     expect(sourceRailProps).toHaveBeenCalledWith(expect.objectContaining({ activeFileId: null }));
   });
 
   it("toggles the collapsed flag it owns when SourceRail's onToggle fires", () => {
-    render(
-      <WorkbenchLayout>
-        <p>center</p>
-      </WorkbenchLayout>,
-    );
+    renderLayout(<p>center</p>);
     expect(sourceRailProps).toHaveBeenCalledWith(expect.objectContaining({ collapsed: false }));
     const { onToggle } = sourceRailProps.mock.calls[sourceRailProps.mock.calls.length - 1][0];
     act(() => {
