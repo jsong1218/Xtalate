@@ -15,7 +15,8 @@ import { ThemeToggle } from "@/lib/theme/ThemeProvider";
  * grid row and adds no competing landmark of its own), now painted with the workbench chrome tokens
  * (`bg-wb-toolbar` / `border-wb-hairline`, Task 6) instead of the page-level `bg-surface`/`border-line`.
  *
- * Left: the Xtalate wordmark (home), then the two cross-workspace verbs:
+ * Left: the Xtalate wordmark (home), then the two cross-workspace verbs (own `aria-label="File
+ * actions"` nav landmark):
  *   - **Open / Upload** — always live, points at `/` where the landing dropzone lives (mirrors
  *     `AppHeader`'s pre-existing "Convert redirects to `/`" precedent).
  *   - **Convert** — jumps straight to the active file's convert route (`/f/[file_id]/convert`).
@@ -29,8 +30,13 @@ import { ThemeToggle } from "@/lib/theme/ThemeProvider";
  * choice is to omit them and let Convert be the one entry point (P1: no UI surface implies a
  * capability that doesn't exist).
  *
- * Right cluster is ported unchanged from `AppHeader`: the ⌘K palette trigger, the three global
- * destinations (Formats/History/Docs), the completion-signal mute toggle, and the theme toggle.
+ * Right cluster (design spec §"Shell architecture" — global destinations + toggles on the right,
+ * not the left verb nav): the ⌘K palette trigger, then the three global destinations
+ * (Formats/History/Docs, in their own `aria-label="Primary"` nav landmark — the same label
+ * `AppHeader` used for its one nav), then the completion-signal mute toggle, then the theme toggle.
+ * Two distinctly-labeled nav landmarks ("File actions" left, "Primary" right) rather than one,
+ * since the left verbs and the right destinations are no longer adjacent in the same list — this
+ * still keeps the toolbar as a single `banner` with no duplicate *unlabeled* landmark.
  */
 
 const GLOBAL_DESTINATIONS: { href: string; label: string }[] = [
@@ -56,46 +62,54 @@ export function Toolbar() {
 
   return (
     <header className="border-b border-wb-hairline bg-wb-toolbar">
-      <div className="flex items-center gap-x-4 gap-y-2 px-4 py-3">
-        <Link
-          href="/"
-          className="shrink-0 rounded-sm text-lg font-semibold tracking-tight text-strong transition-colors hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-wb-toolbar"
-        >
-          Xtalate
-        </Link>
-        <nav
-          aria-label="Primary"
-          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-sm"
-        >
-          <Link href="/" className={linkClass}>
-            Open / Upload
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+        {/* Left cluster: brand + the per-file verbs. */}
+        <div className="flex min-w-0 items-center gap-x-4">
+          <Link
+            href="/"
+            className="shrink-0 rounded-sm text-lg font-semibold tracking-tight text-strong transition-colors hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-wb-toolbar"
+          >
+            Xtalate
           </Link>
-          {convertHref ? (
-            <Link href={convertHref} className={linkClass}>
-              Convert
+          <nav
+            aria-label="File actions"
+            className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"
+          >
+            <Link href="/" className={linkClass}>
+              Open / Upload
             </Link>
-          ) : (
-            <button
-              type="button"
-              disabled
-              title="Open a file first to convert it"
-              className="cursor-not-allowed rounded-sm text-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              Convert
-            </button>
-          )}
-          <span aria-hidden="true" className="hidden h-4 w-px bg-wb-hairline sm:inline-block" />
-          {GLOBAL_DESTINATIONS.map((item) => (
-            <Link key={item.href} href={item.href} className={linkClass}>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="flex shrink-0 items-center gap-2">
+            {convertHref ? (
+              <Link href={convertHref} className={linkClass}>
+                Convert
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled
+                title="Open a file first to convert it"
+                className="cursor-not-allowed rounded-sm text-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                Convert
+              </button>
+            )}
+          </nav>
+        </div>
+
+        {/* Right cluster: ⌘K, the global destinations, then the toggles (design spec order). */}
+        <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm">
           {/* The ⌘K command palette (ported from AppHeader S4): visible button + global ⌘K/Ctrl-K. */}
           <CommandPaletteTrigger />
-          <NotifyToggle />
-          <ThemeToggle />
+          <nav aria-label="Primary" className="flex items-center gap-x-4">
+            {GLOBAL_DESTINATIONS.map((item) => (
+              <Link key={item.href} href={item.href} className={linkClass}>
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+          <div className="flex items-center gap-2">
+            <NotifyToggle />
+            <ThemeToggle />
+          </div>
         </div>
       </div>
     </header>

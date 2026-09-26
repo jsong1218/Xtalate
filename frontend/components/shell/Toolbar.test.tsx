@@ -69,6 +69,26 @@ describe("Toolbar", () => {
     }
   });
 
+  it("keeps the global destinations out of the left File-actions nav (design spec grouping)", () => {
+    // Design spec §"Shell architecture": Formats/History/Docs belong in the RIGHT cluster
+    // alongside ⌘K and the toggles, not the left verb nav next to Open/Upload and Convert.
+    renderToolbar();
+    const fileActions = screen.getByRole("navigation", { name: "File actions" });
+    expect(within(fileActions).queryByRole("link", { name: "Formats" })).not.toBeInTheDocument();
+    expect(within(fileActions).queryByRole("link", { name: "History" })).not.toBeInTheDocument();
+    expect(within(fileActions).queryByRole("link", { name: "Docs" })).not.toBeInTheDocument();
+    // The left nav still carries the per-file verbs.
+    expect(within(fileActions).getByRole("link", { name: /open.*upload/i })).toBeInTheDocument();
+  });
+
+  it("has no duplicate unlabeled nav landmarks (two distinctly-labeled navs only)", () => {
+    renderToolbar();
+    const navs = screen.getAllByRole("navigation");
+    expect(navs).toHaveLength(2);
+    const names = navs.map((nav) => nav.getAttribute("aria-label"));
+    expect(names.sort()).toEqual(["File actions", "Primary"]);
+  });
+
   it("mounts the command-palette trigger (⌘K)", () => {
     renderToolbar();
     const trigger = screen.getByRole("button", { name: /Search/i });
