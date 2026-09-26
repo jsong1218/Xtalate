@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { AppHeader } from "@/components/shell/AppHeader";
 import { DemoBanner } from "@/components/shell/DemoBanner";
 import { DemoPrivacyGate } from "@/components/shell/DemoPrivacyGate";
+import { WorkbenchLayout } from "@/components/shell/WorkbenchLayout";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -46,14 +46,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           {/* The public-demo banner (v1.1 M39-S1): rendered only when NEXT_PUBLIC_DEMO_BANNER is
               set, i.e. only on the hosted-demo image — a self-host never sees it. */}
           <DemoBanner />
-          <AppHeader />
-          <div
-            id="main-content"
-            tabIndex={-1}
-            className="mx-auto max-w-5xl px-4 py-8 focus:outline-none"
-          >
-            {children}
-          </div>
+          {/* The full workbench shell (v2.0 addendums, Task 7) — toolbar, sources rail, center,
+              inspector, status bar. #main-content (the skip-link target) lives inside it now,
+              on the center region. */}
+          <WorkbenchLayout>{children}</WorkbenchLayout>
         </Providers>
       </body>
     </html>
