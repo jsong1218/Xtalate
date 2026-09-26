@@ -2,13 +2,12 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { WorkbenchLayout } from "./WorkbenchLayout";
 
-// AppHeader mounts the ⌘K palette + theme/notify toggles, which need router + provider context the
-// standalone shell test doesn't set up (see AppHeader.test.tsx) — that wiring is exercised there.
-// This test only cares that the toolbar region exists and renders AppHeader's `banner` landmark, so
-// AppHeader is mocked to a bare banner stand-in, matching the temporary-render decision (Task 8
-// replaces AppHeader with the real Toolbar).
-vi.mock("@/components/shell/AppHeader", () => ({
-  AppHeader: () => <header>app header stub</header>,
+// Toolbar mounts the ⌘K palette + theme/notify toggles, which need router + provider context the
+// standalone shell test doesn't set up (see Toolbar.test.tsx) — that wiring is exercised there.
+// This test only cares that the toolbar region exists and renders Toolbar's `banner` landmark, so
+// Toolbar is mocked to a bare banner stand-in.
+vi.mock("@/components/shell/Toolbar", () => ({
+  Toolbar: () => <header>toolbar stub</header>,
 }));
 
 describe("WorkbenchLayout", () => {

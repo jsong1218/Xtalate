@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { AppHeader } from "@/components/shell/AppHeader";
 import { StatusBar } from "@/components/shell/StatusBar";
 import { Inspector } from "@/components/shell/Inspector";
+import { Toolbar } from "@/components/shell/Toolbar";
 
 /**
  * The workbench shell (v2.0 addendums, Task 7; design spec §"Shell architecture").
@@ -11,10 +11,10 @@ import { Inspector } from "@/components/shell/Inspector";
  * (the routed page) renders into the center region, which carries the `#main-content` skip-link
  * target that used to live directly in `app/layout.tsx`.
  *
- * This is the *scaffold* slice: the toolbar and sources rail are temporary stand-ins (see the
- * inline notes below), and the inspector/status bar are minimal stubs (`Inspector.tsx`,
- * `StatusBar.tsx`). Real content for each region lands in Tasks 8–11; this task only makes the
- * five-region grid real and wires the skip-link target through it.
+ * This is the *scaffold* slice: the sources rail is a temporary stand-in (see the inline notes
+ * below), and the inspector/status bar are minimal stubs (`Inspector.tsx`, `StatusBar.tsx`). The
+ * toolbar is the real `Toolbar` component (Task 8). Real content for the remaining regions lands
+ * in Tasks 9–11.
  */
 export function WorkbenchLayout({ children }: { children: ReactNode }) {
   return (
@@ -27,12 +27,10 @@ export function WorkbenchLayout({ children }: { children: ReactNode }) {
     // the bottom of the *document* instead. A true always-visible (sticky) status bar is left to
     // Task 11/13 once it has real content to justify the complexity.
     <div className="grid min-h-screen grid-rows-[auto_1fr_auto]">
-      {/* Toolbar — row 1, full width. */}
-      {/* TODO(Task 8): replace AppHeader with Toolbar. AppHeader already renders its own
-          `border-b border-line` banner chrome, so no extra wb-toolbar background/border is
-          layered here to avoid a double border; Task 8's real Toolbar picks up bg-wb-toolbar /
-          border-wb-hairline directly. */}
-      <AppHeader />
+      {/* Toolbar — row 1, full width. Toolbar renders its own `<header>` (the workbench's single
+          `banner` landmark), painted with the workbench chrome tokens
+          (`bg-wb-toolbar` / `border-wb-hairline`) directly — no extra chrome layered here. */}
+      <Toolbar />
 
       {/* Middle row: sources rail | center | inspector. */}
       <div className="grid grid-cols-[auto_1fr_auto] overflow-hidden">

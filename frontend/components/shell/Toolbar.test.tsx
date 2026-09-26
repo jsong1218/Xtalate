@@ -1,0 +1,118 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Toolbar } from "./Toolbar";
+import { NotifyPreferenceProvider } from "@/lib/notify/NotifyPreferenceProvider";
+import { ThemeProvider } from "@/lib/theme/ThemeProvider";
+
+/**
+ * `Toolbar` mounts the ⌘K palette (needs the router + react-query) and the theme/notify toggles
+ * (need their providers) — same setup as `AppHeader.test.tsx`, plus a `usePathname` mock (like
+ * `WorkspaceTabs.test.tsx`) since the Convert verb derives its target from the active `/f/[id]`
+ * route.
+ */
+const { usePathname, pushMock } = vi.hoisted(() => ({
+  usePathname: vi.fn(() => "/"),
+  pushMock: vi.fn(),
+}));
+vi.mock("next/navigation", () => ({
+  usePathname,
+  useRouter: () => ({ push: pushMock }),
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  usePathname.mockReturnValue("/");
+});
+
+function renderToolbar() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <NotifyPreferenceProvider>
+          <Toolbar />
+        </NotifyPreferenceProvider>
+      </ThemeProvider>
+    </QueryClientProvider>,
+  );
+}
+
+describe("Toolbar", () => {
+  it("renders a banner landmark", () => {
+    renderToolbar();
+    expect(screen.getByRole("banner")).toBeInTheDocument();
+  });
+
+  it("puts the Xtalate wordmark first, linking home", () => {
+    renderToolbar();
+    expect(screen.getByRole("link", { name: "Xtalate" })).toHaveAttribute("href", "/");
+  });
+
+  it("offers an Open/Upload verb pointing at the landing dropzone", () => {
+    renderToolbar();
+    expect(screen.getByRole("link", { name: /open.*upload/i })).toHaveAttribute("href", "/");
+  });
+
+  it("offers the global destinations in a named Primary nav", () => {
+    renderToolbar();
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    const expected: [string, string][] = [
+      ["Formats", "/formats"],
+      ["History", "/history"],
+      ["Docs", "/docs"],
+    ];
+    for (const [label, href] of expected) {
+      expect(within(nav).getByRole("link", { name: label })).toHaveAttribute("href", href);
+    }
+  });
+
+  it("mounts the command-palette trigger (⌘K)", () => {
+    renderToolbar();
+    const trigger = screen.getByRole("button", { name: /Search/i });
+    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+  });
+
+  it("mounts the theme toggle", () => {
+    renderToolbar();
+    expect(screen.getByRole("button", { name: /switch to light mode/i })).toBeInTheDocument();
+  });
+
+  it("mounts the completion-signal mute toggle", () => {
+    renderToolbar();
+    expect(screen.getByRole("button", { name: "Mute completion signal" })).toBeInTheDocument();
+  });
+
+  it("disables the Convert verb when there is no active file", () => {
+    usePathname.mockReturnValue("/formats");
+    renderToolbar();
+    const convert = screen.getByRole("button", { name: /convert/i });
+    expect(convert).toBeDisabled();
+  });
+
+  it("disables the Convert verb on the landing route too", () => {
+    usePathname.mockReturnValue("/");
+    renderToolbar();
+    expect(screen.getByRole("button", { name: /convert/i })).toBeDisabled();
+  });
+
+  it("links the Convert verb to the active file's convert route", () => {
+    usePathname.mockReturnValue("/f/file-42/structure");
+    renderToolbar();
+    expect(screen.getByRole("link", { name: /convert/i })).toHaveAttribute(
+      "href",
+      "/f/file-42/convert",
+    );
+  });
+
+  it("derives the active file id even when already on the convert route", () => {
+    usePathname.mockReturnValue("/f/file-42/convert");
+    renderToolbar();
+    expect(screen.getByRole("link", { name: /convert/i })).toHaveAttribute(
+      "href",
+      "/f/file-42/convert",
+    );
+  });
+});
