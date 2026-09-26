@@ -82,8 +82,8 @@ describe("AppHeader", () => {
 
   it("mounts the theme toggle", () => {
     renderHeader();
-    // Default is light, so the toggle offers to switch to dark.
-    expect(screen.getByRole("button", { name: /switch to dark mode/i })).toBeInTheDocument();
+    // Default is dark (Steel workbench, v2.0 addendums), so the toggle offers to switch to light.
+    expect(screen.getByRole("button", { name: /switch to light mode/i })).toBeInTheDocument();
   });
 
   it("mounts the completion-signal mute toggle, on by default (C1)", () => {

@@ -8,10 +8,11 @@ import type { ReactNode } from "react";
  *
  * A light/dark toggle that flips the `data-theme` attribute on <html> — the single switch the CSS
  * palette (`app/globals.css`) and Tailwind's selector dark-mode (`tailwind.config.ts`) both key off.
- * **Default is light**; the user's explicit choice is remembered in `localStorage`, so it does NOT
- * follow `prefers-color-scheme` (this is the deliberate choice recorded in globals.css, overriding
- * D96). The no-flash `<head>` script in `app/layout.tsx` applies the persisted choice before first
- * paint; this provider then adopts it on mount and owns every change afterward.
+ * **Default is dark** (the Steel workbench palette, v2.0 addendums Task 6); the user's explicit
+ * choice is remembered in `localStorage`, so it does NOT follow `prefers-color-scheme` (this is the
+ * deliberate choice recorded in globals.css, overriding D96). The no-flash `<head>` script in
+ * `app/layout.tsx` applies the persisted choice (or the dark default) before first paint; this
+ * provider then adopts it on mount and owns every change afterward.
  *
  * There is deliberately no cross-page store beyond this (Part 7 §5.1) — the theme is the one piece of
  * genuinely client-only, cross-page UI state, and it lives in a DOM attribute + localStorage, not a
@@ -49,9 +50,9 @@ function persist(theme: Theme): void {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  // SSR and the very first client render agree on "light" so hydration never mismatches; the mount
+  // SSR and the very first client render agree on "dark" so hydration never mismatches; the mount
   // effect then adopts whatever the no-FOUC script already applied / localStorage remembers.
-  const [theme, setThemeState] = useState<Theme>("light");
+  const [theme, setThemeState] = useState<Theme>("dark");
 
   useEffect(() => {
     const stored = readStored();
@@ -91,7 +92,7 @@ export function useTheme(): ThemeContextValue {
  * A non-throwing theme read for leaf widgets that may render outside a ThemeProvider (e.g. the
  * Mol* mount under a bare `render()` in unit tests). Returns the context theme when a provider is
  * present — so it re-renders on toggle in the real app, where Providers always wrap the tree —
- * otherwise falls back to the `data-theme` attribute the no-FOUC script sets, defaulting to light.
+ * otherwise falls back to the `data-theme` attribute the no-FOUC script sets, defaulting to dark.
  */
 export function useOptionalTheme(): Theme {
   const ctx = useContext(ThemeContext);
@@ -100,7 +101,7 @@ export function useOptionalTheme(): Theme {
     const attr = document.documentElement.getAttribute("data-theme");
     if (attr === "dark" || attr === "light") return attr;
   }
-  return "light";
+  return "dark";
 }
 
 /**

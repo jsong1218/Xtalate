@@ -12,16 +12,17 @@ export const metadata: Metadata = {
     "The trusted translation layer between computational chemistry file formats: a converter that tells you exactly what it kept, what it lost, and why.",
 };
 
-// Applied before first paint so a persisted dark choice never flashes light. Kept in sync with
-// THEME_STORAGE_KEY in lib/theme/ThemeProvider.tsx; default is light. Runs at the top of <body> so it
-// executes before the styled content is painted.
-const noFlashThemeScript = `(function(){try{var t=localStorage.getItem('xtalate-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
+// Applied before first paint so a persisted light choice never flashes dark. Kept in sync with
+// THEME_STORAGE_KEY in lib/theme/ThemeProvider.tsx; default is dark (the Steel workbench, v2.0
+// addendums Task 6) — an explicit persisted choice of 'light' still wins. Runs at the top of
+// <body> so it executes before the styled content is painted.
+const noFlashThemeScript = `(function(){try{var t=localStorage.getItem('xtalate-theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     // suppressHydrationWarning: the no-flash script above sets data-theme before React hydrates, so
     // the server-rendered attribute may differ from the client's persisted choice — expected.
-    <html lang="en" data-theme="light" suppressHydrationWarning>
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
       <body className="min-h-screen bg-surface text-strong antialiased">
         <script dangerouslySetInnerHTML={{ __html: noFlashThemeScript }} />
         <Providers>

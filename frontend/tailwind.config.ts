@@ -65,6 +65,16 @@ const config: Config = {
         // token from the fill because teal-as-text on the dark surface needs a lighter tone
         // (`--accent-text` in globals.css) than the button fill can give.
         "accent-text": "var(--accent-text)", // text-accent-text ← links / active tab
+        // Workbench chrome bands (v2.0 addendums Task 6): the toolbar, source/inspector rails, main
+        // panel, and status bar each get their own step so the shell reads as distinct regions
+        // instead of one flat `bg-surface`. Single source of truth is the CSS var in globals.css.
+        wb: {
+          toolbar: "var(--wb-toolbar)", // bg-wb-toolbar
+          rail: "var(--wb-rail)", // bg-wb-rail
+          panel: "var(--wb-panel)", // bg-wb-panel
+          status: "var(--wb-status)", // bg-wb-status
+          hairline: "var(--wb-hairline)", // border-wb-hairline
+        },
         cb: {
           // Foreground / icon colors, one per §4 meaning.
           preserve: "var(--cb-preserve)",

@@ -172,10 +172,71 @@ function checkTheme(theme: string, block: () => string) {
     ] as const)("viewer chrome %s clears AA on %s", (fg, bg) => {
       expect(contrast(t(fg), t(bg))).toBeGreaterThanOrEqual(AA);
     });
+
+    // The workbench chrome surfaces (v2.0 addendums Task 6 — Steel dark-first theme, design spec
+    // "Theme system"): the toolbar, source rail, main panel, and status bar each get their own
+    // token so the shell can band them distinctly from the plain page `--surface`. Body and heading
+    // text must still clear AA rendered directly on each one, in both themes.
+    it.each(["wb-toolbar", "wb-rail", "wb-panel", "wb-status"])(
+      "text-body clears AA on workbench chrome surface %s",
+      (name) => {
+        expect(contrast(t("text-body"), t(name))).toBeGreaterThanOrEqual(AA);
+      },
+    );
+    it.each(["wb-toolbar", "wb-rail", "wb-panel", "wb-status"])(
+      "text-strong clears AA on workbench chrome surface %s",
+      (name) => {
+        expect(contrast(t("text-strong"), t(name))).toBeGreaterThanOrEqual(AA);
+      },
+    );
   });
 }
 
 describe("UI palette — WCAG AA contrast", () => {
   checkTheme("light", lightBlock);
   checkTheme("dark", darkBlock);
+});
+
+/**
+ * The default-theme flip (v2.0 addendums Task 6): the workbench is dark-by-default in the Steel
+ * palette, with the light neutral-gray desktop theme opt-in. Three places encode the default and
+ * must agree: the SSR `<html data-theme>` attribute, the no-flash `<head>` script's fallback (used
+ * when localStorage has no persisted choice, e.g. private browsing or first visit), and the
+ * `ThemeProvider`'s initial React state (which SSR and first client render must agree on, to avoid
+ * a hydration mismatch) — all three read from source here rather than rendering the app, matching
+ * this file's existing "parse the real source" approach.
+ */
+describe("default theme — Steel dark-first (v2.0 addendums)", () => {
+  const layoutSrc = readFileSync(resolve(process.cwd(), "app/layout.tsx"), "utf8");
+  const providerSrc = readFileSync(
+    resolve(process.cwd(), "lib/theme/ThemeProvider.tsx"),
+    "utf8",
+  );
+
+  it("the SSR <html> element defaults data-theme to dark", () => {
+    expect(/<html[^>]*\bdata-theme="dark"/.test(layoutSrc)).toBe(true);
+  });
+
+  it("the no-flash script falls back to dark when nothing is persisted", () => {
+    // The script normalizes any stored value to 'light' or 'dark'; a fallback of 'light' would
+    // read as `t==='light'?'light':'dark'`-shaped or similar — assert the concrete dark default.
+    const match = /document\.documentElement\.setAttribute\('data-theme',([^)]*)\)/.exec(
+      layoutSrc,
+    );
+    expect(match, "no-flash theme-setting call not found in layout.tsx").not.toBeNull();
+    const expr = match![1];
+    // The persisted-choice branch must resolve to 'dark' unless the stored value is explicitly
+    // 'light' — i.e. the ternary picks 'light' only in the light branch, dark otherwise.
+    expect(expr).toMatch(/t===['"]light['"]\?['"]light['"]:['"]dark['"]/);
+    // And the catch-clause fallback (localStorage throws, e.g. privacy mode) must also be dark.
+    const catchMatch = /catch\(e\)\{document\.documentElement\.setAttribute\('data-theme',([^)]*)\)/.exec(
+      layoutSrc,
+    );
+    expect(catchMatch, "no-flash catch-clause fallback not found in layout.tsx").not.toBeNull();
+    expect(catchMatch![1]).toBe("'dark'");
+  });
+
+  it("ThemeProvider's initial state defaults to dark", () => {
+    expect(/useState<Theme>\(\s*"dark"\s*\)/.test(providerSrc)).toBe(true);
+  });
 });

@@ -15,38 +15,56 @@
  *      `text-body` / `border-default` (aliased in tailwind.config.ts) instead of hard-coding
  *      `bg-white` / `text-slate-900`, so a single theme flip re-skins the whole app.
  *
- * **Two themes (the pre-M36 frontend-redesign addendum).** The base `:root {…}` block is the light
- * theme; `:root[data-theme="dark"] {…}` overrides it for dark. The theme is selected by a
- * `data-theme` attribute on <html> (default light, opt-in toggle persisted in localStorage) — NOT by
- * `prefers-color-scheme`. This overrides D96, which deferred dark mode on the grounds that lightening
- * the loss foregrounds while the panels stayed `bg-white` would *lower* contrast: the fix is exactly
- * this — dark surfaces AND surface-aware `--cb-*` values, so every pair clears AA on the surface it
- * actually renders on. `globals.contrast.test.ts` reads these values and guards both themes: a token
- * edit that drops any rendered pair below AA in either theme fails CI. The palette stays
- * distinguishable under common color-vision deficiencies (meaning carried by glyph + label + lightness,
- * not hue alone).
+ * **Two themes, dark-first (v2.0 addendums Task 6 retuned the palette and flipped the default).**
+ * The base `:root {…}` block is the light theme; `:root[data-theme="dark"] {…}` overrides it for
+ * dark. The theme is selected by a `data-theme` attribute on <html> (default **dark**, opt-in
+ * toggle persisted in localStorage) — NOT by `prefers-color-scheme`. This overrides D96, which
+ * deferred dark mode on the grounds that lightening the loss foregrounds while the panels stayed
+ * `bg-white` would *lower* contrast: the fix is exactly this — dark surfaces AND surface-aware
+ * `--cb-*` values, so every pair clears AA on the surface it actually renders on.
+ * `globals.contrast.test.ts` reads these values and guards both themes: a token edit that drops any
+ * rendered pair below AA in either theme fails CI. The palette stays distinguishable under common
+ * color-vision deficiencies (meaning carried by glyph + label + lightness, not hue alone).
+ *
+ * **Palette identity (v2.0 addendums, design spec "Theme system").** The workbench is dark-by-
+ * default in a cool blue-gray "Steel" palette with a cyan-teal chrome accent, VESTA/OVITO-style;
+ * the light theme is a neutral-gray Qt-style desktop rather than the earlier plain white. The
+ * loss-communication `--cb-*` foregrounds keep their §4 hues; only lightness was re-tuned where the
+ * new Steel dark surface required it to hold AA.
  */
 :root {
   /* Native form controls (selects, number spinners, checkboxes) render with the UA's light
      widgets — the flip side of the B1 base rule below, which themes their text/background. */
   color-scheme: light;
 
-  /* Neutral surface chrome (light). Values match the pre-addendum look (white page, slate text). */
-  --surface: #ffffff; /* page + panel background            */
-  --surface-raised: #f8fafc; /* subtle raised/hover zones (slate-50)   */
-  --surface-muted: #f1f5f9; /* chips / inert fills (slate-100)        */
-  --border-default: #e2e8f0; /* default hairline border (slate-200)    */
-  --border-subtle: #f1f5f9; /* faint dividers (slate-100)             */
-  --border-strong: #0f172a; /* selected / emphasized outline (slate-900) */
-  --text-strong: #0f172a; /* headings, emphasis (slate-900)          */
-  --text-body: #334155; /* default paragraph text (slate-700)      */
-  --text-muted: #475569; /* secondary text (slate-600)              */
-  --text-faint: #64748b; /* hints, metadata (slate-500)             */
+  /* Neutral surface chrome (light) — a neutral-gray Qt-style desktop, not stark white. */
+  --surface: #eceef1; /* page + panel background                 */
+  --surface-raised: #f7f8fa; /* subtle raised/hover zones                */
+  --surface-muted: #e3e6ea; /* chips / inert fills                      */
+  --border-default: #c2c7cf; /* default hairline border                  */
+  --border-subtle: #dadde2; /* faint dividers                           */
+  --border-strong: #20242b; /* selected / emphasized outline            */
+  --text-strong: #20242b; /* headings, emphasis                       */
+  --text-body: #3a4048; /* default paragraph text                   */
+  --text-muted: #565e68; /* secondary text                           */
+  --text-faint: #626a76; /* hints, metadata (darkened from slate-500 for AA on the
+                             neutral-gray #eceef1 surface, v2.0 addendums)     */
 
   /* The inverse surface — dark chip/button in light, light chip/button in dark. */
-  --inverse: #0f172a; /* filled neutral button bg (slate-900)    */
-  --inverse-fg: #ffffff; /* text on the inverse surface             */
-  --inverse-hover: #334155; /* inverse hover (slate-700)               */
+  --inverse: #20242b; /* filled neutral button bg                 */
+  --inverse-fg: #ffffff; /* text on the inverse surface              */
+  --inverse-hover: #3a4048; /* inverse hover                            */
+
+  /* Workbench chrome (v2.0 addendums, VESTA/OVITO-style banding): the toolbar, source rail, main
+     panel, and status bar each get their own neutral-gray step so the shell reads as distinct
+     regions instead of one flat `--surface`. Defined once here, per theme, and aliased in
+     tailwind.config.ts as bg-wb-toolbar / bg-wb-rail / bg-wb-panel / bg-wb-status /
+     border-wb-hairline. */
+  --wb-toolbar: #e3e6ea; /* top toolbar band                         */
+  --wb-rail: #e6e9ed; /* source/inspector side rails               */
+  --wb-panel: #f7f8fa; /* main content panel (lightest, like a canvas mat) */
+  --wb-status: #e3e6ea; /* bottom status bar                         */
+  --wb-hairline: #c2c7cf; /* hairline separating chrome bands          */
 
   /* The forward-action accent (used by the S3 Button primitive; defined here so it flips too).
      Precision-instrument deep teal (UI redesign S1, D243): the fill + hover pair paint
@@ -56,10 +74,15 @@
   --accent: #0e7c86; /* teal fill; white-on-fill ~4.9:1 (was blue-600) */
   --accent-fg: #ffffff;
   --accent-hover: #0b646c; /* darker on hover (light-theme direction)     */
-  --accent-text: #0e7c86; /* accent as text on the white surface ~4.9:1  */
+  --accent-text: #0d747e; /* accent as text on the #eceef1 surface ~4.7:1 (v2.0 addendums:
+                              darkened a hair from the button-fill teal now that the light
+                              surface is a neutral gray rather than pure white) */
 
-  /* Loss foregrounds, one per §4 meaning (on the light surface). */
-  --cb-preserve: #15803d; /* green  — present / preserved / check passed        */
+  /* Loss foregrounds, one per §4 meaning (on the light surface). v2.0 addendums Task 6: the light
+     theme's page surface moved from pure white to a neutral-gray desktop tone (`--surface:
+     #eceef1`), which nudges several of these below AA; each affected value below is darkened by a
+     hair (same hue, same §4 meaning) to hold >=4.5:1 on the new surface — never a hue change. */
+  --cb-preserve: #14793a; /* green  — present / preserved / check passed        */
   /* Slate, not gray: on the capabilities grid (Part 7 §2.7) a ✓/✗ column of green vs pale gray was
      too low-contrast to scan (the v0.7 review). Darkened to slate so ✗ reads clearly against ✓ —
      still visually *calm* (not red: "the format cannot express this" is neutral, not a loss; red
@@ -68,10 +91,10 @@
   --cb-absent-file: #475569; /* slate  — absent, file simply lacks it           */
   --cb-removed: #b91c1c; /* red    — removed by conversion                      */
   --cb-assumption: #6d28d9; /* violet — assumption / supplied (third thing)     */
-  --cb-warning: #b45309; /* amber  — warning                                    */
-  --cb-fail: #d42020; /* red    — validation fail / refusal, as TEXT + border   */
+  --cb-warning: #aa4f09; /* amber  — warning                                    */
+  --cb-fail: #ce1f1f; /* red    — validation fail / refusal, as TEXT + border   */
   --cb-fail-solid: #d42020; /* red    — filled ✕ badge / destructive button (white text on it) */
-  --cb-skipped: #6b7280; /* gray with label — validation skipped                */
+  --cb-skipped: #636976; /* gray with label — validation skipped                */
   /* Blue — a value *transformed on the user's explicit request* (the ⟳ "Modified on request"
      mark, v1.7 M66-S3, D257). A wrapped/centered coordinate is not fabricated (so not violet ◆)
      and not removed — it is transformed in place, earning its own calm hue: the one strong color
@@ -98,30 +121,42 @@
      pickers) render dark, matching the dark surface they sit on (v1.1 M39-S4, B1). */
   color-scheme: dark;
 
-  /* Neutral surface chrome (dark). Page + panels share a dark slate; separation is by border. */
-  --surface: #0f172a; /* slate-900 */
-  --surface-raised: #1e293b; /* slate-800 */
-  --surface-muted: #334155; /* slate-700 */
-  --border-default: #334155; /* slate-700 */
-  --border-subtle: #1e293b; /* slate-800 */
-  --border-strong: #cbd5e1; /* slate-300 */
-  --text-strong: #f8fafc; /* slate-50  */
-  --text-body: #e2e8f0; /* slate-200 */
-  --text-muted: #cbd5e1; /* slate-300 */
-  --text-faint: #94a3b8; /* slate-400 */
+  /* Neutral surface chrome (dark) — "Steel": a cool blue-gray, not the earlier slate-900 navy
+     (v2.0 addendums Task 6, VESTA/OVITO-inspired workbench). Separation is by border + banding. */
+  --surface: #161a21; /* page + panel background                  */
+  --surface-raised: #1e232c; /* subtle raised/hover zones                 */
+  --surface-muted: #242b35; /* chips / inert fills                      */
+  --border-default: #2b3240; /* default hairline border                  */
+  --border-subtle: #1e232c; /* faint dividers                           */
+  --border-strong: #c7d0dc; /* selected / emphasized outline            */
+  --text-strong: #dbe4f0; /* headings, emphasis                       */
+  --text-body: #c7d0dc; /* default paragraph text                   */
+  --text-muted: #93a0b2; /* secondary text                           */
+  --text-faint: #7c8a9e; /* hints, metadata                          */
 
-  --inverse: #e2e8f0; /* light chip/button on dark (slate-200)   */
-  --inverse-fg: #0f172a; /* dark text on it                         */
-  --inverse-hover: #cbd5e1; /* slate-300                               */
+  --inverse: #dbe4f0; /* light chip/button on dark                */
+  --inverse-fg: #12151b; /* dark text on it                          */
+  --inverse-hover: #c2ccd9; /* inverse hover                            */
 
-  /* Same teal as light: white text on it clears AA (~4.9:1), and it still reads as a saturated
-     teal against the dark slate surface. The hover lifts *brighter* here (the opposite direction
-     from light), the dark-surface way. The accent-as-*text* tone lightens further — the fill teal
-     only reaches ~3.3:1 on slate-900, so text uses its own `--accent-text` (#3fc9d6, ~9:1). */
+  /* Workbench chrome (v2.0 addendums): Steel bands, each a step apart from `--surface` so the
+     toolbar/rails/status read as distinct regions from the main panel — the main panel sits at the
+     deepest point of the range (like a canvas mat under the chrome), matching the "surfaces in the
+     #12151b-#1e232c range" brief. */
+  --wb-toolbar: #1c212a; /* top toolbar band                         */
+  --wb-rail: #171b22; /* source/inspector side rails               */
+  --wb-panel: #12151b; /* main content panel (deepest)              */
+  --wb-status: #1a1f27; /* bottom status bar                         */
+  --wb-hairline: #2b3240; /* hairline separating chrome bands          */
+
+  /* Same teal fill as light: white text on it clears AA (~4.9:1), and it still reads as a
+     saturated teal against the Steel surface. The hover lifts to a brighter cyan-teal chrome
+     accent (the workbench's "active chrome" color, ~#2fb3c0) — the dark-surface hover direction.
+     The accent-as-*text* tone lightens further still — the fill teal only reaches ~3.3:1 on the
+     Steel surface, so text uses its own `--accent-text` (a bright cyan, >=4.5:1). */
   --accent: #0e7c86; /* teal fill, kept dark enough for white-on-fill ~4.9:1 */
   --accent-fg: #ffffff;
-  --accent-hover: #14a0ad; /* brighter on hover (dark-theme direction)        */
-  --accent-text: #3fc9d6; /* lighter teal: accent-as-text >=4.5:1 on slate-900 */
+  --accent-hover: #2fb3c0; /* cyan-teal chrome accent, brighter on hover      */
+  --accent-text: #7ff0fa; /* bright cyan: accent-as-text >=4.5:1 on Steel surface */
 
   /* Loss foregrounds, lightened so each clears AA on the dark surface and its dark tint. */
   --cb-preserve: #4ade80; /* green-400  */
