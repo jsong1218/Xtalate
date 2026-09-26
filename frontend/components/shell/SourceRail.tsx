@@ -55,6 +55,11 @@ function historyToRecent(item: HistoryItem): RecentFile | null {
   };
 }
 
+/** The id the collapse toggle's `aria-controls` points at — the WAI-ARIA disclosure pattern's
+ * controlled region, whichever of the two mutually-exclusive branches (empty state or file list)
+ * is currently rendered. */
+const RAIL_CONTENT_ID = "source-rail-content";
+
 function railRowClass(active: boolean): string {
   return `flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
     active ? "bg-well text-strong" : "text-body hover:bg-well/60"
@@ -97,6 +102,7 @@ export function SourceRail({
         <button
           type="button"
           aria-expanded={!collapsed}
+          aria-controls={RAIL_CONTENT_ID}
           aria-label={collapsed ? "Expand sources rail" : "Collapse sources rail"}
           onClick={onToggle}
           className="ml-auto rounded-sm px-1.5 py-1 text-sm text-faint transition-colors hover:text-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -106,7 +112,7 @@ export function SourceRail({
       </div>
 
       {collapsed ? null : files.length === 0 ? (
-        <div className="space-y-2 p-3 text-sm text-muted">
+        <div id={RAIL_CONTENT_ID} className="space-y-2 p-3 text-sm text-muted">
           <p>No files yet. Drop one to begin.</p>
           <Link
             href="/"
@@ -116,7 +122,11 @@ export function SourceRail({
           </Link>
         </div>
       ) : (
-        <ul className="flex-1 space-y-0.5 overflow-y-auto p-2" data-testid="source-rail-list">
+        <ul
+          id={RAIL_CONTENT_ID}
+          className="flex-1 space-y-0.5 overflow-y-auto p-2"
+          data-testid="source-rail-list"
+        >
           {files.map((file) => {
             const active = file.key === activeFileId;
             return (

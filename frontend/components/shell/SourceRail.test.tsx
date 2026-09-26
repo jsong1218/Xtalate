@@ -94,6 +94,32 @@ describe("SourceRail", () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
+  it("completes the WAI-ARIA disclosure pattern: aria-controls names the rendered content's id", () => {
+    // Empty state: the toggle's aria-controls must resolve to a real element on the page.
+    renderRail({ collapsed: false });
+    const button = screen.getByRole("button", { name: /collapse/i });
+    const controlsId = button.getAttribute("aria-controls");
+    expect(controlsId).toBeTruthy();
+    expect(document.getElementById(controlsId as string)).toContainElement(
+      screen.getByText("No files yet. Drop one to begin."),
+    );
+  });
+
+  it("keeps the same aria-controls id pointed at the file list once files exist", async () => {
+    pushRecent({
+      key: "f123",
+      href: "/f/f123",
+      filename: "run.extxyz",
+      format_id: "extxyz",
+      last_seen_at: "2026-08-30T00:00:00Z",
+    });
+    renderRail({ collapsed: false });
+    const button = screen.getByRole("button", { name: /collapse/i });
+    const controlsId = button.getAttribute("aria-controls");
+    const link = await screen.findByRole("link", { name: /run\.extxyz/ });
+    expect(document.getElementById(controlsId as string)).toContainElement(link);
+  });
+
   it("hides the file list and shows an expand control when collapsed", async () => {
     pushRecent({
       key: "f123",
