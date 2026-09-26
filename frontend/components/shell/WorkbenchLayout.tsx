@@ -18,7 +18,15 @@ import { Inspector } from "@/components/shell/Inspector";
  */
 export function WorkbenchLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="grid h-screen grid-rows-[auto_1fr_auto]">
+    // min-h-screen, not h-screen: `app/layout.tsx` renders `DemoBanner` as an in-flow sibling
+    // ABOVE this shell when NEXT_PUBLIC_DEMO_BANNER is set (the hosted demo), so a fixed h-screen
+    // here would push the shell's own height past the viewport and clip StatusBar (row 3) below
+    // the fold. min-h-screen lets the grid grow to fit banner + content instead, so the status bar
+    // always sits right after real content. Trade-off: on a very tall page the status bar no
+    // longer clings to the bottom of the *viewport* the way a fixed h-screen would — it sits at
+    // the bottom of the *document* instead. A true always-visible (sticky) status bar is left to
+    // Task 11/13 once it has real content to justify the complexity.
+    <div className="grid min-h-screen grid-rows-[auto_1fr_auto]">
       {/* Toolbar — row 1, full width. */}
       {/* TODO(Task 8): replace AppHeader with Toolbar. AppHeader already renders its own
           `border-b border-line` banner chrome, so no extra wb-toolbar background/border is
@@ -28,17 +36,19 @@ export function WorkbenchLayout({ children }: { children: ReactNode }) {
 
       {/* Middle row: sources rail | center | inspector. */}
       <div className="grid grid-cols-[auto_1fr_auto] overflow-hidden">
-        {/* Sources rail — middle-left. SourceRail (Task 9's real content) requires a `fileId`
-            prop that the shell doesn't have (it wraps every route, including non-file pages like
-            `/formats`/`/history`/`/docs`), so this is a minimal placeholder until Task 9 wires
-            per-file selection and collapsibility. */}
+        {/* Sources rail — middle-left, an empty placeholder column ONLY (no label, no landmark).
+            `app/f/[file_id]/layout.tsx` already renders the real, populated `<SourceRail
+            fileId=.../>` (an `<aside aria-label="Source file">`) inline as part of `{children}`,
+            which now renders inside this shell's center — so this column must not carry its own
+            "Sources" heading/landmark, or every `/f/[file_id]/*` page would show two competing
+            Sources panels. It exists only to reserve the rail's width/chrome for non-file routes
+            (`/formats`, `/history`, `/docs`) until Task 9 gives it real content.
+            TODO(Task 9): move the real SourceRail into this slot and remove it from
+            f/[file_id]/layout.tsx. */}
         <div
-          role="region"
-          aria-label="Sources"
-          className="hidden w-56 shrink-0 border-r border-wb-hairline bg-wb-rail p-4 md:block"
-        >
-          <h2 className="text-sm font-semibold text-strong">Sources</h2>
-        </div>
+          data-testid="wb-sources-placeholder"
+          className="hidden w-56 shrink-0 border-r border-wb-hairline bg-wb-rail md:block"
+        />
 
         {/* Center — the only region that swaps per routed page. Carries the skip-link target
             moved here from app/layout.tsx. */}

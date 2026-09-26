@@ -33,4 +33,25 @@ describe("WorkbenchLayout", () => {
     );
     expect(screen.getByRole("main")).toHaveAttribute("tabIndex", "-1");
   });
+
+  it("reserves an empty, unlabeled sources-rail column instead of a competing landmark", () => {
+    // `app/f/[file_id]/layout.tsx` already renders the real, populated `<SourceRail
+    // fileId=.../>` (an `<aside aria-label="Source file">`) as part of `{children}`, which now
+    // renders inside this shell's center. If the shell's own rail column carried a "Sources"
+    // landmark/heading too, every `/f/[file_id]/*` page would show two competing Sources panels
+    // (a live regression caught in review). So the column must render with no accessible name and
+    // no landmark role of its own — just reserved width/chrome — until Task 9 gives it real,
+    // non-duplicated content.
+    render(
+      <WorkbenchLayout>
+        <p>center</p>
+      </WorkbenchLayout>,
+    );
+    expect(screen.getByTestId("wb-sources-placeholder")).toBeInTheDocument();
+    expect(screen.queryByText("Sources")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Sources" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Sources" })).not.toBeInTheDocument();
+    // Exactly one complementary landmark remains: the Inspector stub.
+    expect(screen.getAllByRole("complementary")).toHaveLength(1);
+  });
 });
