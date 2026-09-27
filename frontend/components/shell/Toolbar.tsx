@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CommandPaletteTrigger } from "@/components/command/CommandPaletteTrigger";
 import { NotifyToggle } from "@/lib/notify/NotifyPreferenceProvider";
 import { ThemeToggle } from "@/lib/theme/ThemeProvider";
@@ -41,12 +41,14 @@ import { ThemeToggle } from "@/lib/theme/ThemeProvider";
  *
  * **Responsive condensing (v2.0 addendums, Task 13; design spec §"Region behaviors &
  * responsiveness"):** below `sm` there is no room for the "File actions" nav's labelled links
- * beside the wordmark, so it is replaced — not merely wrapped — by a single "Menu" overflow
- * button (`aria-haspopup="menu"`) that reveals the same two verbs as `role="menuitem"` entries in a
- * popover. The popover's items are only mounted while open (not CSS-hidden duplicates), so there is
- * never a second same-named "Open / Upload"/"Convert" control in the accessibility tree at once —
- * the `sm:hidden` button and the `hidden sm:flex` nav are mutually exclusive by breakpoint, exactly
- * like `SourceRail`/`Inspector`'s own mobile toggles.
+ * beside the wordmark, so it is replaced — not merely wrapped — by a "Menu" disclosure button that
+ * reveals the same two verbs as ordinary links in a popover (a disclosure, not an ARIA `menu`: it
+ * offers Tab-through + Escape + outside-click, not the roving arrow-key model `role="menu"` would
+ * promise, so those roles stay off to keep the announced semantics honest). The popover's items are
+ * only mounted while open (not CSS-hidden duplicates), so there is never a second same-named
+ * "Open / Upload"/"Convert" control in the accessibility tree at once — the `sm:hidden` button and
+ * the `hidden sm:flex` nav are mutually exclusive by breakpoint, exactly like
+ * `SourceRail`/`Inspector`'s own mobile toggles.
  */
 
 const GLOBAL_DESTINATIONS: { href: string; label: string }[] = [
@@ -70,6 +72,27 @@ export function Toolbar() {
   const fileId = activeFileIdFrom(pathname);
   const convertHref = fileId ? `/f/${fileId}/convert` : null;
   const [moreOpen, setMoreOpen] = useState(false);
+
+  // Dismiss the overflow disclosure on Escape or an outside click — the two affordances a user
+  // expects from a popover, and the ones the SourceRail/Inspector overlays already provide. The
+  // wrapper below carries `moreRef`, so a click on the toggle button (inside it) toggles rather than
+  // double-fires a close.
+  const moreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMoreOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [moreOpen]);
 
   return (
     // `min-w-0`: this header is a row of `WorkbenchLayout`'s single-column root grid
@@ -108,12 +131,14 @@ export function Toolbar() {
               </button>
             )}
           </nav>
-          {/* The condensed equivalent below `sm`: a single overflow button revealing the same two
-              verbs as menu items, mounted only while open (see the module docstring). */}
-          <div className="relative sm:hidden">
+          {/* The condensed equivalent below `sm`: a disclosure button revealing the same two verbs as
+              ordinary links, mounted only while open (see the module docstring). It is a disclosure,
+              not an ARIA `menu`: it implements Tab-through + Escape + outside-click, not the roving
+              arrow-key/Home/End model `role="menu"` would promise, so the roles stay off the button
+              and items to keep the announced semantics honest (Task 13 review fix). */}
+          <div ref={moreRef} className="relative sm:hidden">
             <button
               type="button"
-              aria-haspopup="menu"
               aria-expanded={moreOpen}
               aria-controls="toolbar-overflow-menu"
               onClick={() => setMoreOpen((v) => !v)}
@@ -124,13 +149,10 @@ export function Toolbar() {
             {moreOpen ? (
               <div
                 id="toolbar-overflow-menu"
-                role="menu"
-                aria-label="File actions"
                 className="absolute left-0 top-full z-40 mt-1 min-w-40 rounded-md border border-wb-hairline bg-wb-toolbar p-1 shadow-lg"
               >
                 <Link
                   href="/"
-                  role="menuitem"
                   onClick={() => setMoreOpen(false)}
                   className="block rounded px-2 py-1.5 text-sm text-muted hover:bg-well hover:text-accent-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
@@ -139,18 +161,13 @@ export function Toolbar() {
                 {convertHref ? (
                   <Link
                     href={convertHref}
-                    role="menuitem"
                     onClick={() => setMoreOpen(false)}
                     className="block rounded px-2 py-1.5 text-sm text-muted hover:bg-well hover:text-accent-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   >
                     Convert
                   </Link>
                 ) : (
-                  <span
-                    role="menuitem"
-                    aria-disabled="true"
-                    className="block px-2 py-1.5 text-sm text-faint"
-                  >
+                  <span aria-disabled="true" className="block px-2 py-1.5 text-sm text-faint">
                     Convert
                   </span>
                 )}

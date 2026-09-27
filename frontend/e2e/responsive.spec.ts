@@ -120,10 +120,12 @@ test("the Sources rail and Inspector collapse behind reachable toggles below the
 /**
  * The toolbar's own condensing rule (design spec: "the toolbar condenses verbs into an overflow
  * menu" below `sm`). The labelled "File actions" nav (Open/Upload, Convert) is unreachable below
- * `sm`; the same two verbs are reachable instead as menu items behind a single "Menu" button —
- * never both at once, so there is exactly one accessible "Open / Upload" control at a time.
+ * `sm`; the same two verbs are reachable instead behind a single "Menu" disclosure — never both at
+ * once, so there is exactly one accessible "Open / Upload" control at a time. It is a disclosure of
+ * ordinary links, not an ARIA `menu` (Task 13 review fix): it offers Tab-through + Escape +
+ * outside-click, not the roving arrow-key model `role="menu"` would promise, so those roles stay off.
  */
-test("the toolbar condenses its verbs into an overflow menu on a narrow viewport", async ({
+test("the toolbar condenses its verbs into an overflow disclosure on a narrow viewport", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 900 }); // below `sm` (640)
@@ -136,22 +138,23 @@ test("the toolbar condenses its verbs into an overflow menu on a narrow viewport
 
   await menuButton.click();
   await expect(menuButton).toHaveAttribute("aria-expanded", "true");
-  const menu = page.getByRole("menu", { name: "File actions" });
-  await expect(menu.getByRole("menuitem", { name: /open.*upload/i })).toHaveAttribute(
-    "href",
-    "/",
-  );
-  // Off a /f/[file_id] route there is no active file: Convert is an inert menu item, not a link.
-  await expect(menu.getByRole("menuitem", { name: "Convert" })).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
+  const panel = page.locator("#toolbar-overflow-menu");
+  await expect(panel.getByRole("link", { name: /open.*upload/i })).toHaveAttribute("href", "/");
+  // Off a /f/[file_id] route there is no active file: Convert is inert (aria-disabled), not a link.
+  await expect(panel.getByText("Convert")).toHaveAttribute("aria-disabled", "true");
 
-  // Exactly one accessible "Open / Upload" control exists at a time — the condensed menu item, not
-  // a CSS-hidden duplicate of the wide-viewport nav's own link.
-  await expect(page.getByRole("link", { name: /open.*upload/i })).toHaveCount(0);
-  await expect(page.getByRole("menuitem", { name: /open.*upload/i })).toHaveCount(1);
+  // Exactly one accessible "Open / Upload" control exists at a time — the disclosure link, not a
+  // CSS-hidden duplicate of the wide-viewport nav's own link (which is `display:none` below `sm`).
+  await expect(page.getByRole("link", { name: /open.*upload/i })).toHaveCount(1);
 
+  // Escape dismisses the disclosure (parity with the rail/inspector overlays; Task 13 review fix).
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+
+  // The toggle also closes it.
   await menuButton.click();
-  await expect(menu).toBeHidden();
+  await expect(panel).toBeVisible();
+  await menuButton.click();
+  await expect(panel).toBeHidden();
 });

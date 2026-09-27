@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Toolbar } from "./Toolbar";
 import { NotifyPreferenceProvider } from "@/lib/notify/NotifyPreferenceProvider";
@@ -134,5 +134,53 @@ describe("Toolbar", () => {
       "href",
       "/f/file-42/convert",
     );
+  });
+
+  // The below-`sm` overflow "Menu" is a disclosure, not an ARIA menu (Task 13 review fix): the
+  // toggle carries `aria-expanded` but no `aria-haspopup="menu"`, and the revealed verbs are plain
+  // links, not `menuitem`s — so the announced semantics match the Tab-through behaviour it actually
+  // implements. (jsdom does not apply the `sm:hidden` media query, so the control is in the tree.)
+  describe("overflow disclosure", () => {
+    it("is a disclosure button, not an ARIA menu", () => {
+      renderToolbar();
+      const menuButton = screen.getByRole("button", { name: "Menu" });
+      expect(menuButton).toHaveAttribute("aria-expanded", "false");
+      expect(menuButton).not.toHaveAttribute("aria-haspopup", "menu");
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("reveals the verbs as ordinary links and toggles closed again", () => {
+      renderToolbar();
+      const menuButton = screen.getByRole("button", { name: "Menu" });
+      fireEvent.click(menuButton);
+      expect(menuButton).toHaveAttribute("aria-expanded", "true");
+      const panel = document.getElementById("toolbar-overflow-menu")!;
+      expect(within(panel).getByRole("link", { name: /open.*upload/i })).toHaveAttribute(
+        "href",
+        "/",
+      );
+      expect(screen.queryByRole("menuitem")).toBeNull();
+      fireEvent.click(menuButton);
+      expect(document.getElementById("toolbar-overflow-menu")).toBeNull();
+    });
+
+    it("closes on an outside pointer-down", () => {
+      renderToolbar();
+      const menuButton = screen.getByRole("button", { name: "Menu" });
+      fireEvent.click(menuButton);
+      expect(document.getElementById("toolbar-overflow-menu")).not.toBeNull();
+      fireEvent.mouseDown(document.body);
+      expect(document.getElementById("toolbar-overflow-menu")).toBeNull();
+      expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    });
+
+    it("closes on Escape", () => {
+      renderToolbar();
+      const menuButton = screen.getByRole("button", { name: "Menu" });
+      fireEvent.click(menuButton);
+      expect(document.getElementById("toolbar-overflow-menu")).not.toBeNull();
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(document.getElementById("toolbar-overflow-menu")).toBeNull();
+    });
   });
 });

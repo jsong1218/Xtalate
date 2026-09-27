@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Provenance } from "@/components/Provenance";
@@ -226,6 +226,20 @@ export function Inspector() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mobileOpen]);
 
+  // Keyboard focus management for the split disclosure toggle — same rationale as SourceRail: the
+  // FAB and the in-drawer ✕ unmount/mount on each transition, so without this the activated element
+  // is destroyed and focus falls to `<body>`. On open, focus the drawer's close button; on close,
+  // return focus to the FAB. `prevOpen` gates it to real transitions so mount never steals focus.
+  const fabRef = useRef<HTMLButtonElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const prevOpen = useRef(mobileOpen);
+  useEffect(() => {
+    if (prevOpen.current !== mobileOpen) {
+      (mobileOpen ? closeRef : fabRef).current?.focus();
+      prevOpen.current = mobileOpen;
+    }
+  }, [mobileOpen]);
+
   // Hydrate the persisted preference after mount only — SSR has no localStorage (same pattern as
   // WorkbenchLayout's own Sources-rail collapse preference).
   useEffect(() => {
@@ -252,6 +266,7 @@ export function Inspector() {
           the same height as a predictable, symmetric target. */}
       {mobileOpen ? null : (
         <button
+          ref={fabRef}
           type="button"
           aria-expanded={false}
           aria-controls={INSPECTOR_ASIDE_ID}
@@ -289,6 +304,7 @@ export function Inspector() {
           // moment (v2.0 addendums Task 13).
           <div className="flex justify-end p-2 lg:hidden">
             <button
+              ref={closeRef}
               type="button"
               aria-expanded={true}
               aria-controls={INSPECTOR_ASIDE_ID}
@@ -300,8 +316,13 @@ export function Inspector() {
             </button>
           </div>
         ) : null}
+        {/* `collapsed` is the persisted *desktop* icon-rail preference and must never blank the mobile
+            overlay: the heading and content honour it only when the drawer is closed
+            (`collapsed && !mobileOpen`), and the collapse toggle is `hidden lg:inline-flex` —
+            desktop-only — so it cannot be tapped inside the open drawer to empty it (Task 13 review
+            fix; mirrors SourceRail). */}
         <div className="flex items-center justify-between gap-2 p-2">
-          {collapsed ? null : (
+          {collapsed && !mobileOpen ? null : (
             <h2 className="text-xs font-semibold uppercase tracking-wide text-faint">Inspector</h2>
           )}
           <button
@@ -310,13 +331,13 @@ export function Inspector() {
             aria-controls={INSPECTOR_CONTENT_ID}
             aria-label={collapsed ? "Expand inspector" : "Collapse inspector"}
             onClick={handleToggle}
-            className="ml-auto rounded-sm px-1.5 py-1 text-sm text-faint transition-colors hover:text-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="ml-auto hidden rounded-sm px-1.5 py-1 text-sm text-faint transition-colors hover:text-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:inline-flex"
           >
             {collapsed ? "«" : "»"}
           </button>
         </div>
 
-        {collapsed ? null : (
+        {collapsed && !mobileOpen ? null : (
           // `tabIndex={0}`: this is an `overflow-y-auto` scroll container, and on some tabs (e.g.
           // Compare) its content has no focusable descendants of its own, so a keyboard-only user
           // could not scroll it — axe's `scrollable-region-focusable` (WCAG 2.1.1) flags exactly

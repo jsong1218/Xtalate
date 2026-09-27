@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { historyInfiniteQuery } from "@/lib/api/queries";
 import type { HistoryItem } from "@/lib/history/status";
@@ -111,6 +111,22 @@ export function SourceRail({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mobileOpen]);
 
+  // Keyboard focus management for the split disclosure toggle. Its two halves (the FAB that opens,
+  // the in-drawer ✕ that closes) are separate nodes that mount/unmount on each transition, so the
+  // element the user just activated is destroyed on the next render and the browser drops focus to
+  // `<body>` — a keyboard user loses their place and must re-Tab. So on open, move focus into the
+  // drawer (its close button); on close, return it to the FAB (the trigger). `prevOpen` gates this
+  // to real transitions, so it never steals focus on the initial mount.
+  const fabRef = useRef<HTMLButtonElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const prevOpen = useRef(mobileOpen);
+  useEffect(() => {
+    if (prevOpen.current !== mobileOpen) {
+      (mobileOpen ? closeRef : fabRef).current?.focus();
+      prevOpen.current = mobileOpen;
+    }
+  }, [mobileOpen]);
+
   return (
     <>
       {/* The reachable open control for the hidden-below-md rail — the "show" half of a split
@@ -128,6 +144,7 @@ export function SourceRail({
           dev` (what the Docker e2e stack runs) and a production self-host. */}
       {mobileOpen ? null : (
         <button
+          ref={fabRef}
           type="button"
           aria-expanded={false}
           aria-controls={RAIL_NAV_ID}
@@ -164,6 +181,7 @@ export function SourceRail({
           // (v2.0 addendums Task 13).
           <div className="flex justify-end p-2 md:hidden">
             <button
+              ref={closeRef}
               type="button"
               aria-expanded={true}
               aria-controls={RAIL_NAV_ID}
@@ -175,8 +193,13 @@ export function SourceRail({
             </button>
           </div>
         ) : null}
+      {/* `collapsed` is the persisted *desktop* icon-rail preference; it must never blank the mobile
+          overlay, which has no icon-rail form. So the heading and content below honour it only when
+          the drawer is not open (`collapsed && !mobileOpen`), and the collapse toggle itself is
+          `hidden md:inline-flex` — desktop-only — so it cannot be tapped inside the open drawer to
+          empty it (v2.0 addendums Task 13, review fix). */}
       <div className="flex items-center justify-between gap-2 p-2">
-        {collapsed ? null : (
+        {collapsed && !mobileOpen ? null : (
           <h2 className="text-xs font-semibold uppercase tracking-wide text-faint">Sources</h2>
         )}
         <button
@@ -185,13 +208,13 @@ export function SourceRail({
           aria-controls={RAIL_CONTENT_ID}
           aria-label={collapsed ? "Expand sources rail" : "Collapse sources rail"}
           onClick={onToggle}
-          className="ml-auto rounded-sm px-1.5 py-1 text-sm text-faint transition-colors hover:text-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="ml-auto hidden rounded-sm px-1.5 py-1 text-sm text-faint transition-colors hover:text-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:inline-flex"
         >
           {collapsed ? "»" : "«"}
         </button>
       </div>
 
-      {collapsed ? null : files.length === 0 ? (
+      {collapsed && !mobileOpen ? null : files.length === 0 ? (
         <div id={RAIL_CONTENT_ID} className="space-y-2 p-3 text-sm text-muted">
           <p>No files yet. Drop one to begin.</p>
           <Link
