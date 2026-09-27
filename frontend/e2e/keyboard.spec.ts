@@ -4,8 +4,11 @@ import { API_URL, FIXTURES, fixtureBuffer, fixturePath, pollJob, uploadFixture }
 /**
  * The workbench's mobile collapse toggles are real `<button>`s (v2.0 addendums Task 13; design spec
  * §"Region behaviors & responsiveness": "the collapsible panels are keyboard- and screen-reader-
- * operable (buttons with aria-expanded)") — this exercises the Sources rail's toggle by keyboard
- * alone, and confirms Escape (handled on the revealed nav itself) closes the overlay again.
+ * operable (buttons with aria-expanded)") — this exercises the Sources rail's split toggle by
+ * keyboard alone, confirms Escape (a global keydown listener, since the opening FAB lives outside the
+ * nav it controls) closes the overlay, and — because the FAB and the in-drawer ✕ are separate nodes
+ * that mount/unmount on each transition — asserts focus is *managed* across the transition (into the
+ * drawer on open, back to the trigger on close) rather than falling to `<body>`.
  */
 test("the Sources rail's mobile toggle opens and closes by keyboard alone", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 900 }); // below `md`
@@ -16,9 +19,13 @@ test("the Sources rail's mobile toggle opens and closes by keyboard alone", asyn
   await page.keyboard.press("Enter");
   const sourcesNav = page.getByRole("navigation", { name: "Sources" });
   await expect(sourcesNav).toBeVisible();
+  // On open, focus moves into the drawer (its close control) — not stranded on the now-unmounted FAB.
+  await expect(page.getByRole("button", { name: /^hide sources$/i })).toBeFocused();
 
   await page.keyboard.press("Escape");
   await expect(sourcesNav).toBeHidden();
+  // On close, focus returns to the trigger (the re-shown FAB), so the keyboard user keeps their place.
+  await expect(page.getByRole("button", { name: /^show sources$/i })).toBeFocused();
 });
 
 /**
