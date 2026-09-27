@@ -19,6 +19,32 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 2.0.0
 
+### Changed
+
+- **The Web UI is rebuilt as a desktop-style scientific workbench (VESTA/OVITO-inspired), and the
+  Conversion Report stays the hero.** The centered single-column pages are replaced by a persistent
+  shell — a top toolbar, a collapsible Sources rail, a tabbed center where **Report** leads
+  (Structure/Convert/Analysis/Compare are peer tabs, so the 3D viewer is a first-class panel, never
+  the whole stage), a collapsible Inspector, and a status bar. This is **presentation-only**: every
+  existing route is retained and wrapped in the shell (no bookmark 404s, deep links preserved), and
+  there is **no `/v1`, report-shape, scientific-core, or format change**. The marketing landing is
+  replaced by a workbench empty state — a dropzone plus a "Try a sample" grid (monochrome format
+  glyphs, no emoji) and recents. Below their breakpoints the Sources rail and Inspector collapse to
+  keyboard- and screen-reader-operable overlays and the toolbar verbs condense into an overflow
+  disclosure; the center is never hidden. (D300.)
+- **The default theme is now Steel (dark-first); a neutral-gray desktop theme is the light toggle.**
+  The existing `data-theme` mechanism and every `--cb-*` loss token are preserved — a persisted user
+  choice still wins — and the token-level AA contrast guard (`globals.contrast.test.ts`) is extended
+  to the new chrome-on-surface pairs so both themes stay WCAG AA (color is never the sole carrier of
+  meaning: loss states remain icon + text). (D300.)
+
+### Security
+
+- **Upgraded `vitest` (and the transitive `@vitest/mocker`) to ≥ 4.1.11**, clearing the two open
+  Dependabot alerts for the path-traversal / arbitrary-file-read advisory (GHSA-82fw-gwwq-j7x9) via
+  the mocker's redirect handling. `vitest` is a frontend **dev** dependency — the advisory never
+  reached runtime, published artifacts, or the hosted demo; no product behaviour changes.
+
 ### Fixed
 
 - **Two coverage-guided-fuzzing crashes hardened into refusals, not silent exceptions.** A POSCAR
