@@ -48,6 +48,9 @@ import type { ConversionRecord as ConversionRecordModel } from "@/lib/report/typ
 
 const INSPECTOR_COLLAPSED_KEY = "inspector-collapsed";
 const INSPECTOR_CONTENT_ID = "inspector-content";
+/** The id the mobile-open toggle's `aria-controls` points at — the Inspector's own `aside` landmark
+ * (design spec §"Region behaviors & responsiveness": "hidden behind toggles" below `lg`). */
+const INSPECTOR_ASIDE_ID = "inspector-aside";
 
 function isBoolean(v: unknown): v is boolean {
   return typeof v === "boolean";
@@ -204,6 +207,24 @@ export function Inspector() {
   const pathname = usePathname();
   const context = useMemo(() => contextFromPathname(pathname), [pathname]);
   const [collapsed, setCollapsed] = useState(false);
+  // Below `lg` the Inspector has no room beside the center — it is hidden behind a toggle rather
+  // than simply gone (design spec §"Region behaviors & responsiveness"), same pattern as the
+  // Sources rail's `mobileOpen` (SourceRail.tsx): a separate, ephemeral per-viewport flag from the
+  // persisted desktop `collapsed` icon-rail preference.
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Escape closes the overlay from anywhere on the page — same global-listener pattern as
+  // SourceRail's mobile toggle (see its comment): the button that opens the `aside` lives outside
+  // it, so a keydown handler on the `aside` alone would never see the key while focus is still on
+  // that toggle.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMobileOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
 
   // Hydrate the persisted preference after mount only — SSR has no localStorage (same pattern as
   // WorkbenchLayout's own Sources-rail collapse preference).
@@ -220,44 +241,105 @@ export function Inspector() {
   }
 
   return (
-    <aside
-      aria-label="Inspector"
-      role="complementary"
-      className={`hidden shrink-0 flex-col border-l border-wb-hairline bg-wb-panel lg:flex ${
-        collapsed ? "w-12" : "w-72"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-2 p-2">
-        {collapsed ? null : (
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-faint">Inspector</h2>
-        )}
+    <>
+      {/* The reachable open control for the hidden-below-lg Inspector — the "show" half of a split
+          disclosure toggle (the "hide" half is the ✕ inside the aside below), the same pattern as
+          SourceRail's mobile toggle: one control present at a time, so the open overlay (`z-40`)
+          never covers the "hide" toggle. Rendered outside the `aside` so it stays in the layout (and
+          the a11y tree) while the aside is `hidden`. `lg:hidden` because at `lg`+ the Inspector is
+          always present and this would be redundant with its own collapse/expand control.
+          `bottom-20`, matching SourceRail's toggle on the opposite corner, keeps the two toggles at
+          the same height as a predictable, symmetric target. */}
+      {mobileOpen ? null : (
         <button
           type="button"
-          aria-expanded={!collapsed}
-          aria-controls={INSPECTOR_CONTENT_ID}
-          aria-label={collapsed ? "Expand inspector" : "Collapse inspector"}
-          onClick={handleToggle}
-          className="ml-auto rounded-sm px-1.5 py-1 text-sm text-faint transition-colors hover:text-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          aria-expanded={false}
+          aria-controls={INSPECTOR_ASIDE_ID}
+          aria-label="Show inspector"
+          onClick={() => setMobileOpen(true)}
+          className="fixed bottom-20 right-4 z-30 rounded-full border border-wb-hairline bg-wb-panel px-3 py-2 text-xs font-medium text-body shadow-lg transition-colors hover:bg-well focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:hidden"
         >
-          {collapsed ? "«" : "»"}
+          Inspector
         </button>
-      </div>
-
-      {collapsed ? null : (
-        <div id={INSPECTOR_CONTENT_ID} className="flex-1 space-y-3 overflow-y-auto p-3">
-          {context.kind === "none" ? null : (
-            <>
-              <InspectionSummary fileId={context.fileId} />
-              {context.kind === "report" ? (
-                <ReportEnrichment conversionId={context.conversionId} />
-              ) : null}
-              {context.kind === "structure" ? (
-                <StructureEnrichment fileId={context.fileId} />
-              ) : null}
-            </>
-          )}
-        </div>
       )}
-    </aside>
+      {/* Backdrop: dismisses the overlay on an outside click/tap. Decorative — the toggle button
+          above and the global Escape listener are the real dismiss affordances. */}
+      {mobileOpen ? (
+        <div
+          aria-hidden="true"
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+        />
+      ) : null}
+      <aside
+        id={INSPECTOR_ASIDE_ID}
+        aria-label="Inspector"
+        role="complementary"
+        className={`${
+          mobileOpen ? "flex fixed inset-y-0 right-0 z-40 w-72 shadow-xl" : "hidden"
+        } shrink-0 flex-col border-l border-wb-hairline bg-wb-panel lg:static lg:z-auto lg:flex lg:shadow-none ${
+          collapsed ? "lg:w-12" : "lg:w-72"
+        }`}
+      >
+        {mobileOpen ? (
+          // The "hide" half of the split disclosure toggle: shown only while the overlay is open, on
+          // top of it (so it is always clickable, unlike a bottom-right FAB the overlay would cover).
+          // It carries the same `aria-expanded`/`aria-controls` as the FAB, so screen readers and the
+          // responsive e2e both see exactly one "Show inspector"/"Hide inspector" control at any
+          // moment (v2.0 addendums Task 13).
+          <div className="flex justify-end p-2 lg:hidden">
+            <button
+              type="button"
+              aria-expanded={true}
+              aria-controls={INSPECTOR_ASIDE_ID}
+              aria-label="Hide inspector"
+              onClick={() => setMobileOpen(false)}
+              className="rounded-sm px-1.5 py-1 text-sm text-faint transition-colors hover:text-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              ✕
+            </button>
+          </div>
+        ) : null}
+        <div className="flex items-center justify-between gap-2 p-2">
+          {collapsed ? null : (
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-faint">Inspector</h2>
+          )}
+          <button
+            type="button"
+            aria-expanded={!collapsed}
+            aria-controls={INSPECTOR_CONTENT_ID}
+            aria-label={collapsed ? "Expand inspector" : "Collapse inspector"}
+            onClick={handleToggle}
+            className="ml-auto rounded-sm px-1.5 py-1 text-sm text-faint transition-colors hover:text-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {collapsed ? "«" : "»"}
+          </button>
+        </div>
+
+        {collapsed ? null : (
+          // `tabIndex={0}`: this is an `overflow-y-auto` scroll container, and on some tabs (e.g.
+          // Compare) its content has no focusable descendants of its own, so a keyboard-only user
+          // could not scroll it — axe's `scrollable-region-focusable` (WCAG 2.1.1) flags exactly
+          // that. Making the region itself focusable is the canonical fix (v2.0 addendums Task 13).
+          <div
+            id={INSPECTOR_CONTENT_ID}
+            tabIndex={0}
+            className="flex-1 space-y-3 overflow-y-auto p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+          >
+            {context.kind === "none" ? null : (
+              <>
+                <InspectionSummary fileId={context.fileId} />
+                {context.kind === "report" ? (
+                  <ReportEnrichment conversionId={context.conversionId} />
+                ) : null}
+                {context.kind === "structure" ? (
+                  <StructureEnrichment fileId={context.fileId} />
+                ) : null}
+              </>
+            )}
+          </div>
+        )}
+      </aside>
+    </>
   );
 }

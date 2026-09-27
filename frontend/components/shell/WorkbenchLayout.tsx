@@ -76,7 +76,9 @@ export function WorkbenchLayout({ children }: { children: ReactNode }) {
       <Toolbar />
 
       {/* Middle row: sources rail | center | inspector. */}
-      <div className="grid grid-cols-[auto_1fr_auto] overflow-hidden">
+      {/* `min-w-0`: this is also a row of the root grid above (`grid-rows-[auto_1fr_auto]`) — see
+          `StatusBar.tsx`'s footer for why every row needs this. */}
+      <div className="grid min-w-0 grid-cols-[auto_1fr_auto] overflow-hidden">
         {/* Sources rail — middle-left, the real persistent SourceRail (Task 9). It used to be a
             reserved-but-empty placeholder column here while `app/f/[file_id]/layout.tsx` rendered
             its own per-file `<SourceRail fileId=.../>` inline; that duplicate has been removed

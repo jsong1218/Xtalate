@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { CommandPaletteTrigger } from "@/components/command/CommandPaletteTrigger";
 import { NotifyToggle } from "@/lib/notify/NotifyPreferenceProvider";
 import { ThemeToggle } from "@/lib/theme/ThemeProvider";
@@ -37,6 +38,15 @@ import { ThemeToggle } from "@/lib/theme/ThemeProvider";
  * Two distinctly-labeled nav landmarks ("File actions" left, "Primary" right) rather than one,
  * since the left verbs and the right destinations are no longer adjacent in the same list — this
  * still keeps the toolbar as a single `banner` with no duplicate *unlabeled* landmark.
+ *
+ * **Responsive condensing (v2.0 addendums, Task 13; design spec §"Region behaviors &
+ * responsiveness"):** below `sm` there is no room for the "File actions" nav's labelled links
+ * beside the wordmark, so it is replaced — not merely wrapped — by a single "Menu" overflow
+ * button (`aria-haspopup="menu"`) that reveals the same two verbs as `role="menuitem"` entries in a
+ * popover. The popover's items are only mounted while open (not CSS-hidden duplicates), so there is
+ * never a second same-named "Open / Upload"/"Convert" control in the accessibility tree at once —
+ * the `sm:hidden` button and the `hidden sm:flex` nav are mutually exclusive by breakpoint, exactly
+ * like `SourceRail`/`Inspector`'s own mobile toggles.
  */
 
 const GLOBAL_DESTINATIONS: { href: string; label: string }[] = [
@@ -59,9 +69,14 @@ export function Toolbar() {
   const pathname = usePathname();
   const fileId = activeFileIdFrom(pathname);
   const convertHref = fileId ? `/f/${fileId}/convert` : null;
+  const [moreOpen, setMoreOpen] = useState(false);
 
   return (
-    <header className="border-b border-wb-hairline bg-wb-toolbar">
+    // `min-w-0`: this header is a row of `WorkbenchLayout`'s single-column root grid
+    // (`grid-rows-[auto_1fr_auto]`) — see `StatusBar.tsx`'s footer for the full explanation of why
+    // every row needs this to stop a grid item's content-based automatic minimum width from
+    // forcing the shared column past a narrow phone's viewport.
+    <header className="min-w-0 border-b border-wb-hairline bg-wb-toolbar">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
         {/* Left cluster: brand + the per-file verbs. */}
         <div className="flex min-w-0 items-center gap-x-4">
@@ -73,7 +88,7 @@ export function Toolbar() {
           </Link>
           <nav
             aria-label="File actions"
-            className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"
+            className="hidden items-center gap-x-4 gap-y-1 text-sm sm:flex sm:flex-wrap"
           >
             <Link href="/" className={linkClass}>
               Open / Upload
@@ -93,6 +108,55 @@ export function Toolbar() {
               </button>
             )}
           </nav>
+          {/* The condensed equivalent below `sm`: a single overflow button revealing the same two
+              verbs as menu items, mounted only while open (see the module docstring). */}
+          <div className="relative sm:hidden">
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-controls="toolbar-overflow-menu"
+              onClick={() => setMoreOpen((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-sm text-muted transition-colors hover:text-accent-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              Menu <span aria-hidden="true">▾</span>
+            </button>
+            {moreOpen ? (
+              <div
+                id="toolbar-overflow-menu"
+                role="menu"
+                aria-label="File actions"
+                className="absolute left-0 top-full z-40 mt-1 min-w-40 rounded-md border border-wb-hairline bg-wb-toolbar p-1 shadow-lg"
+              >
+                <Link
+                  href="/"
+                  role="menuitem"
+                  onClick={() => setMoreOpen(false)}
+                  className="block rounded px-2 py-1.5 text-sm text-muted hover:bg-well hover:text-accent-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  Open / Upload
+                </Link>
+                {convertHref ? (
+                  <Link
+                    href={convertHref}
+                    role="menuitem"
+                    onClick={() => setMoreOpen(false)}
+                    className="block rounded px-2 py-1.5 text-sm text-muted hover:bg-well hover:text-accent-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    Convert
+                  </Link>
+                ) : (
+                  <span
+                    role="menuitem"
+                    aria-disabled="true"
+                    className="block px-2 py-1.5 text-sm text-faint"
+                  >
+                    Convert
+                  </span>
+                )}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* Right cluster: ⌘K, the global destinations, then the toggles (design spec order). */}

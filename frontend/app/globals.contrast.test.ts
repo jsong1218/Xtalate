@@ -131,6 +131,16 @@ function checkTheme(theme: string, block: () => string) {
       },
     );
 
+    // `text-faint` also renders on the *raised* panel surface, a step lighter than the page
+    // `--surface`: the report-group count badges ("(1)/(2)") and every provenance `dt` label sit on
+    // `bg-raised`. The v2.0 addendums Steel retune (Task 6) left the dark faint one hundredth short
+    // there — 4.49:1 — which the whole-page axe scan caught (`e2e/accessibility.spec.ts`) after this
+    // isolated guard, then checking faint only on `--surface`, had passed. Pin the exact pair so a
+    // future faint edit cannot silently drop the report/provenance metadata below AA again.
+    it("text-faint clears AA on the raised panel surface (report groups, provenance)", () => {
+      expect(contrast(t("text-faint"), t("surface-raised"))).toBeGreaterThanOrEqual(AA);
+    });
+
     it("inverse foreground clears AA on the inverse surface (neutral buttons)", () => {
       expect(contrast(t("inverse-fg"), t("inverse"))).toBeGreaterThanOrEqual(AA);
     });

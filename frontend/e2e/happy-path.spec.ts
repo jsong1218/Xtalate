@@ -35,8 +35,10 @@ test("upload → inspect → convert → record → download, extXYZ to XYZ", as
   //    commit the conversion (permissive is the default).
   //    Since v1.1 M39-S4 (B2) the first click opens an explicit confirm step (the pre-flight
   //    preview, with a final Convert and a Cancel) — the POST /v1/convert fires only on that final
-  //    Convert, so an exploratory click never commits a record.
-  await page.getByRole("link", { name: "Convert →" }).click();
+  //    Convert, so an exploratory click never commits a record. The old per-file rail's
+  //    "Convert →" CTA was absorbed into the workbench's own Convert tab (v2.0 addendums Task 9's
+  //    reconciliation note) — the workspace tab strip is the guided spine now.
+  await page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Convert" }).click();
   await page.getByRole("button", { name: "Plain XYZ", exact: true }).click();
   await page.getByRole("button", { name: /^Convert to Plain XYZ$/ }).click();
   await expect(page.getByTestId("convert-confirm")).toBeVisible();

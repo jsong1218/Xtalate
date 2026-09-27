@@ -65,25 +65,32 @@ function FileFacts({ fileId }: { fileId: string }) {
 
   const { report } = inspection;
   return (
-    <span data-testid="statusbar-facts" className="flex min-w-0 items-center gap-2 truncate">
-      <span className="truncate">{report.file.filename}</span>
-      <span aria-hidden="true" className="text-faint">
+    <span data-testid="statusbar-facts" className="flex min-w-0 flex-1 items-center gap-2">
+      {/* The filename and format name are the two fields with no length bound (P3/P1 honesty means
+          this shows the real string, however long) — each gets its own `min-w-0` so it can actually
+          shrink and ellipsize as a flex item (a flex child's default `min-width` is its own content
+          size, which silently defeats `truncate` and, left unfixed, forces the whole single-column
+          grid — this footer shares its column with the toolbar and center above it — wider than the
+          viewport on a narrow phone; the fixed short facts (`· N atoms · N frames`) get `shrink-0`
+          instead so they never lose their digits to an ellipsis). */}
+      <span className="min-w-0 shrink truncate">{report.file.filename}</span>
+      <span aria-hidden="true" className="shrink-0 text-faint">
         ·
       </span>
-      <span className="truncate">{report.format.format_name}</span>
-      <span aria-hidden="true" className="text-faint">
+      <span className="min-w-0 shrink truncate">{report.format.format_name}</span>
+      <span aria-hidden="true" className="shrink-0 text-faint">
         ·
       </span>
-      <span>
+      <span className="shrink-0 whitespace-nowrap">
         <span data-testid="statusbar-atom-count" className="font-mono text-strong">
           {report.structure.atom_count}
         </span>{" "}
         atoms
       </span>
-      <span aria-hidden="true" className="text-faint">
+      <span aria-hidden="true" className="shrink-0 text-faint">
         ·
       </span>
-      <span>
+      <span className="shrink-0 whitespace-nowrap">
         <span data-testid="statusbar-frame-count" className="font-mono text-strong">
           {report.structure.frame_count}
         </span>{" "}
@@ -100,7 +107,14 @@ export function StatusBar() {
   return (
     <footer
       role="contentinfo"
-      className="flex h-8 items-center justify-between gap-4 border-t border-wb-hairline bg-wb-status px-4 text-xs text-muted"
+      // `min-w-0`: the footer is itself a row of `WorkbenchLayout`'s single-column root grid
+      // (`grid-rows-[auto_1fr_auto]`) — a grid item's automatic minimum width defaults to its
+      // content's un-shrunk size (doubly so for a `display:flex` element like this one), which
+      // silently overrides every `min-w-0`/`shrink`/`truncate` given to its own children above and
+      // forces the *shared* grid column — and with it the toolbar and center above — wider than a
+      // narrow phone's viewport. Zeroing it here is what lets the facts row's own truncation rules
+      // actually take effect instead of being overruled by this ancestor.
+      className="flex h-8 min-w-0 items-center justify-between gap-4 border-t border-wb-hairline bg-wb-status px-4 text-xs text-muted"
     >
       <span className="sr-only">Status bar</span>
       {fileId ? (

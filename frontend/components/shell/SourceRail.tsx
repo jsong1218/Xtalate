@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { historyInfiniteQuery } from "@/lib/api/queries";
 import type { HistoryItem } from "@/lib/history/status";
@@ -60,6 +60,10 @@ function historyToRecent(item: HistoryItem): RecentFile | null {
  * is currently rendered. */
 const RAIL_CONTENT_ID = "source-rail-content";
 
+/** The id the mobile-open toggle's `aria-controls` points at — the rail's own `nav` landmark
+ * (design spec §"Region behaviors & responsiveness": "hidden behind toggles" below `md`). */
+const RAIL_NAV_ID = "source-rail-nav";
+
 function railRowClass(active: boolean): string {
   return `flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
     active ? "bg-well text-strong" : "text-body hover:bg-well/60"
@@ -88,13 +92,89 @@ export function SourceRail({
   const persisted = useMemo(() => listRecents(), []);
   const files = useMemo(() => mergeRecents(persisted, seeded), [persisted, seeded]);
 
+  // Below `md` the rail has no room beside the center — it is hidden behind a toggle rather than
+  // simply gone (design spec §"Region behaviors & responsiveness"). This is a separate, ephemeral
+  // per-viewport flag from `collapsed` (the persisted desktop icon-rail preference): a phone user
+  // never has a "collapsed" rail, they have a closed one they can open as a temporary overlay.
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Escape closes the overlay from anywhere on the page (not only while focus sits inside the
+  // `nav`) — the toggle button that opens it lives outside the `nav` it controls, so a keydown
+  // handler on the `nav` alone would never see the key while focus is still on that toggle
+  // (matching the `CommandPaletteTrigger` global-listener pattern already used in this shell).
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMobileOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
+
   return (
-    <nav
-      aria-label="Sources"
-      className={`hidden shrink-0 flex-col border-r border-wb-hairline bg-wb-rail md:flex ${
-        collapsed ? "w-12" : "w-56"
-      }`}
-    >
+    <>
+      {/* The reachable open control for the hidden-below-md rail — the "show" half of a split
+          disclosure toggle (the "hide" half is the ✕ inside the drawer below). One control is
+          present at a time: this FAB while the rail is closed, the in-drawer ✕ while it is open.
+          They are split rather than a single always-on FAB because the open drawer (`z-40`, full
+          height on the left) would cover a bottom-left FAB, leaving the "hide" toggle unclickable —
+          so the close control lives inside the drawer, on top, instead. Rendered outside the `nav`
+          so it stays in the layout (and the a11y tree) while the rail it controls is `hidden`.
+          `md:hidden` because at `md`+ the rail is always present and this would be redundant with
+          the rail's own collapse/expand control. `bottom-20` rather than the tighter `bottom-4`:
+          Next.js's dev-mode indicator (a fixed ~32px pill in the bottom-left corner, `next dev`
+          only — never in a production build) sits almost exactly where `bottom-4 left-4` would,
+          intercepting pointer events; the extra clearance keeps this reachable under both `next
+          dev` (what the Docker e2e stack runs) and a production self-host. */}
+      {mobileOpen ? null : (
+        <button
+          type="button"
+          aria-expanded={false}
+          aria-controls={RAIL_NAV_ID}
+          aria-label="Show sources"
+          onClick={() => setMobileOpen(true)}
+          className="fixed bottom-20 left-4 z-30 rounded-full border border-wb-hairline bg-wb-rail px-3 py-2 text-xs font-medium text-body shadow-lg transition-colors hover:bg-well focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:hidden"
+        >
+          Sources
+        </button>
+      )}
+      {/* Backdrop: dismisses the overlay on an outside click/tap. Decorative — the toggle button
+          above and the global Escape listener are the real dismiss affordances. */}
+      {mobileOpen ? (
+        <div
+          aria-hidden="true"
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+        />
+      ) : null}
+      <nav
+        id={RAIL_NAV_ID}
+        aria-label="Sources"
+        className={`${
+          mobileOpen ? "flex fixed inset-y-0 left-0 z-40 w-64 shadow-xl" : "hidden"
+        } shrink-0 flex-col border-r border-wb-hairline bg-wb-rail md:static md:z-auto md:flex md:shadow-none ${
+          collapsed ? "md:w-12" : "md:w-56"
+        }`}
+      >
+        {mobileOpen ? (
+          // The "hide" half of the split disclosure toggle: shown only while the drawer is open, on
+          // top of it (so it is always clickable, unlike a bottom-left FAB the drawer would cover).
+          // It carries the same `aria-expanded`/`aria-controls` as the FAB, so screen readers and the
+          // responsive e2e both see exactly one "Show sources"/"Hide sources" control at any moment
+          // (v2.0 addendums Task 13).
+          <div className="flex justify-end p-2 md:hidden">
+            <button
+              type="button"
+              aria-expanded={true}
+              aria-controls={RAIL_NAV_ID}
+              aria-label="Hide sources"
+              onClick={() => setMobileOpen(false)}
+              className="rounded-sm px-1.5 py-1 text-sm text-faint transition-colors hover:text-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              ✕
+            </button>
+          </div>
+        ) : null}
       <div className="flex items-center justify-between gap-2 p-2">
         {collapsed ? null : (
           <h2 className="text-xs font-semibold uppercase tracking-wide text-faint">Sources</h2>
@@ -156,6 +236,7 @@ export function SourceRail({
           </li>
         </ul>
       )}
-    </nav>
+      </nav>
+    </>
   );
 }

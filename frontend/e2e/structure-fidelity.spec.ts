@@ -36,11 +36,16 @@ test("a cell-less XYZ renders atoms in open space: no box, and the caption says 
   // absence invariant is asserted where it lives, not on the input.
   await expect(mount).toHaveAttribute("data-has-cell", "false");
   await expect(mount).toHaveAttribute("data-unitcell-drawn", "false");
-  // The explicit caption — absence rendered as absence, never a fabricated box.
-  await expect(page.getByText(/declares no simulation cell/)).toBeVisible();
+  // The explicit caption — absence rendered as absence, never a fabricated box. Scoped to the
+  // Structure tab's own viewer chrome (`viewer-annotations`, StructureViewer.tsx): the workbench
+  // Inspector (v2.0 addendums Task 10) shows the *same* fact in its own "structure" enrichment on
+  // this route, by design (design spec §"Shell architecture" — "atom/cell props + legend
+  // [Structure]"), so an unscoped locator now matches both.
+  const viewerAnnotations = page.getByTestId("viewer-annotations");
+  await expect(viewerAnnotations.getByText(/declares no simulation cell/)).toBeVisible();
   // The legend lists exactly the file's elements (the icon+text a11y rule).
-  await expect(page.getByTestId("legend-row-O")).toHaveText("O");
-  await expect(page.getByTestId("legend-row-H")).toHaveText("H");
+  await expect(viewerAnnotations.getByTestId("legend-row-O")).toHaveText("O");
+  await expect(viewerAnnotations.getByTestId("legend-row-H")).toHaveText("H");
 });
 
 test("a celled POSCAR renders the unit-cell wireframe and its element legend", async ({
@@ -60,8 +65,12 @@ test("a celled POSCAR renders the unit-cell wireframe and its element legend", a
   await expect(mount).toHaveAttribute("data-has-cell", "true");
   await expect(mount).toHaveAttribute("data-unitcell-drawn", "true");
   await expect(page.getByText(/declares no simulation cell/)).toHaveCount(0);
-  await expect(page.getByTestId("legend-row-Na")).toHaveText("Na");
-  await expect(page.getByTestId("legend-row-Cl")).toHaveText("Cl");
+  // Scoped to the Structure tab's own viewer chrome (`viewer-annotations`): the workbench Inspector
+  // (Task 10) renders the same species legend in its "structure" enrichment on this route by design,
+  // so an unscoped `legend-row-*` locator matches both. Same reason as the cell-less test above.
+  const viewerAnnotations = page.getByTestId("viewer-annotations");
+  await expect(viewerAnnotations.getByTestId("legend-row-Na")).toHaveText("Na");
+  await expect(viewerAnnotations.getByTestId("legend-row-Cl")).toHaveText("Cl");
 });
 
 test("a celled CIF renders the unit-cell wireframe and its element legend", async ({
@@ -79,8 +88,11 @@ test("a celled CIF renders the unit-cell wireframe and its element legend", asyn
   await expect(mount).toBeVisible({ timeout: 60_000 });
   await expect(mount).toHaveAttribute("data-has-cell", "true");
   await expect(mount).toHaveAttribute("data-unitcell-drawn", "true");
-  await expect(page.getByTestId("legend-row-Zn")).toHaveText("Zn");
-  await expect(page.getByTestId("legend-row-O")).toHaveText("O");
+  // Scoped to the viewer's own legend, not the Inspector's structure enrichment — see the POSCAR
+  // test above.
+  const viewerAnnotations = page.getByTestId("viewer-annotations");
+  await expect(viewerAnnotations.getByTestId("legend-row-Zn")).toHaveText("Zn");
+  await expect(viewerAnnotations.getByTestId("legend-row-O")).toHaveText("O");
 });
 
 test("bonds are a display heuristic: off by default, the persistent badge when enabled, in no report (D234)", async ({

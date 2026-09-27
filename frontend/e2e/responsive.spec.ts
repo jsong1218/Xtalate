@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { fixturePath, FIXTURES } from "./support/api";
+import { fixturePath, FIXTURES, uploadFixture } from "./support/api";
 import happyRecord from "../components/__fixtures__/conversion.record.json";
 
 /**
@@ -63,4 +63,95 @@ test("no wizard page scrolls sideways on a phone, inventory table included", asy
   await page.waitForURL("**/f/**");
   await expect(page.getByText(/Detected\s+Extended XYZ/i)).toBeVisible({ timeout: 30_000 });
   await assertNoHorizontalOverflow(page);
+});
+
+/**
+ * The workbench collapse rules (v2.0 addendums Task 13; design spec §"Region behaviors &
+ * responsiveness": "below `md`, the Sources rail and Inspector collapse to icon rails / are hidden
+ * behind toggles ... The center is never hidden"). Below their respective breakpoints, the rail and
+ * inspector are not merely CSS-dimmed — they are outside the accessibility tree entirely
+ * (`display:none`, so `getByRole` finds nothing) until their own reachable toggle opens them as an
+ * overlay; the center content is visible throughout.
+ */
+test("the Sources rail and Inspector collapse behind reachable toggles below their breakpoints", async ({
+  page,
+  request,
+}) => {
+  const fileId = await uploadFixture(request, FIXTURES.workedExample);
+  await page.setViewportSize({ width: 375, height: 900 }); // below both `md` (768) and `lg` (1024)
+  await page.goto(`/f/${fileId}`);
+  await expect(page.getByText(/^Detected\s/)).toBeVisible({ timeout: 30_000 }); // center never hidden
+
+  // Sources rail: closed by default below `md` — the landmark itself is unreachable, not just
+  // visually dimmed — until its own toggle (rendered outside the collapsed `nav`) opens it.
+  const showSources = page.getByRole("button", { name: /^show sources$/i });
+  await expect(showSources).toBeVisible();
+  await expect(showSources).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("navigation", { name: "Sources" })).toBeHidden();
+  await showSources.click();
+  const sourcesNav = page.getByRole("navigation", { name: "Sources" });
+  await expect(sourcesNav).toBeVisible();
+  await expect(page.getByRole("button", { name: /^hide sources$/i })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await page.getByRole("button", { name: /^hide sources$/i }).click();
+  await expect(sourcesNav).toBeHidden();
+
+  // Inspector: same pattern, its own breakpoint (`lg`) and its own toggle.
+  const showInspector = page.getByRole("button", { name: /^show inspector$/i });
+  await expect(showInspector).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Inspector" })).toBeHidden();
+  await showInspector.click();
+  const inspectorAside = page.getByRole("complementary", { name: "Inspector" });
+  await expect(inspectorAside).toBeVisible();
+  await expect(page.getByRole("button", { name: /^hide inspector$/i })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await page.getByRole("button", { name: /^hide inspector$/i }).click();
+  await expect(inspectorAside).toBeHidden();
+
+  // The center region was never hidden by any of the above.
+  await expect(page.getByText(/^Detected\s/)).toBeVisible();
+  await assertNoHorizontalOverflow(page);
+});
+
+/**
+ * The toolbar's own condensing rule (design spec: "the toolbar condenses verbs into an overflow
+ * menu" below `sm`). The labelled "File actions" nav (Open/Upload, Convert) is unreachable below
+ * `sm`; the same two verbs are reachable instead as menu items behind a single "Menu" button —
+ * never both at once, so there is exactly one accessible "Open / Upload" control at a time.
+ */
+test("the toolbar condenses its verbs into an overflow menu on a narrow viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 900 }); // below `sm` (640)
+  await page.goto("/");
+
+  await expect(page.getByRole("navigation", { name: "File actions" })).toBeHidden();
+  const menuButton = page.getByRole("button", { name: "Menu" });
+  await expect(menuButton).toBeVisible();
+  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+
+  await menuButton.click();
+  await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+  const menu = page.getByRole("menu", { name: "File actions" });
+  await expect(menu.getByRole("menuitem", { name: /open.*upload/i })).toHaveAttribute(
+    "href",
+    "/",
+  );
+  // Off a /f/[file_id] route there is no active file: Convert is an inert menu item, not a link.
+  await expect(menu.getByRole("menuitem", { name: "Convert" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+
+  // Exactly one accessible "Open / Upload" control exists at a time — the condensed menu item, not
+  // a CSS-hidden duplicate of the wide-viewport nav's own link.
+  await expect(page.getByRole("link", { name: /open.*upload/i })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: /open.*upload/i })).toHaveCount(1);
+
+  await menuButton.click();
+  await expect(menu).toBeHidden();
 });

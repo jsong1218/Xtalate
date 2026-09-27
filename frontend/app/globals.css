@@ -132,7 +132,10 @@
   --text-strong: #dbe4f0; /* headings, emphasis                       */
   --text-body: #c7d0dc; /* default paragraph text                   */
   --text-muted: #93a0b2; /* secondary text                           */
-  --text-faint: #7c8a9e; /* hints, metadata                          */
+  --text-faint: #858fa2; /* hints, metadata (nudged lighter from #7c8a9e: that value was 4.49:1 on
+                            the raised panel surface #1e232c — one hundredth short of AA — for the
+                            report-group count badges and provenance dt labels; #858fa2 clears it at
+                            4.84:1 while staying dimmer than --text-muted. v2.0 addendums Task 13.) */
 
   --inverse: #dbe4f0; /* light chip/button on dark                */
   --inverse-fg: #12151b; /* dark text on it                          */

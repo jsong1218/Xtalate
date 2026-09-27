@@ -46,7 +46,9 @@ test("upload → convert → pause → decide → preview → record, the trajec
   //    the decision-needing conversion pauses rather than refusing. Since v1.1 M39-S4 (B2) the
   //    conversion is committed on an explicit confirm step — and this journey proves the recovery
   //    path is unaffected: confirm → POST → awaiting_recovery → decision cards, exactly as before.
-  await page.getByRole("link", { name: "Convert →" }).click();
+  //    The old per-file rail's "Convert →" CTA was absorbed into the workbench's own Convert tab
+  //    (v2.0 addendums Task 9's reconciliation note) — the workspace tab strip is the guided spine.
+  await page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Convert" }).click();
   await page.getByRole("button", { name: "VASP POSCAR", exact: true }).click();
   await page.getByRole("button", { name: /^Convert to VASP POSCAR$/ }).click();
   await expect(page.getByTestId("convert-confirm")).toBeVisible();
