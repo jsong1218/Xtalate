@@ -688,8 +688,14 @@ class VasprunParser(ParserPlugin):
         except ET.ParseError as exc:
             raise _error("VASPRUN_MALFORMED_XML", f"file is not well-formed XML: {exc}") from exc
         except LookupError as exc:
-            # A hostile XML declaration can name an encoding Python's codec registry does not know;
-            # ElementTree raises LookupError during feed. Route it through the §5 error contract.
+            # A hostile XML declaration can name an encoding Python's codec registry does not
+            # know; ElementTree raises LookupError ("unknown encoding: …") during feed. Route
+            # *that* through the §5 error contract — but only that. `LookupError` also subsumes
+            # `KeyError`/`IndexError`, so a non-encoding lookup escaping `_read_header` would be a
+            # real bug, and relabelling it "unknown XML encoding" would be a misleading refusal
+            # reason (P1). Re-raise anything that is not an encoding lookup rather than mask it.
+            if "encoding" not in str(exc):
+                raise
             raise _error(
                 "VASPRUN_MALFORMED_XML",
                 f"file declares an unknown XML encoding: {exc}",
