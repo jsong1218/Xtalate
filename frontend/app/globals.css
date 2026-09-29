@@ -203,10 +203,23 @@
    * **base** layer — so those keep their tailored ring with no double indicator. Everything without a
    * bespoke ring (form fields, the recovery radios, the ack checkbox, native `<summary>` disclosures,
    * doc-markdown links) inherits this consistent outline instead of the inconsistent UA default.
+   *
+   * v2.0 addendums item 5 — the dark-palette focus pass. `--accent` is kept deliberately dark so
+   * white-on-accent buttons clear AA, which leaves the accent outline at only ~3:1 against the
+   * darkest workbench chrome (`--surface-muted`) — it clears the WCAG 1.4.11 non-text bar, but with
+   * almost no margin, so on a dark chip or well the ring is easy to lose. Wrap the accent outline in
+   * an `--inverse` halo: that token flips light-on-dark / dark-on-light with the theme, giving the
+   * ring a *second*, high-contrast boundary that reads on any surface in either palette rather than
+   * relying on the marginal accent/surface edge alone. The `outline-offset` gap shows the halo on the
+   * inner side; the 6px spread carries it ~2px past the outline's outer edge. Bespoke components that
+   * set their own `focus-visible:ring-*`/`shadow-*` in the utilities layer override this box-shadow
+   * exactly as they already override the outline, so there is still never a double indicator.
+   * `globals.contrast.test.ts` guards the halo's contrast in both themes.
    */
   :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+    box-shadow: 0 0 0 6px var(--inverse);
   }
 
   /*
@@ -219,7 +232,8 @@
    * (which have their own chrome) are left alone. This is the whole class, not per-field patches;
    * any component that wants a different treatment still wins via a Tailwind utility.
    */
-  :root[data-theme="dark"] input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+  :root[data-theme="dark"]
+    input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
   :root[data-theme="dark"] textarea,
   :root[data-theme="dark"] select {
     color: var(--text-strong);

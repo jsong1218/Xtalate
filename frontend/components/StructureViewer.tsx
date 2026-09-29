@@ -76,6 +76,65 @@ const BONDS_HEURISTIC_TOOLTIP =
   "source file, are never written to any output, and never appear in a conversion report.";
 
 /**
+ * Viewer-control icons (v2.0 addendums; item 1) — decorative 14px glyphs that sit before each
+ * button's text label. `aria-hidden` because the visible label is the accessible name; they are
+ * pure affordance. Stroke uses `currentColor` so they inherit the button's themed text color.
+ */
+const ICON_PROPS = {
+  width: 14,
+  height: 14,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  "aria-hidden": true,
+  focusable: false,
+};
+
+/** Two atoms joined by a bond — the bonds toggle. */
+function BondsIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="6" r="3" />
+      <line x1="8.1" y1="15.9" x2="15.9" y2="8.1" />
+    </svg>
+  );
+}
+
+/** A circular arrow — reset the camera. */
+function ResetIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <polyline points="3 3 3 6.5 6.5 6.5" />
+    </svg>
+  );
+}
+
+/** Arrows to the corners — expand to fullscreen. */
+function ExpandIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <polyline points="15 3 21 3 21 9" />
+      <polyline points="9 21 3 21 3 15" />
+      <line x1="21" y1="3" x2="14" y2="10" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </svg>
+  );
+}
+
+/** Base classes shared by every viewer control button. */
+const CONTROL_BUTTON_BASE =
+  "inline-flex items-center gap-1.5 rounded border px-2 py-1 text-xs";
+/** The resting (un-latched) look: hairline border, muted text, subtle hover. */
+const CONTROL_BUTTON_RESTING = "border-line text-muted hover:bg-raised";
+/** The latched (pressed/on) look for the bonds toggle: filled well, strong border and text. */
+const CONTROL_BUTTON_LATCHED = "border-line-strong bg-well text-strong";
+
+/**
  * The cell-less caption (v1.6 M60-S2, P3): when the geometry declares no cell, the atoms render in
  * open space with an explicit "no simulation cell" caption and **no box** — the tab never draws a
  * fabricated box around cell-less data. The endpoint answers `cell: null` (D232), and this caption
@@ -335,22 +394,29 @@ export function StructureViewer({
           // accessible description for screen readers — no separate aria-description needed.
           title={BONDS_HEURISTIC_TOOLTIP}
           onClick={() => setBondsEnabled((v) => !v)}
-          className="rounded border border-line px-2 py-1 text-xs text-muted hover:bg-raised"
+          // Latched pressed state (item 1): a toggle that reads as "on" at a glance — filled well,
+          // strong border and text — not just an aria-pressed a screen reader alone can see.
+          className={`${CONTROL_BUTTON_BASE} ${
+            bondsEnabled ? CONTROL_BUTTON_LATCHED : CONTROL_BUTTON_RESTING
+          }`}
         >
+          <BondsIcon />
           {bondsEnabled ? "Hide bonds heuristic" : "Show bonds heuristic"}
         </button>
         <button
           type="button"
           onClick={() => resetRef.current?.()}
-          className="rounded border border-line px-2 py-1 text-xs text-muted hover:bg-raised"
+          className={`${CONTROL_BUTTON_BASE} ${CONTROL_BUTTON_RESTING}`}
         >
+          <ResetIcon />
           Reset view
         </button>
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="rounded border border-line px-2 py-1 text-xs text-muted hover:bg-raised"
+          className={`${CONTROL_BUTTON_BASE} ${CONTROL_BUTTON_RESTING}`}
         >
+          <ExpandIcon />
           Expand
         </button>
       </div>

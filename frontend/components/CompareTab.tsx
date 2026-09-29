@@ -34,14 +34,20 @@
  * only (per-atom difference visualization is v1.8's seam, not this tab's). **Frontend-only**:
  * `side=source` shipped in M59, and D239/Rev 1.82 record this slice.
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type MutableRefObject } from "react";
 import { ErrorEnvelope } from "@/components/ErrorEnvelope";
 import { LossTag, type LossKind } from "@/components/loss/icons";
-import { StructureViewer, type SuppliedCell } from "@/components/StructureViewer";
+import {
+  StructureViewer,
+  type SuppliedCell,
+} from "@/components/StructureViewer";
 import { TrajectoryScrubber } from "@/components/TrajectoryScrubber";
 import { toErrorEnvelope } from "@/lib/api/useInspection";
 import { exportedFrameAnnotation } from "@/lib/exportedFrame";
-import { useConversionGeometry, type GeometryState } from "@/lib/geometry/useGeometry";
+import {
+  useConversionGeometry,
+  type GeometryState,
+} from "@/lib/geometry/useGeometry";
 import type { StructureViewerCamera } from "@/lib/geometry/molstarMount";
 import type { ConversionReport, ValidationReport } from "@/lib/report/types";
 
@@ -61,15 +67,21 @@ const CHECK_KIND: Record<CheckResultStatus, LossKind> = {
 type CheckResultStatus = "pass" | "warn" | "fail" | "skipped";
 
 /**
- * The camera-lock broadcast (M62-S1, D239; v2.0 addendums item 3), held for one tab: when a
+ * The camera-lock broadcast (M62-S1, D239; v2.0 addendums items 2 & 3), held for one tab: when a
  * viewer's camera changes (a user orbit-control drag on that side), its pose is pushed onto the
  * sibling viewer via `applyPose` — which copies orientation and zoom but keeps the sibling
  * centered on its **own** structure (the two Canonical Objects can have different centroids). Each
  * side's `onChange` handler checks an "applying a remote camera" flag for **the same side** before
  * rebroadcasting: while this tab is pushing source→output, the output viewer emits its own
  * `changed` event (the echo), whose handler sees `output` applying and stops — no ping-pong loop.
+ *
+ * v2.0 addendums item 2: the broadcast is **latchable**. The caller owns a `synced` boolean and
+ * passes it in via a ref (`syncedRef`); when the user unlocks the two cameras (the chip's toggle),
+ * both handlers see `syncedRef.current === false` and return before touching the sibling, so each
+ * viewer orbits independently. Toggling back re-arms the broadcast without remounting either
+ * viewer — the next gesture on either side re-couples them.
  */
-function useCameraLock(): {
+function useCameraLock(syncedRef: MutableRefObject<boolean>): {
   onSourceReady: (cam: StructureViewerCamera) => () => void;
   onOutputReady: (cam: StructureViewerCamera) => () => void;
 } {
@@ -77,37 +89,45 @@ function useCameraLock(): {
   const outputRef = useRef<StructureViewerCamera | null>(null);
   const applyingRef = useRef({ source: false, output: false });
 
-  const onSourceReady = useCallback((cam: StructureViewerCamera) => {
-    sourceRef.current = cam;
-    const unsub = cam.onChange(() => {
-      if (applyingRef.current.source) return; // a remote echo, not a user gesture — stop
-      const other = outputRef.current;
-      if (!other) return;
-      applyingRef.current.output = true;
-      try {
-        other.applyPose(cam.getSnapshot());
-      } finally {
-        applyingRef.current.output = false;
-      }
-    });
-    return unsub;
-  }, []);
+  const onSourceReady = useCallback(
+    (cam: StructureViewerCamera) => {
+      sourceRef.current = cam;
+      const unsub = cam.onChange(() => {
+        if (!syncedRef.current) return; // cameras unlocked — orbit independently
+        if (applyingRef.current.source) return; // a remote echo, not a user gesture — stop
+        const other = outputRef.current;
+        if (!other) return;
+        applyingRef.current.output = true;
+        try {
+          other.applyPose(cam.getSnapshot());
+        } finally {
+          applyingRef.current.output = false;
+        }
+      });
+      return unsub;
+    },
+    [syncedRef],
+  );
 
-  const onOutputReady = useCallback((cam: StructureViewerCamera) => {
-    outputRef.current = cam;
-    const unsub = cam.onChange(() => {
-      if (applyingRef.current.output) return; // a remote echo, not a user gesture — stop
-      const other = sourceRef.current;
-      if (!other) return;
-      applyingRef.current.source = true;
-      try {
-        other.applyPose(cam.getSnapshot());
-      } finally {
-        applyingRef.current.source = false;
-      }
-    });
-    return unsub;
-  }, []);
+  const onOutputReady = useCallback(
+    (cam: StructureViewerCamera) => {
+      outputRef.current = cam;
+      const unsub = cam.onChange(() => {
+        if (!syncedRef.current) return; // cameras unlocked — orbit independently
+        if (applyingRef.current.output) return; // a remote echo, not a user gesture — stop
+        const other = sourceRef.current;
+        if (!other) return;
+        applyingRef.current.source = true;
+        try {
+          other.applyPose(cam.getSnapshot());
+        } finally {
+          applyingRef.current.source = false;
+        }
+      });
+      return unsub;
+    },
+    [syncedRef],
+  );
 
   return { onSourceReady, onOutputReady };
 }
@@ -137,11 +157,19 @@ function ComparePrecondition({
 }) {
   const sourceEnvelope =
     source.status === "error"
-      ? toErrorEnvelope(source.error, "GEOMETRY_LOAD_FAILED", "Could not load this structure.")
+      ? toErrorEnvelope(
+          source.error,
+          "GEOMETRY_LOAD_FAILED",
+          "Could not load this structure.",
+        )
       : null;
   const outputEnvelope =
     output.status === "error"
-      ? toErrorEnvelope(output.error, "GEOMETRY_LOAD_FAILED", "Could not load this structure.")
+      ? toErrorEnvelope(
+          output.error,
+          "GEOMETRY_LOAD_FAILED",
+          "Could not load this structure.",
+        )
       : null;
 
   // Expired bytes (the endpoints 410 once the bytes are gone, D232): the M60 expired copy, naming
@@ -158,8 +186,12 @@ function ComparePrecondition({
   if (sourceExpired || outputExpired) {
     return (
       <div className="space-y-2">
-        {sourceExpired ? <p className="text-sm text-body">{EXPIRED_FILE_COPY}</p> : null}
-        {outputExpired ? <p className="text-sm text-body">{EXPIRED_OUTPUT_COPY}</p> : null}
+        {sourceExpired ? (
+          <p className="text-sm text-body">{EXPIRED_FILE_COPY}</p>
+        ) : null}
+        {outputExpired ? (
+          <p className="text-sm text-body">{EXPIRED_OUTPUT_COPY}</p>
+        ) : null}
       </div>
     );
   }
@@ -185,7 +217,19 @@ export function CompareTab({
 }: CompareTabProps) {
   const sourceGeometry = useConversionGeometry(conversionId, "source");
   const outputGeometry = useConversionGeometry(conversionId, "output");
-  const { onSourceReady, onOutputReady } = useCameraLock();
+  // v2.0 addendums item 2 — the camera-lock latch. The boolean drives the chip's label/state; the
+  // ref is what the broadcast handlers read (they are registered once, before a re-render, so they
+  // must read a ref rather than a captured `synced` value). Kept in lock-step by the toggle.
+  const [synced, setSynced] = useState(true);
+  const syncedRef = useRef(true);
+  const toggleSynced = useCallback(() => {
+    setSynced((prev) => {
+      const next = !prev;
+      syncedRef.current = next;
+      return next;
+    });
+  }, []);
+  const { onSourceReady, onOutputReady } = useCameraLock(syncedRef);
   // The Compare tab owns the shared scrubber index; each viewer renders it via `frameControl`.
   const [frame, setFrame] = useState(0);
 
@@ -231,17 +275,25 @@ export function CompareTab({
   //  2. Dropped fields on the **source** side: the `ConversionReport.removed` entries verbatim.
   //  3. Supplied violet on the **output** side: the M60 D235 report-sourced `cell` correlation —
   //     a fabricated lattice looks different from a source lattice.
-  const rmsdCheck = validationReport?.checks.find((c) => c.check_id === "positions_rmsd");
+  const rmsdCheck = validationReport?.checks.find(
+    (c) => c.check_id === "positions_rmsd",
+  );
   const rmsdAng = rmsdCheck?.measured?.rmsd_ang;
   const rmsdShown =
-    rmsdCheck !== undefined && rmsdCheck.status !== "skipped" && typeof rmsdAng === "number";
-  const rmsdKind: LossKind = rmsdCheck ? CHECK_KIND[rmsdCheck.status] : "preserved";
+    rmsdCheck !== undefined &&
+    rmsdCheck.status !== "skipped" &&
+    typeof rmsdAng === "number";
+  const rmsdKind: LossKind = rmsdCheck
+    ? CHECK_KIND[rmsdCheck.status]
+    : "preserved";
   const removedEntries = conversionReport?.removed ?? [];
   const suppliedCellEntry = conversionReport?.supplied.find(
     (entry) => entry.path === "cell" || entry.path.startsWith("cell."),
   );
   const suppliedAssumption = suppliedCellEntry
-    ? conversionReport?.assumptions.find((a) => a.id === suppliedCellEntry.from_assumption)
+    ? conversionReport?.assumptions.find(
+        (a) => a.id === suppliedCellEntry.from_assumption,
+      )
     : undefined;
   const outputSuppliedCell: SuppliedCell | undefined = suppliedCellEntry
     ? {
@@ -252,7 +304,35 @@ export function CompareTab({
 
   return (
     <section aria-label="Compare" className="space-y-2">
-      <h2 className="text-lg font-semibold text-strong">Compare</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold text-strong">Compare</h2>
+        {/*
+         * v2.0 addendums item 2 — the camera-sync latch chip. It makes the invisible camera-lock
+         * broadcast (D239) legible: the two viewers move together *because* this is on, and a user
+         * who wants to inspect one side alone has an obvious way to unlock them. `aria-pressed`
+         * carries the state to assistive tech; the visible 🔒/🔓 glyph and label carry it to sighted
+         * users. Toggling never remounts a viewer — the next gesture re-couples them.
+         */}
+        <button
+          type="button"
+          data-testid="camera-sync-toggle"
+          onClick={toggleSynced}
+          aria-pressed={synced}
+          title={
+            synced
+              ? "Cameras are synced — orbit or zoom one and the other follows. Click to unlock."
+              : "Cameras are unlocked — each viewer orbits on its own. Click to re-sync."
+          }
+          className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 text-xs ${
+            synced
+              ? "border-line-strong bg-well text-strong"
+              : "border-line text-muted hover:bg-raised"
+          }`}
+        >
+          <span aria-hidden="true">{synced ? "🔒" : "🔓"}</span>
+          {synced ? "Cameras synced" : "Cameras unlocked"}
+        </button>
+      </div>
       {rmsdShown ? (
         <div
           data-testid="rmsd-overlay"
@@ -260,7 +340,8 @@ export function CompareTab({
         >
           <LossTag kind={rmsdKind}>RMSD</LossTag>
           <span className="text-sm text-body">
-            positions_rmsd measured: <code className="font-mono">{String(rmsdAng)}</code> Å
+            positions_rmsd measured:{" "}
+            <code className="font-mono">{String(rmsdAng)}</code> Å
           </span>
           <a
             href="#check-positions_rmsd"
@@ -287,7 +368,11 @@ export function CompareTab({
           <StructureViewer
             geometry={sourceGeo}
             label="Source"
-            trajectorySource={{ kind: "conversion", conversionId, side: "source" }}
+            trajectorySource={{
+              kind: "conversion",
+              conversionId,
+              side: "source",
+            }}
             cameraControls={{ onReady: onSourceReady }}
             frameControl={sourceFrameControl}
             subgrid
@@ -297,7 +382,11 @@ export function CompareTab({
           <StructureViewer
             geometry={outputGeo}
             label="Output"
-            trajectorySource={{ kind: "conversion", conversionId, side: "output" }}
+            trajectorySource={{
+              kind: "conversion",
+              conversionId,
+              side: "output",
+            }}
             cameraControls={{ onReady: onOutputReady }}
             frameControl={outputFrameControl}
             suppliedCell={outputSuppliedCell}

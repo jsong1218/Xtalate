@@ -120,6 +120,24 @@ describe("StructureViewer", () => {
     expect(toggle.getAttribute("title")).toMatch(/never (?:written|appear)/i);
   });
 
+  it("gives each control an icon and latches the bonds toggle when pressed (v2.0 addendums; item 1)", async () => {
+    render(<StructureViewer geometry={fixture} />);
+    await screen.findByTestId("molstar-mount");
+    const controls = screen.getByTestId("viewer-controls");
+    // Every control carries a decorative (aria-hidden) icon glyph before its label.
+    expect(controls.querySelectorAll('svg[aria-hidden="true"]').length).toBe(3);
+
+    const toggle = screen.getByRole("button", { name: /Show bonds heuristic/ });
+    // Resting: not latched.
+    expect(toggle.className).not.toMatch(/bg-well/);
+    await userEvent.click(toggle);
+    // Pressed: the latched look (filled well + strong border) reads as "on" visually, not only via
+    // aria-pressed.
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle.className).toMatch(/bg-well/);
+    expect(toggle.className).toMatch(/border-line-strong/);
+  });
+
   it("lays the viewer out as annotations / canvas / controls rows", () => {
     render(<StructureViewer geometry={fixture} />);
     expect(screen.getByTestId("viewer-annotations")).toBeInTheDocument();

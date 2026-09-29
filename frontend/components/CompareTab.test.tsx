@@ -76,7 +76,10 @@ vi.mock("@/components/StructureViewer", () => ({
       suppliedCell: props.suppliedCell,
     });
     return (
-      <div data-testid={`viewer-${props.label}`} data-frame={props.frameControl?.frame ?? 0}>
+      <div
+        data-testid={`viewer-${props.label}`}
+        data-frame={props.frameControl?.frame ?? 0}
+      >
         {props.label}
       </div>
     );
@@ -85,7 +88,8 @@ vi.mock("@/components/StructureViewer", () => ({
 
 const geometryHook = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/geometry/useGeometry", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/geometry/useGeometry")>();
+  const actual =
+    await importOriginal<typeof import("@/lib/geometry/useGeometry")>();
   return { ...actual, useConversionGeometry: geometryHook };
 });
 
@@ -188,7 +192,12 @@ function validationWith(
     report_id: "v1",
     conversion_report_id: "r1",
     created_at: "2026-01-01T00:00:00Z",
-    status: status === "fail" ? "failed" : status === "warn" ? "passed_with_warnings" : "passed",
+    status:
+      status === "fail"
+        ? "failed"
+        : status === "warn"
+          ? "passed_with_warnings"
+          : "passed",
     checks: [
       {
         check_id: "positions_rmsd",
@@ -197,7 +206,8 @@ function validationWith(
         measured: { rmsd_ang: rmsdAng, frames_compared: 1 },
         tolerance_applied: null,
         message: "positions equal within tolerance",
-        skip_reason: status === "skipped" ? "frames not comparable across formats" : null,
+        skip_reason:
+          status === "skipped" ? "frames not comparable across formats" : null,
       },
     ],
     tolerance_profile: { name: "default" },
@@ -228,9 +238,12 @@ describe("CompareTab — two synchronized viewers", () => {
     // camera is structurally loose; it is only used through the onReady seam, so it is erased to
     // the seam's own type.
     act(() => {
-      viewer("Source")!
-        .cameraControls!.onReady(src as unknown as StructureViewerCamera);
-      viewer("Output")!.cameraControls!.onReady(out as unknown as StructureViewerCamera);
+      viewer("Source")!.cameraControls!.onReady(
+        src as unknown as StructureViewerCamera,
+      );
+      viewer("Output")!.cameraControls!.onReady(
+        out as unknown as StructureViewerCamera,
+      );
     });
 
     // A user drags the source viewer → the output should follow (via applyPose).
@@ -255,35 +268,57 @@ describe("CompareTab — two synchronized viewers", () => {
     expect(slider).toBeInTheDocument();
     // One shared scrubber: both sides receive the same controlled frame as it advances.
     fireEvent.change(slider, { target: { value: "3" } });
-    expect(screen.getByTestId("viewer-Source")).toHaveAttribute("data-frame", "3");
-    expect(screen.getByTestId("viewer-Output")).toHaveAttribute("data-frame", "3");
+    expect(screen.getByTestId("viewer-Source")).toHaveAttribute(
+      "data-frame",
+      "3",
+    );
+    expect(screen.getByTestId("viewer-Output")).toHaveAttribute(
+      "data-frame",
+      "3",
+    );
   });
 
   it("for a frame_selection output the source scrubs alone and the output holds its one frame", () => {
     renderReady(4, 1, reportWithSelection(2));
     const slider = screen.getByLabelText("Trajectory frame");
     fireEvent.change(slider, { target: { value: "3" } });
-    expect(screen.getByTestId("viewer-Source")).toHaveAttribute("data-frame", "3");
-    expect(screen.getByTestId("viewer-Output")).toHaveAttribute("data-frame", "0");
+    expect(screen.getByTestId("viewer-Source")).toHaveAttribute(
+      "data-frame",
+      "3",
+    );
+    expect(screen.getByTestId("viewer-Output")).toHaveAttribute(
+      "data-frame",
+      "0",
+    );
   });
 
   it("places the exported-frame marker from the report's own frame_index, verbatim", () => {
     // `parameters.frame_index: 999` marks 999 even against a mismatched-looking frame_count — the
     // marker is the report's integer, never a computed `last → frame_count - 1`.
     renderReady(4, 1, reportWithSelection(999));
-    expect(screen.getByTestId("exported-frame-marker")).toHaveTextContent("Exported frame 999");
+    expect(screen.getByTestId("exported-frame-marker")).toHaveTextContent(
+      "Exported frame 999",
+    );
   });
 
   it("shows no marker when there is no frame_selection Assumption", () => {
     renderReady(4, 1, emptyReport());
-    expect(screen.queryByTestId("exported-frame-marker")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("exported-frame-marker"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders no scrubber when neither side is a trajectory (both single-frame)", () => {
     renderReady(1, 1);
     expect(screen.queryByLabelText("Trajectory frame")).not.toBeInTheDocument();
-    expect(screen.getByTestId("viewer-Source")).toHaveAttribute("data-frame", "0");
-    expect(screen.getByTestId("viewer-Output")).toHaveAttribute("data-frame", "0");
+    expect(screen.getByTestId("viewer-Source")).toHaveAttribute(
+      "data-frame",
+      "0",
+    );
+    expect(screen.getByTestId("viewer-Output")).toHaveAttribute(
+      "data-frame",
+      "0",
+    );
   });
 
   it("aligns the two viewers on a shared subgrid", () => {
@@ -299,6 +334,54 @@ describe("CompareTab — two synchronized viewers", () => {
     for (const col of columns) {
       expect((col as HTMLElement).className).toMatch(/lg:grid-rows-subgrid/);
     }
+  });
+});
+
+describe("CompareTab — camera-sync latch chip (v2.0 addendums item 2)", () => {
+  function mountCameras() {
+    const src = new FakeCam();
+    const out = new FakeCam();
+    act(() => {
+      viewer("Source")!.cameraControls!.onReady(
+        src as unknown as StructureViewerCamera,
+      );
+      viewer("Output")!.cameraControls!.onReady(
+        out as unknown as StructureViewerCamera,
+      );
+    });
+    return { src, out };
+  }
+
+  it("renders the synced chip on by default, with aria-pressed reflecting the state", () => {
+    renderReady(1, 1);
+    const chip = screen.getByTestId("camera-sync-toggle");
+    expect(chip).toHaveTextContent(/cameras synced/i);
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("unlocking the chip stops the broadcast; re-locking re-arms it — without remounting a viewer", () => {
+    renderReady(1, 1);
+    const { src, out } = mountCameras();
+
+    // Synced by default: a source drag pushes to the output.
+    act(() => src.userDrag({ p: 1 }));
+    expect(out.applyPoseCalls).toEqual([{ p: 1 }]);
+
+    // Unlock: the chip flips label + aria-pressed, and the next drag reaches neither sibling.
+    const chip = screen.getByTestId("camera-sync-toggle");
+    act(() => fireEvent.click(chip));
+    expect(chip).toHaveTextContent(/cameras unlocked/i);
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+    act(() => src.userDrag({ p: 2 }));
+    expect(out.applyPoseCalls).toEqual([{ p: 1 }]); // unchanged — no new push
+    act(() => out.userDrag({ p: 3 }));
+    expect(src.applyPoseCalls).toEqual([]); // the reverse direction is silent too
+
+    // Re-lock: the same camera seams (never remounted) resume broadcasting on the next gesture.
+    act(() => fireEvent.click(chip));
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    act(() => src.userDrag({ p: 4 }));
+    expect(out.applyPoseCalls).toEqual([{ p: 1 }, { p: 4 }]);
   });
 });
 
@@ -344,13 +427,17 @@ describe("CompareTab — report-sourced difference annotations (M62-S2, D240)", 
     const row = screen.getByTestId("removed-dynamics.velocities");
     expect(row).toHaveTextContent("dynamics.velocities");
     // The report's own words, never a paraphrase.
-    expect(row).toHaveTextContent("XYZ cannot hold velocities — they were not written.");
+    expect(row).toHaveTextContent(
+      "XYZ cannot hold velocities — they were not written.",
+    );
   });
 
   it("marks a supplied lattice violet on the output side only (the M60 D235 rule doing its comparison job)", () => {
     const reportWithSupplied: ConversionReport = {
       ...emptyReport(),
-      supplied: [{ path: "cell.lattice_vectors", from_assumption: "A2", detail: null }],
+      supplied: [
+        { path: "cell.lattice_vectors", from_assumption: "A2", detail: null },
+      ],
       assumptions: [
         {
           id: "A2",
@@ -371,7 +458,9 @@ describe("CompareTab — report-sourced difference annotations (M62-S2, D240)", 
   it("shows neither overlay nor dropped list on a conversion with no removed/supplied/rmsd", () => {
     renderReady(1, 1);
     expect(screen.queryByTestId("rmsd-overlay")).not.toBeInTheDocument();
-    expect(screen.queryByText(/fields the target could not hold/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/fields the target could not hold/i),
+    ).not.toBeInTheDocument();
     expect(viewer("Output")!.suppliedCell).toBeUndefined();
   });
 });
@@ -395,14 +484,23 @@ describe("CompareTab — honest non-ready states, no analysis surface (M62-S3, R
       side === "source" ? source : output,
     );
     return render(
-      <CompareTab conversionId="cnv-1" conversionReport={emptyReport()} validationReport={undefined} />,
+      <CompareTab
+        conversionId="cnv-1"
+        conversionReport={emptyReport()}
+        validationReport={undefined}
+      />,
     );
   }
 
   it("an expired output renders the M60 honest expired state — no viewer, no half canvas", () => {
-    renderStates({ status: "ready", geometry: geometryFixture(1) }, expiredError("output"));
+    renderStates(
+      { status: "ready", geometry: geometryFixture(1) },
+      expiredError("output"),
+    );
     expect(
-      screen.getByText(/The output bytes have expired; the reports below remain the complete record\./),
+      screen.getByText(
+        /The output bytes have expired; the reports below remain the complete record\./,
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("viewer-Source")).not.toBeInTheDocument();
     expect(screen.queryByTestId("viewer-Output")).not.toBeInTheDocument();
@@ -411,28 +509,49 @@ describe("CompareTab — honest non-ready states, no analysis surface (M62-S3, R
   it("a one-side-expired compare names the expired side — never a silent one-sided comparison", () => {
     // The source side persists, but the output's bytes are gone: the honest partial state names the
     // output and renders NO viewer — the surviving source is never silently shown alone as whole.
-    renderStates({ status: "ready", geometry: geometryFixture(1) }, expiredError("output"));
-    expect(screen.getByText(/The output bytes have expired/)).toBeInTheDocument();
+    renderStates(
+      { status: "ready", geometry: geometryFixture(1) },
+      expiredError("output"),
+    );
+    expect(
+      screen.getByText(/The output bytes have expired/),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("viewer-Source")).not.toBeInTheDocument();
     expect(screen.queryByTestId("viewer-Output")).not.toBeInTheDocument();
 
     // And the mirror: the source side expired while the output persists.
-    renderStates(expiredError("source"), { status: "ready", geometry: geometryFixture(1) });
-    expect(screen.getByText(/This file's bytes have expired; the reports below remain the complete record\./)).toBeInTheDocument();
+    renderStates(expiredError("source"), {
+      status: "ready",
+      geometry: geometryFixture(1),
+    });
+    expect(
+      screen.getByText(
+        /This file's bytes have expired; the reports below remain the complete record\./,
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("viewer-Source")).not.toBeInTheDocument();
   });
 
   it("when both sides' bytes are gone, both expired copies read", () => {
     renderStates(expiredError("source"), expiredError("output"));
-    expect(screen.getByText(/This file's bytes have expired/)).toBeInTheDocument();
-    expect(screen.getByText(/The output bytes have expired/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/This file's bytes have expired/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/The output bytes have expired/),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("viewer-Output")).not.toBeInTheDocument();
   });
 
   it("a non-expiry geometry failure renders the service envelope, not a canvas", () => {
     renderStates(
       { status: "ready", geometry: geometryFixture(1) },
-      { status: "error", error: { error: { code: "SERVICE_DOWN", message: "backend unreachable" } } },
+      {
+        status: "error",
+        error: {
+          error: { code: "SERVICE_DOWN", message: "backend unreachable" },
+        },
+      },
     );
     expect(screen.getByText("backend unreachable")).toBeInTheDocument();
     expect(screen.getByText("SERVICE_DOWN")).toBeInTheDocument();
@@ -440,7 +559,10 @@ describe("CompareTab — honest non-ready states, no analysis surface (M62-S3, R
   });
 
   it("holds the loading affordance until BOTH sides are ready", () => {
-    renderStates({ status: "ready", geometry: geometryFixture(1) }, { status: "loading" });
+    renderStates(
+      { status: "ready", geometry: geometryFixture(1) },
+      { status: "loading" },
+    );
     expect(screen.getByRole("status")).toHaveTextContent("Loading structure…");
     expect(screen.queryByTestId("viewer-Source")).not.toBeInTheDocument();
   });
@@ -460,6 +582,8 @@ describe("CompareTab — honest non-ready states, no analysis surface (M62-S3, R
       expect(section.querySelector(`[data-testid="${id}"]`)).toBeNull();
     }
     // The section's only rendered structure surfaces are the two side-by-side viewers.
-    expect(section.querySelectorAll("[data-testid^='viewer-']")).toHaveLength(2);
+    expect(section.querySelectorAll("[data-testid^='viewer-']")).toHaveLength(
+      2,
+    );
   });
 });

@@ -27,10 +27,10 @@ import { describe, expect, it } from "vitest";
 // `import.meta.url` is not a file:// URL). The token values under test are read from this file.
 // Strip CSS comments first: the file's doc comment contains the literal prose ":root {…}", which the
 // block regexes below would otherwise match instead of the real declaration blocks.
-const css = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8").replace(
-  /\/\*[\s\S]*?\*\//g,
-  "",
-);
+const css = readFileSync(
+  resolve(process.cwd(), "app/globals.css"),
+  "utf8",
+).replace(/\/\*[\s\S]*?\*\//g, "");
 
 /** The `:root { … }` base block (light theme). */
 function lightBlock(): string {
@@ -41,14 +41,18 @@ function lightBlock(): string {
 /** The `:root[data-theme="dark"] { … }` override block. */
 function darkBlock(): string {
   const match = /:root\[data-theme="dark"\]\s*\{([\s\S]*?)\}/.exec(css);
-  if (!match) throw new Error(':root[data-theme="dark"] block not found in globals.css');
+  if (!match)
+    throw new Error(':root[data-theme="dark"] block not found in globals.css');
   return match[1];
 }
 
 /** Pull a `--name: #rrggbb;` declaration out of one theme block — the single source of truth. */
 function token(block: string, name: string, theme: string): string {
   const match = new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`).exec(block);
-  if (!match) throw new Error(`token --${name} not found in the ${theme} block of globals.css`);
+  if (!match)
+    throw new Error(
+      `token --${name} not found in the ${theme} block of globals.css`,
+    );
   return match[1];
 }
 
@@ -69,6 +73,7 @@ function contrast(a: string, b: string): number {
 }
 
 const AA = 4.5; // normal-size text / meaningful icons
+const FOCUS = 3.0; // WCAG 1.4.11 non-text contrast: focus indicators vs adjacent colors
 const WHITE = "#ffffff";
 
 const FOREGROUNDS = [
@@ -115,10 +120,13 @@ function checkTheme(theme: string, block: () => string) {
       expect(contrast(t(fg), t(bg))).toBeGreaterThanOrEqual(AA);
     });
 
-    it.each(TINTS)("body text (text-strong and text-body) clears AA on %s", (bg) => {
-      expect(contrast(t("text-strong"), t(bg))).toBeGreaterThanOrEqual(AA);
-      expect(contrast(t("text-body"), t(bg))).toBeGreaterThanOrEqual(AA);
-    });
+    it.each(TINTS)(
+      "body text (text-strong and text-body) clears AA on %s",
+      (bg) => {
+        expect(contrast(t("text-strong"), t(bg))).toBeGreaterThanOrEqual(AA);
+        expect(contrast(t("text-body"), t(bg))).toBeGreaterThanOrEqual(AA);
+      },
+    );
 
     it("white text on the filled fail badge (cb-fail-solid) clears AA", () => {
       expect(contrast(WHITE, t("cb-fail-solid"))).toBeGreaterThanOrEqual(AA);
@@ -138,11 +146,15 @@ function checkTheme(theme: string, block: () => string) {
     // isolated guard, then checking faint only on `--surface`, had passed. Pin the exact pair so a
     // future faint edit cannot silently drop the report/provenance metadata below AA again.
     it("text-faint clears AA on the raised panel surface (report groups, provenance)", () => {
-      expect(contrast(t("text-faint"), t("surface-raised"))).toBeGreaterThanOrEqual(AA);
+      expect(
+        contrast(t("text-faint"), t("surface-raised")),
+      ).toBeGreaterThanOrEqual(AA);
     });
 
     it("inverse foreground clears AA on the inverse surface (neutral buttons)", () => {
-      expect(contrast(t("inverse-fg"), t("inverse"))).toBeGreaterThanOrEqual(AA);
+      expect(contrast(t("inverse-fg"), t("inverse"))).toBeGreaterThanOrEqual(
+        AA,
+      );
     });
 
     // The forward-action accent is a rendered surface as of the addendum S3 Button primitive: the
@@ -157,7 +169,9 @@ function checkTheme(theme: string, block: () => string) {
     // tone than the button-fill teal (which only reaches ~3.3:1 on slate-900), so the two are
     // separate tokens: `--accent-text` vs `--accent`. Guard the pair in both themes.
     it("accent text clears AA on the page surface (links, active tab)", () => {
-      expect(contrast(t("accent-text"), t("surface"))).toBeGreaterThanOrEqual(AA);
+      expect(contrast(t("accent-text"), t("surface"))).toBeGreaterThanOrEqual(
+        AA,
+      );
     });
 
     // The viewer chrome pairs (v1.6 M63-S2, D241): the Structure/Compare tab chrome must meet the
@@ -199,6 +213,24 @@ function checkTheme(theme: string, block: () => string) {
         expect(contrast(t("text-strong"), t(name))).toBeGreaterThanOrEqual(AA);
       },
     );
+
+    // The global keyboard-focus ring (v2.0 addendums item 5, the dark-palette focus pass): the
+    // `:focus-visible` baseline in globals.css draws a `--accent` outline wrapped in an `--inverse`
+    // halo. The accent tone is kept dark for white-on-accent AA, so accent-on-surface only reaches
+    // ~3:1 on the darkest chrome; the halo is what guarantees the ring stays visible on any surface.
+    // Guard both the halo↔surface boundary (on every surface a bare interactive element can sit on)
+    // and the halo↔accent boundary (the two-tone ring's own internal edge), in both themes, at the
+    // WCAG 1.4.11 non-text bar. A future accent/inverse edit that would sink the ring below 3:1 fails
+    // here instead of silently regressing focus visibility.
+    it.each(["surface", "surface-raised", "surface-muted"])(
+      "the focus-ring halo (--inverse) clears the non-text bar on %s",
+      (bg) => {
+        expect(contrast(t("inverse"), t(bg))).toBeGreaterThanOrEqual(FOCUS);
+      },
+    );
+    it("the focus ring's accent↔halo internal edge clears the non-text bar", () => {
+      expect(contrast(t("accent"), t("inverse"))).toBeGreaterThanOrEqual(FOCUS);
+    });
   });
 }
 
@@ -217,7 +249,10 @@ describe("UI palette — WCAG AA contrast", () => {
  * this file's existing "parse the real source" approach.
  */
 describe("default theme — Steel dark-first (v2.0 addendums)", () => {
-  const layoutSrc = readFileSync(resolve(process.cwd(), "app/layout.tsx"), "utf8");
+  const layoutSrc = readFileSync(
+    resolve(process.cwd(), "app/layout.tsx"),
+    "utf8",
+  );
   const providerSrc = readFileSync(
     resolve(process.cwd(), "lib/theme/ThemeProvider.tsx"),
     "utf8",
@@ -230,19 +265,27 @@ describe("default theme — Steel dark-first (v2.0 addendums)", () => {
   it("the no-flash script falls back to dark when nothing is persisted", () => {
     // The script normalizes any stored value to 'light' or 'dark'; a fallback of 'light' would
     // read as `t==='light'?'light':'dark'`-shaped or similar — assert the concrete dark default.
-    const match = /document\.documentElement\.setAttribute\('data-theme',([^)]*)\)/.exec(
-      layoutSrc,
-    );
-    expect(match, "no-flash theme-setting call not found in layout.tsx").not.toBeNull();
+    const match =
+      /document\.documentElement\.setAttribute\('data-theme',([^)]*)\)/.exec(
+        layoutSrc,
+      );
+    expect(
+      match,
+      "no-flash theme-setting call not found in layout.tsx",
+    ).not.toBeNull();
     const expr = match![1];
     // The persisted-choice branch must resolve to 'dark' unless the stored value is explicitly
     // 'light' — i.e. the ternary picks 'light' only in the light branch, dark otherwise.
     expect(expr).toMatch(/t===['"]light['"]\?['"]light['"]:['"]dark['"]/);
     // And the catch-clause fallback (localStorage throws, e.g. privacy mode) must also be dark.
-    const catchMatch = /catch\(e\)\{document\.documentElement\.setAttribute\('data-theme',([^)]*)\)/.exec(
-      layoutSrc,
-    );
-    expect(catchMatch, "no-flash catch-clause fallback not found in layout.tsx").not.toBeNull();
+    const catchMatch =
+      /catch\(e\)\{document\.documentElement\.setAttribute\('data-theme',([^)]*)\)/.exec(
+        layoutSrc,
+      );
+    expect(
+      catchMatch,
+      "no-flash catch-clause fallback not found in layout.tsx",
+    ).not.toBeNull();
     expect(catchMatch![1]).toBe("'dark'");
   });
 
