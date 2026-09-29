@@ -198,7 +198,7 @@ export function SourceRail({
           the drawer is not open (`collapsed && !mobileOpen`), and the collapse toggle itself is
           `hidden md:inline-flex` — desktop-only — so it cannot be tapped inside the open drawer to
           empty it (v2.0 addendums Task 13, review fix). */}
-      <div className="flex items-center justify-between gap-2 p-2">
+      <div className="flex items-center justify-between gap-2 px-3 py-2">
         {collapsed && !mobileOpen ? null : (
           <h2 className="text-xs font-semibold uppercase tracking-wide text-faint">Sources</h2>
         )}
@@ -227,7 +227,7 @@ export function SourceRail({
       ) : (
         <ul
           id={RAIL_CONTENT_ID}
-          className="flex-1 space-y-0.5 overflow-y-auto p-2"
+          className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2"
           data-testid="source-rail-list"
         >
           {files.map((file) => {

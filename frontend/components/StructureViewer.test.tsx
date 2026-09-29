@@ -86,7 +86,7 @@ describe("StructureViewer", () => {
     const mount = await screen.findByTestId("molstar-mount");
     // The caption says why there is no box…
     expect(screen.getByTestId("no-cell-caption")).toHaveTextContent(
-      /declares no simulation cell/
+      /declares no simulation cell/,
     );
     // …and the loader/render path receives a cell-less geometry — no cell wireframe possible.
     expect(mount).toHaveAttribute("data-has-cell", "false");
@@ -99,13 +99,25 @@ describe("StructureViewer", () => {
     fireEvent.click(toggle);
     await waitFor(() =>
       expect(
-        screen.getByText("Bonds are a display heuristic, not file content")
-      ).toBeInTheDocument()
+        screen.getByText("Bonds are a display heuristic, not file content"),
+      ).toBeInTheDocument(),
     );
     fireEvent.click(toggle);
     await waitFor(() =>
-      expect(screen.queryByText(/display heuristic/)).toBeNull()
+      expect(screen.queryByText(/display heuristic/)).toBeNull(),
     );
+  });
+
+  it("carries the explanatory bond-heuristic tooltip on the toggle (v2.0 addendums; item 7)", async () => {
+    render(<StructureViewer geometry={fixture} />);
+    await screen.findByTestId("molstar-mount");
+    const toggle = screen.getByRole("button", { name: /Show bonds heuristic/ });
+    // The tooltip explains the badge: inferred for display, never in the file, output, or report.
+    expect(toggle).toHaveAttribute(
+      "title",
+      expect.stringMatching(/inferred from interatomic/i),
+    );
+    expect(toggle.getAttribute("title")).toMatch(/never (?:written|appear)/i);
   });
 
   it("lays the viewer out as annotations / canvas / controls rows", () => {
@@ -116,24 +128,36 @@ describe("StructureViewer", () => {
   });
 
   it("switches its root to the subgrid template only when `subgrid` is requested (M62-S5)", () => {
-    const { container, rerender } = render(<StructureViewer geometry={fixture} />);
+    const { container, rerender } = render(
+      <StructureViewer geometry={fixture} />,
+    );
     // A lone viewer (no `subgrid`) keeps its own intrinsic three-row template.
-    expect(container.firstElementChild).toHaveClass("grid-rows-[auto_auto_auto]");
-    expect(container.firstElementChild?.className).not.toMatch(/grid-rows-subgrid/);
+    expect(container.firstElementChild).toHaveClass(
+      "grid-rows-[auto_auto_auto]",
+    );
+    expect(container.firstElementChild?.className).not.toMatch(
+      /grid-rows-subgrid/,
+    );
 
     rerender(<StructureViewer geometry={fixture} subgrid />);
     // Under a parent subgrid (the Compare tab), the root inherits the parent's rows instead.
     expect(container.firstElementChild?.className).toMatch(/grid-rows-subgrid/);
-    expect(container.firstElementChild?.className).not.toMatch(/grid-rows-\[auto_auto_auto\]/);
+    expect(container.firstElementChild?.className).not.toMatch(
+      /grid-rows-\[auto_auto_auto\]/,
+    );
   });
 
   it("keeps the bonds heuristic badge and drives the render when toggled on", async () => {
     render(<StructureViewer geometry={fixture} />);
     const mount = await screen.findByTestId("molstar-mount");
     expect(mount).toHaveAttribute("data-bonds", "false");
-    const toggle = screen.getByRole("button", { name: /show bonds heuristic/i });
+    const toggle = screen.getByRole("button", {
+      name: /show bonds heuristic/i,
+    });
     await userEvent.click(toggle);
-    expect(screen.getByText(/display heuristic, not file content/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/display heuristic, not file content/i),
+    ).toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     // The prop genuinely reaches the mount — not just the badge, which the previous test covers.
     expect(mount).toHaveAttribute("data-bonds", "true");
@@ -141,14 +165,18 @@ describe("StructureViewer", () => {
 
   it("offers reset-view and expand controls", () => {
     render(<StructureViewer geometry={fixture} />);
-    expect(screen.getByRole("button", { name: /reset view/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /reset view/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /expand/i })).toBeInTheDocument();
   });
 
   it("opens a fullscreen overlay on expand and closes on Escape", async () => {
     render(<StructureViewer geometry={fixture} />);
     await userEvent.click(screen.getByRole("button", { name: /expand/i }));
-    expect(screen.getByRole("dialog", { name: /structure viewer/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: /structure viewer/i }),
+    ).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -175,7 +203,7 @@ describe("StructureViewer", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /expand/i }));
     expect(
-      screen.getByRole("dialog", { name: /structure viewer/i })
+      screen.getByRole("dialog", { name: /structure viewer/i }),
     ).toBeInTheDocument();
     // A stable tree position means the SAME DOM node persists across the toggle — React never
     // unmounts the Mol* host, so the WebGL context, camera, and loaded trajectory survive

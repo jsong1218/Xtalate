@@ -133,7 +133,7 @@ describe("StructureViewerMolstar lifecycle", () => {
     document.documentElement.setAttribute("data-theme", "dark");
     rerender(<StructureViewerMolstar geometry={win} frameIndex={0} />);
     await settle();
-    expect(setBackground).toHaveBeenCalledWith(0x161a21);
+    expect(setBackground).toHaveBeenCalledWith(0x0d1117);
     expect(mountMock).toHaveBeenCalledTimes(1);
     document.documentElement.removeAttribute("data-theme");
   });
@@ -155,7 +155,7 @@ describe("StructureViewerMolstar lifecycle", () => {
     expect(setBackground).not.toHaveBeenCalled();
 
     resolveMount({ setFrame, setWindow, dispose, setBackground, setBonds, resetCamera });
-    await waitFor(() => expect(setBackground).toHaveBeenCalledWith(0x161a21));
+    await waitFor(() => expect(setBackground).toHaveBeenCalledWith(0x0d1117));
     document.documentElement.removeAttribute("data-theme");
   });
 

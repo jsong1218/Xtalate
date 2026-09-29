@@ -121,35 +121,36 @@
      pickers) render dark, matching the dark surface they sit on (v1.1 M39-S4, B1). */
   color-scheme: dark;
 
-  /* Neutral surface chrome (dark) — "Steel": a cool blue-gray, not the earlier slate-900 navy
-     (v2.0 addendums Task 6, VESTA/OVITO-inspired workbench). Separation is by border + banding. */
-  --surface: #161a21; /* page + panel background                  */
-  --surface-raised: #1e232c; /* subtle raised/hover zones                 */
-  --surface-muted: #242b35; /* chips / inert fills                      */
-  --border-default: #2b3240; /* default hairline border                  */
-  --border-subtle: #1e232c; /* faint dividers                           */
-  --border-strong: #c7d0dc; /* selected / emphasized outline            */
-  --text-strong: #dbe4f0; /* headings, emphasis                       */
-  --text-body: #c7d0dc; /* default paragraph text                   */
-  --text-muted: #93a0b2; /* secondary text                           */
-  --text-faint: #858fa2; /* hints, metadata (nudged lighter from #7c8a9e: that value was 4.49:1 on
-                            the raised panel surface #1e232c — one hundredth short of AA — for the
-                            report-group count badges and provenance dt labels; #858fa2 clears it at
-                            4.84:1 while staying dimmer than --text-muted. v2.0 addendums Task 13.) */
+  /* Neutral surface chrome (dark) — a deeper, more neutral "Graphite" range aligned to GitHub's
+     Primer dark palette (v2.0 addendums final polish: darker + more professional). The earlier
+     Steel range read a touch light and blue; these steps sit lower and more neutral, and the extra
+     depth only *raises* contrast for every text foreground and loss hue below. Separation is still
+     by border + banding, not by big luminance jumps. */
+  --surface: #0d1117; /* page + panel background (Primer canvas.default) */
+  --surface-raised: #161b22; /* subtle raised/hover zones (Primer canvas.subtle) */
+  --surface-muted: #21262d; /* chips / inert fills (Primer neutral.muted)  */
+  --border-default: #30363d; /* default hairline border (Primer border.default) */
+  --border-subtle: #21262d; /* faint dividers (Primer border.muted)      */
+  --border-strong: #7d8590; /* selected / emphasized outline             */
+  --text-strong: #e6edf3; /* headings, emphasis (Primer fg.default)   */
+  --text-body: #c9d1d9; /* default paragraph text                   */
+  --text-muted: #9ba7b4; /* secondary text (AA on both the panel and the raised surface) */
+  --text-faint: #8b949e; /* hints, metadata (Primer fg.muted; 5.6:1 on the raised surface
+                            #161b22, well clear of AA, and dimmer than --text-muted) */
 
-  --inverse: #dbe4f0; /* light chip/button on dark                */
-  --inverse-fg: #12151b; /* dark text on it                          */
-  --inverse-hover: #c2ccd9; /* inverse hover                            */
+  --inverse: #e6edf3; /* light chip/button on dark                */
+  --inverse-fg: #0d1117; /* dark text on it                          */
+  --inverse-hover: #c9d1d9; /* inverse hover                            */
 
-  /* Workbench chrome (v2.0 addendums): Steel bands, each a step apart from `--surface` so the
-     toolbar/rails/status read as distinct regions from the main panel — the main panel sits at the
-     deepest point of the range (like a canvas mat under the chrome), matching the "surfaces in the
-     #12151b-#1e232c range" brief. */
-  --wb-toolbar: #1c212a; /* top toolbar band                         */
-  --wb-rail: #171b22; /* source/inspector side rails               */
-  --wb-panel: #12151b; /* main content panel (deepest)              */
-  --wb-status: #1a1f27; /* bottom status bar                         */
-  --wb-hairline: #2b3240; /* hairline separating chrome bands          */
+  /* Workbench chrome (v2.0 addendums): Graphite bands, each a step above the main content panel so
+     the toolbar/rails/status read as distinct chrome regions — the main panel sits at the deepest
+     point (the Primer canvas.default #0d1117, like a canvas mat under the chrome) and the chrome
+     bands lift to canvas.subtle and just above it. */
+  --wb-toolbar: #161b22; /* top toolbar band (Primer canvas.subtle)  */
+  --wb-rail: #12171e; /* source/inspector side rails               */
+  --wb-panel: #0d1117; /* main content panel (deepest, = --surface) */
+  --wb-status: #161b22; /* bottom status bar                         */
+  --wb-hairline: #30363d; /* hairline separating chrome bands          */
 
   /* Same teal fill as light: white text on it clears AA (~4.9:1), and it still reads as a
      saturated teal against the Steel surface. The hover lifts to a brighter cyan-teal chrome

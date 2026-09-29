@@ -13,14 +13,25 @@ import type { StructureViewerCamera } from "@/lib/geometry/molstarMount";
 import { CompareTab } from "./CompareTab";
 import type { CameraControls } from "./StructureViewerMolstar";
 
-/** A fake Mol* camera seam for one viewer (recorded setSnapshot, subscribable onChange). */
+/** A fake Mol* camera seam for one viewer (recorded applyPose, subscribable onChange). */
 const FakeCam = vi.hoisted(() => {
   return class FakeCam {
     snapshot: Record<string, number> = { p: 0 };
     listeners: Array<() => void> = [];
+    applyPoseCalls: Array<Record<string, number>> = [];
     setSnapshotCalls: Array<Record<string, number>> = [];
     setSnapshot(s: Record<string, number>) {
       this.setSnapshotCalls.push(s);
+      this.snapshot = s;
+      this.listeners.forEach((l) => l());
+    }
+    /**
+     * The camera-lock broadcast now shares only the pose (orientation + zoom), keeping each viewer
+     * centered on its own structure (v2.0 addendums item 3). The mock records the received pose and
+     * fires the echo exactly as `setSnapshot` did, so the re-entrancy guard is still exercised.
+     */
+    applyPose(s: Record<string, number>) {
+      this.applyPoseCalls.push(s);
       this.snapshot = s;
       this.listeners.forEach((l) => l());
     }
@@ -222,20 +233,20 @@ describe("CompareTab — two synchronized viewers", () => {
       viewer("Output")!.cameraControls!.onReady(out as unknown as StructureViewerCamera);
     });
 
-    // A user drags the source viewer → the output should follow.
+    // A user drags the source viewer → the output should follow (via applyPose).
     act(() => src.userDrag({ p: 5 }));
-    expect(out.setSnapshotCalls).toEqual([{ p: 5 }]);
-    // The follow applies output→... no: the echo of the output's own setSnapshot must NOT push back
-    // onto the source. `userDrag` on source is one gesture; source is never re-set by its own echo.
-    expect(src.setSnapshotCalls).toEqual([]);
+    expect(out.applyPoseCalls).toEqual([{ p: 5 }]);
+    // The follow applies output→... no: the echo of the output's own applyPose must NOT push back
+    // onto the source. `userDrag` on source is one gesture; source is never re-posed by its own echo.
+    expect(src.applyPoseCalls).toEqual([]);
 
     // And the reverse: a user drag on the output pushes to source, its echo guarded.
     act(() => out.userDrag({ p: 7 }));
-    // output.setSnapshot called again? No: that was a source→output push, already counted. The
+    // output.applyPose called again? No: that was a source→output push, already counted. The
     // fresh output gesture pushes source→output, not output→source.
-    expect(src.setSnapshotCalls).toEqual([{ p: 7 }]);
+    expect(src.applyPoseCalls).toEqual([{ p: 7 }]);
     // No echo loop: the pushed source change did not re-push output.
-    expect(out.setSnapshotCalls).toEqual([{ p: 5 }]);
+    expect(out.applyPoseCalls).toEqual([{ p: 5 }]);
   });
 
   it("drives both viewers with one scrubber when the frame counts match", () => {

@@ -170,7 +170,8 @@ function ReportEnrichment({ conversionId }: { conversionId: string }) {
     <div data-testid="inspector-report" className="space-y-3 border-t border-wb-hairline pt-3">
       <SummaryChips report={report} />
       {geometry.status === "ready" ? <CellSummary cell={geometry.geometry?.cell} /> : null}
-      <Provenance record={record} />
+      <Provenance record={record} dense />
+
     </div>
   );
 }
@@ -321,7 +322,7 @@ export function Inspector() {
             (`collapsed && !mobileOpen`), and the collapse toggle is `hidden lg:inline-flex` —
             desktop-only — so it cannot be tapped inside the open drawer to empty it (Task 13 review
             fix; mirrors SourceRail). */}
-        <div className="flex items-center justify-between gap-2 p-2">
+        <div className="flex items-center justify-between gap-2 px-4 py-2">
           {collapsed && !mobileOpen ? null : (
             <h2 className="text-xs font-semibold uppercase tracking-wide text-faint">Inspector</h2>
           )}
@@ -345,7 +346,7 @@ export function Inspector() {
           <div
             id={INSPECTOR_CONTENT_ID}
             tabIndex={0}
-            className="flex-1 space-y-3 overflow-y-auto p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+            className="flex-1 space-y-3 overflow-y-auto px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
           >
             {context.kind === "none" ? null : (
               <>

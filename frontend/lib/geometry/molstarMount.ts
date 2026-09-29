@@ -21,6 +21,7 @@
  * arithmetic on positions.
  */
 import type { Camera } from "molstar/lib/mol-canvas3d/camera.js";
+import { Vec3 } from "molstar/lib/mol-math/linear-algebra.js";
 import { PluginContext } from "molstar/lib/mol-plugin/context.js";
 import { DefaultPluginSpec } from "molstar/lib/mol-plugin/spec.js";
 import { PluginCommands } from "molstar/lib/mol-plugin/commands.js";
@@ -30,6 +31,7 @@ import { ParamDefinition as PD } from "molstar/lib/mol-util/param-definition.js"
 import { Color } from "molstar/lib/mol-util/color/color.js";
 import { UnitcellParams } from "molstar/lib/mol-repr/shape/model/unitcell.js";
 import { Task } from "molstar/lib/mol-task/index.js";
+import { poseFromRemote } from "./cameraPose";
 import { geometryToTrajectory, latticeIsRenderable } from "./molstarLoader";
 import type { CanonicalGeometry } from "./useGeometry";
 
@@ -63,11 +65,32 @@ const GeometryTrajectory = PluginStateTransform.BuiltIn({
   },
 });
 
-/** The molecules-only representation: atom spheres, no bond visual (D234). */
+/** The molecules-only representation: full van-der-Waals atom spheres, no bond visual (D234). */
 const ATOMS_ONLY_REPRESENTATION = {
   type: "spacefill",
   colorTheme: { name: "element-symbol" },
 } as const;
+
+/**
+ * The atom-sphere scale while the bond heuristic is on (v2.0 addendums, item 4a). Full VdW
+ * spacefill spheres (`sizeFactor` 1.0) completely engulf the `ball-and-stick` cylinders, so with
+ * bonds enabled the sticks are drawn but invisible — the user's "show bonds does nothing" report.
+ * Shrinking the spheres to a ball radius makes the ball-and-stick reading legible while keeping the
+ * element-symbol coloring; the atoms stay `spacefill` (not the preset's own ball-and-stick atoms)
+ * so the bonds overlay and the atoms remain two independently-toggled representations.
+ */
+const BOND_MODE_ATOM_SCALE = 0.26;
+
+/** The atoms representation at the size appropriate for the current bond state (item 4a). */
+function atomsRepresentationFor(shrunk: boolean) {
+  return shrunk
+    ? ({
+        type: "spacefill",
+        typeParams: { sizeFactor: BOND_MODE_ATOM_SCALE },
+        colorTheme: { name: "element-symbol" },
+      } as const)
+    : ATOMS_ONLY_REPRESENTATION;
+}
 
 /**
  * The ordinary unit-cell wireframe color — a neutral slate bound to the app's chrome token, chosen
@@ -139,8 +162,18 @@ export interface MountedStructureViewer {
 export interface StructureViewerCamera {
   /** Read the current camera snapshot (the plugin's own state). */
   getSnapshot(): Camera.Snapshot;
-  /** Apply a camera snapshot, e.g. one read from the sibling viewer (camera-lock broadcast). */
+  /** Apply a camera snapshot verbatim, e.g. round-tripping this viewer's own state. */
   setSnapshot(snapshot: Camera.Snapshot): void;
+  /**
+   * Apply a sibling viewer's **orientation and zoom** while keeping *this* viewer centered on its
+   * own structure (v2.0 addendums, item 3). The camera-lock broadcast previously pushed the
+   * sibling's absolute snapshot, whose `target` is the *sibling's* centroid — so a structure with a
+   * different centroid (e.g. water → a CIF with a 1 Å box, whose origin differs) rendered
+   * off-center in the followed viewer. This preserves the local `target` (the structure's own
+   * center) and reconstructs `position` from the remote view *direction and distance*, so the two
+   * viewers share rotation and zoom yet each stays centered in its own box.
+   */
+  applyPose(remote: Camera.Snapshot): void;
   /** Subscribe to this viewer's camera changes; returns an unsubscribe. */
   onChange(listener: () => void): () => void;
 }
@@ -170,7 +203,7 @@ function unitcellParamsFor(suppliedCell: boolean) {
 export async function mountStructureViewer(
   target: HTMLDivElement,
   geometry: CanonicalGeometry,
-  options: MountStructureViewerOptions = {}
+  options: MountStructureViewerOptions = {},
 ): Promise<MountedStructureViewer> {
   const plugin = new PluginContext(DefaultPluginSpec());
   await plugin.init();
@@ -178,7 +211,9 @@ export async function mountStructureViewer(
   // `canvas3d` is guaranteed non-null after `mountAsync` (see the `plugin.canvas3d!.camera` read
   // further below) — asserted here too, for consistency with the rest of the file.
   if (options.backgroundColor !== undefined) {
-    plugin.canvas3d!.setProps({ renderer: { backgroundColor: Color(options.backgroundColor) } });
+    plugin.canvas3d!.setProps({
+      renderer: { backgroundColor: Color(options.backgroundColor) },
+    });
   }
 
   let disposed = false;
@@ -186,6 +221,11 @@ export async function mountStructureViewer(
   let bondsCell: { ref: unknown } | undefined;
   let bondsOn = false;
   let bondsChain: Promise<void> = Promise.resolve();
+  // The atoms (spacefill) representation cell and whether it is currently drawn at the shrunk
+  // bond-mode size. Both are re-established by `buildStructure` on the initial mount and on every
+  // window swap, and `setAtomScale` swaps the representation in place when bonds toggle (item 4a).
+  let atomsCell: { ref: unknown } | undefined;
+  let atomsShrunk = false;
   // The window currently displayed and its absolute base — both mutable: `setWindow` swaps the
   // frame set in place, so every closure below reads the *current* window, never the mount-time one.
   let windowGeometry = geometry;
@@ -204,18 +244,63 @@ export async function mountStructureViewer(
       .apply(GeometryTrajectory, { json: JSON.stringify(geo) })
       .commit({ revertOnError: true });
 
-    await plugin.builders.structure.hierarchy.applyPreset(trajectory, "default", {
-      representationPreset: "empty",
-    });
+    await plugin.builders.structure.hierarchy.applyPreset(
+      trajectory,
+      "default",
+      {
+        representationPreset: "empty",
+      },
+    );
 
     const structure = plugin.managers.structure.hierarchy.current.structures[0];
+    // Build the atoms at the size the current bond state calls for — a window swap that happens
+    // while bonds are on must not flash a full-size sphere set before `doSetBonds` re-shrinks it.
+    atomsCell = undefined;
+    atomsShrunk = bondsOn;
     if (structure) {
-      await plugin.builders.structure.representation.addRepresentation(
-        structure.cell,
-        ATOMS_ONLY_REPRESENTATION
-      );
+      atomsCell =
+        (await plugin.builders.structure.representation.addRepresentation(
+          structure.cell,
+          atomsRepresentationFor(bondsOn),
+        )) ?? undefined;
     }
     return trajectory;
+  }
+
+  /**
+   * Swap the atoms representation between full VdW and the shrunk bond-mode size (item 4a). Deletes
+   * and re-adds the `spacefill` representation (the same delete/re-add pattern the bond visual uses),
+   * guarded by `atomsShrunk` so a redundant call is a no-op. Called only from within `doSetBonds`,
+   * which itself runs only on the serialized `bondsChain`, so `atomsCell` is never mutated
+   * concurrently with the bond representation.
+   */
+  async function setAtomScale(shrunk: boolean): Promise<void> {
+    if (disposed) return;
+    if (atomsShrunk === shrunk) return; // already at this size
+    const structure = plugin.managers.structure.hierarchy.current.structures[0];
+    if (!structure) return;
+    if (atomsCell) {
+      try {
+        await plugin.state.data
+          .build()
+          .delete(atomsCell.ref as never)
+          .commit();
+      } catch (err) {
+        console.error("Mol* setAtomScale (remove) failed:", err);
+      }
+      atomsCell = undefined;
+    }
+    try {
+      atomsCell =
+        (await plugin.builders.structure.representation.addRepresentation(
+          structure.cell,
+          atomsRepresentationFor(shrunk),
+        )) ?? undefined;
+    } catch (err) {
+      console.error("Mol* setAtomScale (add) failed:", err);
+      atomsCell = undefined;
+    }
+    atomsShrunk = shrunk;
   }
 
   // The M59/M60 mount: build the initial window's structure. `setWindow` rebuilds this subtree.
@@ -257,7 +342,10 @@ export async function mountStructureViewer(
   async function drawUnitcellForFrame(absoluteIndex: number): Promise<boolean> {
     if (disposed) return false;
     if (unitcellCell) {
-      await plugin.state.data.build().delete(unitcellCell.ref as never).commit();
+      await plugin.state.data
+        .build()
+        .delete(unitcellCell.ref as never)
+        .commit();
       unitcellCell = undefined;
     }
     if (!frameHasRenderableCell(absoluteIndex)) {
@@ -268,7 +356,7 @@ export async function mountStructureViewer(
     const unitcell = await plugin.builders.structure.tryCreateUnitcell(
       modelCell,
       unitcellParamsFor(Boolean(options.suppliedCell)),
-      { isHidden: false }
+      { isHidden: false },
     );
     unitcellCell = unitcell ?? undefined;
     return Boolean(unitcell);
@@ -287,15 +375,22 @@ export async function mountStructureViewer(
     if (disposed) return;
     if (enabled) {
       if (bondsCell) return; // already on; no-op, proof already "true"
-      const structure = plugin.managers.structure.hierarchy.current.structures[0];
+      const structure =
+        plugin.managers.structure.hierarchy.current.structures[0];
       if (!structure) return; // nothing to add to yet; proof stays "false"
+      // Shrink the atom spheres first so the ball-and-stick cylinders are not engulfed by full VdW
+      // spacefill spheres (item 4a) — without this the bonds are added but never visible.
+      await setAtomScale(true);
       try {
         bondsCell =
-          (await plugin.builders.structure.representation.addRepresentation(structure.cell, {
-            type: "ball-and-stick",
-            typeParams: { visuals: ["intra-bond", "inter-bond"] },
-            colorTheme: { name: "element-symbol" },
-          })) ?? undefined;
+          (await plugin.builders.structure.representation.addRepresentation(
+            structure.cell,
+            {
+              type: "ball-and-stick",
+              typeParams: { visuals: ["intra-bond", "inter-bond"] },
+              colorTheme: { name: "element-symbol" },
+            },
+          )) ?? undefined;
       } catch (err) {
         console.error("Mol* setBonds (add) failed:", err);
         bondsCell = undefined;
@@ -304,7 +399,10 @@ export async function mountStructureViewer(
     } else {
       if (!bondsCell) return; // already off; no-op, proof already "false"
       try {
-        await plugin.state.data.build().delete(bondsCell.ref as never).commit();
+        await plugin.state.data
+          .build()
+          .delete(bondsCell.ref as never)
+          .commit();
       } catch (err) {
         // The ref may already be gone — e.g. its subtree was removed by a concurrent window swap
         // before this delete ran. Either way, the representation is no longer present, so state
@@ -313,6 +411,8 @@ export async function mountStructureViewer(
       }
       bondsCell = undefined;
       target.dataset.bondsDrawn = "false";
+      // Restore the atoms to full VdW size now that the bonds are gone (item 4a).
+      await setAtomScale(false);
     }
   }
 
@@ -355,7 +455,10 @@ export async function mountStructureViewer(
   // representation/unit-cell cascade with it), rebuild over the new window, then show the target
   // frame. Calls serialize on `windowChain` so a burst of boundary crossings applies in order.
   let windowChain: Promise<void> = Promise.resolve();
-  async function doSetWindow(newGeometry: CanonicalGeometry, absoluteIndex: number): Promise<void> {
+  async function doSetWindow(
+    newGeometry: CanonicalGeometry,
+    absoluteIndex: number,
+  ): Promise<void> {
     if (disposed) return;
     // The unit-cell ref belongs to the subtree we are about to delete; drop it before the delete so
     // `drawUnitcellForFrame` does not try to remove a stale ref after the rebuild.
@@ -378,7 +481,10 @@ export async function mountStructureViewer(
       if (bondsOn) await doSetBonds(true);
     });
   }
-  function setWindow(newGeometry: CanonicalGeometry, absoluteIndex: number): Promise<void> {
+  function setWindow(
+    newGeometry: CanonicalGeometry,
+    absoluteIndex: number,
+  ): Promise<void> {
     windowChain = windowChain
       .then(() => doSetWindow(newGeometry, absoluteIndex))
       .catch((err) => {
@@ -416,6 +522,23 @@ export async function mountStructureViewer(
     setSnapshot: (snapshot) => {
       pluginCamera.setState(snapshot);
     },
+    applyPose: (remote) => {
+      // Keep this viewer's own target (its structure center); adopt the remote's orientation and
+      // distance. `poseFromRemote` computes localTarget + (remotePosition - remoteTarget) so the
+      // view direction and zoom match the sibling while the local structure stays centered (item 3),
+      // and returns null for a degenerate remote pose with no view direction — we drop that
+      // broadcast frame rather than collapse position onto target and hand Mol* a NaN camera
+      // (item 6). Guarded here in the imperative seam; the math itself is unit-tested in
+      // `cameraPose.test.ts`.
+      const local = pluginCamera.getSnapshot();
+      const position = poseFromRemote(local, remote);
+      if (position === null) return;
+      pluginCamera.setState({
+        ...remote,
+        target: Vec3.clone(local.target),
+        position,
+      });
+    },
     onChange(listener) {
       const sub = pluginCamera.changed.subscribe(() => {
         listener();
@@ -444,7 +567,9 @@ export async function mountStructureViewer(
       // `dispose()` the plugin's `canvas3d` is null and the non-null assertion below would throw.
       // Unreachable today (unmount nulls the handle before disposing), but kept consistent.
       if (disposed) return;
-      plugin.canvas3d!.setProps({ renderer: { backgroundColor: Color(color) } });
+      plugin.canvas3d!.setProps({
+        renderer: { backgroundColor: Color(color) },
+      });
     },
     async setBonds(enabled: boolean) {
       bondsOn = enabled;

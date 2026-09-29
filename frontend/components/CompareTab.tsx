@@ -13,9 +13,10 @@
  *
  *  - **Camera-locked always.** A guarded broadcast between the two mounts: rotate/zoom one and the
  *    other follows. Each viewer exposes its camera through the M62 camera seam
- *    (`handle.camera` → get/set/observe); this tab wires A's change to B's `setSnapshot` and
+ *    (`handle.camera` → get/applyPose/observe); this tab wires A's change to B's `applyPose` and
  *    vice-versa, re-entrancy-guarded (an "applying a remote camera" flag) so the broadcast never
- *    ping-pongs.
+ *    ping-pongs. `applyPose` (not `setSnapshot`) shares only orientation and zoom, so each viewer
+ *    stays centered on its own structure even when the two centroids differ (v2.0 addendums, item 3).
  *  - **Frame-locked only where a correspondence honestly exists.** When source and output have the
  *    **same `frame_count`**, **one** scrubber drives **both** (the Compare tab owns the index and
  *    hands it to each viewer via `frameControl`). When the output is a **single selected frame**
@@ -60,8 +61,10 @@ const CHECK_KIND: Record<CheckResultStatus, LossKind> = {
 type CheckResultStatus = "pass" | "warn" | "fail" | "skipped";
 
 /**
- * The camera-lock broadcast (M62-S1, D239), held for one tab: when a viewer's camera changes
- * (a user orbit-control drag on that side), its snapshot is pushed onto the sibling viewer. Each
+ * The camera-lock broadcast (M62-S1, D239; v2.0 addendums item 3), held for one tab: when a
+ * viewer's camera changes (a user orbit-control drag on that side), its pose is pushed onto the
+ * sibling viewer via `applyPose` — which copies orientation and zoom but keeps the sibling
+ * centered on its **own** structure (the two Canonical Objects can have different centroids). Each
  * side's `onChange` handler checks an "applying a remote camera" flag for **the same side** before
  * rebroadcasting: while this tab is pushing source→output, the output viewer emits its own
  * `changed` event (the echo), whose handler sees `output` applying and stops — no ping-pong loop.
@@ -82,7 +85,7 @@ function useCameraLock(): {
       if (!other) return;
       applyingRef.current.output = true;
       try {
-        other.setSnapshot(cam.getSnapshot());
+        other.applyPose(cam.getSnapshot());
       } finally {
         applyingRef.current.output = false;
       }
@@ -98,7 +101,7 @@ function useCameraLock(): {
       if (!other) return;
       applyingRef.current.source = true;
       try {
-        other.setSnapshot(cam.getSnapshot());
+        other.applyPose(cam.getSnapshot());
       } finally {
         applyingRef.current.source = false;
       }
