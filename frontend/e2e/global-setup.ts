@@ -20,9 +20,22 @@ export default async function globalSetup(): Promise<void> {
     "/",
     "/convert",
     "/formats",
+    "/history",
     "/files/warmup",
     "/convert/warmup",
     "/conversions/warmup",
+    // The per-file workbench routes are dynamic (`/f/[file_id]/…`) and were NOT warmed here, so the
+    // first test to click into the Convert, Structure, Analysis, or report tab paid the lazy compile
+    // cold — under full-run parallelism that stall is what pushed qol.spec's "VASP POSCAR" click and
+    // formats.spec's detail navigation past their timeouts (v2.0 addendums; item 8). Warm the whole
+    // family up front so the journeys run against compiled routes.
+    "/f/warmup",
+    "/f/warmup/convert",
+    "/f/warmup/structure",
+    "/f/warmup/analysis",
+    "/f/warmup/report",
+    "/f/warmup/report/warmup",
+    "/formats/warmup",
   ];
   const ctx = await request.newContext({ baseURL });
   for (const route of routes) {

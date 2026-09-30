@@ -34,8 +34,10 @@ test("Cancel leaves no history row; Confirm is what records the conversion", asy
   const before = await historyCount(request);
 
   // 2. Advance to the Convert tab, pick plain XYZ and open the confirm step, then CANCEL. The first
-  //    click must not submit.
-  await page.getByRole("link", { name: "Convert →" }).click();
+  //    click must not submit. The old per-file rail's "Convert →" CTA was absorbed into the
+  //    workbench's own Convert tab (v2.0 addendums Task 9's reconciliation note) — the workspace
+  //    tab strip is the guided spine now.
+  await page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Convert" }).click();
   await page.getByRole("button", { name: "Plain XYZ", exact: true }).click();
   await page.getByRole("button", { name: /^Convert to Plain XYZ$/ }).click();
   await expect(page.getByTestId("convert-confirm")).toBeVisible();

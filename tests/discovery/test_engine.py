@@ -114,6 +114,14 @@ def test_unknown_format_raises_parse_error() -> None:
     assert any(i.code == "UNKNOWN_FORMAT" for i in exc.value.issues)
 
 
+def test_discovery_declines_zero_atom_poscar() -> None:
+    # Fuzzer-found crash: a POSCAR whose atom counts sum to zero must be refused through
+    # ParseError on the discovery path too, never leak the raw matmul ValueError (Part 3 §6.2).
+    data = b"c\n1.0\n1 0 0\n0 8 0\n0 0 1\nH O\n0 0\nDirect\n"
+    with pytest.raises(ParseError):
+        DiscoveryEngine(default_registry()).discover(data, filename="fuzz.dat", max_frames=10_000)
+
+
 def test_mixed_status_lists_present_frames() -> None:
     # A per-frame field present in only some frames must surface as "mixed" with the indices,
     # never collapsed to present/absent (Part 3 §6.2, the trichotomy). Built directly against the

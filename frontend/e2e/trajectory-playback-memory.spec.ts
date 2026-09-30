@@ -29,7 +29,7 @@ function generatePlaybackExtxyz(nFrames = 10_000): Buffer {
   for (let f = 0; f < nFrames; f++) {
     lines.push("1");
     lines.push("Properties=species:S:1:pos:R:3");
-    const base = (1234 * 131 + f * 7) % 1000 / 100.0;
+    const base = ((1234 * 131 + f * 7) % 1000) / 100.0;
     const x = (base + 0.01 * f) % 20.0;
     const y = (base * 1.3) % 20.0;
     const z = (base * 0.7 + 0.005 * f) % 20.0;
@@ -56,19 +56,29 @@ test("playback of a generated 10⁴-frame trajectory holds browser memory flat (
   const spike = generatePlaybackExtxyz();
   const upload = await request.post(`${API_URL}/v1/upload`, {
     multipart: {
-      file: { name: "playback-1e4.extxyz", mimeType: "chemical/x-xyz", buffer: spike },
+      file: {
+        name: "playback-1e4.extxyz",
+        mimeType: "chemical/x-xyz",
+        buffer: spike,
+      },
     },
   });
   expect(upload.status(), await upload.text()).toBe(201);
   const fileId = String((await upload.json()).file_id);
 
-  const first = await request.get(`${API_URL}/v1/files/${fileId}/geometry?frames=0:1`);
+  const first = await request.get(
+    `${API_URL}/v1/files/${fileId}/geometry?frames=0:1`,
+  );
   expect(first.status(), await first.text()).toBe(200);
   expect((await first.json()).frame_count).toBe(10_000);
 
   // The dev spike surface mounts the scrubber over the full trajectory with a fast play interval.
-  await page.goto(`/dev/structure/${fileId}`, { waitUntil: "domcontentloaded" });
-  await expect(page.locator("[data-mounted=true]")).toBeVisible({ timeout: 60_000 });
+  await page.goto(`/dev/structure/${fileId}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await expect(page.locator("[data-mounted=true]")).toBeVisible({
+    timeout: 60_000,
+  });
   const play = page.getByRole("button", { name: "Play" });
   await expect(play).toBeVisible({ timeout: 30_000 });
 
@@ -86,8 +96,24 @@ test("playback of a generated 10⁴-frame trajectory holds browser memory flat (
   const mount = page.locator("[data-mounted=true]");
   const startFrame = Number(await mount.getAttribute("data-current-frame"));
 
-  // Play across the trajectory, sampling heap after explicit GC at ~4 points along the way.
+  // Play across the trajectory. Advancement is proven by polling the live frame counter WHILE
+  // playing — decoupled from the GC-stalled sampling loop below (v2.0 addendums; item 8). The old
+  // single read *after* Pause conflated "did playback move" with "how far did it get in a fixed
+  // wall-clock budget"; the per-sample `collectGarbage` stalls the 80 ms step clock enough that a
+  // loaded runner crossed only ~7 frames and failed a `> 9` check that was never about timing. The
+  // poll instead waits (generously) for the frame to cross a window boundary, which is the real
+  // signal: the bounded store slid and the next window fed the viewer.
   await play.click();
+  await expect
+    .poll(
+      async () =>
+        Number(await mount.getAttribute("data-current-frame")) - startFrame,
+      {
+        timeout: 30_000,
+      },
+    )
+    .toBeGreaterThan(MIN_FRAMES_ADVANCED);
+
   const samples: number[] = [];
   const sampleMarks: number[] = [];
   for (let i = 0; i < 4; i++) {
@@ -111,10 +137,10 @@ test("playback of a generated 10⁴-frame trajectory holds browser memory flat (
     }),
   );
 
-  // Playback must actually animate — the frame advanced across several windows (the measurement
-  // is meaningless if playback did not move), and did not stall at a window edge (prefetch).
+  // Playback advancement is already proven by the pre-sampling poll above; the frame counter here
+  // only feeds the diagnostic log (it may have advanced further, or be frozen at the Pause point).
   const endFrame = Number(await mount.getAttribute("data-current-frame"));
-  expect(endFrame - startFrame).toBeGreaterThan(MIN_FRAMES_ADVANCED);
+  expect(endFrame - startFrame).toBeGreaterThan(0); // sanity: it moved at all off the start frame
 
   // A ceiling, not a rising line: every playback sample under baseline + headroom, and the last
   // within a headroom of the first — browser memory stays flat under the sliding window.

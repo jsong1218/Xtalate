@@ -21,9 +21,11 @@ test("the reserved seams render 'coming later' and are inert across the workspac
 }) => {
   const fileId = await uploadFixture(request, FIXTURES.workedExample);
   await page.goto(`/f/${fileId}`);
-  await expect(page.locator('aside[aria-label="Source file"]')).not.toContainText("Loading source…", {
-    timeout: 30_000,
-  });
+  // Hydration-readiness gate (v2.0 addendums Task 13): the per-file `aside[aria-label="Source
+  // file"]` this used to wait on was absorbed into the Inspector/Toolbar (Task 9's reconciliation
+  // note) and no longer exists. The Inspect tab's own "Detected <format>" line is the same signal —
+  // real content has replaced the "Inspecting…" stub — for the exact route under test here.
+  await expect(page.getByText(/^Detected\s/)).toBeVisible({ timeout: 30_000 });
 
   // The seams belong to the shell, so they appear on every tab.
   for (const path of [`/f/${fileId}`, `/f/${fileId}/structure`, `/f/${fileId}/convert`]) {

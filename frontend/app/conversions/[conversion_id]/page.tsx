@@ -5,7 +5,6 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ConversionRecord } from "@/components/workspace/ConversionRecord";
 import { apiClient } from "@/lib/api/client";
-import { queryKeys } from "@/lib/api/queries";
 import type { Schemas } from "@/lib/api/client";
 
 /**
@@ -32,8 +31,17 @@ export default function LegacyConversionRecordPage() {
   const router = useRouter();
 
   // Only fetch history when the caller didn't already hand a file forward.
+  //
+  // A distinct query key — *not* `queryKeys.history` (`["history"]`). Since the v2.0 workbench shell,
+  // `SourceRail` (mounted on every route, this one included) reads `["history"]` with
+  // `useInfiniteQuery(historyInfiniteQuery(...))`, whose cache entry is shaped `{ pages, pageParams }`.
+  // A plain `useQuery` sharing that exact key would read *that* infinite-query cache — so
+  // `history.data.items` came back `undefined`, `resolvedFileId` stayed null, and a bare bookmark
+  // never redirected (it silently fell to the standalone render). This one-shot resolution walk is a
+  // different query with a different shape and depth, so it gets its own key, keyed by the
+  // conversion it resolves (v2.0 addendums Task 13).
   const history = useQuery({
-    queryKey: queryKeys.history,
+    queryKey: ["conversion-file-resolve", conversionId],
     queryFn: async () => {
       // A bookmark can point at a conversion older than the most-recent page. /v1/history is
       // keyset-paginated, so follow next_cursor until the record is found or the history is

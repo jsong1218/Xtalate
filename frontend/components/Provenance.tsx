@@ -60,7 +60,26 @@ function Timestamp({ iso }: { iso: string }) {
   );
 }
 
-export function Provenance({ record }: { record: ConversionRecord }) {
+/**
+ * The mono value class. `break-all` is load-bearing: the conversion/report ids are long unbroken
+ * `cnv_…`/`rep_…` strings with no natural break points, so without it they overflow their grid
+ * column and overlap the neighbouring value — visible in the narrow (`w-72`) Inspector rail, where
+ * the whole strip renders in a tight space (v2.0 addendums: Inspector overlap fix).
+ */
+const MONO_VALUE = "block break-all font-mono text-xs";
+
+export function Provenance({
+  record,
+  dense = false,
+}: {
+  record: ConversionRecord;
+  /**
+   * Single-column stack for a narrow container (the Inspector rail). The default multi-column grid
+   * uses *viewport* breakpoints, which crowd four columns into the `w-72` rail on a desktop viewport
+   * and overlap the long ids; `dense` stacks the fields one per row so each id gets the full width.
+   */
+  dense?: boolean;
+}) {
   const report = record.conversion_report;
   const sha256 = typeof report.source.sha256 === "string" ? report.source.sha256 : null;
   const schemaVersion =
@@ -74,14 +93,20 @@ export function Provenance({ record }: { record: ConversionRecord }) {
       data-testid="provenance"
       className="rounded-lg border border-line bg-raised p-4"
     >
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+      <dl
+        className={
+          dense
+            ? "grid grid-cols-1 gap-y-3"
+            : "grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4"
+        }
+      >
         <Field label="Conversion">
-          <span className="font-mono text-xs">{record.conversion_id}</span>
+          <span className={MONO_VALUE}>{record.conversion_id}</span>
         </Field>
 
         <Field label="Source sha256" title={sha256 ?? undefined}>
           {sha256 ? (
-            <span className="font-mono text-xs">{shortHash(sha256)}…</span>
+            <span className={MONO_VALUE}>{shortHash(sha256)}…</span>
           ) : (
             <Unknown reason="not recorded" />
           )}
@@ -99,7 +124,7 @@ export function Provenance({ record }: { record: ConversionRecord }) {
 
         <Field label="Tolerance profile">
           {typeof profileName === "string" ? (
-            <span className="font-mono text-xs">{profileName}</span>
+            <span className={MONO_VALUE}>{profileName}</span>
           ) : validation === null ? (
             <Unknown reason="no validation ran" />
           ) : (
@@ -109,19 +134,19 @@ export function Provenance({ record }: { record: ConversionRecord }) {
 
         <Field label="Canonical schema">
           {schemaVersion ? (
-            <span className="font-mono text-xs">{schemaVersion}</span>
+            <span className={MONO_VALUE}>{schemaVersion}</span>
           ) : (
             <Unknown reason="not recorded" />
           )}
         </Field>
 
         <Field label="Conversion report">
-          <span className="font-mono text-xs">{report.report_id}</span>
+          <span className={MONO_VALUE}>{report.report_id}</span>
         </Field>
 
         <Field label="Validation report">
           {validation ? (
-            <span className="font-mono text-xs">{validation.report_id}</span>
+            <span className={MONO_VALUE}>{validation.report_id}</span>
           ) : (
             <Unknown reason="none" />
           )}

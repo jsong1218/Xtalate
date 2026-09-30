@@ -98,6 +98,10 @@ _TAILORED: dict[str, list[tuple[str, bytes]]] = {
         ("bad_scale", b"c\nNOTFLOAT\n1 0 0\n0 1 0\n0 0 1\nH\n1\nDirect\n0 0 0\n"),
         ("counts_mismatch", b"c\n1.0\n1 0 0\n0 1 0\n0 0 1\nH O\n1\nDirect\n0 0 0\n"),
         ("short_lattice", b"c\n1.0\n1 0 0\n0 1 0\nH\n1\nDirect\n0 0 0\n"),
+        (
+            "zero_atoms",
+            b"c\n1.0\n1 0 0\n0 8 0\n0 0 1\nH O\n0 0\nDirect\n",
+        ),
     ],
     "contcar": [
         ("bad_scale", b"c\nNOTFLOAT\n1 0 0\n0 1 0\n0 0 1\nH\n1\nDirect\n0 0 0\n"),
@@ -135,6 +139,10 @@ _TAILORED: dict[str, list[tuple[str, bytes]]] = {
             + b"</energy>\n"
             + b'<varray name="forces" >\n<v> 0.1 0.0 0.0 </v>\n<v> -0.1 0.0 0.0 </v>\n'
             + b"</varray>\n</calculation>\n</vasprun>\n",
+        ),
+        (
+            "unknown_encoding",
+            b'<?xml version="1.0" encoding="I-9-O8S581"?>\n<vasprun>\n</vasprun>\n',
         ),
     ],
     "outcar": [

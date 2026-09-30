@@ -56,8 +56,11 @@ test("a sample file completes a conversion end-to-end via the normal upload path
   await page.waitForURL(/\/f\/[^/]+$/);
   await expect(page.getByRole("heading", { name: "water.xyz" })).toBeVisible({ timeout: 30_000 });
 
-  // Advance the guided spine to the Convert tab and commit a lossless conversion (water → plain XYZ).
-  await page.getByRole("link", { name: "Convert →" }).click();
+  // Advance the guided spine to the Convert tab and commit a lossless conversion (water → plain
+  // XYZ). The old per-file rail's "Convert →" CTA was absorbed into the workbench's own Convert
+  // tab (v2.0 addendums Task 9's reconciliation note) — the workspace tab strip is the guided
+  // spine now.
+  await page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Convert" }).click();
   await expect(page.getByRole("heading", { name: "Convert", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Plain XYZ", exact: true }).click();
   await page.getByRole("button", { name: /^Convert to Plain XYZ/ }).click();
@@ -79,7 +82,7 @@ test("a saved preset re-converts in one click (S4)", async ({ page }) => {
   // Upload a sample, then go to the Convert tab to pick a target.
   await page.getByTestId("sample-diatomic").click();
   await page.waitForURL(/\/f\/[^/]+$/);
-  await page.getByRole("link", { name: "Convert →" }).click();
+  await page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Convert" }).click();
   await expect(page.getByRole("heading", { name: "Convert", exact: true })).toBeVisible();
 
   // Choose VASP POSCAR (a lossy target for the extXYZ sample) and save it as a named preset.

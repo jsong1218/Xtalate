@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from tests._format_helpers import assert_matches_golden, parse_bytes
-from xtalate.parsers.poscar import make_contcar_parser, make_poscar_parser
+from xtalate.parsers.poscar import PoscarParser, make_contcar_parser, make_poscar_parser
 from xtalate.sdk import ParseError
 
 GOLDEN = Path(__file__).parent.parent / "golden" / "poscar" / "nacl-primitive"
@@ -278,3 +278,11 @@ def test_sniff_exact_names() -> None:
     # Nameless file: both match structurally, POSCAR scores higher (§6.1 tie-break).
     assert poscar.sniff(data, None) > contcar.sniff(data, None)
     assert poscar.sniff(data, None) >= 0.5
+
+
+def test_zero_atom_poscar_is_refused_not_crashed() -> None:
+    # Species H O with counts "0 0" -> n_atoms == 0; must refuse, never ValueError from matmul.
+    data = b"c\n1.0\n1 0 0\n0 8 0\n0 0 1\nH O\n0 0\nDirect\n"
+    with pytest.raises(ParseError) as exc:
+        PoscarParser().parse(io.BytesIO(data), filename="POSCAR")
+    assert exc.value.issues[0].code == "POSCAR_MALFORMED"

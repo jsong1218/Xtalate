@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
  * `globals.css`: every interactive element a component author did *not* give a bespoke Tailwind ring
  * (form inputs, the ack checkbox, the recovery radios, native `<summary>` disclosures, doc-markdown
  * links) still shows a consistent, visible focus outline under keyboard navigation, instead of the
- * inconsistent browser default. The bespoke component rings (Button, AppHeader, BackLink, the theme
+ * inconsistent browser default. The bespoke component rings (Button, Toolbar, BackLink, the theme
  * toggle) keep winning because they live in Tailwind's utilities layer and set `outline-none` there,
  * which beats this base-layer rule — so there is never a double indicator.
  *

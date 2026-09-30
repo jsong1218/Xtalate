@@ -44,11 +44,13 @@ x-backend-env: &backend-env
 
 services:
   postgres:
-    # Pulled from the AWS ECR Public Docker Hub mirror, not Docker Hub itself: the `main`
-    # compose-integration job fails intermittently on `connection reset by peer` pulling the base
-    # images from registry-1.docker.io (unauthenticated Docker Hub rate limiting). The mirror serves
-    # the byte-identical official image without that limit — same intent as the MinIO→quay.io move.
-    image: public.ecr.aws/docker/library/postgres:16-alpine
+    # The official Docker Hub image. This was briefly pulled from the AWS ECR Public Docker Hub
+    # mirror to dodge unauthenticated Docker Hub rate limiting, but ECR Public anonymous pulls are
+    # themselves per-IP rate-limited and the shared CI runner pool exhausted that budget too — a
+    # contributor to the CI pull failures. CI now authenticates to Docker Hub (`main.yml`), which
+    # raises the per-account pull budget far above the anonymous per-IP ceiling, so the official
+    # image is the more reliable source there; locally, `docker login` (or the cache) covers it.
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-xtalate}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xtalate}
@@ -117,8 +119,8 @@ services:
     restart: "no"
 
   queue:
-    # AWS ECR Public Docker Hub mirror — see the postgres service above (Docker Hub pull flakiness).
-    image: public.ecr.aws/docker/library/redis:7-alpine
+    # Official Docker Hub image — see the postgres service above (CI authenticates to Docker Hub).
+    image: redis:7-alpine
     # Loopback-only: this Redis has no auth, so it must never be reachable off the host.
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
@@ -193,8 +195,8 @@ services:
   # ../docs/openapi.json (mounted read-only). node_modules is a named volume so it stays off the host
   # tree and avoids a host/container platform mismatch.
   frontend:
-    # AWS ECR Public Docker Hub mirror — see the postgres service above (Docker Hub pull flakiness).
-    image: public.ecr.aws/docker/library/node:20-alpine
+    # Official Docker Hub image — see the postgres service above (CI authenticates to Docker Hub).
+    image: node:20-alpine
     working_dir: /repo/frontend
     command: ["sh", "-c", "npm install && npm run dev"]
     depends_on:

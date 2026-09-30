@@ -35,6 +35,7 @@ jobs:
     # pull falls back to the anonymous+retry path unchanged.
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -63,8 +64,21 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Fetch the stack's base images (postgres/redis from ECR Public, minio/mc from quay.io, the
-      # node image, and the python:3.13-slim build base from Docker Hub) behind a bounded backoff.
+      # Authenticate to quay.io: MinIO gated its community images (minio/minio, minio/mc) behind
+      # authentication in 2025, so anonymous pulls now 401 — the failure that broke this job. A free
+      # quay.io account (or a read-only robot account) can pull them; set the repo secrets
+      # QUAY_USERNAME / QUAY_TOKEN. Skipped when unset (forks / secret-less contexts): the pull then
+      # 401s on the minio images and the retry backoff below surfaces it, unchanged.
+      - name: Log in to quay.io (MinIO images require authentication)
+        if: env.QUAY_USERNAME != ''
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_TOKEN }}
+
+      # Fetch the stack's base images (postgres/redis/node from Docker Hub, minio/mc from quay.io, and
+      # the python:3.13-slim build base from Docker Hub) behind a bounded backoff.
       # Every public registry rate-limits anonymous pulls per source IP, and GitHub's shared runner
       # pool routinely exhausts that budget: a `toomanyrequests` here aborted this job on a commit
       # whose sibling `e2e` job pulled the identical images from a different runner IP and passed. The
@@ -127,8 +141,9 @@ jobs:
       # wall-clock minute — including the next journey's upload — a timing flake, not a product one.
       # Raise the lane's window far above suite volume; the limiter stays on (unit-tested elsewhere).
       XTALATE_RATE_LIMIT_PER_MINUTE: "100000"
-      # Mapped so the Docker Hub login step can gate on presence in `if:` (see compose-integration).
+      # Mapped so the login steps can gate on presence in `if:` (see compose-integration).
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -155,9 +170,21 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Authenticate to quay.io for the MinIO images (see compose-integration for the full rationale:
+      # MinIO gated minio/minio + minio/mc behind auth in 2025). Set QUAY_USERNAME / QUAY_TOKEN;
+      # skipped when unset.
+      - name: Log in to quay.io (MinIO images require authentication)
+        if: env.QUAY_USERNAME != ''
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_TOKEN }}
+
       # Fetch the stack's base images behind a bounded backoff — see the compose-integration job for
-      # why (transient, IP-bound anonymous registry rate limits on the shared runner pool). The login
-      # above raises the ceiling for the Docker-Hub images; this retry is the backstop for a throttled
+      # why (transient, IP-bound anonymous registry rate limits on the shared runner pool). The logins
+      # above raise the ceiling for the Docker-Hub images and unlock the quay MinIO images; this retry
+      # is the backstop for a throttled
       # window on any registry. `--ignore-buildable` skips backend/worker (built below).
       - name: Pull and build images (retry past transient registry rate limits)
         working-directory: .

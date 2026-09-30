@@ -31,9 +31,10 @@ import { useOptionalTheme, type Theme } from "@/lib/theme/ThemeProvider";
  * The renderer background per theme (D-next): keeps the WebGL canvas in step with the app's
  * light/dark palette instead of Mol*'s own default background. Read once at mount time (via a
  * ref, since the mount effect depends only on `suppliedCell`) and reconciled afterward through
- * `handle.setBackground` on every theme change.
+ * `handle.setBackground` on every theme change. Values mirror `--surface` in globals.css — the
+ * neutral-gray light desktop and the Graphite dark page background (v2.0 addendums).
  */
-const THEME_BG: Record<Theme, number> = { light: 0xffffff, dark: 0x0f172a };
+const THEME_BG: Record<Theme, number> = { light: 0xeceef1, dark: 0x0d1117 };
 
 /**
  * The additive camera-lock seam (M62-S1, D239): when present, the parent hands the mount's camera

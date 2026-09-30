@@ -28,7 +28,9 @@ async function uploadToConvertTab(page: Page, file: string) {
   await page.waitForURL("**/f/**");
   // The workspace's Inspect tab, the pre-existing surface — the repair UI must not appear here.
   await expect(page.getByText(/Detected/i)).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("link", { name: "Convert →" }).click();
+  // The old per-file rail's "Convert →" CTA was absorbed into the workbench's own Convert tab
+  // (v2.0 addendums Task 9's reconciliation note) — the workspace tab strip is the guided spine now.
+  await page.getByRole("navigation", { name: "Workspace" }).getByRole("link", { name: "Convert" }).click();
   await expect(page.getByTestId("repair-picker")).toBeVisible();
 }
 

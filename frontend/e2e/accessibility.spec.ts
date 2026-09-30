@@ -83,16 +83,36 @@ test("the workspace shell has no serious accessibility violations (UIR-S6)", asy
   // M63-S2 posture). A live upload feeds the rail its filename/counts.
   const fileId = await uploadFixture(request, FIXTURES.workedExample);
   await page.goto(`/f/${fileId}`);
-  await expect(page.locator('aside[aria-label="Source file"]')).toBeVisible({ timeout: 30_000 });
-  // The rail is the shell's readiness signal: once it shows the filename (not "Loading source…")
-  // and the seams are up, the whole layout under test has hydrated.
-  await expect(page.locator('aside[aria-label="Source file"]')).not.toContainText("Loading source…", {
-    timeout: 30_000,
-  });
+  // Hydration-readiness gate (v2.0 addendums Task 13): the per-file `aside[aria-label="Source
+  // file"]` this used to wait on was absorbed into the Inspector/Toolbar (Task 9's reconciliation
+  // note) and no longer exists. The Inspect tab's own "Detected <format>" line is the same
+  // signal — real content has replaced the "Inspecting…" stub, so the whole layout under test has
+  // hydrated — for the exact route the axe scan below runs against.
+  await expect(page.getByText(/^Detected\s/)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("future-seams")).toBeVisible();
 
   const violations = await seriousViolations(page);
   expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
+});
+
+test("the collapsed mobile shell has no serious accessibility violations, open or closed (v2.0 addendums Task 13)", async ({
+  page,
+  request,
+}) => {
+  // Below `md`/`lg`/`sm` the Sources rail, Inspector, and toolbar verbs all move behind their own
+  // toggles (design spec §"Region behaviors & responsiveness") — this scans both the closed state
+  // (toggles present, panels absent) and the opened state (an overlay panel plus its backdrop) for
+  // the same barrier categories the desktop shell is held to.
+  const fileId = await uploadFixture(request, FIXTURES.workedExample);
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.goto(`/f/${fileId}`);
+  await expect(page.getByText(/^Detected\s/)).toBeVisible({ timeout: 30_000 });
+
+  expect(await seriousViolations(page), "closed").toEqual([]);
+
+  await page.getByRole("button", { name: /^show sources$/i }).click();
+  await expect(page.getByRole("navigation", { name: "Sources" })).toBeVisible();
+  expect(await seriousViolations(page), "sources open").toEqual([]);
 });
 
 test("the Compare tab's viewer chrome has no serious accessibility violations (M63-S2)", async ({

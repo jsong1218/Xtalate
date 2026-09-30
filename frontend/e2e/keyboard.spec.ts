@@ -2,6 +2,33 @@ import { expect, test } from "@playwright/test";
 import { API_URL, FIXTURES, fixtureBuffer, fixturePath, pollJob, uploadFixture } from "./support/api";
 
 /**
+ * The workbench's mobile collapse toggles are real `<button>`s (v2.0 addendums Task 13; design spec
+ * §"Region behaviors & responsiveness": "the collapsible panels are keyboard- and screen-reader-
+ * operable (buttons with aria-expanded)") — this exercises the Sources rail's split toggle by
+ * keyboard alone, confirms Escape (a global keydown listener, since the opening FAB lives outside the
+ * nav it controls) closes the overlay, and — because the FAB and the in-drawer ✕ are separate nodes
+ * that mount/unmount on each transition — asserts focus is *managed* across the transition (into the
+ * drawer on open, back to the trigger on close) rather than falling to `<body>`.
+ */
+test("the Sources rail's mobile toggle opens and closes by keyboard alone", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 900 }); // below `md`
+  await page.goto("/");
+
+  const toggle = page.getByRole("button", { name: /^show sources$/i });
+  await toggle.focus();
+  await page.keyboard.press("Enter");
+  const sourcesNav = page.getByRole("navigation", { name: "Sources" });
+  await expect(sourcesNav).toBeVisible();
+  // On open, focus moves into the drawer (its close control) — not stranded on the now-unmounted FAB.
+  await expect(page.getByRole("button", { name: /^hide sources$/i })).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(sourcesNav).toBeHidden();
+  // On close, focus returns to the trigger (the re-shown FAB), so the keyboard user keeps their place.
+  await expect(page.getByRole("button", { name: /^show sources$/i })).toBeFocused();
+});
+
+/**
  * Keyboard traversal of the wizard (MASTER_SPEC Part 7 §4; slice M30-S2). A conversion must be
  * completable without a mouse: focus must reach the primary controls in a sensible order, and they
  * must activate on Enter. This drives the real browser's focus model — Tab order and Enter
@@ -40,8 +67,12 @@ test("the conversion can be chosen and started with the keyboard", async ({ page
   await page.waitForURL("**/f/**");
   await expect(page.getByText(/Detected\s+Extended XYZ/i)).toBeVisible({ timeout: 30_000 });
 
-  // Advance the guided spine with the rail's CTA — focus it and press Enter (keyboard, no mouse).
-  const convertCta = page.getByRole("link", { name: "Convert →" });
+  // Advance the guided spine with the Convert tab — focus it and press Enter (keyboard, no mouse).
+  // The old per-file rail's "Convert →" CTA was absorbed into the workbench's own Convert tab
+  // (v2.0 addendums Task 9's reconciliation note) — the workspace tab strip is the guided spine now.
+  const convertCta = page
+    .getByRole("navigation", { name: "Workspace" })
+    .getByRole("link", { name: "Convert" });
   await convertCta.focus();
   await page.keyboard.press("Enter");
   await page.waitForURL("**/convert");

@@ -13,7 +13,9 @@ import { API_URL, FIXTURES, fixtureBuffer, pollJob, uploadFixture } from "./supp
  *      neither side is ever produced by exporting to a display format, so no `/v1/download` we
  *      never ask for a converted-file download to *render* a structure.
  *   2. **Camera-locked always.** The two mounts share their camera by a guarded broadcast; rotating
- *      one moves the other (both carry the same `data-camera-pos` fingerprint after a drag).
+ *      one moves the other. The broadcast shares orientation and zoom via `applyPose`, keeping each
+ *      viewer centered on its own structure, so the `data-camera-pos` fingerprints track together in
+ *      orientation without being byte-identical (their targets are each structure's own centroid).
  *   3. **Honest frame-lock with the report-sourced marker.** A `frame_selection` conversion's
  *      source track carries the exported-frame marker at the *report's* `parameters.frame_index`
  *      (D237 placed here) — the user is told exactly which source frame the output is, never a

@@ -114,15 +114,17 @@ describe("StructureViewerMolstar lifecycle", () => {
   });
 
   it("passes a theme-aware background to the mount and reconciles it on a live theme change", async () => {
-    // Mount under light (no data-theme): the mount receives the light background directly.
-    document.documentElement.removeAttribute("data-theme");
+    // Mount with data-theme="light" explicitly set: the mount receives the light (neutral-gray)
+    // background directly. (v2.0 addendums: the app default flipped to dark, so "no attribute" no
+    // longer means light — see useOptionalTheme's dark fallback.)
+    document.documentElement.setAttribute("data-theme", "light");
     const win = windowFixture(0, 8);
     const { rerender } = render(<StructureViewerMolstar geometry={win} frameIndex={0} />);
     await settle();
     expect(mountMock).toHaveBeenCalledWith(
       expect.anything(),
       win,
-      expect.objectContaining({ backgroundColor: 0xffffff }),
+      expect.objectContaining({ backgroundColor: 0xeceef1 }),
     );
 
     // A live flip to dark drives the mount handle's `setBackground` — the F3 fix path
@@ -131,13 +133,13 @@ describe("StructureViewerMolstar lifecycle", () => {
     document.documentElement.setAttribute("data-theme", "dark");
     rerender(<StructureViewerMolstar geometry={win} frameIndex={0} />);
     await settle();
-    expect(setBackground).toHaveBeenCalledWith(0x0f172a);
+    expect(setBackground).toHaveBeenCalledWith(0x0d1117);
     expect(mountMock).toHaveBeenCalledTimes(1);
     document.documentElement.removeAttribute("data-theme");
   });
 
   it("reconciles the background when a theme change lands during the async mount (VIEW-M1)", async () => {
-    document.documentElement.removeAttribute("data-theme");
+    document.documentElement.setAttribute("data-theme", "light");
     let resolveMount: (handle: unknown) => void = () => {};
     mountMock.mockImplementationOnce(
       () => new Promise((resolve) => (resolveMount = resolve)),
@@ -153,7 +155,7 @@ describe("StructureViewerMolstar lifecycle", () => {
     expect(setBackground).not.toHaveBeenCalled();
 
     resolveMount({ setFrame, setWindow, dispose, setBackground, setBonds, resetCamera });
-    await waitFor(() => expect(setBackground).toHaveBeenCalledWith(0x0f172a));
+    await waitFor(() => expect(setBackground).toHaveBeenCalledWith(0x0d1117));
     document.documentElement.removeAttribute("data-theme");
   });
 

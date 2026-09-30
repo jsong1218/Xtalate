@@ -12,35 +12,47 @@ test("landing shell serves with the primary action", async ({ page }) => {
 });
 
 /**
- * The persistent header (pre-M36 addendum S2): a home wordmark and the primary destinations, present
- * on every page. This is the navigation that replaced the old per-page inline links.
+ * The persistent toolbar (v2.0 addendums Task 8, superseding the pre-M36 `AppHeader`): a home
+ * wordmark and the primary destinations, present on every page. Formats/History/Docs live in the
+ * "Primary" nav (the right cluster); Open/Upload and the contextual Convert verb live in their own
+ * "File actions" nav (the left cluster, next to the wordmark) — two distinctly-labeled nav
+ * landmarks, not one (Toolbar.tsx's own "two distinctly-labeled nav landmarks" note).
  */
-test("the header carries the primary navigation on every page", async ({ page }) => {
+test("the toolbar carries the primary navigation on every page", async ({ page }) => {
   await page.goto("/history");
   const banner = page.getByRole("banner");
   await expect(banner.getByRole("link", { name: "Xtalate" })).toHaveAttribute("href", "/");
-  const nav = page.getByRole("navigation", { name: "Primary" });
-  for (const label of ["Convert", "Formats", "History", "Docs"]) {
-    await expect(nav.getByRole("link", { name: label })).toBeVisible();
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  for (const label of ["Formats", "History", "Docs"]) {
+    await expect(primary.getByRole("link", { name: label })).toBeVisible();
   }
+  const fileActions = page.getByRole("navigation", { name: "File actions" });
+  await expect(fileActions.getByRole("link", { name: /open.*upload/i })).toHaveAttribute(
+    "href",
+    "/",
+  );
+  // /history is not a /f/[file_id] route, so there is no active file — Convert is an inert,
+  // genuinely disabled button rather than a link to nowhere (Toolbar.tsx, P1).
+  await expect(fileActions.getByRole("button", { name: "Convert" })).toBeDisabled();
 });
 
 /**
- * The theme toggle (addendum S1 mechanism, S2 mount): flips `data-theme` on <html> and persists the
- * choice across a reload. The token-level contrast of both themes is guarded in vitest; this proves
- * the switch is wired into the running app and sticks.
+ * The theme toggle (addendum S1 mechanism, S2 mount; default flipped to dark by the v2.0 addendums
+ * Steel workbench theme, Task 6): flips `data-theme` on <html> and persists the choice across a
+ * reload. The token-level contrast of both themes is guarded in vitest; this proves the switch is
+ * wired into the running app and sticks.
  */
-test("the theme toggle switches to dark and the choice persists", async ({ page }) => {
+test("the theme toggle switches to light and the choice persists", async ({ page }) => {
   await page.goto("/");
   const html = page.locator("html");
+  await expect(html).toHaveAttribute("data-theme", "dark");
+
+  await page.getByRole("button", { name: /switch to light mode/i }).click();
   await expect(html).toHaveAttribute("data-theme", "light");
 
-  await page.getByRole("button", { name: /switch to dark mode/i }).click();
-  await expect(html).toHaveAttribute("data-theme", "dark");
-
-  // Persisted: a reload comes back dark, with no flash of light (the no-FOUC script applies it).
+  // Persisted: a reload comes back light, with no flash of dark (the no-FOUC script applies it).
   await page.reload();
-  await expect(html).toHaveAttribute("data-theme", "dark");
+  await expect(html).toHaveAttribute("data-theme", "light");
 });
 
 /**
