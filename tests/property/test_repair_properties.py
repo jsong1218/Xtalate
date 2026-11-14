@@ -35,6 +35,7 @@ overrides ``hazards_for``, so the second (no-op) application's hazard list is as
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -50,9 +51,39 @@ from xtalate.schema.cell import to_fractional
 
 #: The project's position tolerance for repaired coordinates (Å) — the atol the M64
 #: flagship uses for the wrap's inverse-solve float noise (tests/repair/test_wrap_into_cell.py).
+#: Used for the fractional non-periodic-axis invariant, where no cell-face fold happens.
 _POSITION_ATOL = 1e-9
 
+#: Wrap idempotence is asserted on the minimum-image **fractional** drift, not raw Cartesian.
+#: The fold is idempotent in fractional space by construction (``_fold_fractional`` clamps into
+#: ``[0, 1)``), but a boundary atom the first wrap sends to frac ``0.0`` can, on the second wrap,
+#: have its recomputed fractional land at ``−ε`` (inverse-solve noise) and fold to ``~1.0`` — the
+#: *same* minimum-image site, yet a full lattice vector away in raw Cartesian. No fixed Cartesian
+#: atol survives that flip, so idempotence is a fractional, boundary-agnostic statement. ``1e-6``
+#: sits far below any genuine move (a real non-idempotence is O(0.1–0.5) fractional) while
+#: absorbing the inverse-solve noise of hypothesis's diagonal-dominant triclinic lattices. Closes
+#: a rare 3.11/numpy-2.4.6 flake where a flat Cartesian ``1e-9`` tripped on such a boundary flip.
+_FRAC_ATOL = 1e-6
+
 _ENGINE = ConversionEngine(default_registry())
+
+
+def _wrap_frac_drift(
+    a_positions: np.ndarray,
+    b_positions: np.ndarray,
+    lattice: np.ndarray,
+    pbc: Sequence[bool],
+) -> np.ndarray:
+    """Per-axis fractional difference between two position sets, reduced to the minimum image on
+    the periodic axes (a frac ``0.0`` ↔ ``~1.0`` boundary flip is the same site → ~0 drift) and
+    left raw on the non-periodic axes (the fold never touches those, so they must agree)."""
+    frac_a = to_fractional(np.asarray(a_positions, dtype=float), lattice)
+    frac_b = to_fractional(np.asarray(b_positions, dtype=float), lattice)
+    diff = frac_a - frac_b
+    periodic = np.asarray(tuple(pbc), dtype=bool)
+    # np.asarray pins the return to ndarray: np.where is typed Any under the numpy stubs on the
+    # 3.11 floor (green on 3.13), which trips mypy's no-any-return (mirrors repair/operations.py).
+    return np.asarray(np.where(periodic, diff - np.round(diff), diff))
 
 
 #: Family 1's domain: any object whose **every** frame carries a usable cell — the
@@ -184,13 +215,21 @@ def test_wrap_into_cell_is_idempotent_within_tolerance(source: CanonicalObject) 
     twice = apply_repairs(once.canonical, [RepairRequest("wrap_into_cell")])
     assert twice.canonical is not None and not twice.blocked
 
-    # Idempotence: the second application changes no position beyond float noise.
-    for out, src in zip(twice.canonical.frames, once.canonical.frames, strict=True):
-        assert np.allclose(
-            np.asarray(out.atoms.positions, dtype=float),
-            np.asarray(src.atoms.positions, dtype=float),
-            atol=_POSITION_ATOL,
+    # Idempotence: the second application moves no atom to a different minimum-image site. This
+    # is a fractional, boundary-agnostic statement (see _FRAC_ATOL) — a boundary atom the fold
+    # flips between opposite cell faces is the same site, ~0 fractional drift but a full lattice
+    # vector in raw Cartesian, so raw-Cartesian allclose is the wrong measure here.
+    for out, src, frame_in in zip(
+        twice.canonical.frames, once.canonical.frames, source.frames, strict=True
+    ):
+        assert frame_in.cell is not None  # _WRAP_DOMAIN filters to all-celled frames
+        drift = _wrap_frac_drift(
+            out.atoms.positions,
+            src.atoms.positions,
+            np.asarray(frame_in.cell.lattice_vectors, dtype=float),
+            frame_in.cell.pbc,
         )
+        assert np.all(np.abs(drift) <= _FRAC_ATOL)
 
     # Both applications are recorded, each with the complete verbatim parameters ({} —
     # wrap takes none), so either row of the report re-derives the repaired object.
@@ -205,12 +244,17 @@ def test_wrap_into_cell_is_idempotent_within_tolerance(source: CanonicalObject) 
 
     replay = apply_repairs(source, [RepairRequest("wrap_into_cell", dict(first.parameters))])
     assert replay.canonical is not None
-    for out, src in zip(replay.canonical.frames, twice.canonical.frames, strict=True):
-        assert np.allclose(
-            np.asarray(out.atoms.positions, dtype=float),
-            np.asarray(src.atoms.positions, dtype=float),
-            atol=_POSITION_ATOL,
+    for out, src, frame_in in zip(
+        replay.canonical.frames, twice.canonical.frames, source.frames, strict=True
+    ):
+        assert frame_in.cell is not None  # _WRAP_DOMAIN filters to all-celled frames
+        drift = _wrap_frac_drift(
+            out.atoms.positions,
+            src.atoms.positions,
+            np.asarray(frame_in.cell.lattice_vectors, dtype=float),
+            frame_in.cell.pbc,
         )
+        assert np.all(np.abs(drift) <= _FRAC_ATOL)
 
 
 # --- Family 2 — dedupe removes exactly the enumerated atoms -------------------------------
