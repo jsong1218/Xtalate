@@ -87,12 +87,12 @@ describe("buttonClasses", () => {
     const cls = buttonClasses("primary", "lg");
     expect(cls).toContain("bg-accent");
     expect(cls).toContain("text-accent-fg");
-    expect(cls).toContain("px-5"); // lg size padding
+    expect(cls).toContain("px-6"); // lg size padding
   });
 
   it("distinguishes sizes", () => {
     expect(buttonClasses("primary", "sm")).toContain("px-3");
     expect(buttonClasses("primary", "md")).toContain("px-4");
-    expect(buttonClasses("primary", "lg")).toContain("px-5");
+    expect(buttonClasses("primary", "lg")).toContain("px-6");
   });
 });

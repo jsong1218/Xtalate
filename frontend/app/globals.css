@@ -39,6 +39,10 @@
 
   /* Neutral surface chrome (light) — a neutral-gray Qt-style desktop, not stark white. */
   --surface: #eceef1; /* page + panel background                 */
+  /* Radius scale (redesign §9): 2 / 4 / 6 px only. Tailwind `rounded-sm` / `rounded` / `rounded-md`. */
+  --radius-1: 2px;
+  --radius-2: 4px;
+  --radius-3: 6px;
   --surface-raised: #f7f8fa; /* subtle raised/hover zones                */
   --surface-muted: #e3e6ea; /* chips / inert fills                      */
   --border-default: #c2c7cf; /* default hairline border                  */

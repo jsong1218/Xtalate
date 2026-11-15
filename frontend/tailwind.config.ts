@@ -23,7 +23,28 @@ const config: Config = {
     "./lib/**/*.{ts,tsx}",
   ],
   theme: {
+    // Radius scale (redesign §9): 2 / 4 / 6 px, from the `--radius-*` tokens in globals.css.
+    // Deliberately *replaces* Tailwind's default so `rounded-lg` and larger do not exist; `full` is
+    // kept for status dots and progress tracks only (lib/designScale.test.ts polices the rest).
+    borderRadius: {
+      none: "0",
+      sm: "var(--radius-1)",
+      DEFAULT: "var(--radius-2)",
+      md: "var(--radius-3)",
+      full: "9999px",
+    },
     extend: {
+      // Type scale (redesign §9): 11–24 px. UI sizes use 1.4 line height, the two prose sizes
+      // (`base`, `md`) 1.55. Components never write an arbitrary `text-[Npx]`.
+      fontSize: {
+        xs2: ["11px", { lineHeight: "1.4" }],
+        xs: ["12px", { lineHeight: "1.4" }],
+        sm: ["13px", { lineHeight: "1.4" }],
+        base: ["14px", { lineHeight: "1.55" }],
+        md: ["16px", { lineHeight: "1.55" }],
+        lg: ["20px", { lineHeight: "1.4" }],
+        xl: ["24px", { lineHeight: "1.4" }],
+      },
       fontFamily: {
         // IBM Plex via next/font/local (redesign D-B6, reversing D-R7): `app/fonts.ts` sets the
         // `--font-*` variables on <html>; each stack falls back to the system families and ends at
