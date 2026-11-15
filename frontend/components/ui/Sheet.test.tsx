@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -60,5 +60,31 @@ describe("Sheet", () => {
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(opener);
+  });
+
+  it("keeps focus on a control inside the panel when the parent re-renders with a new onClose", async () => {
+    function Harness() {
+      const [n, setN] = useState(0);
+      return (
+        <>
+          <button type="button" onClick={() => setN(n + 1)}>
+            bump {n}
+          </button>
+          <Sheet open onClose={() => setN(-1)} title="Shortcuts">
+            <button type="button">inner</button>
+          </Sheet>
+        </>
+      );
+    }
+    render(<Harness />);
+    const inner = screen.getByRole("button", { name: "inner" });
+    inner.focus();
+    expect(document.activeElement).toBe(inner);
+    // Re-render the parent without moving focus off the inner control.
+    await act(async () => {
+      screen.getByRole("button", { name: /bump/ }).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(screen.getByRole("button", { name: "bump 1" })).toBeTruthy();
+    expect(document.activeElement).toBe(inner);
   });
 });

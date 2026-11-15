@@ -22,6 +22,10 @@ export interface SheetProps {
 export function Sheet({ open, onClose, title, side = "right", children, className }: SheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<Element | null>(null);
+  // Latest onClose without making it an effect dependency: re-running the effect on a parent
+  // re-render would steal focus from whatever control inside the panel the user is using.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -30,7 +34,7 @@ export function Sheet({ open, onClose, title, side = "right", children, classNam
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
       }
     };
     document.addEventListener("keydown", onKey);
@@ -39,7 +43,7 @@ export function Sheet({ open, onClose, title, side = "right", children, classNam
       const opener = openerRef.current;
       if (opener instanceof HTMLElement) opener.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
