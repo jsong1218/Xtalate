@@ -24,10 +24,13 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        // Monospace for every value, count, and identifier (UI redesign S1, D243). System stack
-        // only — no web font (keeps the self-host lean and the CSP simple). Components write
-        // `font-mono`; the DataValue primitive applies it to scientific readouts.
+        // IBM Plex via next/font/local (redesign D-B6, reversing D-R7): `app/fonts.ts` sets the
+        // `--font-*` variables on <html>; each stack falls back to the system families and ends at
+        // the generic. Preflight applies `sans` to <html>; `DataValue` applies `mono`; `serif` is
+        // for the stage-5 editorial register and the wordmark only.
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: [
+          "var(--font-mono)",
           "ui-monospace",
           "SF Mono",
           "SFMono-Regular",
@@ -35,6 +38,7 @@ const config: Config = {
           "Consolas",
           "monospace",
         ],
+        serif: ["var(--font-serif)", "Iowan Old Style", "Palatino Linotype", "Georgia", "serif"],
       },
       colors: {
         // Semantic surface chrome — the neutral tokens every page is built from (globals.css).

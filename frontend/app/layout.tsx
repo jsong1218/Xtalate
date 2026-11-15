@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { DemoBanner } from "@/components/shell/DemoBanner";
 import { DemoPrivacyGate } from "@/components/shell/DemoPrivacyGate";
 import { WorkbenchLayout } from "@/components/shell/WorkbenchLayout";
+import { fontClassName } from "./fonts";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -22,7 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     // suppressHydrationWarning: the no-flash script above sets data-theme before React hydrates, so
     // the server-rendered attribute may differ from the client's persisted choice — expected.
-    <html lang="en" data-theme="dark" suppressHydrationWarning>
+    <html lang="en" data-theme="dark" className={fontClassName} suppressHydrationWarning>
       <body className="min-h-screen bg-surface text-strong antialiased">
         <script dangerouslySetInnerHTML={{ __html: noFlashThemeScript }} />
         <Providers>
