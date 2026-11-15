@@ -95,9 +95,9 @@ describe("Toolbar", () => {
     expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
   });
 
-  it("mounts the theme toggle", () => {
+  it("mounts the theme control", () => {
     renderToolbar();
-    expect(screen.getByRole("button", { name: /switch to light mode/i })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Theme" })).toBeInTheDocument();
   });
 
   it("mounts the completion-signal mute toggle", () => {

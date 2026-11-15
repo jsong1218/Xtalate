@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CommandPaletteTrigger } from "@/components/command/CommandPaletteTrigger";
 import { NotifyToggle } from "@/lib/notify/NotifyPreferenceProvider";
-import { ThemeToggle } from "@/lib/theme/ThemeProvider";
+import { ThemeControl } from "./ThemeControl";
 
 /**
  * The workbench toolbar (v2.0 addendums, Task 8; design spec §"Shell architecture" — Toolbar row:
@@ -189,7 +189,7 @@ export function Toolbar() {
           </nav>
           <div className="flex items-center gap-2">
             <NotifyToggle />
-            <ThemeToggle />
+            <ThemeControl />
           </div>
         </div>
       </div>

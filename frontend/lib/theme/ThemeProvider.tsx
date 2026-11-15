@@ -1,168 +1,123 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 /**
- * The theme system (pre-M36 frontend-redesign addendum, Slice S1).
+ * The theme system (pre-M36 addendum S1; system-default three-state since the pipeline-bench
+ * redesign, D-B7). The *preference* is what the user chose — `system`, `light` or `dark` — persisted
+ * under {@link THEME_STORAGE_KEY}; the *theme* is the resolved `light | dark` that lands on
+ * `<html data-theme>` (the attribute the CSS palette and Tailwind's selector dark mode key off).
+ * `system` follows `prefers-color-scheme` live through a `change` listener. The same resolution
+ * runs before paint in the no-flash script in `app/layout.tsx`; the two must agree.
  *
- * A light/dark toggle that flips the `data-theme` attribute on <html> — the single switch the CSS
- * palette (`app/globals.css`) and Tailwind's selector dark-mode (`tailwind.config.ts`) both key off.
- * **Default is dark** (the Steel workbench palette, v2.0 addendums Task 6); the user's explicit
- * choice is remembered in `localStorage`, so it does NOT follow `prefers-color-scheme` (this is the
- * deliberate choice recorded in globals.css, overriding D96). The no-flash `<head>` script in
- * `app/layout.tsx` applies the persisted choice (or the dark default) before first paint; this
- * provider then adopts it on mount and owns every change afterward.
- *
- * There is deliberately no cross-page store beyond this (Part 7 §5.1) — the theme is the one piece of
- * genuinely client-only, cross-page UI state, and it lives in a DOM attribute + localStorage, not a
- * data store.
+ * Consumers that only need the resolved theme (the Mol* viewer background) keep the `Theme` type
+ * and `useOptionalTheme()` unchanged.
  */
-
 export type Theme = "light" | "dark";
+export type ThemePreference = "system" | "light" | "dark";
 
-/** localStorage key — shared with the no-FOUC script in layout.tsx (keep them in sync). */
 export const THEME_STORAGE_KEY = "xtalate-theme";
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+export function isThemePreference(v: unknown): v is ThemePreference {
+  return v === "system" || v === "light" || v === "dark";
+}
+
+/** The persisted preference; anything absent, unknown, or unreadable (privacy mode) is `system`. */
+export function readStoredPreference(): ThemePreference {
+  try {
+    const v = localStorage.getItem(THEME_STORAGE_KEY);
+    return isThemePreference(v) ? v : "system";
+  } catch {
+    return "system";
+  }
+}
+
+/** The OS scheme; `dark` when `matchMedia` is unavailable (SSR, old jsdom). */
+export function systemTheme(): Theme {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "dark";
+  return window.matchMedia(DARK_QUERY).matches ? "dark" : "light";
+}
+
+export function resolveTheme(preference: ThemePreference, system: Theme): Theme {
+  return preference === "system" ? system : preference;
+}
 
 interface ThemeContextValue {
   theme: Theme;
-  setTheme: (theme: Theme) => void;
-  toggle: () => void;
+  preference: ThemePreference;
+  setPreference: (preference: ThemePreference) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function readStored(): Theme | null {
-  try {
-    const value = localStorage.getItem(THEME_STORAGE_KEY);
-    return value === "light" || value === "dark" ? value : null;
-  } catch {
-    return null; // localStorage can throw (privacy mode); fall back to the default.
-  }
-}
-
-function persist(theme: Theme): void {
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, theme);
-  } catch {
-    // Persistence is best-effort; the attribute below still applies for this session.
-  }
-}
-
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  // SSR and the very first client render agree on "dark" so hydration never mismatches; the mount
-  // effect then adopts whatever the no-FOUC script already applied / localStorage remembers.
-  const [theme, setThemeState] = useState<Theme>("dark");
+  // Lazy initialisers: on the client the first render already knows the stored preference and the
+  // OS scheme, so there is no dark→light flicker after hydration. On the server both fall back
+  // (system / dark); nothing rendered depends on them, so there is no hydration mismatch — the
+  // no-flash script has already set `data-theme` on <html> before React runs.
+  const [preference, setPreferenceState] = useState<ThemePreference>(() =>
+    typeof window === "undefined" ? "system" : readStoredPreference(),
+  );
+  const [system, setSystem] = useState<Theme>(() => systemTheme());
 
+  // Follow the OS only while the preference is `system`.
   useEffect(() => {
-    const stored = readStored();
-    if (stored) setThemeState(stored);
-  }, []);
+    if (preference !== "system" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia(DARK_QUERY);
+    const onChange = (e: { matches: boolean }) => setSystem(e.matches ? "dark" : "light");
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [preference]);
 
-  // The attribute is the source of truth the stylesheet reads; keep it in lockstep with state.
+  const theme = resolveTheme(preference, system);
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
-  const setTheme = useCallback((next: Theme) => {
-    setThemeState(next);
-    persist(next);
+  const setPreference = useCallback((next: ThemePreference) => {
+    setPreferenceState(next);
+    if (next === "system") setSystem(systemTheme());
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch {
+      // Storage unavailable (privacy mode): the choice still applies for this page.
+    }
   }, []);
 
-  const toggle = useCallback(() => {
-    setThemeState((prev) => {
-      const next: Theme = prev === "light" ? "dark" : "light";
-      persist(next);
-      return next;
-    });
-  }, []);
-
-  return (
-    <ThemeContext.Provider value={{ theme, setTheme, toggle }}>{children}</ThemeContext.Provider>
+  const value = useMemo(
+    () => ({ theme, preference, setPreference }),
+    [theme, preference, setPreference],
   );
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error("useTheme must be used within a ThemeProvider");
+  if (!ctx) throw new Error("useTheme must be used within a <ThemeProvider>");
   return ctx;
 }
 
 /**
- * A non-throwing theme read for leaf widgets that may render outside a ThemeProvider (e.g. the
- * Mol* mount under a bare `render()` in unit tests). Returns the context theme when a provider is
- * present — so it re-renders on toggle in the real app, where Providers always wrap the tree —
- * otherwise falls back to the `data-theme` attribute the no-FOUC script sets, defaulting to dark.
+ * The resolved theme without requiring a provider — reads the `data-theme` attribute the no-flash
+ * script set, falling back to dark. Used by mounts that may render outside the provider (tests, the
+ * Mol* viewer).
  */
 export function useOptionalTheme(): Theme {
   const ctx = useContext(ThemeContext);
   if (ctx) return ctx.theme;
   if (typeof document !== "undefined") {
     const attr = document.documentElement.getAttribute("data-theme");
-    if (attr === "dark" || attr === "light") return attr;
+    if (attr === "light" || attr === "dark") return attr;
   }
   return "dark";
-}
-
-/**
- * The theme toggle control. Mounted into the app-shell header in Slice S2; a self-contained button
- * here so the whole mechanism is testable now. Shows a sun in dark mode (tap to lighten) and a moon
- * in light mode (tap to darken); the accessible name states the action and `aria-pressed` reports
- * whether dark mode is active.
- */
-export function ThemeToggle({ className }: { className?: string }) {
-  const { theme, toggle } = useTheme();
-  const dark = theme === "dark";
-  return (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-pressed={dark}
-      aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-      title={dark ? "Switch to light mode" : "Switch to dark mode"}
-      className={
-        className ??
-        "inline-flex h-9 w-9 items-center justify-center rounded-md border border-line text-muted transition-colors hover:bg-raised hover:text-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-      }
-    >
-      {dark ? <SunIcon /> : <MoonIcon />}
-    </button>
-  );
-}
-
-function SunIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-    </svg>
-  );
 }

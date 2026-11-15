@@ -103,12 +103,12 @@ test("the Structure tab's reset/expand controls work and the viewer survives a t
     page.locator('[data-mounted=true][data-survives-expand=true]'),
   ).toHaveCount(1);
 
-  // Theme switch: the toolbar toggle flips `<html data-theme>` (default dark, v2.0 addendums Task
-  // 6); the viewer re-themes its background in place — the canvas stays mounted across the flip
-  // (theme-aware, not a re-mount).
+  // Theme switch: the toolbar's three-state control flips `<html data-theme>` (redesign D-B7); the
+  // viewer re-themes its background in place — the canvas stays mounted across the flip.
   const html = page.locator("html");
+  await page.getByRole("button", { name: "Use dark theme" }).click();
   await expect(html).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("button", { name: /switch to light mode/i }).click();
+  await page.getByRole("button", { name: "Use light theme" }).click();
   await expect(html).toHaveAttribute("data-theme", "light");
   await expect(page.locator("[data-mounted=true]")).toBeVisible();
 });

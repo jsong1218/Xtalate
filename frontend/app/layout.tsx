@@ -13,16 +13,16 @@ export const metadata: Metadata = {
     "The trusted translation layer between computational chemistry file formats: a converter that tells you exactly what it kept, what it lost, and why.",
 };
 
-// Applied before first paint so a persisted light choice never flashes dark. Kept in sync with
-// THEME_STORAGE_KEY in lib/theme/ThemeProvider.tsx; default is dark (the Steel workbench, v2.0
-// addendums Task 6) — an explicit persisted choice of 'light' still wins. Runs at the top of
-// <body> so it executes before the styled content is painted.
-const noFlashThemeScript = `(function(){try{var t=localStorage.getItem('xtalate-theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`;
+// Applied before first paint so the resolved theme never flashes. Mirrors lib/theme/ThemeProvider.tsx
+// exactly (same key, same resolution — D-B7): a persisted explicit 'light'/'dark' wins; anything else
+// (absent, 'system', unreadable storage) follows prefers-color-scheme. Runs at the top of <body> so
+// it executes before the styled content is painted.
+const noFlashThemeScript = `(function(){var d=document.documentElement;function sys(){return window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}try{var t=localStorage.getItem('xtalate-theme');d.setAttribute('data-theme',t==='light'||t==='dark'?t:sys());}catch(e){d.setAttribute('data-theme',sys());}})();`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    // suppressHydrationWarning: the no-flash script above sets data-theme before React hydrates, so
-    // the server-rendered attribute may differ from the client's persisted choice — expected.
+    // suppressHydrationWarning: the server-rendered attribute is a placeholder the no-flash script
+    // replaces before paint, so it may differ from the client's resolved theme — expected.
     <html lang="en" data-theme="dark" className={fontClassName} suppressHydrationWarning>
       <body className="min-h-screen bg-surface text-strong antialiased">
         <script dangerouslySetInnerHTML={{ __html: noFlashThemeScript }} />

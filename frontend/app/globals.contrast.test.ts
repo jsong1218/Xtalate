@@ -240,56 +240,30 @@ describe("UI palette — WCAG AA contrast", () => {
 });
 
 /**
- * The default-theme flip (v2.0 addendums Task 6): the workbench is dark-by-default in the Steel
- * palette, with the light neutral-gray desktop theme opt-in. Three places encode the default and
- * must agree: the SSR `<html data-theme>` attribute, the no-flash `<head>` script's fallback (used
- * when localStorage has no persisted choice, e.g. private browsing or first visit), and the
- * `ThemeProvider`'s initial React state (which SSR and first client render must agree on, to avoid
- * a hydration mismatch) — all three read from source here rather than rendering the app, matching
- * this file's existing "parse the real source" approach.
+ * The default-theme contract (redesign D-B7, reversing the D300 dark-first default): the theme
+ * follows the OS unless the user chose otherwise. Two places encode the resolution and must agree —
+ * the no-flash script in `app/layout.tsx` (runs before paint) and `ThemeProvider` (runs after
+ * hydration) — so both are read from source here, matching this file's "parse the real source"
+ * approach. The SSR `<html data-theme>` is only a placeholder the script overwrites.
  */
-describe("default theme — Steel dark-first (v2.0 addendums)", () => {
-  const layoutSrc = readFileSync(
-    resolve(process.cwd(), "app/layout.tsx"),
-    "utf8",
-  );
-  const providerSrc = readFileSync(
-    resolve(process.cwd(), "lib/theme/ThemeProvider.tsx"),
-    "utf8",
-  );
+describe("default theme — follows the system (redesign D-B7)", () => {
+  const layoutSrc = readFileSync(resolve(process.cwd(), "app/layout.tsx"), "utf8");
+  const providerSrc = readFileSync(resolve(process.cwd(), "lib/theme/ThemeProvider.tsx"), "utf8");
 
-  it("the SSR <html> element defaults data-theme to dark", () => {
-    expect(/<html[^>]*\bdata-theme="dark"/.test(layoutSrc)).toBe(true);
+  it("the no-flash script consults prefers-color-scheme", () => {
+    expect(layoutSrc).toContain("matchMedia('(prefers-color-scheme: dark)')");
   });
 
-  it("the no-flash script falls back to dark when nothing is persisted", () => {
-    // The script normalizes any stored value to 'light' or 'dark'; a fallback of 'light' would
-    // read as `t==='light'?'light':'dark'`-shaped or similar — assert the concrete dark default.
-    const match =
-      /document\.documentElement\.setAttribute\('data-theme',([^)]*)\)/.exec(
-        layoutSrc,
-      );
-    expect(
-      match,
-      "no-flash theme-setting call not found in layout.tsx",
-    ).not.toBeNull();
-    const expr = match![1];
-    // The persisted-choice branch must resolve to 'dark' unless the stored value is explicitly
-    // 'light' — i.e. the ternary picks 'light' only in the light branch, dark otherwise.
-    expect(expr).toMatch(/t===['"]light['"]\?['"]light['"]:['"]dark['"]/);
-    // And the catch-clause fallback (localStorage throws, e.g. privacy mode) must also be dark.
-    const catchMatch =
-      /catch\(e\)\{document\.documentElement\.setAttribute\('data-theme',([^)]*)\)/.exec(
-        layoutSrc,
-      );
-    expect(
-      catchMatch,
-      "no-flash catch-clause fallback not found in layout.tsx",
-    ).not.toBeNull();
-    expect(catchMatch![1]).toBe("'dark'");
+  it("an explicit persisted light/dark wins; anything else resolves from the OS", () => {
+    expect(layoutSrc).toMatch(/t==='light'\|\|t==='dark'\?t:sys\(\)/);
   });
 
-  it("ThemeProvider's initial state defaults to dark", () => {
-    expect(/useState<Theme>\(\s*"dark"\s*\)/.test(providerSrc)).toBe(true);
+  it("an unreadable localStorage also resolves from the OS, never a fixed scheme", () => {
+    expect(layoutSrc).toMatch(/catch\(e\)\{d\.setAttribute\('data-theme',sys\(\)\)/);
+  });
+
+  it("ThemeProvider's preference defaults to system and resolves through the same query", () => {
+    expect(providerSrc).toContain('const DARK_QUERY = "(prefers-color-scheme: dark)"');
+    expect(providerSrc).toMatch(/useState<ThemePreference>\(\(\)\s*=>\s*\n?\s*typeof window === "undefined" \? "system" : readStoredPreference\(\)/);
   });
 });
