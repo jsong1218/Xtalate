@@ -10,6 +10,7 @@
     "dev": "next dev -H ${XTALATE_DEV_HOST:-127.0.0.1}",
     "prebuild": "npm run gen:api",
     "build": "next build",
+    "size": "node scripts/size-budget.mjs",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

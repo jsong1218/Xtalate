@@ -1,0 +1,6 @@
+{
+  "shellEntries": ["/layout", "/page"],
+  "shellGzipBytes": 256000,
+  "fontsDir": "app/fonts",
+  "fontsBytes": 163840
+}

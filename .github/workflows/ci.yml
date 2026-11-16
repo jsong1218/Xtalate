@@ -152,3 +152,8 @@ jobs:
       # nor jsdom ever runs — the landing-page static-bake defect (D98) was invisible without it.
       - name: Production build (next build)
         run: npm run build
+
+      # The redesign's size budget (§11): the bench shell's JS ≤ 250 kB gzipped excluding dynamic
+      # chunks, fonts ≤ 160 kB. Limits live in frontend/size-budget.json and only ever go down.
+      - name: Bundle size budget
+        run: npm run size
