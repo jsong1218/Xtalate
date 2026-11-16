@@ -173,7 +173,7 @@ export function Toolbar() {
         </div>
 
         {/* Right cluster: ⌘K, the global destinations, then the toggles (design spec order). */}
-        <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm">
           {/* The ⌘K command palette (ported from AppHeader S4): visible button + global ⌘K/Ctrl-K. */}
           <CommandPaletteTrigger />
           <nav aria-label="Primary" className="flex items-center gap-x-4">

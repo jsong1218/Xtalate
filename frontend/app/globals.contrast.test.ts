@@ -196,6 +196,7 @@ function checkTheme(theme: string, block: () => string) {
       // ~4.04:1 dark, so it is *not* legible here — the whole-page axe scan caught a RecentsStrip
       // chip that used it; guarding the canonical `text-muted` pair keeps that from recurring.
       ["text-muted", "surface-muted"],
+      ["cb-preserve", "surface-muted"],
     ] as const)("viewer chrome %s clears AA on %s", (fg, bg) => {
       expect(contrast(t(fg), t(bg))).toBeGreaterThanOrEqual(AA);
     });
@@ -208,6 +209,12 @@ function checkTheme(theme: string, block: () => string) {
       "text-body clears AA on workbench chrome surface %s",
       (name) => {
         expect(contrast(t("text-body"), t(name))).toBeGreaterThanOrEqual(AA);
+      },
+    );
+    it.each(["wb-toolbar", "wb-rail", "wb-panel", "wb-status"])(
+      "text-faint clears AA on workbench chrome surface %s",
+      (name) => {
+        expect(contrast(t("text-faint"), t(name))).toBeGreaterThanOrEqual(AA);
       },
     );
     it.each(["wb-toolbar", "wb-rail", "wb-panel", "wb-status"])(

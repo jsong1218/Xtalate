@@ -63,7 +63,7 @@
   --text-strong: #20242b; /* headings, emphasis                       */
   --text-body: #3a4048; /* default paragraph text                   */
   --text-muted: #565e68; /* secondary text                           */
-  --text-faint: #626a76; /* hints, metadata (darkened from slate-500 for AA on the
+  --text-faint: #5e6671; /* hints, metadata (darkened from slate-500 for AA on the
                              neutral-gray #eceef1 surface, v2.0 addendums)     */
 
   /* The inverse surface — dark chip/button in light, light chip/button in dark. */
@@ -98,7 +98,7 @@
      theme's page surface moved from pure white to a neutral-gray desktop tone (`--surface:
      #eceef1`), which nudges several of these below AA; each affected value below is darkened by a
      hair (same hue, same §4 meaning) to hold >=4.5:1 on the new surface — never a hue change. */
-  --cb-preserve: #14793a; /* green  — present / preserved / check passed        */
+  --cb-preserve: #127036; /* green  — present / preserved / check passed        */
   /* Slate, not gray: on the capabilities grid (Part 7 §2.7) a ✓/✗ column of green vs pale gray was
      too low-contrast to scan (the v0.7 review). Darkened to slate so ✗ reads clearly against ✓ —
      still visually *calm* (not red: "the format cannot express this" is neutral, not a loss; red
