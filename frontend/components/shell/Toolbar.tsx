@@ -35,7 +35,7 @@ import { Wordmark } from "./Wordmark";
  * Right cluster (design spec §"Shell architecture" — global destinations + toggles on the right,
  * not the left verb nav): the ⌘K palette trigger, then the three global destinations
  * (Formats/History/Docs, in their own `aria-label="Primary"` nav landmark — the same label
- * `AppHeader` used for its one nav), then the completion-signal mute toggle, then the theme toggle.
+ * `AppHeader` used for its one nav), then the completion-signal mute toggle, then the theme control.
  * Two distinctly-labeled nav landmarks ("File actions" left, "Primary" right) rather than one,
  * since the left verbs and the right destinations are no longer adjacent in the same list — this
  * still keeps the toolbar as a single `banner` with no duplicate *unlabeled* landmark.

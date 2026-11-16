@@ -9,7 +9,7 @@ import { requestNotificationPermission } from "./completionSignal";
  * completion signal (chime + Notification), mirroring the theme system's shape
  * (`lib/theme/ThemeProvider.tsx`).
  *
- * **Default is on** (deliberately unlike the theme, whose default is light): the signal is purely
+ * **Default is on** (deliberately unlike the theme, whose default follows the OS): the signal is purely
  * additive UX, and the maintainer's decision is on-by-default with an opt-out. The user's choice is
  * remembered in `localStorage`; there is no no-FOUC script needed because the default (on) is also
  * the first-paint state — a persisted "off" only mutes, it never flashes anything.
@@ -90,10 +90,10 @@ export function useNotifyPreference(): NotifyPreferenceContextValue {
 }
 
 /**
- * The mute toggle (C1), mounted in the app-shell header beside the theme toggle: a bell while the
+ * The mute toggle (C1), mounted in the app-shell header beside the theme control: a bell while the
  * signal is on, a bell-off while muted, `aria-pressed` reporting the enabled state and the
  * accessible name stating the action. A self-contained client island, exactly like the theme
- * toggle, so the whole mechanism is unit-testable.
+ * control, so the whole mechanism is unit-testable.
  */
 export function NotifyToggle({ className }: { className?: string }) {
   const { enabled, toggle } = useNotifyPreference();

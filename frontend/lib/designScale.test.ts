@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 
 /**
  * The design-scale lint (redesign §9). Spacing is 4/8/12/16/24/32 (Tailwind 1/2/3/4/6/8), radius is
- * 2/4/6 (`rounded-sm` / `rounded` / `rounded-md`), and type comes from the named scale — so the
- * classes below must not appear in `app/` or `components/`:
+ * 2/4/6 (`rounded-sm` / `rounded` / `rounded-md`) — so the classes below must not appear in
+ * `app/` or `components/` (type is not linted here):
  *   - `rounded-lg|xl|2xl|3xl` (any side variant), and `rounded-full` except on dots/progress bars
  *     (a line that also sizes the element at h-1…h-3 or h-[1.1em]);
  *   - `p-5`, `p-7`, `gap-5`, `gap-7` and their axis/side variants;

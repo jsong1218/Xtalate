@@ -13,9 +13,10 @@ export const metadata: Metadata = {
     "The trusted translation layer between computational chemistry file formats: a converter that tells you exactly what it kept, what it lost, and why.",
 };
 
-// Applied before first paint so the resolved theme never flashes. Mirrors lib/theme/ThemeProvider.tsx
-// exactly (same key, same resolution — D-B7): a persisted explicit 'light'/'dark' wins; anything else
-// (absent, 'system', unreadable storage) follows prefers-color-scheme. Runs at the top of <body> so
+// Applied before first paint so the resolved theme never flashes. Uses the same storage key and
+// resolution as lib/theme/ThemeProvider.tsx (D-B7): a persisted explicit 'light'/'dark' wins;
+// anything else (absent, 'system', unreadable storage) follows prefers-color-scheme. One known
+// difference: with no matchMedia at all this script resolves 'light', the provider 'dark'. Runs at the top of <body> so
 // it executes before the styled content is painted.
 const noFlashThemeScript = `(function(){var d=document.documentElement;function sys(){return window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}try{var t=localStorage.getItem('xtalate-theme');d.setAttribute('data-theme',t==='light'||t==='dark'?t:sys());}catch(e){d.setAttribute('data-theme',sys());}})();`;
 

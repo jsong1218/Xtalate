@@ -13,9 +13,10 @@ import type { Config } from "tailwindcss";
  */
 const config: Config = {
   // Dark mode is selector-driven: the `data-theme="dark"` attribute on <html> (set by the
-  // no-flash script in app/layout.tsx and the ThemeProvider; the default follows the OS, D-B7)
-  // toggles the whole palette. Not `prefers-color-scheme` — the theme is an explicit, persisted
-  // user choice (see globals.css, which overrides D96).
+  // no-flash script in app/layout.tsx and the ThemeProvider) toggles the whole palette. The
+  // attribute itself follows `prefers-color-scheme` by default (three-state system/light/dark
+  // control, persisted as `xtalate-theme`, D-B7); Tailwind keys off the attribute, not the media
+  // query (see globals.css, which overrides D96).
   darkMode: ["selector", ':root[data-theme="dark"]'],
   content: [
     "./app/**/*.{ts,tsx}",

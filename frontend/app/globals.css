@@ -15,10 +15,11 @@
  *      `text-body` / `border-default` (aliased in tailwind.config.ts) instead of hard-coding
  *      `bg-white` / `text-slate-900`, so a single theme flip re-skins the whole app.
  *
- * **Two themes, dark-first (v2.0 addendums Task 6 retuned the palette and flipped the default).**
+ * **Two themes, three-state control (system / light / dark).**
  * The base `:root {…}` block is the light theme; `:root[data-theme="dark"] {…}` overrides it for
- * dark. The theme is selected by a `data-theme` attribute on <html> (default **dark**, opt-in
- * toggle persisted in localStorage) — NOT by `prefers-color-scheme`. This overrides D96, which
+ * dark. The theme is selected by a `data-theme` attribute on <html>, resolved before first paint:
+ * a persisted explicit light/dark choice (localStorage `xtalate-theme`) wins, otherwise it follows
+ * `prefers-color-scheme` (the "system" default). This overrides D96, which
  * deferred dark mode on the grounds that lightening the loss foregrounds while the panels stayed
  * `bg-white` would *lower* contrast: the fix is exactly this — dark surfaces AND surface-aware
  * `--cb-*` values, so every pair clears AA on the surface it actually renders on.
