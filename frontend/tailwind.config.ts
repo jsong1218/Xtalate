@@ -101,6 +101,11 @@ const config: Config = {
           status: "var(--wb-status)", // bg-wb-status
           hairline: "var(--wb-hairline)", // border-wb-hairline
         },
+        // Stage-state tokens (redesign §9): the folded "done" row fill and the current-stage rule.
+        stage: {
+          done: "var(--stage-done-bg)", // bg-stage-done
+          current: "var(--stage-current-line)", // border-stage-current
+        },
         cb: {
           // Foreground / icon colors, one per §4 meaning.
           preserve: "var(--cb-preserve)",

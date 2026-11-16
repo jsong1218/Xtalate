@@ -32,7 +32,16 @@
  * loss-communication `--cb-*` foregrounds keep their §4 hues; only lightness was re-tuned where the
  * new Steel dark surface required it to hold AA.
  */
-:root {
+/*
+ * Paper (redesign §9, D-B7): the report stage renders on the light palette regardless of theme, so a
+ * printed or exported Conversion Report looks the same in every lab. This base block is the light
+ * theme AND the paper surface: a `[data-surface="paper"]` element re-declares every light token on
+ * itself, which overrides the values it would otherwise inherit from a dark `:root` regardless of
+ * specificity. One declaration list, nothing to keep in sync; the contrast guard parses it as the
+ * light theme.
+ */
+:root,
+[data-surface="paper"] {
   /* Native form controls (selects, number spinners, checkboxes) render with the UA's light
      widgets — the flip side of the B1 base rule below, which themes their text/background. */
   color-scheme: light;
@@ -43,6 +52,9 @@
   --radius-1: 2px;
   --radius-2: 4px;
   --radius-3: 6px;
+  /* Stage-state tokens (redesign §9), derived — never new hues. */
+  --stage-done-bg: var(--surface-muted);
+  --stage-current-line: var(--accent);
   --surface-raised: #f7f8fa; /* subtle raised/hover zones                */
   --surface-muted: #e3e6ea; /* chips / inert fills                      */
   --border-default: #c2c7cf; /* default hairline border                  */
@@ -121,6 +133,9 @@
 }
 
 :root[data-theme="dark"] {
+  /* Stage-state tokens (redesign §9), derived — never new hues. */
+  --stage-done-bg: var(--surface-muted);
+  --stage-current-line: var(--accent);
   /* Native form-control widgets (the select dropdown arrow, number spinners, the date/color
      pickers) render dark, matching the dark surface they sit on (v1.1 M39-S4, B1). */
   color-scheme: dark;
@@ -262,5 +277,29 @@
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
+  }
+}
+
+/*
+ * Print (redesign §9): the shell hides (`print:hidden` on the Toolbar, rail, strip, drawers and
+ * StatusBar — applied by the components), every stage expands, interactive controls disappear, and
+ * colours print as shown. Stage panels opt into expansion with `data-print-expand`.
+ */
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  [data-print-expand] {
+    display: block !important;
+  }
+  button,
+  select,
+  input,
+  [role="dialog"] {
+    display: none !important;
   }
 }

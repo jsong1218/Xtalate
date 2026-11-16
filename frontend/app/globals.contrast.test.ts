@@ -32,10 +32,13 @@ const css = readFileSync(
   "utf8",
 ).replace(/\/\*[\s\S]*?\*\//g, "");
 
-/** The `:root { … }` base block (light theme). */
+/** The base block, shared by the light theme and the paper surface: `:root, [data-surface="paper"] { … }`. */
 function lightBlock(): string {
-  const match = /:root\s*\{([\s\S]*?)\}/.exec(css);
-  if (!match) throw new Error("base :root block not found in globals.css");
+  const match = /:root\s*,\s*\[data-surface="paper"\]\s*\{([\s\S]*?)\}/.exec(css);
+  if (!match)
+    throw new Error(
+      '`:root, [data-surface="paper"]` base block not found in globals.css',
+    );
   return match[1];
 }
 /** The `:root[data-theme="dark"] { … }` override block. */
@@ -237,6 +240,12 @@ function checkTheme(theme: string, block: () => string) {
 describe("UI palette — WCAG AA contrast", () => {
   checkTheme("light", lightBlock);
   checkTheme("dark", darkBlock);
+});
+
+describe("paper surface (redesign §9)", () => {
+  it("shares the light theme's declaration list via the `:root, [data-surface=\"paper\"]` selector", () => {
+    expect(css).toMatch(/:root\s*,\s*\[data-surface="paper"\]\s*\{/);
+  });
 });
 
 /**
