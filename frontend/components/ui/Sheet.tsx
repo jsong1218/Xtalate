@@ -55,7 +55,7 @@ export function Sheet({ open, onClose, title, side = "right", children, classNam
 
   return (
     <div className="fixed inset-0 z-50">
-      <div aria-hidden="true" className="absolute inset-0 bg-inverse/40" onClick={onClose} />
+      <div aria-hidden="true" className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div
         ref={panelRef}
         role="dialog"
