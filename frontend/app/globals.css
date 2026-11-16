@@ -27,9 +27,10 @@
  * rendered pair below AA in either theme fails CI. The palette stays distinguishable under common
  * color-vision deficiencies (meaning carried by glyph + label + lightness, not hue alone).
  *
- * **Palette identity (v2.0 addendums, design spec "Theme system").** The workbench is dark-by-
- * default in a cool blue-gray "Steel" palette with a cyan-teal chrome accent, VESTA/OVITO-style;
- * the light theme is a neutral-gray Qt-style desktop rather than the earlier plain white. The
+ * **Palette identity (v2.0 addendums, design spec "Theme system").** The dark theme is a cool
+ * blue-gray "Steel" palette with a cyan-teal chrome accent, VESTA/OVITO-style; the light theme is
+ * a neutral-gray Qt-style desktop rather than the earlier plain white. Which one shows follows the
+ * OS by default (redesign S0, three-state control). The
  * loss-communication `--cb-*` foregrounds keep their §4 hues; only lightness was re-tuned where the
  * new Steel dark surface required it to hold AA.
  */
