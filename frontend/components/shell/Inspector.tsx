@@ -1,17 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Provenance } from "@/components/Provenance";
 import { SummaryChips } from "@/components/report/SummaryChips";
-import { StructureLegend } from "@/components/StructureLegend";
 import { DataValue } from "@/components/ui/DataValue";
 import { conversionQuery } from "@/lib/api/queries";
 import { useInspection } from "@/lib/api/useInspection";
 import { useConversionGeometry, useFileGeometry } from "@/lib/geometry/useGeometry";
 import { readJson, writeJson } from "@/lib/prefs/storage";
 import type { ConversionRecord as ConversionRecordModel } from "@/lib/report/types";
+
+// StructureLegend pulls Mol* colour modules (~213 kB gzip); keep them out of the always-loaded shell.
+const StructureLegend = dynamic(() => import("@/components/StructureLegend").then((m) => m.StructureLegend), {
+  ssr: false,
+});
 
 /**
  * The workbench inspector rail (right side of `WorkbenchLayout`, design spec §"Shell architecture" —

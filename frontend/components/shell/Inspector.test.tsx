@@ -218,7 +218,7 @@ describe("Inspector", () => {
     // Fixture species are per-atom [Fe, O, O] — 3 atoms, 5 frames, deduped to 2 legend rows.
     expect(within(enrichment).getByText("3")).toBeInTheDocument();
     expect(within(enrichment).getByText("5")).toBeInTheDocument();
-    expect(within(enrichment).getByTestId("structure-legend")).toBeInTheDocument();
+    expect(await within(enrichment).findByTestId("structure-legend", {}, { timeout: 5000 })).toBeInTheDocument();
     expect(within(enrichment).getByTestId("legend-row-Fe")).toBeInTheDocument();
     expect(within(enrichment).getByTestId("legend-row-O")).toBeInTheDocument();
   });
