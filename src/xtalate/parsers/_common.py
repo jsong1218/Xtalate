@@ -20,10 +20,11 @@ from xtalate.sdk import ParseError, ParseIssue
 
 # Coerce a raw per-atom column set exactly as the ``Frame.custom_per_atom`` field would (the
 # left-to-right union: numeric input → ndarray, non-numeric → list — D12), driven off the field's
-# own annotation so it can never drift from the model.
-_PER_ATOM_ADAPTER: TypeAdapter[dict[str, Any]] = TypeAdapter(
-    Frame.model_fields["custom_per_atom"].annotation
-)
+# own annotation so it can never drift from the model. The annotation is a runtime type object
+# that mypy (2.4+, PEP 747 ``TypeForm`` inference) cannot see through as a static TypeForm, so it
+# is passed through an ``Any``-typed name; the adapter's declared type is what callers rely on.
+_PER_ATOM_ANNOTATION: Any = Frame.model_fields["custom_per_atom"].annotation
+_PER_ATOM_ADAPTER: TypeAdapter[dict[str, Any]] = TypeAdapter(_PER_ATOM_ANNOTATION)
 
 
 def decode_text(data: bytes, *, format_id: str) -> str:
