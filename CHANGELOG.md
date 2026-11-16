@@ -21,6 +21,16 @@ Schema version: 2.0.0
 
 ### Changed
 
+- **Redesign foundation (pipeline bench S0).** The Web UI now self-hosts IBM Plex Sans, Mono and
+  Serif through `next/font/local` (Latin subset, no runtime fetch; reverses the system-only font
+  stack), fixes a 11–24 px type scale, a 4–32 px spacing scale and 2/4/6 px radii guarded by a source
+  lint, routes every icon through one Lucide seam (`Icon` / `IconButton`), and **follows the operating
+  system's colour scheme by default** with a three-state System · Light · Dark control (an explicit
+  choice is still remembered; reverses the dark-first default). A light "paper" surface and print
+  rules are in place for the report stage, a bundle-size budget (bench shell ≤ 250 kB gzipped, fonts
+  ≤ 160 kB) runs in CI, and six new `components/ui` primitives (`Kbd`, `Disclosure`, `Select`,
+  `KeyValueStrip`, `Table`, `Sheet`) are ready for the ledger. Presentation-only: no `/v1`,
+  report-shape, scientific-core or format change.
 - **The Web UI is rebuilt as a desktop-style scientific workbench (VESTA/OVITO-inspired), and the
   Conversion Report stays the hero.** The centered single-column pages are replaced by a persistent
   shell — a top toolbar, a collapsible Sources rail, a tabbed center where **Report** leads
