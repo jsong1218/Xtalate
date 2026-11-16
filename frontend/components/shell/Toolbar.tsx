@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { CommandPaletteTrigger } from "@/components/command/CommandPaletteTrigger";
 import { NotifyToggle } from "@/lib/notify/NotifyPreferenceProvider";
 import { ThemeControl } from "./ThemeControl";
+import { Wordmark } from "./Wordmark";
 
 /**
  * The workbench toolbar (v2.0 addendums, Task 8; design spec §"Shell architecture" — Toolbar row:
@@ -103,12 +104,7 @@ export function Toolbar() {
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
         {/* Left cluster: brand + the per-file verbs. */}
         <div className="flex min-w-0 items-center gap-x-4">
-          <Link
-            href="/"
-            className="shrink-0 rounded-sm text-lg font-semibold tracking-tight text-strong transition-colors hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-wb-toolbar"
-          >
-            Xtalate
-          </Link>
+          <Wordmark />
           <nav
             aria-label="File actions"
             className="hidden items-center gap-x-4 gap-y-1 text-sm sm:flex sm:flex-wrap"
