@@ -13,6 +13,7 @@ from typing import TypeAlias
 
 import numpy as np
 
+from xtalate._constants import K_BAR_PER_EV_A3 as K_BAR_PER_EV_A3  # re-export (single source)
 from xtalate.schema import Cell
 from xtalate.schema.elements import SYMBOL_TO_Z, is_valid_symbol
 
@@ -32,7 +33,6 @@ TOTAL_ENERGY_TAG = "e_0_energy"
 #: The exact kBar → eV/Å³ factor: 1 eV/Å³ = 1602.1766208 kBar (1 eV = 1.6021766208e-19 J,
 #: 1 Å = 1e-10 m, 1 kBar = 1e8 Pa). Pinned by a hand-computed fixture — a wrong factor would
 #: be a silent scale error at MLIP scale (D161).
-K_BAR_PER_EV_A3 = 1602.1766208
 
 _PBC_NOTE = (
     "pbc set to (true,true,true): vasprun.xml carries no PBC declaration and VASP is always "

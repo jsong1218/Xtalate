@@ -69,6 +69,7 @@ from typing import TypeAlias
 
 import numpy as np
 
+from xtalate._constants import BOHR_TO_ANGSTROM_QE
 from xtalate.schema.cell import to_cartesian
 from xtalate.sdk.qe import species_symbol as species_symbol  # explicit re-export (M51-S1, D192)
 
@@ -76,7 +77,7 @@ from xtalate.sdk.qe import species_symbol as species_symbol  # explicit re-expor
 #: (``bohr_radius_angs = 0.52917720859_dp``). Pinned by hand-computed fixtures in the
 #: M50 goldens — a wrong factor would be a silent scale error at MLIP scale, the same
 #: failure class D161 names for VASP's kBar factor.
-BOHR_TO_ANGSTROM = 0.52917720859
+BOHR_TO_ANGSTROM = BOHR_TO_ANGSTROM_QE
 
 #: The per-card units a pw.x input can declare (QE's documented vocabulary).
 POSITION_UNITS = ("angstrom", "bohr", "alat", "crystal")

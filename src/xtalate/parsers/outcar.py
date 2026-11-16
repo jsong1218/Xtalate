@@ -85,6 +85,7 @@ from typing import Any, BinaryIO
 
 import numpy as np
 
+from xtalate._constants import K_BAR_PER_EV_A3
 from xtalate.parsers._common import build_provenance
 from xtalate.parsers._vasp import (
     build_cell,
@@ -185,7 +186,8 @@ _STEP_CELL_NOTE = (
 _STRESS_NOTE = (
     "electronic.stress mapped from the 'in kB' Voigt-6 stress line: VASP reports pressure "
     "(compression-positive) in kBar, so the tensor is sign-flipped to canonical tension-positive "
-    "and divided by the exact factor 1602.1766208 kBar per eV/Å³ (D161). The 'in kB' line carries "
+    f"and divided by the exact factor {K_BAR_PER_EV_A3} kBar per eV/Å³ (D161). "
+    "The 'in kB' line carries "
     'the same sign as vasprun.xml\'s <varray name="stress"> (pinned by the OUTCAR↔vasprun '
     "cross-check), so no additional sign correction is applied. A step without a stress line "
     "leaves electronic.stress None (P3 — absence is never defaulted)."
@@ -1174,7 +1176,8 @@ class OutcarParser(ParserPlugin):
                     notes="Deterministic mapping (D161): the 'in kB' Voigt-6 line (VASP order "
                     "[XX, YY, ZZ, XY, YZ, ZX], kBar, compression-positive — the same sign as "
                     "vasprun.xml's stress varray) is sign-flipped to canonical tension-positive "
-                    "and divided by the exact factor 1602.1766208 kBar per eV/Å³; recorded in "
+                    f"and divided by the exact factor {K_BAR_PER_EV_A3} kBar per eV/Å³; "
+                    "recorded in "
                     "parse_notes. A step without a stress line reads None (P3 — never a "
                     "defaulted zero tensor).",
                 ),

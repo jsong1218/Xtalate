@@ -47,6 +47,7 @@ import h5py
 import numpy as np
 
 from xtalate import __version__
+from xtalate._constants import HARTREE_EV, KCAL_PER_MOL_EV, KJ_PER_MOL_EV, RYDBERG_EV
 from xtalate.parsers._common import build_provenance
 from xtalate.schema import (
     SCHEMA_VERSION,
@@ -114,12 +115,12 @@ _CHARGE: dict[str, float] = {"e": 1.0, "elementary_charge": 1.0}
 _TIME: dict[str, float] = {"fs": 1.0, "femtosecond": 1.0, "ps": 1000.0, "picosecond": 1000.0}
 _ENERGY: dict[str, float] = {
     "ev": 1.0,
-    "hartree": 27.211386245988,
-    "ha": 27.211386245988,
-    "ry": 13.605693122994,
-    "rydberg": 13.605693122994,
-    "kj/mol": 0.010364269574,
-    "kcal/mol": 0.043364104242,
+    "hartree": HARTREE_EV,
+    "ha": HARTREE_EV,
+    "ry": RYDBERG_EV,
+    "rydberg": RYDBERG_EV,
+    "kj/mol": KJ_PER_MOL_EV,
+    "kcal/mol": KCAL_PER_MOL_EV,
 }
 # quantity -> (canonical unit spelling, recognized-unit factor table).
 _UNITS: dict[str, tuple[str, dict[str, float]]] = {

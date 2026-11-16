@@ -271,7 +271,7 @@ source = ["xtalate"]
 # stubs and gains teeth as code lands.
 # The two root-level modules extend the Part 1 §5.1 graph (post-v0.3 review):
 # `registry` is the composition root that wires parsers/exporters into a Registry
-# (only `cli` sits above it), and `_time` is the dependency-free leaf any layer
+# (only `cli` sits above it), and `_time` / `_constants` are the dependency-free leaves any layer
 # may use — listing them means a future P2 inversion through either is caught.
 [tool.importlinter]
 # Two root packages from v0.5 M21: the library and the service. `backend` sits above `xtalate`
@@ -321,7 +321,7 @@ layers = [
     "xtalate.capabilities | xtalate.parsers | xtalate.exporters | xtalate.adapters",
     "xtalate.sdk",
     "xtalate.schema",
-    "xtalate._time",
+    "xtalate._time | xtalate._constants",
 ]
 
 # The CIF parser is the one format built as a package rather than a module (DECISIONS.md D65),
@@ -385,9 +385,10 @@ forbidden_modules = [
     "xtalate.cli",
     "xtalate.registry",
     "xtalate._time",
+    "xtalate._constants",
 ]
 # Direct imports only: the plugin imports `xtalate.sdk`, which legitimately reaches `schema` and
-# `_time` on its own — forbidding that transitive chain would forbid using the SDK at all. What
+# `_time` / `_constants` on its own — forbidding that transitive chain would forbid using the SDK at all. What
 # must not happen is the plugin importing an internal layer *directly*.
 allow_indirect_imports = true
 
@@ -411,7 +412,8 @@ forbidden_modules = [
     "xtalate.cli",
     "xtalate.registry",
     "xtalate._time",
+    "xtalate._constants",
 ]
 # Direct imports only, for the same reason as the M36 contract: the plugin imports `xtalate.sdk`,
-# which legitimately reaches `schema` and `_time` on its own.
+# which legitimately reaches `schema`, `_time` and `_constants` on its own.
 allow_indirect_imports = true

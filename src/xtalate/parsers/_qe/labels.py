@@ -42,6 +42,7 @@ from typing import TypeAlias
 
 import numpy as np
 
+from xtalate._constants import K_BAR_PER_EV_A3, RYDBERG_EV
 from xtalate.parsers._qe import BOHR_TO_ANGSTROM
 
 #: A reader may hand lists or ndarrays; both are "parsed pw.x output values".
@@ -52,14 +53,14 @@ _RowSeq: TypeAlias = Sequence[Sequence[float]] | np.ndarray
 #: silent scale error at MLIP scale, the same failure class D161 names for VASP's kBar factor
 #: (D195). The round-trip stays inside tolerance only because the *same* value QE itself uses
 #: is applied here.
-RY_TO_EV = 13.605693122994
+RY_TO_EV = RYDBERG_EV
 
 #: The universal 1 eV/Å³ = 1602.1766208 kBar constant (1 eV = 1.6021766208e-19 J, 1 Å = 1e-10 m,
-#: 1 kBar = 1e8 Pa). **Stated, not imported** from ``_vasp.labels`` (where it lives as
-#: ``K_BAR_PER_EV_A3``): importing ``_vasp`` from the QE core would couple two format cores
-#: across the import boundary, and the constant is a physical fact, not a VASP fact (D195
-#: rejected alternative (a)).
-_EV_PER_A3_PER_KBAR = 1602.1766208
+#: 1 kBar = 1e8 Pa). Taken from ``xtalate._constants`` (not from ``_vasp.labels``, where it is
+#: re-exported as ``K_BAR_PER_EV_A3``): importing ``_vasp`` from the QE core would couple two
+#: format cores across the import boundary, and the constant is a physical fact, not a VASP fact
+#: (D195 rejected alternative (a)).
+_EV_PER_A3_PER_KBAR = K_BAR_PER_EV_A3
 
 #: Ry/bohr → eV/Å: QE's ``RYTOEV`` over its ``bohr_radius_angs`` — the exact factor pinned by
 #: the hand-computed force fixtures.

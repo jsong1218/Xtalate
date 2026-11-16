@@ -32,15 +32,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from xtalate._constants import J_TO_EV, KCAL_PER_MOL_EV, KG_TO_AMU
+
 #: 1 kcal (thermochemical) / 1 mol / 1 eV in J — the exact kcal/mol→eV-per-molecule
 #: conversion: 4184 J/mol ÷ (6.02214076e23 molecules/mol × 1.602176634e-19 J/eV).
-_REAL_ENERGY_TO_EV = 0.043364104241800934
+_REAL_ENERGY_TO_EV = KCAL_PER_MOL_EV
 #: 1 J in eV: 1 / 1.602176634e-19.
-_SI_ENERGY_TO_EV = 6.241509074460763e18
+_SI_ENERGY_TO_EV = J_TO_EV
 #: 1 kilogram in amu (the canonical mass unit, Part 2 §3.1): 1 / 1.66053906660e-27 kg per amu.
 #: LAMMPS ``si`` mass is the kilograms of one particle, so this is the per-particle kg→amu factor
 #: (M48; the ``metal``/``real`` styles already state mass in grams/mole, numerically amu, ×1).
-_SI_MASS_TO_AMU = 6.022140762081123e26
+_SI_MASS_TO_AMU = KG_TO_AMU
 
 
 @dataclass(frozen=True)

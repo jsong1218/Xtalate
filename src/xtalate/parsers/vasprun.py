@@ -65,6 +65,7 @@ from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 from pydantic import JsonValue
 
+from xtalate._constants import K_BAR_PER_EV_A3
 from xtalate.parsers._common import build_provenance
 from xtalate.parsers._vasp import (
     TOTAL_ENERGY_TAG,
@@ -760,7 +761,7 @@ class VasprunParser(ParserPlugin):
                     level=full.level,
                     notes="Deterministic mapping (D161): VASP declares its convention, so the "
                     "kBar compression-positive tensor is sign-flipped to canonical "
-                    "tension-positive eV/Å³ and divided by the exact factor 1602.1766208; "
+                    f"tension-positive eV/Å³ and divided by the exact factor {K_BAR_PER_EV_A3}; "
                     "recorded in parse_notes. A step without a stress block reads None "
                     "(P3 — never a defaulted zero tensor).",
                 ),
