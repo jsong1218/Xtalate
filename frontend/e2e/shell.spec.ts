@@ -44,6 +44,8 @@ test("the toolbar carries the primary navigation on every page", async ({ page }
 test("the theme follows the system until a choice is made, and the choice persists", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
+  // Hydration attaches the live `change` listener; wait for it before flipping the OS scheme.
+  await page.waitForLoadState("networkidle");
   const html = page.locator("html");
   await expect(html).toHaveAttribute("data-theme", "light");
 
