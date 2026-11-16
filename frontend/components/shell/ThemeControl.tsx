@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { IconButton } from "@/components/ui/IconButton";
 import { useTheme, type ThemePreference } from "@/lib/theme/ThemeProvider";
@@ -17,6 +18,11 @@ const OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; icon: Luci
 
 export function ThemeControl() {
   const { preference, setPreference } = useTheme();
+  // The server renders preference "system" (no window) while a client may hold a stored choice, and
+  // React does not patch attribute mismatches on hydration. Press nothing until mounted so server
+  // and first client render agree; the right button presses right after.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   return (
     <div role="group" aria-label="Theme" className="inline-flex items-center gap-1 rounded border border-wb-hairline p-1">
       {OPTIONS.map((o) => (
@@ -25,7 +31,7 @@ export function ThemeControl() {
           icon={o.icon}
           label={o.label}
           size={14}
-          pressed={preference === o.value}
+          pressed={mounted && preference === o.value}
           onClick={() => setPreference(o.value)}
         />
       ))}
