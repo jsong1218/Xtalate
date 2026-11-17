@@ -30,10 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-import ase.data
 import numpy as np
-from ase import units as ase_units
-from ase.stress import voigt_6_to_full_3x3_stress
 
 from xtalate.recovery.scenarios import (
     SCENARIO_HAZARD,
@@ -964,6 +961,9 @@ def _maxwell_boltzmann(masses: np.ndarray, temperature_k: float, seed: int) -> n
     returned unchanged: no center-of-mass drift removal, no temperature rescaling (D43). The unit
     factor is ``ase.units.fs`` — the same ASE-velocity → Å/fs conversion the extXYZ parser uses — so
     no hand-rolled constant can drift from the rest of the codebase."""
+
+    from ase import units as ase_units
+
     rng = np.random.default_rng(seed)
     sigma = np.sqrt(ase_units.kB * temperature_k / masses) * ase_units.fs
     sample: np.ndarray = rng.standard_normal((masses.shape[0], 3)) * sigma[:, None]
@@ -975,6 +975,9 @@ def _standard_masses(symbols: list[str]) -> np.ndarray:
     verbatim IUPAC table. The
     reserved unknown species ``"X"`` (Z = 0) has no standard weight and is refused — the caller must
     supply masses via ``manual_input``."""
+
+    import ase.data
+
     masses = np.empty(len(symbols), dtype=np.float64)
     for i, sym in enumerate(symbols):
         z = atomic_number(sym)
@@ -1260,6 +1263,9 @@ def _stress_to_canonical(raw: np.ndarray, *, negate: bool) -> np.ndarray:
     the canonical tension-positive requires the sign change); the magnitude is already eV/Å³ for
     an ASE-parsed extXYZ tensor, so no unit transform applies. Anything else is refused — an
     unexpected shape is not a stress tensor the resolver can honestly interpret."""
+
+    from ase.stress import voigt_6_to_full_3x3_stress
+
     if raw.shape == (6,):
         tensor = np.asarray(voigt_6_to_full_3x3_stress(raw), dtype=np.float64)
     elif raw.shape == (3, 3):

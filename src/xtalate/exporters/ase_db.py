@@ -34,17 +34,12 @@ temporary ``.db`` file whose bytes are then copied into the caller's stream.
 
 from __future__ import annotations
 
+import functools
 import tempfile
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 import numpy as np
-from ase import Atoms
-from ase import units as ase_units
-from ase.calculators.singlepoint import SinglePointCalculator
-from ase.constraints import FixAtoms
-from ase.db import connect
-from ase.stress import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
 
 from xtalate.schema import CanonicalObject, Frame
 from xtalate.sdk import (
@@ -56,6 +51,9 @@ from xtalate.sdk import (
     FormatCapabilities,
 )
 
+if TYPE_CHECKING:
+    from ase import Atoms
+
 FORMAT_ID = "ase_db"
 _KEY_PREFIX = "ase_db:"
 _STRESS_KEY = "ase_db:stress"
@@ -66,10 +64,19 @@ _DATA_KEY = "ase_db:data"
 # as ``poscar:comment`` fails the fullmatch and is reported ``removed``, never entered into the
 # write plan and then silently dropped (D69; the extXYZ per-atom precedent).
 _WRITABLE_CUSTOM_GLOBAL_PATTERN = rf"{_KEY_PREFIX}[^:]*"
+
+
 # (Å/fs) per one ASE internal velocity unit — i.e. ase_units.fs. Canonical Å/fs *divided by* this
 # yields ASE units (the exact inverse of the parser's multiply). Defined here, not imported, so the
 # exporter layer does not depend on the parser layer (P2; mirrors exporters.ase_traj).
-_ANG_PER_FS_PER_ASE_VEL = ase_units.fs
+@functools.cache
+def _ang_per_fs_per_ase_vel() -> float:
+    """ASE velocity unit in Angstrom/fs (lazy: importing ``ase`` is deferred to first use)."""
+    from ase import units as ase_units
+
+    return float(ase_units.fs)
+
+
 # Scalars ASE accepts as a key_value_pairs value (bool is an int subclass, hence listed explicitly
 # for intent; ASE stores it as an int). Anything else in custom_global is not a kv value.
 _KV_SCALARS = (str, bool, int, float)
@@ -81,6 +88,8 @@ class AseDbExporter(ExporterPlugin):
     version = "0.1.0"
 
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
+        from ase.db import connect
+
         atoms, key_value_pairs, data = self._row_from(canonical)
         # ase.db opens a database only by real path, so write to a temp .db and copy its bytes into
         # the caller's stream (the parser spools the same way for the same reason).
@@ -103,6 +112,9 @@ class AseDbExporter(ExporterPlugin):
         dataset is content-identical to the same source converted alone (SQLite rows are
         independent; per-contribution validation keeps its meaning). ``ase.db`` opens a database
         only by real path, so the N rows go to one temp ``.db`` whose bytes are copied out."""
+
+        from ase.db import connect
+
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "out.db"
             db = connect(path, use_lock_file=False)
@@ -140,6 +152,11 @@ class AseDbExporter(ExporterPlugin):
         """Rebuild one ASE ``Atoms`` from a canonical frame plus this frame's per-frame carry — the
         exact inverse of the parser's row read. Charges/moments go to the per-atom ``initial_*``
         arrays (the parser's source), energy/forces/stress to a ``SinglePointCalculator``."""
+
+        from ase import Atoms
+        from ase.calculators.singlepoint import SinglePointCalculator
+        from ase.stress import full_3x3_to_voigt_6_stress
+
         atoms = Atoms(
             symbols=list(frame.atoms.symbols),
             positions=np.asarray(frame.atoms.positions, dtype=float),
@@ -150,7 +167,7 @@ class AseDbExporter(ExporterPlugin):
             atoms.set_cell(np.asarray(frame.cell.lattice_vectors, dtype=float))
             atoms.set_pbc(frame.cell.pbc)
         if frame.dynamics.velocities is not None:
-            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ANG_PER_FS_PER_ASE_VEL
+            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ang_per_fs_per_ase_vel()
             atoms.set_velocities(v_ase)
         # electronic.charges/magmoms round-trip through ASE's per-atom initial_* arrays (the parser
         # reads them from there); the exporter writes them back to the same place — the ase_traj
@@ -197,6 +214,9 @@ class AseDbExporter(ExporterPlugin):
         """Write ``fixed_atoms`` constraints back as ASE ``FixAtoms`` (the ase_traj rule): an
         empty/``None`` list leaves ASE's default (no constraint); an unrepresentable kind is the
         Conversion Engine's to report as ``removed``."""
+
+        from ase.constraints import FixAtoms
+
         constraints = frame.dynamics.constraints
         if not constraints:
             return
@@ -329,6 +349,9 @@ class AseDbExporter(ExporterPlugin):
 
         An unresolved object (only the legacy carry, no populated field) is written verbatim and
         warrants no warning."""
+
+        from ase.stress import voigt_6_to_full_3x3_stress
+
         warnings: list[ExporterWarning] = []
         carry_values = canonical.user_metadata.custom_per_frame.get(_STRESS_KEY)
         dropped: list[int] = []

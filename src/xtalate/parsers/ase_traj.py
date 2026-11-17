@@ -43,13 +43,11 @@ and peak memory tracks the resident frame, not the frame count (M14 deliverable;
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, BinaryIO
 
-import ase
 import numpy as np
-from ase import units as ase_units
-from ase.io.trajectory import TrajectoryReader
 from pydantic import JsonValue
 
 from xtalate import __version__
@@ -80,6 +78,7 @@ from xtalate.sdk import (
 
 if TYPE_CHECKING:
     from ase import Atoms
+    from ase.io.trajectory import TrajectoryReader
 
 FORMAT_ID = "ase_traj"
 _KEY_PREFIX = "ase_traj:"
@@ -94,16 +93,31 @@ _RESERVED_ARRAYS = frozenset(
 # Calculator results with a unit- and sign-safe canonical home. Everything else ASE places on the
 # calculator (stress, dipole, free_energy, …) is carried verbatim to custom_per_frame (P1, D18).
 _MAPPED_CALC_KEYS = frozenset({"energy", "forces", "charges", "magmoms"})
+
+
 # ASE's velocity unit is Å / (ASE time unit); ase.units.fs is "1 fs in ASE time", so multiplying an
 # ASE-unit velocity by it yields Å/fs (mirrors extXYZ; the exporter divides by the same factor).
-_VEL_ASE_TO_ANG_PER_FS = ase_units.fs
+@functools.cache
+def _vel_ase_to_ang_per_fs() -> float:
+    """ASE velocity unit -> Angstrom/fs (lazy: importing ``ase`` is deferred to first use)."""
+    from ase import units as ase_units
+
+    return float(ase_units.fs)
+
+
 # ULM magic ASE writes at the head of every .traj file (see ase.io.ulm); the trailing tag names it
 # an ASE trajectory specifically. Used only for sniffing — cheap, never authoritative.
 _ULM_MAGIC = b"- of Ulm"
 _TRAJ_TAG = b"ASE-Trajectory"
 
+
 #: parser_version string folding in the wrapped ASE version (M14 deliverable 3; D59).
-_PARSER_VERSION = f"{FORMAT_ID}-parser {__version__} (ase {ase.__version__})"
+@functools.cache
+def _parser_version() -> str:
+    """Parser version string; folds in the installed ASE version (lazy import)."""
+    import ase
+
+    return f"{FORMAT_ID}-parser {__version__} (ase {ase.__version__})"
 
 
 def _error(code: str, message: str, *, location: str | None = None) -> ParseError:
@@ -150,6 +164,9 @@ class AseTrajParser(ParserPlugin):
         is constant — mirroring the extXYZ streaming parser (v2.0 review). Variable N (M73) is a
         per-frame atom count; the header is still derived from frame 0.
         """
+        import ase
+        from ase.io.trajectory import TrajectoryReader
+
         issues: list[ParseIssue] = []
         try:
             reader = TrajectoryReader(stream)
@@ -175,7 +192,7 @@ class AseTrajParser(ParserPlugin):
                 f"read via ASE {ase.__version__} TrajectoryReader; ASE-manufactured defaults "
                 "(zero cell, derived masses, zeroed momenta) laundered to absence (P3)."
             ],
-            parser_version=_PARSER_VERSION,
+            parser_version=_parser_version(),
         )
         header = StreamHeader(
             schema_version=SCHEMA_VERSION,
@@ -275,7 +292,7 @@ class AseTrajParser(ParserPlugin):
             # Laundering: ASE synthesises zero momenta for a file that declared none, so only a
             # real momenta array produces velocities (unit-converted ASE → Å/fs).
             raw = np.asarray(atoms.get_velocities(), dtype=np.float64)
-            velocities = raw * _VEL_ASE_TO_ANG_PER_FS
+            velocities = raw * _vel_ase_to_ang_per_fs()
         return Dynamics(
             velocities=velocities,
             forces=mapped.get("forces"),

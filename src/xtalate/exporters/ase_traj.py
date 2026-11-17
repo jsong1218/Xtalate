@@ -18,16 +18,11 @@ reason ``exporters.extxyz`` redefines its own velocity constant.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Iterator
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 import numpy as np
-from ase import Atoms
-from ase import units as ase_units
-from ase.calculators.singlepoint import SinglePointCalculator
-from ase.constraints import FixAtoms
-from ase.io.trajectory import TrajectoryWriter
-from ase.stress import voigt_6_to_full_3x3_stress
 
 from xtalate.schema import CanonicalObject, Frame
 from xtalate.sdk import (
@@ -40,14 +35,24 @@ from xtalate.sdk import (
     StreamHeader,
 )
 
+if TYPE_CHECKING:
+    from ase import Atoms
+
 FORMAT_ID = "ase_traj"
 _KEY_PREFIX = "ase_traj:"
 _STRESS_KEY = "ase_traj:stress"
 _CONSTRAINTS_KEY = "ase_traj:constraints"
+
+
 # (Å/fs) per one ASE internal velocity unit — i.e. ase_units.fs. Canonical Å/fs *divided by* this
 # yields ASE units (the exact inverse of the parser's multiply). Defined here, not imported, so the
 # exporter layer does not depend on the parser layer (P2; mirrors exporters.extxyz).
-_ANG_PER_FS_PER_ASE_VEL = ase_units.fs
+@functools.cache
+def _ang_per_fs_per_ase_vel() -> float:
+    """ASE velocity unit in Angstrom/fs (lazy: importing ``ase`` is deferred to first use)."""
+    from ase import units as ase_units
+
+    return float(ase_units.fs)
 
 
 class AseTrajExporter(ExporterPlugin):
@@ -56,6 +61,8 @@ class AseTrajExporter(ExporterPlugin):
     version = "0.1.0"
 
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
+        from ase.io.trajectory import TrajectoryWriter
+
         per_frame = canonical.user_metadata.custom_per_frame
         writer = TrajectoryWriter(stream, "w")
         for frame in canonical.frames:
@@ -77,6 +84,9 @@ class AseTrajExporter(ExporterPlugin):
         The per-atom ``custom_per_atom`` columns ride on each ``StreamFrame.frame`` (schema 2.0.0,
         M73), sized to that frame's own N; per-frame comment metadata rides on each ``StreamFrame``.
         Not closed, for the same reason as ``export``."""
+
+        from ase.io.trajectory import TrajectoryWriter
+
         writer = TrajectoryWriter(stream, "w")
         for sf in frames:
             writer.write(self._atoms_from(sf.frame, sf.frame.custom_per_atom, sf.per_frame_custom))
@@ -90,6 +100,10 @@ class AseTrajExporter(ExporterPlugin):
         """Rebuild one ASE ``Atoms`` from a canonical frame plus its object-level per-atom columns
         and this frame's per-frame comment metadata. Shared by ``export`` and ``export_stream`` so
         the two paths can never write a frame differently."""
+
+        from ase import Atoms
+        from ase.calculators.singlepoint import SinglePointCalculator
+
         atoms = Atoms(
             symbols=list(frame.atoms.symbols),
             positions=np.asarray(frame.atoms.positions, dtype=float),
@@ -100,7 +114,7 @@ class AseTrajExporter(ExporterPlugin):
             atoms.set_cell(np.asarray(frame.cell.lattice_vectors, dtype=float))
             atoms.set_pbc(frame.cell.pbc)
         if frame.dynamics.velocities is not None:
-            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ANG_PER_FS_PER_ASE_VEL
+            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ang_per_fs_per_ase_vel()
             atoms.set_velocities(v_ase)
         # electronic.charges/magmoms round-trip through ASE's per-atom initial_* arrays (the parser
         # reads them from there); the exporter writes them back to the same place.
@@ -157,6 +171,9 @@ class AseTrajExporter(ExporterPlugin):
         """Write ``fixed_atoms`` constraints back as ASE ``FixAtoms``. An empty/``None`` constraint
         list leaves ASE's default (no constraint); an unrepresentable kind is the Conversion
         Engine's to report as ``removed`` — this exporter writes only what it can express."""
+
+        from ase.constraints import FixAtoms
+
         constraints = frame.dynamics.constraints
         if not constraints:
             return
@@ -243,6 +260,9 @@ class AseTrajExporter(ExporterPlugin):
 
         An unresolved object (only the legacy carry, no populated field) is written verbatim and
         warrants no warning."""
+
+        from ase.stress import voigt_6_to_full_3x3_stress
+
         warnings: list[ExporterWarning] = []
         # Dual-source guard (RF-3 analogue): when a populated field coexists with a stale carry,
         # `_atoms_from` writes the field and drops the carry — report a *differing* drop, never

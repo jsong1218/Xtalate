@@ -26,7 +26,6 @@ from io import BytesIO
 from typing import Any, Protocol
 
 import numpy as np
-from ase.stress import voigt_6_to_full_3x3_stress
 
 from xtalate._time import utc_now
 from xtalate.capabilities import Registry
@@ -791,6 +790,9 @@ def _carried_to_canonical(value: Any, path: str, stress_output_convention: str) 
     reversal is the documented inverse of a machine-readable declaration — not the parser
     interpreting the value (D18 stands: the parser still never maps stress on read).
     """
+
+    from ase.stress import voigt_6_to_full_3x3_stress
+
     arr = np.asarray(value, dtype=float)
     if path == "electronic.stress":
         if arr.shape == (6,):

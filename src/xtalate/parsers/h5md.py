@@ -39,11 +39,11 @@ D166).
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Iterator, Mapping
 from io import BytesIO
-from typing import BinaryIO
+from typing import TYPE_CHECKING, BinaryIO
 
-import h5py
 import numpy as np
 
 from xtalate import __version__
@@ -73,10 +73,22 @@ from xtalate.sdk import (
     materialize,
 )
 
+if TYPE_CHECKING:
+    import h5py
+
 FORMAT_ID = "h5md"
 # HDF5 files begin with this 8-byte signature (see the HDF5 spec); used only for sniffing.
 _HDF5_MAGIC = b"\x89HDF\r\n\x1a\n"
-_PARSER_VERSION = f"{FORMAT_ID}-parser {__version__} (h5py {h5py.__version__})"
+
+
+@functools.cache
+def _parser_version() -> str:
+    """Parser version string; folds in the installed h5py version (lazy import)."""
+    import h5py
+
+    return f"{FORMAT_ID}-parser {__version__} (h5py {h5py.__version__})"
+
+
 _TRUNCATE_HINT = "truncate_at_last_valid_frame"
 _PERIODICITY_HINT = "ambiguous_periodicity"
 
@@ -152,6 +164,8 @@ def _get_local(group: h5py.Group, name: str) -> h5py.Group | h5py.Dataset | None
     an out-of-band file, so we refuse it explicitly rather than trusting the driver to fail. A soft
     link is in-file by definition and safe. Returns ``None`` when absent (like ``group.get(name)``).
     """
+    import h5py
+
     link = group.get(name, getlink=True)
     if link is None:
         return None
@@ -218,6 +232,8 @@ class _Element:
     """
 
     def __init__(self, node: h5py.Group | h5py.Dataset) -> None:
+        import h5py
+
         self._times: np.ndarray | None = None
         self.time_unit: str | None = None
         if isinstance(node, h5py.Group):
@@ -396,6 +412,8 @@ class H5MDParser(ParserPlugin):
 
     def sniff(self, head: bytes, filename: str | None) -> float:
         if head.startswith(_HDF5_MAGIC):
+            import h5py
+
             # HDF5 is a binary container; H5MD is one layout within it. Probe the head for the
             # /h5md + /particles groups that make it H5MD. A partial head can fail to open (the
             # superblock points past it) — then the magic alone is a weak positive, not a claim.
@@ -483,6 +501,8 @@ class H5MDParser(ParserPlugin):
         truncate: bool = False,
         periodicity: str | None = None,
     ) -> FrameStream:
+        import h5py
+
         try:
             f = h5py.File(stream, "r")
         except Exception as exc:  # h5py raises the OSError family; normalise to the §5 contract
@@ -579,7 +599,7 @@ class H5MDParser(ParserPlugin):
                 original_coordinate_system="cartesian",
                 source_units=source_units,
                 parse_notes=notes,
-                parser_version=_PARSER_VERSION,
+                parser_version=_parser_version(),
             )
         except BaseException:
             f.close()

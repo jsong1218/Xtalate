@@ -14,17 +14,13 @@ warning; an unresolved object's ``extxyz:stress`` carry is written verbatim as w
 
 from __future__ import annotations
 
+import functools
 import io
 import re
 from collections.abc import Iterator
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 import numpy as np
-from ase import Atoms
-from ase import units as ase_units
-from ase.calculators.singlepoint import SinglePointCalculator
-from ase.io import write as ase_write
-from ase.stress import voigt_6_to_full_3x3_stress
 
 from xtalate.schema import CanonicalObject, Frame
 from xtalate.sdk import (
@@ -38,6 +34,9 @@ from xtalate.sdk import (
     StreamHeader,
 )
 
+if TYPE_CHECKING:
+    from ase import Atoms
+
 FORMAT_ID = "extxyz"
 _KEY_PREFIX = "extxyz:"
 _STRESS_KEY = "extxyz:stress"
@@ -46,12 +45,19 @@ _STRESS_KEY = "extxyz:stress"
 # from this single string so the declaration and the behaviour cannot drift apart.
 _WRITABLE_PER_ATOM_PATTERN = rf"{_KEY_PREFIX}[^:]*"
 _WRITABLE_PER_ATOM_KEY = re.compile(_WRITABLE_PER_ATOM_PATTERN)
+
+
 # The velocity conversion factor in units of (Å/fs) per one ASE internal velocity unit — i.e.
 # `ase_units.fs`. Named for its units so the export direction reads correctly: canonical Å/fs
 # *divided by* this factor yields ASE units (the exact inverse of the parser's multiply). Defined
 # here (not imported from parsers) because exporters and parsers are import-sibling layers that must
 # not depend on each other (pyproject import-linter contract, P2).
-_ANG_PER_FS_PER_ASE_VEL = ase_units.fs
+@functools.cache
+def _ang_per_fs_per_ase_vel() -> float:
+    """ASE velocity unit in Angstrom/fs (lazy: importing ``ase`` is deferred to first use)."""
+    from ase import units as ase_units
+
+    return float(ase_units.fs)
 
 
 class ExtxyzExporter(ExporterPlugin):
@@ -60,6 +66,8 @@ class ExtxyzExporter(ExporterPlugin):
     version = "0.1.0"
 
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
+        from ase.io import write as ase_write
+
         per_frame = canonical.user_metadata.custom_per_frame
         images = [
             self._atoms_from(
@@ -89,6 +97,9 @@ class ExtxyzExporter(ExporterPlugin):
         write — the streamed output matches ``export`` exactly. The per-atom ``custom_per_atom``
         columns ride on each ``StreamFrame.frame`` (schema 2.0.0, M73), sized to that frame's own N;
         the per-frame comment metadata rides on each ``StreamFrame`` alongside."""
+
+        from ase.io import write as ase_write
+
         for sf in frames:
             atoms = self._atoms_from(sf.frame, sf.frame.custom_per_atom, sf.per_frame_custom)
             buf = io.StringIO()
@@ -117,6 +128,10 @@ class ExtxyzExporter(ExporterPlugin):
         """Rebuild one ASE ``Atoms`` from a canonical frame plus its object-level per-atom columns
         and this frame's per-frame comment metadata. Shared by whole-file ``export`` and streaming
         ``export_stream`` so the two paths can never write a frame differently."""
+
+        from ase import Atoms
+        from ase.calculators.singlepoint import SinglePointCalculator
+
         atoms = Atoms(
             symbols=list(frame.atoms.symbols),
             positions=np.asarray(frame.atoms.positions, dtype=float),
@@ -127,7 +142,7 @@ class ExtxyzExporter(ExporterPlugin):
             atoms.set_cell(np.asarray(frame.cell.lattice_vectors, dtype=float))
             atoms.set_pbc(frame.cell.pbc)
         if frame.dynamics.velocities is not None:
-            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ANG_PER_FS_PER_ASE_VEL
+            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ang_per_fs_per_ase_vel()
             atoms.set_velocities(v_ase)
 
         # Object-level per-atom carry-through columns apply to every frame (Part 2 §3.10), but only
@@ -250,7 +265,7 @@ class ExtxyzExporter(ExporterPlugin):
             # output_column_format): 8 decimals, so a value can move by up to 0.5e-8 on write.
             # Info scalars (energy, stress, Lattice) are written via str() and are lossless, so
             # they are deliberately NOT declared. Velocities are written in ASE units
-            # (canonical / _ANG_PER_FS_PER_ASE_VEL) and stored as momenta (v*m); declaring 8 is
+            # (canonical / _ang_per_fs_per_ase_vel()) and stored as momenta (v*m); declaring 8 is
             # conservative (never under-reports a loss). Custom per-atom FLOAT columns go through
             # the same "%16.8f"; int/str columns are exact (the warning text says so).
             numeric_precision={
@@ -275,6 +290,9 @@ class ExtxyzExporter(ExporterPlugin):
 
         An unresolved object (only the legacy carry, no populated field) is written verbatim and
         warrants no warning."""
+
+        from ase.stress import voigt_6_to_full_3x3_stress
+
         warnings: list[ExporterWarning] = []
         # Dual-source guard (RF-3): when a populated field coexists with a stale carry,
         # `_atoms_from` writes the field and drops the carry — report a *differing* drop, never
