@@ -20,6 +20,9 @@ Exit codes (§A.2) make the CLI CI-native without parsing stdout:
 from __future__ import annotations
 
 import argparse
+import contextlib
+import glob
+import io
 import json
 import os
 import sys
@@ -262,7 +265,7 @@ def _dry_run(
         parsed.canonical,
         source_format_id=parsed.format_id,
         target_format_id=args.to,
-        source_filename=Path(args.file).name,
+        source_filename=_source_name(args.file),
         target_filename=Path(args.output).name if args.output else None,
         mode=args.mode,
         repairs=repairs or None,
@@ -291,24 +294,68 @@ def _dry_run(
             )
         )
     else:
-        print(render.render_dry_run(dry))
+        print(render.render_dry_run(dry), file=sys.stderr if args.output == "-" else sys.stdout)
     return EXIT_OK if dry.report.status == "completed" else EXIT_REFUSED
 
 
+_GLOB_CHARS = frozenset("*?[")
+_STDIN_NAME = "<stdin>"
+
+
+def _source_name(file: str) -> str:
+    """The ``source_filename`` the reports record: ``<stdin>`` for ``-``, else the basename."""
+    return _STDIN_NAME if file == "-" else Path(file).name
+
+
+def _is_source_directory(path: Path) -> bool:
+    """True when ``path`` is a recognised multi-file *source* (a DeePMD-style system) — the
+    pre-existing directory-as-input semantics, which win over fan-out so every directory the CLI
+    converted before this task still converts identically."""
+    return bool(_read_directory(str(path)))
+
+
+def _expand_inputs(patterns: list[str]) -> tuple[list[Path], bool]:
+    """Expand globs the shell left alone and fan out plain directories.
+
+    Returns ``(paths, fan_out)``: ``fan_out`` is True when the request names several files (more
+    than one path, or a directory that is not a recognised source). A glob that matches nothing,
+    or a directory with nothing to convert, is a usage error."""
+    found: list[Path] = []
+    fanned = False
+    for pattern in patterns:
+        path = Path(pattern)
+        if any(c in pattern for c in _GLOB_CHARS) and not path.exists():
+            matches = [Path(m) for m in sorted(glob.glob(pattern)) if Path(m).is_file()]
+            if not matches:
+                raise _UsageError(f"{pattern!r} matched no files")
+            found.extend(matches)
+        elif path.is_dir() and not _is_source_directory(path):
+            members = sorted(
+                p for p in path.iterdir() if p.is_file() and not p.name.startswith(".")
+            )
+            if not members:
+                raise _UsageError(f"{pattern} contains no files to convert")
+            found.extend(members)
+            fanned = True
+        else:
+            found.append(path)
+    return found, fanned or len(found) > 1
+
+
+def _writable_extensions_for(registry: Registry, format_id: str) -> list[str]:
+    """The extensions ``format_id`` is written under, sorted: Task 15's ``{ext: [format ids]}``
+    table inverted for one format (``[]`` when it declares none, e.g. POSCAR)."""
+    return sorted(ext for ext, ids in _writable_extensions(registry).items() if format_id in ids)
+
+
 def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
+    inputs: list[str] = list(args.file or [])
     if args.batch:
-        if args.file is not None:
+        if inputs:
             raise _UsageError("convert takes FILE *or* --batch MANIFEST, not both")
         return _cmd_convert_batch(args, registry)
-    if args.file is None:
+    if not inputs:
         raise _UsageError("convert needs FILE (or --batch MANIFEST)")
-    if args.to is None and args.output:
-        args.to = _infer_target(args.output, registry)
-    if args.to is None:
-        raise _UsageError(
-            "convert needs --to FORMAT_ID or an -o path whose extension names one "
-            "(in batch mode the manifest carries it)"
-        )
     if args.dry_run and args.recover:
         raise _UsageError(
             "--dry-run cannot be combined with --recover: a dry run reports the recovery choices "
@@ -318,7 +365,31 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
         raise _UsageError(
             "--dry-run runs no validation, so --validation-report has nothing to write"
         )
-    is_directory = Path(args.file).is_dir()
+    to_stdout = args.output == "-"
+    if to_stdout and args.json:
+        raise _UsageError("--json cannot be combined with -o - (both would use stdout)")
+    stdin_mode = inputs == ["-"]
+    if "-" in inputs and not stdin_mode:
+        raise _UsageError("'-' (stdin) cannot be combined with other inputs")
+    if stdin_mode and not args.format:
+        raise _UsageError("reading stdin needs --from FORMAT_ID (there is no filename to sniff)")
+    if stdin_mode:
+        args.file = "-"
+    else:
+        paths, fan_out = _expand_inputs(inputs)
+        if fan_out:
+            if to_stdout:
+                raise _UsageError("-o - writes one file to stdout; give a single input")
+            return _convert_many(args, registry, paths)
+        args.file = str(paths[0])
+    if args.to is None and args.output and not to_stdout:
+        args.to = _infer_target(args.output, registry)
+    if args.to is None:
+        raise _UsageError(
+            "convert needs --to FORMAT_ID or an -o path whose extension names one "
+            "(in batch mode the manifest carries it)"
+        )
+    is_directory = args.file != "-" and Path(args.file).is_dir()
     result = None if is_directory else _convert_streamed(args, registry)
     streamed = result is not None
     if result is None:
@@ -338,7 +409,7 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
         parsed = parse_with_recovery(
             registry,
             data,
-            filename=Path(args.file).name,
+            filename=_source_name(args.file),
             format_override=args.format,
             recovery_choices=recovery_choices,
             directory_files=directory_files,
@@ -350,7 +421,7 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
             parsed.canonical,
             source_format_id=parsed.format_id,
             target_format_id=args.to,
-            source_filename=Path(args.file).name,
+            source_filename=_source_name(args.file),
             target_filename=Path(args.output).name if args.output else None,
             mode=args.mode,
             recovery_choices=recovery_choices,
@@ -379,13 +450,14 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
             )
         )
     else:
-        print(render.render_conversion(report))
+        say = sys.stderr if to_stdout else sys.stdout
+        print(render.render_conversion(report), file=say)
         guidance = render.render_recovery_guidance(report)
         if guidance:
-            print(guidance)
+            print(guidance, file=say)
         if result.validation is not None:
-            print()
-            print(render.render_validation(result.validation))
+            print(file=say)
+            print(render.render_validation(result.validation), file=say)
 
     # The output file is written regardless of --json — the reports and the artifact are
     # independent outputs. In --json mode only the stdout dump is suppressed (it would corrupt the
@@ -398,6 +470,102 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
 
     _ring_completion_bell(args)
     return _convert_exit_code(report, result.validation, args.mode)
+
+
+def _status_word(report: dict[str, Any], validation: dict[str, Any] | None) -> str:
+    """The one-word per-file outcome used in the fan-out summary line."""
+    if report["stage"] == "preflight":  # --dry-run
+        return "would complete" if report["status"] == "completed" else "needs recovery"
+    if report["status"] == "refused":
+        return "refused"
+    if validation is not None and validation["status"] == "failed":
+        return "validation failed"
+    if validation is not None and validation["status"] == "passed_with_warnings":
+        return "completed with warnings"
+    return "completed"
+
+
+def _convert_one_quiet(
+    args: argparse.Namespace, registry: Registry
+) -> tuple[int, dict[str, Any] | None, dict[str, Any] | None, str]:
+    """Run one fan-out member through the single-file path with its output captured.
+
+    Returns ``(exit_code, conversion_report, validation_report, status_text)``. Per-file caller
+    mistakes and parse errors become a line and an exit code rather than ending the run."""
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = _cmd_convert(args, registry)
+    except ParseError as exc:
+        issue = exc.issues[0] if exc.issues else None
+        detail = f" [{issue.code}]: {issue.message}" if issue is not None else ""
+        return EXIT_PARSE_ERROR, None, None, f"parse error{detail}"
+    except (RepairError, RecoveryError, RecoveryPresetError, _UsageError) as exc:
+        return EXIT_USAGE, None, None, f"error: {exc}"
+    payload = json.loads(out.getvalue())
+    report = payload["conversion_report"]
+    validation = payload.get("validation_report")
+    return code, report, validation, _status_word(report, validation)
+
+
+def _convert_many(args: argparse.Namespace, registry: Registry, inputs: list[Path]) -> int:
+    """Convert each input into ``-o DIR`` as ``<stem>.<ext>``: one summary line per file, the
+    process exit code the highest per-file code. Collisions refuse up front (never an overwrite);
+    a per-file failure is a line, not a crash."""
+    if not args.output:
+        raise _UsageError("converting several inputs needs -o DIR (and --to FORMAT_ID)")
+    if args.to is None:
+        raise _UsageError(
+            "converting several inputs needs --to FORMAT_ID (-o names a directory, which has no "
+            "extension to infer the format from)"
+        )
+    if args.report or args.validation_report:
+        raise _UsageError(
+            "--report/--validation-report cannot hold several conversions; use --json instead"
+        )
+    out_dir = Path(args.output)
+    if out_dir.exists() and not out_dir.is_dir():
+        raise _UsageError(f"-o {args.output!r} exists and is not a directory")
+    extension = (_writable_extensions_for(registry, args.to) or ["." + args.to])[0]
+    names = [f"{p.stem}{extension}" for p in inputs]
+    duplicated = sorted({n for n in names if names.count(n) > 1})
+    if duplicated:
+        raise _UsageError(
+            f"several inputs would write the same output name {duplicated}; rename an input or "
+            "convert them separately"
+        )
+    if not args.dry_run:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    codes: list[int] = []
+    results: list[dict[str, Any]] = []
+    for path, name in zip(inputs, names, strict=True):
+        sub = argparse.Namespace(
+            **{
+                **vars(args),
+                "file": [str(path)],
+                "output": str(out_dir / name),
+                "json": True,
+                "no_bell": True,
+            }
+        )
+        code, report, validation, status = _convert_one_quiet(sub, registry)
+        codes.append(code)
+        results.append(
+            {
+                "input": str(path),
+                "output": None if args.dry_run else str(out_dir / name),
+                "exit_code": code,
+                "status": status,
+                "conversion_report": report,
+                "validation_report": validation,
+            }
+        )
+        if not args.json:
+            print(f"{path.name} -> {name}  {status}")
+    if args.json:
+        print(_json(results))
+    _ring_completion_bell(args)
+    return max(codes, default=EXIT_OK)
 
 
 def _cmd_convert_batch(args: argparse.Namespace, registry: Registry) -> int:
@@ -422,6 +590,8 @@ def _cmd_convert_batch(args: argparse.Namespace, registry: Registry) -> int:
         raise _UsageError(
             "batch conversion needs -o: a directory (per-file mode) or a file path (assemble mode)"
         )
+    if args.output == "-":
+        raise _UsageError("--batch writes files under -o; it cannot write to stdout (-o -)")
     manifest = load_manifest(args.batch)
     report = run_batch(
         manifest,
@@ -538,7 +708,7 @@ def _convert_streamed(args: argparse.Namespace, registry: Registry) -> Any | Non
     a pre-existing file at ``-o`` untouched — exactly like the materialized path, which writes
     the output only after the whole conversion succeeded.
     """
-    if not args.output or args.mode == "strict":
+    if not args.output or args.output == "-" or args.file == "-" or args.mode == "strict":
         return None
     if args.repair or args.frames is not None or args.dry_run:
         # --frames is a select_frames repair, and --dry-run must never run the writing streaming
@@ -957,6 +1127,13 @@ def _convert_exit_code(
 
 
 def _emit_output(args: argparse.Namespace, result: Any, *, human: bool) -> None:
+    if args.output == "-":
+        if result.outputs is not None or result.output_dir is not None:
+            raise _UsageError("-o - cannot hold a multi-file output (use -o DIR)")
+        if result.output is not None:
+            sys.stdout.buffer.write(result.output)
+            sys.stdout.buffer.flush()
+        return
     # `split_all` produced one file per frame (Part 4 §3.3): write the set into a directory.
     if result.outputs is not None:
         _emit_split_outputs(args, result.outputs, human=human)
@@ -1019,6 +1196,8 @@ def _read_directory(path: str) -> dict[str, bytes]:
 
 
 def _read_bytes(path: str) -> bytes:
+    if path == "-":
+        return sys.stdin.buffer.read()
     try:
         return Path(path).read_bytes()
     except OSError as exc:
@@ -1055,7 +1234,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "convert", help="Full pipeline: parse → pre-flight → recovery → export → validate."
     )
     p_convert.add_argument(
-        "file", nargs="?", help="Source file (omit when --batch MANIFEST is given)."
+        "file",
+        nargs="*",
+        metavar="FILE",
+        help=(
+            "Source file(s), glob(s) or a directory of files to convert into -o DIR; '-' reads "
+            "stdin (needs --from). List all inputs before the options. Omit with --batch."
+        ),
     )
     p_convert.add_argument(
         "--batch",
@@ -1078,8 +1263,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "-o",
         "--output",
         metavar="PATH",
-        help="Write the converted file here (batch: a directory for per-file mode, a file "
-        "for assemble mode).",
+        help="Write the converted file here (a directory when converting several inputs; batch: "
+        "a directory for per-file mode, a file for assemble mode). '-' writes the result to "
+        "stdout (status goes to stderr; a trajectory is then held in memory).",
     )
     p_convert.add_argument(
         "--format",
