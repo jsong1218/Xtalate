@@ -57,7 +57,13 @@ from xtalate.sdk import (
     StreamHeader,
     stream_of,
 )
-from xtalate.sdk.lammps import unit_style
+from xtalate.sdk.lammps import (
+    RESTRICTED_TILT_EPS,
+    RESTRICTED_UPPER_ATOL,
+    describe_zeroed_box_components,
+    unit_style,
+    zeroed_box_components,
+)
 from xtalate.sdk.lammps.units import UnitStyle
 
 FORMAT_ID = "lammps_dump"
@@ -152,7 +158,7 @@ class LammpsDumpExporter(ExporterPlugin):
         for frame in canonical.frames:
             _extend_type_map(type_map, frame.atoms.symbols)
         mapping = ", ".join(f"type {number} → {symbol}" for symbol, number in type_map.items())
-        return [
+        warnings = [
             ExporterWarning(
                 code=_TYPES_ASSIGNED,
                 message=(
@@ -161,6 +167,15 @@ class LammpsDumpExporter(ExporterPlugin):
                 ),
             )
         ]
+        by_frame = {
+            k: zeroed_box_components(frame.cell.lattice_vectors)
+            for k, frame in enumerate(canonical.frames)
+            if frame.cell is not None and frame.cell.lattice_vectors is not None
+        }
+        zeroed = describe_zeroed_box_components(by_frame, len(canonical.frames))
+        if zeroed is not None:
+            warnings.append(ExporterWarning(code="TILT_BELOW_THRESHOLD_DROPPED", message=zeroed))
+        return warnings
 
     def unrepresentable(self, canonical: Any) -> str | None:
         """Why the dump format cannot express ``canonical``'s *values*, or ``None`` when it can
@@ -362,7 +377,7 @@ def _write_snapshot(
     _require_restricted(lattice, index)
     lx, ly, lz = lattice[0, 0], lattice[1, 1], lattice[2, 2]
     xy, xz, yz = lattice[1, 0], lattice[2, 0], lattice[2, 1]
-    tilted = max(abs(xy), abs(xz), abs(yz)) > 1e-12
+    tilted = max(abs(xy), abs(xz), abs(yz)) > RESTRICTED_TILT_EPS
     pbc = frame.cell.pbc if frame.cell is not None else (True, True, True)
     # The boundary flags are per-axis tokens (the parser reads each token's first character
     # for the periodic flag): "p p p" for a fully periodic box, "f f f" for an open one.
@@ -503,9 +518,9 @@ def _is_restricted(lattice: np.ndarray) -> bool:
     any other cell would need a rotation to write, which would silently change the trajectory's
     frame of reference — an unrequested transform Xtalate refuses rather than performs (D43)."""
     return bool(
-        np.allclose(lattice[0, 1], 0.0)
-        and np.allclose(lattice[0, 2], 0.0)
-        and np.allclose(lattice[1, 2], 0.0)
+        abs(float(lattice[0, 1])) <= RESTRICTED_UPPER_ATOL
+        and abs(float(lattice[0, 2])) <= RESTRICTED_UPPER_ATOL
+        and abs(float(lattice[1, 2])) <= RESTRICTED_UPPER_ATOL
     )
 
 

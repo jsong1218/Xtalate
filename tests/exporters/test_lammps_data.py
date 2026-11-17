@@ -36,6 +36,7 @@ from tests._format_helpers import assert_scientifically_equal
 from xtalate.exporters.lammps_data import make_lammps_data_exporter
 from xtalate.parsers.lammps_data import make_lammps_data_parser
 from xtalate.schema import CanonicalObject, load_canonical
+from xtalate.sdk.lammps import RESTRICTED_TILT_EPS, RESTRICTED_UPPER_ATOL
 
 GOLDEN = Path(__file__).parent.parent / "golden" / "lammps_data"
 _TYPES_ASSIGNED = "LAMMPSDATA_TYPES_ASSIGNED"
@@ -376,3 +377,77 @@ def test_export_without_a_resolved_unit_style_raises() -> None:
     obj.user_metadata.custom_global.pop(_UNITS_KEY, None)
     with pytest.raises(ValueError, match="ambiguous_units"):
         _export(obj)
+
+
+def _with_lattice(obj: CanonicalObject, lattice: np.ndarray) -> CanonicalObject:
+    frame = obj.frames[0]
+    assert frame.cell is not None
+    return obj.model_copy(
+        update={
+            "frames": [
+                frame.model_copy(
+                    update={"cell": frame.cell.model_copy(update={"lattice_vectors": lattice})}
+                )
+            ]
+        }
+    )
+
+
+def _lattice(obj: CanonicalObject) -> np.ndarray:
+    cell = obj.frames[0].cell
+    assert cell is not None
+    return np.asarray(cell.lattice_vectors, dtype=float).copy()
+
+
+def _tilt_warnings(obj: CanonicalObject) -> list[str]:
+    return [
+        w.message
+        for w in make_lammps_data_exporter().export_warnings(obj)
+        if w.code == "TILT_BELOW_THRESHOLD_DROPPED"
+    ]
+
+
+def test_thresholds_are_named_constants() -> None:
+    assert RESTRICTED_TILT_EPS == 1e-12
+    assert RESTRICTED_UPPER_ATOL == 1e-8
+
+
+def test_upper_triangle_noise_is_still_accepted_but_now_reported() -> None:
+    obj = _load("atomic-metal-ortho")
+    lat = _lattice(obj)
+    lat[0, 1] = 5e-10
+    noisy = _with_lattice(obj, lat)
+    _export(noisy)  # acceptance unchanged: must not raise
+    messages = _tilt_warnings(noisy)
+    assert len(messages) == 1 and "5e-10" in messages[0]
+
+
+def test_upper_triangle_above_atol_is_still_refused() -> None:
+    obj = _load("atomic-metal-ortho")
+    lat = _lattice(obj)
+    lat[0, 1] = 1e-6
+    with pytest.raises(ValueError, match="restricted triclinic"):
+        _export(_with_lattice(obj, lat))
+
+
+def test_lower_triangle_tilt_above_eps_is_written_without_warning() -> None:
+    obj = _load("atomic-metal-ortho")
+    lat = _lattice(obj)
+    lat[1, 0] = 5e-10
+    tilted = _with_lattice(obj, lat)
+    assert "xy xz yz" in _export(tilted).decode()
+    assert _tilt_warnings(tilted) == []
+
+
+def test_sub_eps_tilt_is_written_as_zero_and_reported() -> None:
+    obj = _load("atomic-metal-ortho")
+    lat = _lattice(obj)
+    lat[1, 0] = 5e-13
+    tilted = _with_lattice(obj, lat)
+    assert "xy xz yz" not in _export(tilted).decode()
+    messages = _tilt_warnings(tilted)
+    assert len(messages) == 1 and "xy" in messages[0] and "5e-13" in messages[0]
+
+
+def test_exact_zero_box_emits_no_tilt_warning() -> None:
+    assert _tilt_warnings(_load("atomic-metal-ortho")) == []
