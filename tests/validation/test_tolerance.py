@@ -132,3 +132,10 @@ def test_a_cartesian_exporter_declaring_precision_is_supported() -> None:
 def test_a_fractional_exporter_with_no_precision_declaration_is_supported() -> None:
     # Every Phase 1 fractional exporter today: full precision, nothing declared, bound 0.0.
     assert require_supported_precision("cif", {}, "fractional") == {}
+
+
+def test_occupancies_quantity_has_a_default_base() -> None:
+    p = ToleranceProfile.named("default")
+    assert "occupancies" in p.quantities()
+    assert p.base("occupancies") == Bounds(1e-6, 1e-4)
+    assert p.as_dict()["occupancies_fail"] == 1e-4

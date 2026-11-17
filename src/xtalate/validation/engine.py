@@ -36,6 +36,7 @@ from xtalate.validation._shared import AGGREGATE as _AGGREGATE
 from xtalate.validation._shared import NUMERIC_FIELDS as _NUMERIC_FIELDS
 from xtalate.validation._shared import RANK as _RANK
 from xtalate.validation._shared import require_supported_precision
+from xtalate.validation._structural import StructuralTally
 from xtalate.validation.report import CheckResult, ValidationReport
 from xtalate.validation.tolerance import ToleranceProfile
 
@@ -204,6 +205,10 @@ class ValidationEngine:
             ),
             _check_report_consistency(conversion_report),
         ]
+        checks = _with_structural(
+            checks,
+            _check_structural(expected, canonical, perm, tolerance, precision, conversion_report),
+        )
         return self._finalize(
             conversion_report,
             expected.schema_version,
@@ -254,6 +259,17 @@ class ValidationEngine:
             ),
             _check_report_consistency(conversion_report),
         ]
+        checks = _with_structural(
+            checks,
+            _check_structural(
+                expected,
+                actual,
+                exporter.atom_permutation(expected),
+                tolerance,
+                write_caps.numeric_precision,
+                conversion_report,
+            ),
+        )
         return self._finalize(
             conversion_report,
             expected.schema_version,
@@ -622,6 +638,38 @@ def _check_metadata(expected: CanonicalObject, canonical: CanonicalObject) -> Ch
             )
         ),
     )
+
+
+def _check_structural(
+    expected: CanonicalObject,
+    canonical: CanonicalObject,
+    perm: list[int] | None,
+    tolerance: ToleranceProfile,
+    precision: dict[str, int | None],
+    report: ConversionReportView,
+) -> CheckResult | None:
+    """The conditional ``structural_fidelity`` check (``None`` = nothing structural to judge)."""
+    tally = StructuralTally()
+    n = min(len(expected.frames), len(canonical.frames))
+    for i in range(n):
+        ef, af = expected.frames[i], canonical.frames[i]
+        tally.observe(ef, af, _perm_for(perm, len(ef.atoms.symbols)))
+    return tally.result(
+        tolerance,
+        _representational_bound(precision, "atoms.occupancies"),
+        frozenset(e.path for e in report.removed),
+    )
+
+
+def _with_structural(
+    checks: list[CheckResult], structural: CheckResult | None
+) -> list[CheckResult]:
+    """Insert the conditional check immediately after ``metadata_preservation`` (shared by the batch
+    and streaming validators so their check order agrees)."""
+    if structural is None:
+        return checks
+    at = next(i for i, c in enumerate(checks) if c.check_id == "metadata_preservation") + 1
+    return [*checks[:at], structural, *checks[at:]]
 
 
 def _check_absence(

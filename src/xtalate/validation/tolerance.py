@@ -48,7 +48,8 @@ class Bounds:
 # (typical values ~1e-3–1e-1), so its base is a hundredth of the forces/velocities base — recorded
 # as DECISIONS.md D151 (the D25 per-quantity-base methodology), first exercised by M40-S2's
 # resolved extXYZ round-trip; the §4.3 note scopes it: Voigt↔3×3 expansion is exact, the tolerance
-# covers decimal representation only.
+# covers decimal representation only. `occupancies` is a dimensionless fraction in [0, 1]; its base
+# is the forces/velocities base, the same D25 nearest-precision methodology.
 _BASES: dict[str, Bounds] = {
     "positions": Bounds(1e-5, 1e-3),
     "lattice": Bounds(1e-5, 1e-3),
@@ -60,6 +61,7 @@ _BASES: dict[str, Bounds] = {
     "magnetic_moments": Bounds(1e-4, 1e-2),
     "masses": Bounds(1e-6, 1e-4),
     "time": Bounds(1e-6, 1e-3),
+    "occupancies": Bounds(1e-6, 1e-4),
 }
 
 # The named profiles (§4.4): a uniform scale on every base. `default` is 1×; `strict` tightens 100×
