@@ -1,7 +1,8 @@
 """The concrete repair operations (v1.7 M64).
 
-The operation set is **closed at four for the whole version** — wrap-into-cell (M64), center,
-deduplicate, species reorder (M65) — and ``identity``, which is **not** a fifth scientific
+The operation set was closed at four for v1.7 — wrap-into-cell (M64), center, deduplicate,
+species reorder (M65) — and is extended to five by the QoL release with ``select_frames`` (a
+selective-reductive trajectory subset); and ``identity``, which is **not** a fifth scientific
 operation: it is the reference implementation of the ``RepairOperation`` contract (M64-S1),
 used to prove the recording spine and the reproducibility harness before the hard operation
 (wrap) lands. ``builtin_repair_operations()`` is the explicit first-party list a higher layer
@@ -27,6 +28,7 @@ from numpy.typing import NDArray
 
 from xtalate.repair._reindex import reindex_per_atom
 from xtalate.repair.contract import (
+    REPAIR_BLOCK_EMPTY_SELECTION,
     REPAIR_BLOCK_MISSING_LATTICE,
     SELECTIVE_REDUCTIVE_HAZARD,
     TRANSFORMATIVE_HAZARD,
@@ -798,8 +800,166 @@ class Deduplicate(RepairOperation):
         )
 
 
+SELECT_FRAMES_DROPPED = RepairHazard(
+    code="SELECT_FRAMES_DROPPED_FRAMES",
+    message=(
+        "select_frames dropped frames from the trajectory - they are not recoverable from the "
+        "output (the Assumption records the slice and the counts kept/dropped)"
+    ),
+)
+
+#: Above this many kept frames the explicit index list is omitted from the recorded parameters
+#: (the normalized start/stop/step replay the selection exactly; a 100k-element list would bloat
+#: every Conversion Report for no added reproducibility).
+_SELECT_FRAMES_LIST_LIMIT = 1000
+
+#: Recorded-only keys: a replay passes back the recorded parameters verbatim.
+_SELECT_FRAMES_RECORDED_KEYS = frozenset(
+    {"kept_indices", "kept_count", "dropped_count", "total_frames"}
+)
+
+
+def _int_param(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise RepairError(
+            f"select_frames: {name!r} must be an integer, got {type(value).__name__} {value!r}"
+        )
+    return value
+
+
+def _select_frames_slice(parameters: dict[str, Any]) -> tuple[int | None, int | None, int]:
+    unknown = set(parameters) - {"start", "stop", "step"} - _SELECT_FRAMES_RECORDED_KEYS
+    if unknown:
+        raise RepairError(
+            f"select_frames does not take parameter(s) {sorted(unknown)}; "
+            "it takes start, stop, step"
+        )
+    start = None if parameters.get("start") is None else _int_param(parameters["start"], "start")
+    stop = None if parameters.get("stop") is None else _int_param(parameters["stop"], "stop")
+    step = _int_param(parameters.get("step", 1), "step")
+    if step < 1:
+        raise RepairError(
+            f"select_frames: step must be >= 1, got {step} (a negative step would reverse the "
+            "trajectory order - an unrequested transformation)"
+        )
+    return start, stop, step
+
+
+class SelectFrames(RepairOperation):
+    """Keep a Python-slice subset of a trajectory's frames (QoL Q2).
+
+    Parameters ``start``/``stop``/``step`` follow ``list[start:stop:step]`` semantics (negative
+    indices count from the end; out-of-range bounds clamp; omitted ``start``/``stop`` mean the
+    ends - slice endpoints, not defaulted scientific values). ``step`` must be an integer >= 1
+    (a negative step would reverse trajectory order, an unrequested transform, D43).
+    **Selective-reductive**: dropped frames are gone from the output, so every application that
+    drops something warns with ``SELECT_FRAMES_DROPPED_FRAMES``; keeping every frame is a
+    recorded no-op with no warning. An **empty selection blocks**
+    (``REPAIR_BLOCK_EMPTY_SELECTION``; the engine turns it into a ``RepairError``). Kept frames
+    are renumbered ``index = position`` (a schema invariant); ``Frame.time`` is kept verbatim (a
+    gap in time is real), and the object-level ``custom_per_frame`` arrays are sliced with the
+    same indices. ``trajectory`` is kept while more than one frame remains and dropped for
+    exactly one (the ``CanonicalObject.single_frame`` rule). No per-atom axis is touched, so the
+    reindex spine is not involved.
+    """
+
+    operation = "select_frames"
+    hazard_class = SELECTIVE_REDUCTIVE_HAZARD
+    hazards = (SELECT_FRAMES_DROPPED,)
+
+    @staticmethod
+    def _indices(obj: CanonicalObject, parameters: dict[str, Any]) -> list[int]:
+        start, stop, step = _select_frames_slice(parameters)
+        return list(range(*slice(start, stop, step).indices(obj.frame_count)))
+
+    def block(self, obj: CanonicalObject, parameters: dict[str, Any]) -> RepairBlock | None:
+        start, stop, step = _select_frames_slice(parameters)
+        if not self._indices(obj, parameters):
+            return RepairBlock(
+                operation=self.operation,
+                reason=REPAIR_BLOCK_EMPTY_SELECTION,
+                path=None,
+                detail=(
+                    f"frames {start if start is not None else ''}:"
+                    f"{stop if stop is not None else ''}:{step} selects no frames from a "
+                    f"{obj.frame_count}-frame object"
+                ),
+            )
+        return None
+
+    def apply(self, obj: CanonicalObject, parameters: dict[str, Any]) -> CanonicalObject:
+        indices = self._indices(obj, parameters)
+        frames = [obj.frames[i].model_copy(update={"index": pos}) for pos, i in enumerate(indices)]
+        um = obj.user_metadata
+        sliced: dict[str, Any] = {
+            key: (val[indices] if isinstance(val, np.ndarray) else [val[i] for i in indices])
+            for key, val in um.custom_per_frame.items()
+        }
+        new_um = um.model_copy(update={"custom_per_frame": sliced})
+        return obj.model_copy(
+            update={
+                "frames": frames,
+                "trajectory": obj.trajectory if len(frames) > 1 else None,
+                "user_metadata": new_um,
+            }
+        )
+
+    def recorded_parameters(
+        self, obj: CanonicalObject, parameters: dict[str, Any]
+    ) -> dict[str, Any]:
+        start, stop, step = _select_frames_slice(parameters)
+        # Normalized, always-integer bounds replay the selection exactly on any object of the
+        # same length (``slice.indices`` is idempotent on its own output).
+        norm_start, norm_stop, norm_step = slice(start, stop, step).indices(obj.frame_count)
+        indices = self._indices(obj, parameters)
+        record: dict[str, Any] = {
+            "start": norm_start,
+            "stop": norm_stop,
+            "step": norm_step,
+            "kept_count": len(indices),
+            "dropped_count": obj.frame_count - len(indices),
+            "total_frames": obj.frame_count,
+        }
+        if len(indices) <= _SELECT_FRAMES_LIST_LIMIT:
+            record["kept_indices"] = indices
+        return record
+
+    def hazards_for(self, obj: CanonicalObject, parameters: dict[str, Any]) -> list[RepairHazard]:
+        dropped = obj.frame_count - len(self._indices(obj, parameters))
+        if dropped == 0:
+            return []  # Nothing dropped - a no-op repair must not claim a loss.
+        message = (
+            f"select_frames dropped {dropped} of {obj.frame_count} frame(s) - they are "
+            "not recoverable from the output; the Assumption records the slice and the "
+            "counts kept/dropped"
+        )
+        _, _, step = _select_frames_slice(parameters)
+        if step > 1 and obj.trajectory is not None and obj.trajectory.timestep is not None:
+            # trajectory.timestep is the SOURCE frame spacing. Rescaling it would be an
+            # unrequested transform (D43); leaving it unmentioned would let it silently
+            # misdescribe the kept frames (P1). So it is carried verbatim and the mismatch is
+            # stated.
+            message += (
+                f"; trajectory.timestep ({obj.trajectory.timestep} fs) is the source's frame "
+                f"spacing and is carried unchanged, but consecutive kept frames are {step} "
+                "source frames apart (per-frame time values are kept verbatim and remain "
+                "authoritative)"
+            )
+        return [RepairHazard(code=SELECT_FRAMES_DROPPED.code, message=message)]
+
+    def describe(self, obj: CanonicalObject, parameters: dict[str, Any]) -> str:
+        start, stop, step = _select_frames_slice(parameters)
+        n = obj.frame_count
+        kept = len(self._indices(obj, parameters))
+        norm = slice(start, stop, step).indices(n)
+        spec = f"{norm[0]}:{norm[1]}:{norm[2]}"
+        if kept == n:
+            return f"Kept frames {spec} ({kept} of {n}); nothing dropped (a recorded no-op repair)."
+        return f"Kept frames {spec} ({kept} of {n}); dropped {n - kept} frames."
+
+
 def builtin_repair_operations() -> list[RepairOperation]:
-    """The explicit first-party repair-operation list — the **closed set of four** (+ the
+    """The explicit first-party repair-operation list — the **closed set of five** (+ the
     ``identity`` reference op), complete at M65-S3 (D254). Third-party repairs are declined
     for v1.7 (impl-plan §4 rule 4)."""
     return [
@@ -808,4 +968,5 @@ def builtin_repair_operations() -> list[RepairOperation]:
         SpeciesReorder(),
         Center(),
         Deduplicate(),
+        SelectFrames(),
     ]

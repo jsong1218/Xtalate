@@ -62,6 +62,7 @@ from xtalate.recovery import (
     frame_selection_stream_records,
 )
 from xtalate.repair import (
+    REPAIR_BLOCK_EMPTY_SELECTION,
     REPAIR_BLOCK_MISSING_LATTICE,
     AppliedRepair,
     RepairBlock,
@@ -1711,12 +1712,13 @@ def _repair_block_scenarios(
 ) -> list[UnresolvedScenario]:
     """Map blocked repairs onto the recovery scenarios they resolve through (D249/D250).
 
-    M64/M65's closed operation set knows two blocks, both cell-less: ``wrap_into_cell`` and a
+    M64/M65's closed operation set knows two cell-less blocks: ``wrap_into_cell`` and a
     ``center`` whose ``cell_center`` reference/target names a frame without one — both compose
     with the existing ``missing_lattice`` recovery — the scenario, canonical path, and
     pair-specific option list (computed for the concrete target, never static) come from the
     existing machinery, so the repair refuses exactly the way a target-required lattice would
-    (nothing new is invented). A block whose reason maps to no recovery scenario raises: the
+    (nothing new is invented). A third block, ``select_frames`` selecting no frame, is a caller
+    error raised as ``RepairError``. A block whose reason maps to no recovery scenario raises: the
     engine can neither refuse it through recovery nor honestly proceed."""
     caps = matrix.get(target_format_id, "write")
     scenarios: list[UnresolvedScenario] = []
@@ -1733,6 +1735,13 @@ def _repair_block_scenarios(
                         target_supports_multifile=output_multifile,
                     ),
                 )
+            )
+        elif block.reason == REPAIR_BLOCK_EMPTY_SELECTION:
+            # Nothing can be "recovered" into a selection the caller never made: a caller mistake
+            # (CLI exit 1, API MALFORMED_REQUEST), not a refusal with an empty option list.
+            raise RepairError(
+                f"repair {block.operation!r}: {block.detail} - correct the frame range "
+                "(there is nothing to recover into an empty selection)"
             )
         else:
             raise RepairError(

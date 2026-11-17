@@ -101,6 +101,7 @@ def _repair_stack(draw: st.DrawFn) -> list[RepairRequest]:
     """
     requests: list[RepairRequest] = []
     for _ in range(draw(st.integers(min_value=1, max_value=3))):
+        # select_frames is covered by tests/repair/test_select_frames.py (frame-count-changing op).
         operation = draw(
             st.sampled_from(["wrap_into_cell", "center", "deduplicate", "species_reorder"])
         )

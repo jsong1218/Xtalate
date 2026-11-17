@@ -304,3 +304,44 @@ def test_recovery_preview_on_a_paused_repair_job_describes_the_repaired_document
         a["description"] for a in report["assumptions"] if a["scenario"] == "missing_lattice"
     ]
     assert recorded == [row["description"]]  # the preview is the record (P4)
+
+
+FOUR_FRAME_XYZ = b"".join(
+    f"2\nframe {i}\nO {i}.0 0.0 0.0\nH {i}.0 1.0 0.0\n".encode() for i in range(4)
+)
+
+
+def test_select_frames_via_api_repairs_field(client: TestClient) -> None:
+    file_id = _upload(client, FOUR_FRAME_XYZ, "traj.xyz")
+    env = _convert(
+        client,
+        file_id,
+        "extxyz",
+        {
+            "repairs": [
+                {"operation": "select_frames", "parameters": {"start": 0, "stop": 4, "step": 2}}
+            ]
+        },
+    )
+    assert env["state"] == "completed"
+    report = env["result"]["conversion_report"]
+    assert report["status"] == "completed"
+    (row,) = _repair_rows(report)
+    assert row["choice"] == "select_frames"
+    assert row["description"] == "Kept frames 0:4:2 (2 of 4); dropped 2 frames."
+    (warning,) = _repair_warnings(report)
+    assert warning["code"] == "SELECT_FRAMES_DROPPED_FRAMES"
+    assert env["result"]["validation_report"]["status"] in ("passed", "passed_with_warnings")
+
+
+def test_select_frames_empty_selection_is_malformed_request(client: TestClient) -> None:
+    file_id = _upload(client, FOUR_FRAME_XYZ, "traj.xyz")
+    env = _convert(
+        client,
+        file_id,
+        "extxyz",
+        {"repairs": [{"operation": "select_frames", "parameters": {"start": 9, "stop": 12}}]},
+    )
+    assert env["state"] == "failed"
+    assert env["error"]["code"] == "MALFORMED_REQUEST"
+    assert "selects no frames" in env["error"]["message"]

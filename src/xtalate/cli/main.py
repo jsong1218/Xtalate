@@ -1003,7 +1003,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Apply a repair operation before export (repeatable; applied in the given "
         "order). Operations: wrap_into_cell (no parameters); center "
         "(reference=centroid|cell_center, target=origin|cell_center); deduplicate "
-        "(distance_threshold=ANGSTROM); species_reorder (optional permutation=…). "
+        "(distance_threshold=ANGSTROM); species_reorder (optional permutation=…); "
+        "select_frames (start=,stop=,step=: keep a Python-slice subset of frames). "
         "An explicit-coordinate [x, y, z] center target is not supported on the CLI yet.",
     )
     p_convert.add_argument("--acknowledge-loss", action="store_true")

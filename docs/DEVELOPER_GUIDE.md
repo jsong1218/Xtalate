@@ -862,8 +862,8 @@ File Repair is the second realized §3.2 consumer and the first *modifying* one.
 `src/xtalate/repair/` and depends on `schema` + `sdk` only (the import-linter layer M64 added); the
 Conversion Engine applies a user-supplied **ordered** list of `RepairRequest`s between parse and
 pre-flight (D250) — order is scientific meaning, and the report's repair rows record the applied
-order. The operation set is **closed at four** — `wrap_into_cell`, `center`, `deduplicate`,
-`species_reorder` — each a pure, deterministic Canonical Object → Canonical Object transform that
+order. The operation set is **closed at five** — `wrap_into_cell`, `center`, `deduplicate`,
+`species_reorder`, `select_frames` (a selective-reductive trajectory subset) — each a pure, deterministic Canonical Object → Canonical Object transform that
 records the D249 triple: an Assumption carrying the operation and its complete parameters, a
 plain-language statement of what changed, and a `ConversionRecord(operation="repair")` in
 Provenance. Every application is reproducible from its report alone — the property suite

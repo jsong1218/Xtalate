@@ -115,7 +115,8 @@ class RepairSpec(BaseModel):
     (v1.7 M66-S2; D256).
 
     ``operation`` names one of the closed set (``wrap_into_cell``, ``center``,
-    ``deduplicate``, ``species_reorder``); ``parameters`` are the operation's complete
+    ``deduplicate``, ``species_reorder``, ``select_frames`` — a selective-reductive frame subset
+    taking ``start``/``stop``/``step``); ``parameters`` are the operation's complete
     parameters. **Order is significant and preserved**: the list is applied in the order given
     (wrap-then-center ≠ center-then-wrap) and the report records the applied order. Repair
     parameters are **required up front** — the user initiates a repair and therefore already
