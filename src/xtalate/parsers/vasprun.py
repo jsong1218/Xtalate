@@ -66,7 +66,7 @@ from defusedxml.common import DefusedXmlException
 from pydantic import JsonValue
 
 from xtalate._constants import K_BAR_PER_EV_A3
-from xtalate.parsers._common import build_provenance
+from xtalate.parsers._common import build_provenance, floats_from_tokens
 from xtalate.parsers._vasp import (
     TOTAL_ENERGY_TAG,
     build_cell,
@@ -158,7 +158,20 @@ def _row_values(v: Element, where: str) -> list[float]:
 def _varray_rows(varray: Element) -> list[list[float]]:
     """The float rows of a ``<varray>`` (one ``[float, ...]`` per ``<v>`` child)."""
     where = f"<varray name={varray.get('name')!r}>"
-    return [_row_values(v, where) for v in varray]
+    children = list(varray)
+    texts = [v.text for v in children]
+    if children and all(t is not None and t.strip() for t in texts):
+        split = [t.split() for t in texts if t is not None]
+        width = len(split[0])
+        if all(len(s) == width for s in split):
+            try:
+                flat = floats_from_tokens([tok for s in split for tok in s])
+            except ValueError:
+                pass  # replay per row below so the error text is the legacy one
+            else:
+                shaped: list[list[float]] = flat.reshape(len(children), width).tolist()
+                return shaped
+    return [_row_values(v, where) for v in children]
 
 
 def _require_name(elem: Element, where: str) -> str:

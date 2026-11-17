@@ -351,8 +351,10 @@ def _check_species(
             mismatches += max(len(exp), len(got))
             continue
         fp = _perm_for(perm, len(exp))
-        order = fp if fp is not None else list(range(len(exp)))
-        mismatches += sum(1 for j in range(len(got)) if exp[order[j]] != got[j])
+        exp_arr = np.asarray(exp)
+        if fp is not None:
+            exp_arr = exp_arr[np.asarray(fp)]
+        mismatches += int(np.count_nonzero(exp_arr != np.asarray(got)))
     status = "fail" if mismatches else "pass"
     measured: dict[str, Any] = {
         "permutation_map": perm if perm is not None else "identity",
