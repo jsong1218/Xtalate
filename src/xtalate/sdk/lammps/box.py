@@ -64,10 +64,11 @@ def zeroed_box_components(lattice: np.ndarray) -> list[tuple[str, float]]:
         v = float(lat[i, j])
         if 0.0 < abs(v) <= RESTRICTED_UPPER_ATOL:
             out.append((name, v))
-    for name, (i, j) in (("xy", (1, 0)), ("xz", (2, 0)), ("yz", (2, 1))):
-        v = float(lat[i, j])
-        if 0.0 < abs(v) <= RESTRICTED_TILT_EPS:
-            out.append((name, v))
+    tilts = [("xy", float(lat[1, 0])), ("xz", float(lat[2, 0])), ("yz", float(lat[2, 1]))]
+    # The writers' own decision: the tilt line is dropped only when ALL tilts are within eps;
+    # otherwise it is written verbatim and nothing is zeroed.
+    if max(abs(v) for _, v in tilts) <= RESTRICTED_TILT_EPS:
+        out.extend((name, v) for name, v in tilts if v != 0.0)
     return out
 
 

@@ -371,3 +371,36 @@ def test_every_affected_frame_is_reported_not_just_the_first() -> None:
     messages = _tilt_warnings(multi)
     assert len(messages) == 1
     assert "frame(s) 1-2" in messages[0] and "xy" in messages[0] and "5e-13" in messages[0]
+
+
+def test_mixed_tilt_above_and_below_eps_is_written_verbatim_without_warning() -> None:
+    obj = _resolved(_METAL)
+    lat = _lattice(obj)
+    lat[1, 0] = 5e-10
+    lat[2, 0] = 5e-13
+    tilted = _with_lattice(obj, lat)
+    assert "xy xz yz" in _export(tilted).decode()
+    assert _tilt_warnings(tilted) == []
+
+
+def test_absent_cell_gives_no_tilt_warning_and_no_crash() -> None:
+    obj = _resolved(_METAL)
+    frame = obj.frames[0]
+    cellless = obj.model_copy(update={"frames": [frame.model_copy(update={"cell": None})]})
+    assert _tilt_warnings(cellless) == []
+
+
+def test_non_consecutive_frames_are_reported_as_ranges() -> None:
+    obj = _resolved(_METAL)
+    base = obj.frames[0]
+    assert base.cell is not None
+    noisy_lattice = _lattice(obj)
+    noisy_lattice[1, 0] = 5e-13
+    noisy = base.model_copy(
+        update={"cell": base.cell.model_copy(update={"lattice_vectors": noisy_lattice})}
+    )
+    frames = [base] + [
+        (noisy if k in (1, 2, 4) else base).model_copy(update={"index": k}) for k in range(1, 5)
+    ]
+    messages = _tilt_warnings(obj.model_copy(update={"frames": frames}))
+    assert len(messages) == 1 and "frame(s) 1-2, 4" in messages[0]

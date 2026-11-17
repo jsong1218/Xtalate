@@ -451,3 +451,20 @@ def test_sub_eps_tilt_is_written_as_zero_and_reported() -> None:
 
 def test_exact_zero_box_emits_no_tilt_warning() -> None:
     assert _tilt_warnings(_load("atomic-metal-ortho")) == []
+
+
+def test_mixed_tilt_above_and_below_eps_is_written_verbatim_without_warning() -> None:
+    obj = _load("atomic-metal-ortho")
+    lat = _lattice(obj)
+    lat[1, 0] = 5e-10
+    lat[2, 0] = 5e-13
+    tilted = _with_lattice(obj, lat)
+    assert "xy xz yz" in _export(tilted).decode()
+    assert _tilt_warnings(tilted) == []
+
+
+def test_absent_cell_gives_no_tilt_warning_and_no_crash() -> None:
+    obj = _load("atomic-metal-ortho")
+    frame = obj.frames[0]
+    cellless = obj.model_copy(update={"frames": [frame.model_copy(update={"cell": None})]})
+    assert _tilt_warnings(cellless) == []
