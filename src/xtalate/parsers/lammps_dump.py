@@ -76,7 +76,12 @@ from typing import BinaryIO, cast
 
 import numpy as np
 
-from xtalate.parsers._common import build_provenance, coerce_per_atom, with_per_atom
+from xtalate.parsers._common import (
+    build_provenance,
+    coerce_per_atom,
+    floats_from_tokens,
+    with_per_atom,
+)
 from xtalate.schema import (
     SCHEMA_VERSION,
     AtomsBlock,
@@ -493,26 +498,46 @@ def _read_block_header(
 def _read_data_rows(lines: _Lines, header: _BlockHeader) -> list[list[str]]:
     """Read one snapshot's ``n_atoms`` data rows (token lists, untyped — columns are
     interpreted by name afterwards, so a numeric column and an element column read side by
-    side)."""
-    rows: list[list[str]] = []
-    for a in range(header.n_atoms):
-        line = lines.next()
+    side).
+
+    Lines are drawn first and validated after, so tokenising is one tight pass; the checks then
+    run in file order, which keeps every error — and which of two simultaneous errors wins —
+    identical to a row-at-a-time read: a lazily raised UTF-8 error is held back and raised only
+    once the rows before it have passed their own token-count check."""
+    taken: list[str] = []
+    pending: ParseError | None = None
+    ended = False
+    for _ in range(header.n_atoms):
+        try:
+            line = lines.next()
+        except ParseError as exc:
+            pending = exc
+            break
         if line is None or line.strip() == "":
-            raise _error(
-                _MALFORMED,
-                f"{header.location} declares {header.n_atoms} atoms but the block ended after "
-                f"{a} data rows",
-                location=header.location,
-            )
+            ended = True
+            break
+        taken.append(line)
+    n_columns = len(header.columns)
+    rows: list[list[str]] = []
+    for line in taken:
         tokens = line.split()
-        if len(tokens) != len(header.columns):
+        if len(tokens) != n_columns:
             raise _error(
                 _MALFORMED,
                 f"{header.location} data row has {len(tokens)} values, expected "
-                f"{len(header.columns)} for columns {header.columns}: {line.strip()!r}",
+                f"{n_columns} for columns {header.columns}: {line.strip()!r}",
                 location=header.location,
             )
         rows.append(tokens)
+    if pending is not None:
+        raise pending
+    if ended:
+        raise _error(
+            _MALFORMED,
+            f"{header.location} declares {header.n_atoms} atoms but the block ended after "
+            f"{len(taken)} data rows",
+            location=header.location,
+        )
     return rows
 
 
@@ -528,6 +553,10 @@ def _column_index(header: _BlockHeader, name: str) -> int:
 
 
 def _column_floats(rows: list[list[str]], index: int, header: _BlockHeader) -> np.ndarray:
+    try:
+        return floats_from_tokens([row[index] for row in rows])
+    except ValueError:
+        pass  # replay per token below so the message names the exact column, value and atom
     out = np.empty(len(rows), dtype=np.float64)
     for a, row in enumerate(rows):
         try:
