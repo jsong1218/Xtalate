@@ -23,9 +23,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests._format_helpers import assert_matches_golden
+from tests._format_helpers import assert_matches_golden, parse_h5md_assuming_periodic
 from xtalate.parsers.h5md import make_h5md_parser
 from xtalate.schema import CanonicalObject
+from xtalate.sdk import ParseError
 
 GOLDEN = Path(__file__).parent / "h5md"
 CASES = ["co2-nvt-3frame", "gcmc-variable-n-3frame", "npt-triclinic-2frame"]
@@ -36,7 +37,14 @@ def _source(case: str) -> bytes:
 
 
 def _parse(case: str) -> CanonicalObject:
-    return make_h5md_parser().parse(io.BytesIO(_source(case)), filename="sample.h5").canonical
+    try:
+        return make_h5md_parser().parse(io.BytesIO(_source(case)), filename="sample.h5").canonical
+    except ParseError as exc:
+        # The gcmc box states no boundary: periodicity is never guessed (P4), so the committed bytes
+        # are read under an explicit, recorded `periodic` choice (the canonical object is the same).
+        if exc.issues[0].recovery_hint != "ambiguous_periodicity":
+            raise
+        return parse_h5md_assuming_periodic(_source(case), "sample.h5")
 
 
 @pytest.mark.parametrize("case", CASES)

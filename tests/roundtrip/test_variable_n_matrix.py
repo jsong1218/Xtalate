@@ -17,11 +17,11 @@ is the full-width matrix, not the curated PR subset.
 
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
 import pytest
 
+from tests._format_helpers import parse_h5md_assuming_periodic
 from tests.roundtrip._matrix import FIXED_PRESETS, writeable_targets
 from xtalate.conversion import ConversionEngine
 from xtalate.registry import default_registry
@@ -46,9 +46,8 @@ _PRESETS_NO_FRAME_SELECTION = {k: v for k, v in FIXED_PRESETS.items() if k != "f
 
 
 def _variable_n_source() -> CanonicalObject:
-    parser = _REGISTRY.get_parser("h5md")
     with _SRC.open("rb") as fh:
-        return parser.parse(io.BytesIO(fh.read()), filename=_SRC.name).canonical
+        return parse_h5md_assuming_periodic(fh.read(), _SRC.name)
 
 
 @pytest.mark.nightly

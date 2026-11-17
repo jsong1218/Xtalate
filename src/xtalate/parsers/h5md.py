@@ -39,9 +39,9 @@ D166).
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from io import BytesIO
-from typing import TYPE_CHECKING, BinaryIO
+from typing import BinaryIO
 
 import h5py
 import numpy as np
@@ -73,14 +73,12 @@ from xtalate.sdk import (
     materialize,
 )
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
 FORMAT_ID = "h5md"
 # HDF5 files begin with this 8-byte signature (see the HDF5 spec); used only for sniffing.
 _HDF5_MAGIC = b"\x89HDF\r\n\x1a\n"
 _PARSER_VERSION = f"{FORMAT_ID}-parser {__version__} (h5py {h5py.__version__})"
 _TRUNCATE_HINT = "truncate_at_last_valid_frame"
+_PERIODICITY_HINT = "ambiguous_periodicity"
 
 # Defensive allocation ceilings (v2.0 review, S4). A hostile or corrupt H5MD file can be a few KB on
 # disk yet declare an enormous per-frame particle dimension (H1) or frame count (H4) — chunked,
@@ -283,13 +281,27 @@ def _resolve(group: h5py.Group, name: str) -> _Element | None:
     return _Element(node)
 
 
-def _pbc_from_boundary(boundary: h5py.Dataset | None) -> tuple[bool, bool, bool]:
-    if boundary is None:
+def _pbc_from_boundary(
+    boundary: h5py.Dataset | None, periodicity: str | None = None
+) -> tuple[bool, bool, bool]:
+    """A declared 3-entry boundary is read as written. Anything less is never guessed (P3/P4):
+    it refuses with a recoverable error unless the caller supplied an explicit ``periodicity``."""
+    flags: list[bool] = []
+    if boundary is not None:
+        flags = [_is_periodic(b) for b in np.asarray(boundary).reshape(-1)[:3]]
+    if len(flags) == 3:
+        return (flags[0], flags[1], flags[2])
+    if periodicity == "periodic":
         return (True, True, True)
-    flags = [_is_periodic(b) for b in np.asarray(boundary).reshape(-1)[:3]]
-    while len(flags) < 3:
-        flags.append(True)
-    return (flags[0], flags[1], flags[2])
+    if periodicity == "non_periodic":
+        return (False, False, False)
+    raise _error(
+        "H5MD_AMBIGUOUS_PERIODICITY",
+        "The H5MD box has no usable boundary attribute (absent, or fewer than three entries), "
+        "so its periodicity is unknown. Choose periodic or non_periodic to proceed.",
+        location="box/boundary",
+        hint=_PERIODICITY_HINT,
+    )
 
 
 def _edges_to_lattice(arr: np.ndarray) -> np.ndarray:
@@ -323,7 +335,7 @@ class _BoxReader:
         return Cell(lattice_vectors=_edges_to_lattice(self._edges.at(index)), pbc=self._pbc)
 
 
-def _resolve_box(group: h5py.Group) -> _BoxReader | None:
+def _resolve_box(group: h5py.Group, periodicity: str | None = None) -> _BoxReader | None:
     box = _get_local(group, "box")
     if box is None:
         return None
@@ -331,7 +343,7 @@ def _resolve_box(group: h5py.Group) -> _BoxReader | None:
     if edges_node is None:
         return None
     edges = _Element(edges_node)
-    return _BoxReader(edges, _pbc_from_boundary(_get_local(box, "boundary")))
+    return _BoxReader(edges, _pbc_from_boundary(_get_local(box, "boundary"), periodicity))
 
 
 def _resolve_unit(
@@ -421,18 +433,55 @@ class H5MDParser(ParserPlugin):
         (``truncate_at_last_valid_frame`` → ``truncate``, Part 4 §3.3). Re-reads through the same
         streaming path in truncate mode, so the kept prefix is read by exactly the code that reads
         an intact file, and the dropped tail is recorded as a warning (P1)."""
-        if hint != _TRUNCATE_HINT:
+        if hint not in (_TRUNCATE_HINT, _PERIODICITY_HINT):
             raise NotImplementedError(f"h5md parse_recover does not handle hint {hint!r}")
-        if choice != "truncate":
-            raise NotImplementedError(
-                f"h5md parse_recover applies only the 'truncate' choice (got {choice!r})"
-            )
-        frame_stream = self.parse_stream(stream, filename=filename, truncate=True)
+        context: dict[str, object] = dict(recovery_context or {})
+        # The current hint's own choice is authoritative even if the caller omitted the context.
+        context["truncate_corrupt_tail" if hint == _TRUNCATE_HINT else _PERIODICITY_HINT] = {
+            "choice": choice,
+            "parameters": dict(parameters),
+        }
+        truncate_spec = context.get("truncate_corrupt_tail")
+        truncate = False
+        if isinstance(truncate_spec, Mapping):
+            if truncate_spec.get("choice") != "truncate":
+                raise NotImplementedError(
+                    "h5md parse_recover applies only the 'truncate' choice "
+                    f"(got {truncate_spec.get('choice')!r})"
+                )
+            truncate = True
+        periodicity: str | None = None
+        periodicity_spec = context.get(_PERIODICITY_HINT)
+        if isinstance(periodicity_spec, Mapping):
+            raw = periodicity_spec.get("choice")
+            if raw not in ("periodic", "non_periodic"):
+                raise ValueError(f"unknown ambiguous_periodicity choice {raw!r}")
+            periodicity = str(raw)
+        frame_stream = self.parse_stream(
+            stream, filename=filename, truncate=truncate, periodicity=periodicity
+        )
         canonical, issues = materialize(frame_stream)
+        if periodicity is not None:
+            issues.append(
+                ParseIssue(
+                    severity="warning",
+                    code="H5MD_PERIODICITY_SUPPLIED",
+                    message=(
+                        f"Box periodicity set to {periodicity} on all three axes by explicit "
+                        "user choice."
+                    ),
+                    location="box/boundary",
+                )
+            )
         return ParseResult(canonical=canonical, issues=issues)
 
     def parse_stream(
-        self, stream: BinaryIO, *, filename: str | None, truncate: bool = False
+        self,
+        stream: BinaryIO,
+        *,
+        filename: str | None,
+        truncate: bool = False,
+        periodicity: str | None = None,
     ) -> FrameStream:
         try:
             f = h5py.File(stream, "r")
@@ -455,7 +504,7 @@ class H5MDParser(ParserPlugin):
             force = _resolve(group, "force")
             mass = _resolve(group, "mass")
             charge = _resolve(group, "charge")
-            box = _resolve_box(group)
+            box = _resolve_box(group, periodicity)
 
             issues: list[ParseIssue] = []
             notes: list[str] = [

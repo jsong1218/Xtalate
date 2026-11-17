@@ -119,6 +119,13 @@ export const WHY_THIS_MATTERS: Record<string, WhyThisMatters> = {
       "This changes which structure you convert, nothing about the structure itself. Pick a row by its position to convert that one, or choose to convert every row — which runs the file through batch mode, one output per row. The row you selected is recorded on the conversion so the output is unambiguously traceable to its source row.",
     ],
   },
+  ambiguous_periodicity: {
+    question: QUESTION,
+    stakes: [
+      "The H5MD file has a simulation box but no usable boundary attribute (it is missing, or lists fewer than three directions), so it does not say whether the box is periodic. Xtalate will not assume either answer, and it will not pad a partly declared boundary.",
+      "This is a fact the file never stated, so your choice is recorded on the conversion as a supplied value rather than a reading of your data. Choose 'periodic' or 'non-periodic' to match how the data was produced; the wrong choice changes how every downstream tool wraps atoms and measures distances across the box.",
+    ],
+  },
 };
 
 /** Disclosure copy for a scenario code, or `null` when there is none (a plugin scenario). */

@@ -77,6 +77,11 @@ export const SCENARIO_LABELS: Record<string, Labeled> = {
     description:
       "The database holds more than one structure; a single conversion reads exactly one row.",
   },
+  ambiguous_periodicity: {
+    label: "Periodic boundary conditions not stated",
+    description:
+      "The file has a simulation box but does not say whether it is periodic, so Xtalate cannot tell without a choice from you.",
+  },
 };
 
 /**
@@ -141,6 +146,10 @@ export const CHOICE_LABELS: Record<string, Record<string, Labeled>> = {
   asedb_row_selection: {
     index: { label: "Convert one row by its position" },
     all: { label: "Convert every row (use batch mode)" },
+  },
+  ambiguous_periodicity: {
+    periodic: { label: "Treat the box as periodic in all three directions" },
+    non_periodic: { label: "Treat the system as non-periodic (no boundary conditions)" },
   },
 };
 

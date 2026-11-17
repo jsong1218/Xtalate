@@ -127,6 +127,9 @@ SCENARIO_HAZARD: dict[str, HazardClass] = {
     # exactly like ambiguous_units. A style *outside* the supported set is not an ambiguity to
     # resolve — the parser refuses it as unsupported, never offers it here.
     "ambiguous_atom_style": HazardClass.FABRICATIVE,
+    # M-A5: the source stated no (or an incomplete) boundary; the periodicity is a value the file
+    # never said, so it is a recorded fabrication with a `cell.pbc` supplied entry (P3/P4).
+    "ambiguous_periodicity": HazardClass.FABRICATIVE,
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
@@ -252,6 +255,8 @@ def available_options(
         # documented atom-style list. A style beyond these three is not an ambiguity to resolve —
         # the parser refuses it as unsupported rather than offering it here.
         return ["atomic", "charge", "full"]
+    if scenario == "ambiguous_periodicity":
+        return ["periodic", "non_periodic"]
     if scenario == "asedb_row_selection":
         # M55/M73-S5: `index` re-parses exactly one row as a standalone structure (parameter
         # `row`, a 0-based ordinal in the database's insertion order — the ids the message lists

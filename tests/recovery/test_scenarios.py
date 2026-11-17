@@ -34,6 +34,7 @@ _EXPECTED_CLASSES = {
     # (recovery_hint="ambiguous_atom_style"); the columns are genuine source data, only their
     # layout (which is the charge, which the molecule-id) is resolved, so no `supplied` entry.
     "ambiguous_atom_style": HazardClass.FABRICATIVE,
+    "ambiguous_periodicity": HazardClass.FABRICATIVE,
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
@@ -163,3 +164,7 @@ def test_missing_velocities_offers_omit_only_when_optional_and_permissive() -> N
 
 def test_missing_masses_options() -> None:
     assert available_options("missing_masses") == ["standard_masses", "manual_input"]
+
+
+def test_ambiguous_periodicity_options() -> None:
+    assert available_options("ambiguous_periodicity") == ["periodic", "non_periodic"]
