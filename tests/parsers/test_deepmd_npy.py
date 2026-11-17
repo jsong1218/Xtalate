@@ -257,3 +257,35 @@ def np_save(value: np.ndarray) -> bytes:
     stream = io.BytesIO()
     np.save(stream, value, allow_pickle=False)
     return stream.getvalue()
+
+
+def _boxed_system() -> dict[str, bytes]:
+    return write_system(coords=[H2O_COORDS], boxes=[BOX_FLAT], energy=H2O_ENERGY)
+
+
+def test_nopbc_marker_makes_the_cell_non_periodic() -> None:
+    files = _boxed_system()
+    files["nopbc"] = b""
+    obj = _parse(files).canonical
+    cell = obj.frames[0].cell
+    assert cell is not None
+    assert cell.pbc == (False, False, False)
+    assert not any("nopbc" in n for n in obj.provenance.parse_notes)
+
+
+def test_absent_nopbc_is_noted_when_a_cell_exists() -> None:
+    obj = _parse(_boxed_system()).canonical
+    cell = obj.frames[0].cell
+    assert cell is not None
+    assert cell.pbc == (True, True, True)
+    assert (
+        "DeePMD systems are periodic unless a nopbc file is present; none was found."
+        in obj.provenance.parse_notes
+    )
+
+
+def test_no_note_when_there_is_no_cell() -> None:
+    files = write_system(coords=[H2O_COORDS], boxes=[np.zeros(9)], energy=H2O_ENERGY)
+    obj = _parse(files).canonical
+    assert obj.frames[0].cell is None
+    assert not any("nopbc" in n for n in obj.provenance.parse_notes)

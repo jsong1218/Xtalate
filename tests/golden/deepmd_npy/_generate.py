@@ -78,7 +78,7 @@ def _manifest(
         "format_id": "deepmd_npy",
         "source_file": source_dir.name,
         "expected_canonical": expected_path.name,
-        "canonical_schema_version": "1.0.0",
+        "canonical_schema_version": "2.0.0",
         "sha256": _tree_sha256(source_dir),
         "expected_sha256": _file_sha256(expected_path),
         "origin": {

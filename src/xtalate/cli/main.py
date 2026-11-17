@@ -838,7 +838,7 @@ def _read_directory(path: str) -> dict[str, bytes]:
     root = Path(path)
     if not root.is_dir():
         raise _UsageError(f"{path} is not a directory")
-    known = {"type.raw", "type_map.raw"}
+    known = {"type.raw", "type_map.raw", "nopbc"}
     files: dict[str, bytes] = {}
     for child in sorted(root.rglob("*")):
         if not child.is_file():
