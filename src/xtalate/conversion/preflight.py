@@ -71,6 +71,21 @@ _REQUIRED_FIELD_SCENARIOS = {
 #: one code designed for *unforeseen* fields is the one code the lint cannot see.
 GENERIC_REQUIRED_FIELD_SCENARIO = "missing_required_field"
 
+#: Plain-language label + unit per precision-declared container (A3). Containers a target
+#: declares in ``numeric_precision`` but that are missing here fall back to the raw path.
+_PRECISION_LABELS: dict[str, tuple[str, str]] = {
+    "atoms.positions": ("Positions", "Å"),
+    "dynamics.velocities": ("Velocities (written as momenta)", "ASE momentum units"),
+    "dynamics.forces": ("Forces", "eV/Å"),
+    "electronic.charges": ("Charges", "e"),
+    "electronic.magnetic_moments": ("Magnetic moments", "μB"),
+    "atoms.masses": ("Masses", "amu"),
+    "user_metadata.custom_per_atom": (
+        "Custom per-atom float columns (integer and string columns are exact)",
+        "column units",
+    ),
+}
+
 # The container-level capability key governing per-atom constraint representation (Part 4 §3.3).
 _CONSTRAINTS = "dynamics.constraints"
 
@@ -333,6 +348,26 @@ def build_preflight_from_presence(
         else:  # NONE
             reason = cap.notes or f"Target format {target_format_id!r} cannot store {container}."
             diff.removed.append(RemovedEntry(path=path, reason=reason, detail=detail))
+
+    # A3: a target that writes a declared container at reduced decimal precision. One warning per
+    # container actually written (``diff.preserved`` paths, mapped to their container), so a
+    # per-key custom path and a plain path are treated the same way.
+    written_containers = {capability_path(p.path) for p in diff.preserved}
+    for container, digits in caps.numeric_precision.items():
+        if digits is None or container not in written_containers:
+            continue
+        label, unit = _PRECISION_LABELS.get(container, (container, "source units"))
+        bound = 0.5 * 10.0 ** (-digits)
+        diff.warnings.append(
+            ReportWarning(
+                code="NUMERIC_PRECISION_LIMITED",
+                message=(
+                    f"{label} are written with {digits} decimal places, so a value can change "
+                    f"by up to {bound:.1e} {unit} on write."
+                ),
+                source="capability",
+            )
+        )
 
     # Partial occupancy the target cannot hold. Gated on the target's declared capability for the
     # first-class `atoms.occupancies` field, not a hard-coded format list, so a future format that

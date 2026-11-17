@@ -72,7 +72,8 @@ class ToleranceProfile:
 
     Construct via :meth:`named`; instances are immutable in effect (the base map is not mutated).
     :meth:`effective` applies the §4.2 formula for one quantity given that field's representational
-    bound (0.0 for a full-precision field, e.g. every v0.1 exporter — see ``numeric_precision``)."""
+    bound (0.0 for a full-precision field; extXYZ per-atom columns declare 8 decimals — see
+    ``numeric_precision``)."""
 
     def __init__(self, name: str, bases: dict[str, Bounds]) -> None:
         self.name = name

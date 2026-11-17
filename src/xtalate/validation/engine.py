@@ -765,8 +765,9 @@ def _representational_bound(precision: dict[str, int | None], path: str) -> floa
     It is unimplemented because nothing needs it. The bound this returns is in the *field's own*
     units, which is correct whenever a format writes coordinates at full round-trip precision — and
     every Phase 1 exporter does, including both fractional ones (``_fmt`` is ``repr(float(x))``).
-    So no exporter declares ``numeric_precision``, every bound is 0.0, and the §4.3 base tolerances
-    govern unchanged. Building the scaling now would be speculative machinery for a case no format
+    The extXYZ exporter declares 8 decimals for its per-atom columns (A3); every other exporter
+    currently declares none, so the bound is 0.0 for them and the §4.3 base tolerances govern
+    unchanged. Building the scaling now would be speculative machinery for a case no format
     reaches (**P6**); ``require_supported_precision`` is the guard that makes its absence loud
     rather than silent if one ever does.
     """

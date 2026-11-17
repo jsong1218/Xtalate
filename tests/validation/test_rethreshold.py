@@ -117,6 +117,7 @@ def test_numeric_rethreshold_reapplies_the_stored_representational_bound() -> No
     inert only because no exporter declares ``numeric_precision``, so every stored bound was 0.0 —
     a latent mis-judgement waiting for the first format that declares one. The bound could not be
     re-applied even in principle before this, because the engine never recorded it per path.
+    (extXYZ declares it from A3 on; this test builds its own report and is unaffected.)
     """
     strict = ToleranceProfile.named("strict")
     without = rethreshold(_numeric_report(0.0), strict)

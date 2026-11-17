@@ -203,3 +203,40 @@ def test_write_declaration_is_partial_and_honest(reg: Registry) -> None:
     # The note names both behaviours: the populated-field write (verbatim) and the verbatim
     # carry fallback — never a claim the exporter cannot keep.
     assert _exporter(reg).capabilities().stress_output_convention == "tension_positive"
+
+
+def test_extxyz_declares_eight_decimal_per_atom_precision() -> None:
+    from xtalate.exporters.extxyz import ExtxyzExporter
+
+    prec = ExtxyzExporter().capabilities().numeric_precision
+    assert prec == {
+        "atoms.positions": 8,
+        "dynamics.velocities": 8,
+        "dynamics.forces": 8,
+        "electronic.charges": 8,
+        "electronic.magnetic_moments": 8,
+        "atoms.masses": 8,
+        "user_metadata.custom_per_atom": 8,
+    }
+    # info scalars are written with str() (lossless) and must NOT be declared
+    assert "electronic.total_energy" not in prec
+    assert "electronic.stress" not in prec
+
+
+def test_ase_writes_custom_float_columns_at_eight_decimals() -> None:
+    """Empirical ground truth behind the `user_metadata.custom_per_atom` declaration: ASE's own
+    writer truncates a float per-atom column to 8 decimals but writes info scalars losslessly."""
+    import io as _io
+
+    import numpy as np
+    from ase import Atoms
+    from ase.io import write
+
+    atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1.0]])
+    atoms.arrays["foo"] = np.array([0.123456789012345, 1.0])
+    atoms.info["bar"] = 0.123456789012345
+    buf = _io.StringIO()
+    write(buf, atoms, format="extxyz")
+    text = buf.getvalue()
+    assert "0.12345679" in text and "0.123456789012345" not in text.split("\n")[2]
+    assert "bar=0.123456789012345" in text

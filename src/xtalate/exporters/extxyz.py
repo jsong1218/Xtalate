@@ -246,6 +246,22 @@ class ExtxyzExporter(ExporterPlugin):
             # The stress this exporter writes is tension-positive, identical to canonical
             # (Part 2 §3.7.1; ASE's own get_stress() is tension-positive, A2).
             stress_output_convention="tension_positive",
+            # ASE writes per-atom float columns with "%16.8f" (ase/io/extxyz.py,
+            # output_column_format): 8 decimals, so a value can move by up to 0.5e-8 on write.
+            # Info scalars (energy, stress, Lattice) are written via str() and are lossless, so
+            # they are deliberately NOT declared. Velocities are written in ASE units
+            # (canonical / _ANG_PER_FS_PER_ASE_VEL) and stored as momenta (v*m); declaring 8 is
+            # conservative (never under-reports a loss). Custom per-atom FLOAT columns go through
+            # the same "%16.8f"; int/str columns are exact (the warning text says so).
+            numeric_precision={
+                "atoms.positions": 8,
+                "dynamics.velocities": 8,
+                "dynamics.forces": 8,
+                "electronic.charges": 8,
+                "electronic.magnetic_moments": 8,
+                "atoms.masses": 8,
+                "user_metadata.custom_per_atom": 8,
+            },
         )
 
     def export_warnings(self, canonical: CanonicalObject) -> list[ExporterWarning]:
