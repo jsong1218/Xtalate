@@ -225,7 +225,7 @@ def available_options(
             options.append("omit")
         return options
     if scenario == "missing_masses":
-        # M8: IUPAC standard atomic weights (a reported default) or a caller-supplied list.
+        # M8: standard atomic weights from ASE's table (a reported default) or a caller list.
         return ["standard_masses", "manual_input"]
     if scenario == "ambiguous_stress_convention":
         # M40/A2: the two-option core — the source-declared sign convention of a carried extXYZ

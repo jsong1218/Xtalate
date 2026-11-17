@@ -15,7 +15,7 @@ slice guarantees:
   input re-exports with **no** ``QEIN_INCOMPLETE_INPUT``.
 * **Masses resolve through the existing ``missing_masses`` scenario.** ``atoms.masses`` is a write
   ``required_field``; the pre-flight refuses an object without them and ``standard_masses`` fills
-  IUPAC standard weights (never a QE-specific recovery).
+  ASE's standard atomic weights table (never a QE-specific recovery).
 * **A trajectory is a recovery, not a refusal.** ``max_frames=1`` + ``frame_selection`` — a
   multi-frame object routes through the existing scenario, never an outright refusal; a lattice-less
   object routes through ``missing_lattice``.

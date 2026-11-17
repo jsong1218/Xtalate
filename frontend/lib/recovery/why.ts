@@ -54,7 +54,7 @@ export const WHY_THIS_MATTERS: Record<string, WhyThisMatters> = {
   missing_masses: {
     question: QUESTION,
     stakes: [
-      "Atomic masses are needed by the target but absent from your file. Filling them from a standard table (the IUPAC standard atomic weights for each element) is exact for ordinary chemistry.",
+      "Atomic masses are needed by the target but absent from your file. Filling them from a standard table (standard atomic weights from ASE's table for each element) is exact for ordinary chemistry.",
       "The filled masses are standard weights, not isotope-specific values from your system. If your work depends on a particular isotope, the standard weight is an assumption to check, not a measurement — and Xtalate records exactly which atoms were filled.",
     ],
   },

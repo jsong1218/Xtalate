@@ -49,7 +49,7 @@ that remains — analysis overlays — belongs to future versions.
 
 Every augmentation Xtalate makes — a filled mass, an inferred symbol, a fabricated lattice,
 generated velocities — is recorded as an Assumption and rendered in plain language in the
-Conversion Report (e.g. *"Filled masses for 18 atoms using IUPAC standard atomic weights."*).
+Conversion Report (e.g. *"Filled masses for 18 atoms using standard atomic weights from ASE's table."*).
 There are no silent fills, and no unrequested transformation even when it is standard practice:
 recovery fabricates exactly what the user asked for and nothing more.
 

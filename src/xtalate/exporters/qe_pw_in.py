@@ -20,7 +20,7 @@ defaulted mesh, no synthesized pseudopotential filename):
   ``ibrav`` code — that would be symmetry *detection*, an analysis concern Xtalate does not do,
   and a classic silent-transformation trap (D43). Explicit vectors are exact and universal.
 * **The fillable/un-fillable split inside ``ATOMIC_SPECIES``.** Mass has a legitimate generic fill
-  (IUPAC standard atomic weights), so an absent ``atoms.masses`` is a write ``required_field``
+  (ASE's standard atomic weights table), so an absent ``atoms.masses`` is a write ``required_field``
   refused through the existing ``missing_masses`` scenario — the lammps_data precedent (D181),
   reused unchanged. A pseudopotential has **no** generic fill, so when the object carries none the
   exporter writes a placeholder token that cannot be mistaken for a real file

@@ -811,7 +811,8 @@ def _apply_missing_masses(
     """Fabricate the per-atom masses a target requires, or that another recovery (Maxwell–Boltzmann)
     needs to seed a velocity draw (fabricative, Part 4 §3.1, §3.3).
 
-    ``standard_masses`` looks up IUPAC standard atomic weights (a *reported default*);
+    ``standard_masses`` looks up standard atomic weights from ASE's table,
+    ``ase.data.atomic_masses`` (a *reported default*);
     ``manual_input`` takes a caller-supplied list. Either way one ``Assumption`` and one
     ``SuppliedField('atoms.masses')`` are recorded — the masses did not exist in the source, so they
     are filed as created, never a silent fill (**P4**). ``scenario.params['emit']`` is ``False``
@@ -827,10 +828,8 @@ def _apply_missing_masses(
 
     if code == "standard_masses":
         masses = _standard_masses(symbols)
-        report_params: dict[str, Any] = {
-            "source": "ASE atomic_masses (IUPAC standard atomic weights)"
-        }
-        source_desc = "IUPAC standard atomic weights"
+        source_desc = "standard atomic weights from ASE's table (ase.data.atomic_masses)"
+        report_params: dict[str, Any] = {"source": source_desc}
     else:  # manual_input
         masses = _as_masses(params.get("masses"), n)
         report_params = {"masses_u": masses.tolist()}
@@ -972,7 +971,8 @@ def _maxwell_boltzmann(masses: np.ndarray, temperature_k: float, seed: int) -> n
 
 
 def _standard_masses(symbols: list[str]) -> np.ndarray:
-    """IUPAC standard atomic weights (u) for ``symbols`` from ``ase.data.atomic_masses`` (D44). The
+    """Standard atomic weights (u) for ``symbols`` from ``ase.data.atomic_masses`` (D44), not a
+    verbatim IUPAC table. The
     reserved unknown species ``"X"`` (Z = 0) has no standard weight and is refused — the caller must
     supply masses via ``manual_input``."""
     masses = np.empty(len(symbols), dtype=np.float64)
