@@ -325,8 +325,8 @@ CHOICE_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "it is refused. Use bounding_box instead."
     ),
     ("missing_species", "species_map"): (
-        "Give the element symbols yourself, in atom order. Not settable with --recover; "
-        "available through the Web UI or the HTTP API."
+        "Give the element symbols yourself (parameter: species): type:symbol pairs for a LAMMPS "
+        "source (e.g. '1:Si 2:O'), otherwise the symbols in order."
     ),
     ("missing_species", "upload_reference"): "Read the element symbols from a reference structure.",
     ("missing_velocities", "zero_init"): "Write zero velocities for every atom.",

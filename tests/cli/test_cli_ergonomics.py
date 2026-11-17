@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 from typing import Any, cast
 
@@ -93,7 +94,7 @@ def test_every_copyable_recover_example_parses_and_names_an_offered_choice() -> 
     from xtalate.cli.main import _parse_recover
     from xtalate.cli.render import _RECOVER_EXAMPLES, _offered_choices
 
-    known_params = {"padding_ang", "frame_index", "row", "temperature_K", "seed"}
+    known_params = {"padding_ang", "frame_index", "row", "temperature_K", "seed", "species"}
     for (scenario, choice), spec in _RECOVER_EXAMPLES.items():
         parsed = _parse_recover([spec])
         assert parsed[scenario]["choice"] == choice, spec
@@ -146,10 +147,13 @@ def test_every_emitted_recover_flag_is_accepted_by_the_real_parser() -> None:
             if flag is None:
                 continue
             assert flag.startswith("--recover ")
-            parsed = _parse_recover([flag.removeprefix("--recover ")])
+            parsed = _parse_recover(shlex.split(flag)[1:])
             assert parsed[scenario]["choice"] == choice, flag
             emitted += 1
     assert emitted > 10
+    # species_map is expressible on the CLI (a quoted value with a space) and must be emitted.
+    species_flag = _recover_flag("missing_species", "species_map")
+    assert species_flag == '--recover "missing_species=species_map,species=1:Si 2:O"'
 
 
 def test_non_periodic_is_not_advertised_as_a_copyable_flag() -> None:

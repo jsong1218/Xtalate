@@ -207,6 +207,8 @@ _RECOVER_EXAMPLES: dict[tuple[str, str], str] = {
     ("missing_lattice", "bounding_box"): "missing_lattice=bounding_box,padding_ang=5.0",
     ("frame_selection", "index"): "frame_selection=index,frame_index=0",
     ("asedb_row_selection", "index"): "asedb_row_selection=index,row=0",
+    # The LAMMPS form (type:symbol pairs); the space is part of the value, so the flag is quoted.
+    ("missing_species", "species_map"): "missing_species=species_map,species=1:Si 2:O",
     # The temperature is an example the user edits; the seed is explicit (no hidden default).
     (
         "missing_velocities",
@@ -219,7 +221,8 @@ def _recover_flag(scenario: str, choice: str) -> str | None:
     """The ready-to-copy ``--recover`` flag, or ``None`` for a choice that cannot be written as a
     bare flag (it needs data the user must supply, e.g. a 3x3 lattice or a species list)."""
     if (scenario, choice) in _RECOVER_EXAMPLES:
-        return f"--recover {_RECOVER_EXAMPLES[(scenario, choice)]}"
+        spec = _RECOVER_EXAMPLES[(scenario, choice)]
+        return f'--recover "{spec}"' if " " in spec else f"--recover {spec}"
     if choice == "upload_reference":
         # The CLI parses the second file itself (``file=PATH``); the user substitutes the path.
         return f"--recover {scenario}=upload_reference,file=REFERENCE_FILE"
@@ -233,7 +236,6 @@ _API_ONLY = "no --recover flag exists for this choice; use the Web UI or the HTT
 _NO_FLAG_HINTS: dict[tuple[str, str], str] = {
     ("missing_lattice", "manual_input"): _API_ONLY,
     ("missing_masses", "manual_input"): _API_ONLY,
-    ("missing_species", "species_map"): _API_ONLY,
     ("missing_lattice", "non_periodic"): "not yet available in this version; it is refused",
     # `all` is valid only through --batch (a single-file convert refuses it).
     ("asedb_row_selection", "all"): "only available through --batch, not a single-file convert",
