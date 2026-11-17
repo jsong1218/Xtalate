@@ -13,10 +13,11 @@ from __future__ import annotations
 import weakref
 from typing import Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, Response, status
 
 from backend.deps import get_registry
 from backend.errors import ApiError
+from backend.http_cache import etag_response
 from xtalate.capabilities import Registry
 
 router = APIRouter()
@@ -72,15 +73,15 @@ def capabilities_body(registry: Registry) -> dict[str, dict[str, Any]]:
 
 
 @router.get("/capabilities", tags=["capabilities"])
-def capabilities(registry: Registry = Depends(get_registry)) -> dict[str, dict[str, Any]]:
+def capabilities(request: Request, registry: Registry = Depends(get_registry)) -> Response:
     """Every format's read/write capability declaration (equals ``xtalate capabilities --json``)."""
-    return capabilities_body(registry)
+    return etag_response(request, capabilities_body(registry))
 
 
 @router.get("/capabilities/{format_id}", tags=["capabilities"])
 def capabilities_for_format(
-    format_id: str, registry: Registry = Depends(get_registry)
-) -> dict[str, dict[str, Any]]:
+    format_id: str, request: Request, registry: Registry = Depends(get_registry)
+) -> Response:
     """One format's declaration as ``{format_id: {...}}`` (matches ``capabilities <id> --json``)."""
     known = _known_format_ids(registry)
     if format_id not in known:
@@ -93,4 +94,4 @@ def capabilities_for_format(
             message=f"Unknown format {format_id!r}.",
             details={"known_formats": sorted(known)},
         )
-    return {format_id: capabilities_body(registry)[format_id]}
+    return etag_response(request, {format_id: capabilities_body(registry)[format_id]})

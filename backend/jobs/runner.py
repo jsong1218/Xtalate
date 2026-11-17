@@ -126,7 +126,7 @@ def _try_convert_streamed(
     frame resident), or return ``None`` so the caller runs the unchanged materialized path.
 
     ``None`` is returned — before or after streaming — whenever the outcome could differ from the
-    materialized path's: strict mode, any recovery choice or repair, a resumed pause, an
+    materialized path's: strict mode, a dry run, any recovery choice or repair, a resumed pause, an
     unsniffable or ineligible pair, an engine ``ValueError`` (a runtime exclusion), a mid-stream
     ``ParseError`` (the materialized parse re-raises it with the same envelope), and a *refused*
     streamed result (the data-dependent ``ambiguous_stress_convention`` refusal: the materialized
@@ -137,7 +137,13 @@ def _try_convert_streamed(
     from xtalate.discovery.sniffer import HEAD_SIZE
     from xtalate.sdk import ParseError
 
-    if options.get("mode", "permissive") != "permissive" or recovery_choices or repairs or resumed:
+    if (
+        options.get("mode", "permissive") != "permissive"
+        or options.get("dry_run")
+        or recovery_choices
+        or repairs
+        or resumed
+    ):
         return None
     with spool.open("rb") as head_stream:
         head = head_stream.read(HEAD_SIZE)
@@ -611,6 +617,37 @@ def _run_convert(
         )
         repository.set_job_progress(job.job_id, {"phase": "converting"})
         source_format_id = parsed.format_id
+        if options.get("dry_run"):
+            # Preflight-only (QoL Q4): repairs applied strictly, nothing converted, validated or
+            # stored. A blocked need is a *report* (status awaiting_recovery), never a job pause —
+            # a dry run asks nothing of the caller. A malformed repair raises RepairError inside
+            # dry_run and fails the job MALFORMED_REQUEST through the same funnel as a real run.
+            # No Conversion row and no object-store bytes are written: only this Report row, with
+            # a NULL conversion_id, which build_job_result recognizes as a dry-run payload.
+            dry = engine.dry_run(
+                parsed.canonical,
+                source_format_id=parsed.format_id,
+                target_format_id=target_format_id,
+                source_filename=upload.filename,
+                source_sha256=upload.sha256,
+                target_filename=options.get("output_filename"),
+                mode=options.get("mode", "permissive"),
+                output_multifile=False,
+                repairs=repairs,
+                parse_issues=parsed.issues,
+                acknowledge_loss=options.get("acknowledge_loss", False),
+                acknowledge_parse_warnings=options.get("acknowledge_parse_warnings", False),
+            )
+            repository.add_report(
+                Report(
+                    report_id=_new_id("rep"),
+                    job_id=job.job_id,
+                    conversion_id=None,
+                    kind="conversion",
+                    body=dry.report.model_dump(mode="json"),
+                )
+            )
+            return
         result = engine.convert(
             parsed.canonical,
             source_format_id=parsed.format_id,

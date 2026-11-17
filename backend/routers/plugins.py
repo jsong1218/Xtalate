@@ -14,9 +14,10 @@ from __future__ import annotations
 import weakref
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 
 from backend.deps import get_registry
+from backend.http_cache import etag_response
 from xtalate.capabilities import Registry
 
 router = APIRouter()
@@ -80,6 +81,6 @@ def plugins_body(registry: Registry) -> dict[str, list[dict[str, Any]]]:
 
 
 @router.get("/plugins", tags=["plugins"])
-def plugins(registry: Registry = Depends(get_registry)) -> dict[str, list[dict[str, Any]]]:
+def plugins(request: Request, registry: Registry = Depends(get_registry)) -> Response:
     """Every installed plugin's kind, name, and version (format plugins add ``format_name``)."""
-    return plugins_body(registry)
+    return etag_response(request, plugins_body(registry))
