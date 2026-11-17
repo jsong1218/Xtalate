@@ -646,7 +646,17 @@ def _apply_missing_lattice(
             "source; pbc set to (T,T,T) as required by the target. The source file expressed no "
             "lattice — this cell is borrowed from the reference, not present in the source."
         )
-    else:  # "bounding_box"
+    elif code == "non_periodic":
+        # Offered for targets that can hold an open structure, but this resolver does not
+        # implement it. Refuse loudly: falling through to the bounding box would silently
+        # fabricate a cell the caller explicitly declined (P4).
+        raise RecoveryError(
+            "missing_lattice 'non_periodic' is offered but not implemented in this version; "
+            "choose bounding_box, manual_input or upload_reference"
+        )
+    elif code != "bounding_box":
+        raise RecoveryError(f"missing_lattice: unknown choice {code!r}")
+    else:
         padding = params.get("padding_ang")
         if not isinstance(padding, (int, float)) or padding < 0:
             raise RecoveryError(

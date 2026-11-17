@@ -211,7 +211,7 @@ _RECOVER_EXAMPLES: dict[tuple[str, str], str] = {
     (
         "missing_velocities",
         "maxwell_boltzmann",
-    ): "missing_velocities=maxwell_boltzmann,temperature_K=300,seed=0",
+    ): "missing_velocities=maxwell_boltzmann,temperature_K=300,seed=0",  # needs masses (see text)
 }
 
 
@@ -220,20 +220,24 @@ def _recover_flag(scenario: str, choice: str) -> str | None:
     bare flag (it needs data the user must supply, e.g. a 3x3 lattice or a species list)."""
     if (scenario, choice) in _RECOVER_EXAMPLES:
         return f"--recover {_RECOVER_EXAMPLES[(scenario, choice)]}"
-    needs_data = {
-        ("missing_lattice", "manual_input"),
-        ("missing_lattice", "upload_reference"),
-        ("missing_species", "species_map"),
-        ("missing_species", "upload_reference"),
-        ("missing_velocities", "upload_reference"),
-        ("missing_masses", "manual_input"),
-        # `all` is valid only through --batch (a single-file convert refuses it), so it is never
-        # offered as a copyable single-file flag.
-        ("asedb_row_selection", "all"),
-    }
-    if (scenario, choice) in needs_data:
+    if choice == "upload_reference":
+        # The CLI parses the second file itself (``file=PATH``); the user substitutes the path.
+        return f"--recover {scenario}=upload_reference,file=REFERENCE_FILE"
+    if (scenario, choice) in _NO_FLAG_HINTS:
         return None
     return f"--recover {scenario}={choice}"
+
+
+#: Choices that cannot be written as a ``--recover`` flag, with the reason shown to the user.
+_API_ONLY = "no --recover flag exists for this choice; use the Web UI or the HTTP API"
+_NO_FLAG_HINTS: dict[tuple[str, str], str] = {
+    ("missing_lattice", "manual_input"): _API_ONLY,
+    ("missing_masses", "manual_input"): _API_ONLY,
+    ("missing_species", "species_map"): _API_ONLY,
+    ("missing_lattice", "non_periodic"): "not yet available in this version; it is refused",
+    # `all` is valid only through --batch (a single-file convert refuses it).
+    ("asedb_row_selection", "all"): "only available through --batch, not a single-file convert",
+}
 
 
 def render_recovery_guidance(report: ConversionReport) -> str:
@@ -256,7 +260,7 @@ def render_recovery_guidance(report: ConversionReport) -> str:
             lines.append(
                 f"      {flag}"
                 if flag
-                else f"      (needs data — see `xtalate scenarios {scenario}` for its parameters)"
+                else f"      ({_NO_FLAG_HINTS.get((scenario, str(choice)), _API_ONLY)})"
             )
     return "\n".join(lines)
 

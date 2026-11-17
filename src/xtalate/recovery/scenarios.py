@@ -291,9 +291,11 @@ SCENARIO_DESCRIPTIONS: dict[str, str] = {
     "ambiguous_stress_convention": (
         "The source carries a stress tensor whose sign convention is not declared."
     ),
-    "ambiguous_units": "The source file does not declare its unit system.",
+    "ambiguous_units": "A LAMMPS unit system is not declared; one must be named.",
     "ambiguous_periodicity": ("The source has a box but does not say whether it is periodic."),
-    "ambiguous_atom_style": "The source file does not declare its atom-style column layout.",
+    "ambiguous_atom_style": (
+        "A LAMMPS atom style (column layout) is not declared; one must be named."
+    ),
     "frame_selection": "The source has several frames and the target holds exactly one.",
     "truncate_corrupt_tail": "The source ends with a corrupt or incomplete trailing frame.",
     "constraint_representation": (
@@ -305,26 +307,42 @@ SCENARIO_DESCRIPTIONS: dict[str, str] = {
 #: Plain-language statement of what each *choice* does (Q1), keyed ``(scenario, choice)``. Every
 #: choice any ``available_options`` call can offer must appear here (coverage test).
 CHOICE_DESCRIPTIONS: dict[tuple[str, str], str] = {
-    ("missing_lattice", "manual_input"): "Type in a 3x3 lattice yourself (parameter: lattice).",
+    ("missing_lattice", "manual_input"): (
+        "Supply a 3x3 lattice yourself (parameter: lattice). Not settable with --recover; "
+        "available through the Web UI or the HTTP API."
+    ),
     ("missing_lattice", "upload_reference"): (
         "Take the lattice from a second structure file (parameter: file=PATH)."
     ),
     ("missing_lattice", "bounding_box"): (
-        "Build an axis-aligned bounding box around the atoms plus padding (parameter: padding_ang)."
+        "Build an axis-aligned bounding box around the atoms plus padding "
+        "(parameter: padding_ang). "
+        "The atoms are rigidly translated into the box (interatomic distances are unchanged); a "
+        "multi-frame source shares one box and one shift."
     ),
-    ("missing_lattice", "non_periodic"): "Write an open (non-periodic) structure with no cell.",
-    ("missing_species", "species_map"): "Give the element symbols yourself, in atom order.",
+    ("missing_lattice", "non_periodic"): (
+        "Not yet available: offered for open-structure targets but not implemented, so choosing "
+        "it is refused. Use bounding_box instead."
+    ),
+    ("missing_species", "species_map"): (
+        "Give the element symbols yourself, in atom order. Not settable with --recover; "
+        "available through the Web UI or the HTTP API."
+    ),
     ("missing_species", "upload_reference"): "Read the element symbols from a reference structure.",
     ("missing_velocities", "zero_init"): "Write zero velocities for every atom.",
     ("missing_velocities", "maxwell_boltzmann"): (
-        "Draw random velocities at a temperature (parameters: temperature_K, seed)."
+        "Draw random velocities at a temperature (parameters: temperature_K, seed). Needs masses: "
+        "if the source has none, also pass missing_masses=standard_masses."
     ),
     ("missing_velocities", "upload_reference"): "Take velocities from a second structure file.",
     ("missing_velocities", "omit"): "Leave velocities out of the output.",
     ("missing_masses", "standard_masses"): (
         "Fill masses from standard atomic weights (ASE's table, ase.data.atomic_masses)."
     ),
-    ("missing_masses", "manual_input"): "Type in one mass per atom yourself (parameter: masses).",
+    ("missing_masses", "manual_input"): (
+        "Supply one mass per atom yourself (parameter: masses). Not settable with --recover; "
+        "available through the Web UI or the HTTP API."
+    ),
     ("ambiguous_stress_convention", "tension_positive"): (
         "The stress is tension-positive (ASE's convention and the canonical one); kept as written."
     ),
@@ -337,12 +355,30 @@ CHOICE_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "ambiguous_periodicity",
         "non_periodic",
     ): "Treat the system as non-periodic (no boundary conditions).",
-    ("ambiguous_units", "metal"): "LAMMPS 'metal' units (Angstrom, picosecond, eV).",
-    ("ambiguous_units", "real"): "LAMMPS 'real' units (Angstrom, femtosecond, kcal/mol).",
-    ("ambiguous_units", "si"): "LAMMPS 'si' units (metre, second, joule).",
-    ("ambiguous_atom_style", "atomic"): "Columns are: id type x y z.",
-    ("ambiguous_atom_style", "charge"): "Columns are: id type q x y z.",
-    ("ambiguous_atom_style", "full"): "Columns are: id molecule-id type q x y z.",
+    ("ambiguous_units", "metal"): (
+        "Use LAMMPS 'metal' units (Angstrom, picosecond, eV): used to interpret the input "
+        "when reading a LAMMPS file, and written as the unit system when writing one."
+    ),
+    ("ambiguous_units", "real"): (
+        "Use LAMMPS 'real' units (Angstrom, femtosecond, kcal/mol): used to interpret the input "
+        "when reading a LAMMPS file, and written as the unit system when writing one."
+    ),
+    ("ambiguous_units", "si"): (
+        "Use LAMMPS 'si' units (metre, second, joule): used to interpret the input "
+        "when reading a LAMMPS file, and written as the unit system when writing one."
+    ),
+    ("ambiguous_atom_style", "atomic"): (
+        "Atom style 'atomic' (columns: id type x y z), used to interpret the atom columns "
+        "when reading a LAMMPS data file."
+    ),
+    ("ambiguous_atom_style", "charge"): (
+        "Atom style 'charge' (columns: id type q x y z), used to interpret the atom columns "
+        "when reading a LAMMPS data file."
+    ),
+    ("ambiguous_atom_style", "full"): (
+        "Atom style 'full' (columns: id molecule-id type q x y z), used to interpret the atom "
+        "columns when reading a LAMMPS data file."
+    ),
     ("frame_selection", "first"): "Keep only the first frame.",
     ("frame_selection", "last"): "Keep only the last frame.",
     ("frame_selection", "index"): "Keep one frame by position (parameter: frame_index, 0-based).",

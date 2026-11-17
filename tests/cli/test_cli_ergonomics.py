@@ -128,3 +128,39 @@ def test_scenarios_json_is_machine_readable(capsys: pytest.CaptureFixture[str]) 
 def test_scenarios_unknown_name_is_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["scenarios", "nope"]) == EXIT_USAGE
     assert "known scenarios" in capsys.readouterr().err
+
+
+# --- fix round 1 ------------------------------------------------------------------------------
+
+
+def test_every_emitted_recover_flag_is_accepted_by_the_real_parser() -> None:
+    """Every flag ``_recover_flag`` emits, for every offered pair, parses and names that choice."""
+    from xtalate.cli.main import _parse_recover
+    from xtalate.cli.render import _offered_choices, _recover_flag
+    from xtalate.recovery.scenarios import SCENARIO_HAZARD
+
+    emitted = 0
+    for scenario in SCENARIO_HAZARD:
+        for choice in _offered_choices(scenario):
+            flag = _recover_flag(scenario, choice)
+            if flag is None:
+                continue
+            assert flag.startswith("--recover ")
+            parsed = _parse_recover([flag.removeprefix("--recover ")])
+            assert parsed[scenario]["choice"] == choice, flag
+            emitted += 1
+    assert emitted > 10
+
+
+def test_non_periodic_is_not_advertised_as_a_copyable_flag() -> None:
+    from xtalate.cli.render import _recover_flag
+    from xtalate.recovery.scenarios import describe_choice
+
+    assert _recover_flag("missing_lattice", "non_periodic") is None
+    assert "not yet available" in describe_choice("missing_lattice", "non_periodic").lower()
+
+
+def test_api_only_choices_say_so_in_the_catalog(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["scenarios", "missing_lattice"]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "HTTP API" in out
