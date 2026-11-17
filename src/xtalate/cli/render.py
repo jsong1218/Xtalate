@@ -16,6 +16,7 @@ from pydantic import JsonValue
 from xtalate.conversion.batch import BatchReport
 from xtalate.conversion.report import ConversionReport
 from xtalate.discovery.report import DiscoveryReport
+from xtalate.recovery.scenarios import describe_choice, describe_scenario
 from xtalate.sdk import CapabilityLevel, FormatCapabilities
 from xtalate.validation.report import ValidationReport
 
@@ -197,3 +198,100 @@ def render_capabilities(declarations: dict[str, dict[str, FormatCapabilities]]) 
                 lines.append(f"      (lossy) {note}")
         lines.append("")
     return "\n".join(lines).rstrip()
+
+
+#: Copy-paste values for the ``--recover`` flag, per (scenario, choice). Only choices that need a
+#: parameter appear; everything else renders as ``scenario=choice``. Values are *examples the user
+#: edits*, never defaults the engine applies (P4): the engine still requires the flag to be passed.
+_RECOVER_EXAMPLES: dict[tuple[str, str], str] = {
+    ("missing_lattice", "bounding_box"): "missing_lattice=bounding_box,padding_ang=5.0",
+    ("frame_selection", "index"): "frame_selection=index,frame_index=0",
+    ("asedb_row_selection", "index"): "asedb_row_selection=index,row=0",
+    # The temperature is an example the user edits; the seed is explicit (no hidden default).
+    (
+        "missing_velocities",
+        "maxwell_boltzmann",
+    ): "missing_velocities=maxwell_boltzmann,temperature_K=300,seed=0",
+}
+
+
+def _recover_flag(scenario: str, choice: str) -> str | None:
+    """The ready-to-copy ``--recover`` flag, or ``None`` for a choice that cannot be written as a
+    bare flag (it needs data the user must supply, e.g. a 3x3 lattice or a species list)."""
+    if (scenario, choice) in _RECOVER_EXAMPLES:
+        return f"--recover {_RECOVER_EXAMPLES[(scenario, choice)]}"
+    needs_data = {
+        ("missing_lattice", "manual_input"),
+        ("missing_lattice", "upload_reference"),
+        ("missing_species", "species_map"),
+        ("missing_species", "upload_reference"),
+        ("missing_velocities", "upload_reference"),
+        ("missing_masses", "manual_input"),
+        # `all` is valid only through --batch (a single-file convert refuses it), so it is never
+        # offered as a copyable single-file flag.
+        ("asedb_row_selection", "all"),
+    }
+    if (scenario, choice) in needs_data:
+        return None
+    return f"--recover {scenario}={choice}"
+
+
+def render_recovery_guidance(report: ConversionReport) -> str:
+    """For a refused/``awaiting_recovery`` report: each unresolved scenario's plain-language
+    description, its offered choices with descriptions, and a ready-to-copy ``--recover`` flag
+    (Q1). Empty string when nothing is unresolved — the caller prints nothing."""
+    refusal = report.refusal if isinstance(report.refusal, dict) else {}
+    unresolved = refusal.get("unresolved_scenarios", []) if refusal else []
+    if not unresolved:
+        return ""
+    lines = ["", "To resolve, re-run with one of these choices per scenario:"]
+    for entry in unresolved:
+        scenario = str(entry.get("scenario"))
+        lines.append(f"  {scenario} — {describe_scenario(scenario)}")
+        if entry.get("detail"):
+            lines.append(f"    ({entry['detail']})")
+        for choice in entry.get("options", []):
+            lines.append(f"    {choice}: {describe_choice(scenario, str(choice))}")
+            flag = _recover_flag(scenario, str(choice))
+            lines.append(
+                f"      {flag}"
+                if flag
+                else f"      (needs data — see `xtalate scenarios {scenario}` for its parameters)"
+            )
+    return "\n".join(lines)
+
+
+def render_scenarios(names: list[str]) -> str:
+    """Human view of the recovery catalog for ``xtalate scenarios [SCENARIO]``."""
+    from xtalate.recovery.scenarios import SCENARIO_HAZARD
+
+    lines: list[str] = []
+    for name in names:
+        lines.append(f"{name}  [{SCENARIO_HAZARD[name].value}]")
+        lines.append(f"  {describe_scenario(name)}")
+        for choice in _offered_choices(name):
+            lines.append(f"    {choice}: {describe_choice(name, choice)}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def _offered_choices(scenario: str) -> list[str]:
+    """Union of the choices ``available_options`` can offer for ``scenario`` over every target
+    capability combination, in first-seen order (the catalog view is target-independent; a real
+    refusal shows the pair-specific subset)."""
+    import itertools
+
+    from xtalate.recovery.scenarios import available_options
+
+    seen: list[str] = []
+    for a, b, c, d in itertools.product([False, True], repeat=4):
+        for choice in available_options(
+            scenario,
+            target_can_be_nonperiodic=a,
+            target_supports_multifile=b,
+            target_field_optional=c,
+            permissive_mode=d,
+        ):
+            if choice not in seen:
+                seen.append(choice)
+    return seen

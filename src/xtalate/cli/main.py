@@ -103,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
             "validate": _cmd_validate,
             "capabilities": _cmd_capabilities,
             "analyze": _cmd_analyze,
+            "scenarios": _cmd_scenarios,
         }[args.command]
         return handler(args, registry)
     except AnalysisError as exc:
@@ -183,6 +184,43 @@ def _cmd_inspect(args: argparse.Namespace, registry: Registry) -> int:
     return EXIT_OK
 
 
+def _writable_extensions(registry: Registry) -> dict[str, list[str]]:
+    """``{".ext": [format_id, ...]}`` over **writable** formats only (those with an exporter).
+    Extensions are hints declared on the parser (and, if a plugin declares them, the exporter)."""
+    writable = {e.format_id for e in registry.exporters()}
+    table: dict[str, list[str]] = {}
+    plugins: list[Any] = [*registry.parsers(), *registry.exporters()]
+    for plugin in plugins:
+        if plugin.format_id not in writable:
+            continue
+        for ext in getattr(plugin, "file_extensions", ()):
+            ids = table.setdefault(ext.lower(), [])
+            if plugin.format_id not in ids:
+                ids.append(plugin.format_id)
+    return table
+
+
+def _infer_target(output: str, registry: Registry) -> str:
+    """Infer ``--to`` from the ``-o`` extension when exactly one writable format claims it (Q1).
+    Never guesses: zero or several claimants is a usage error that names the candidates (P4)."""
+    ext = Path(output).suffix.lower()
+    if not ext:
+        raise _UsageError(
+            f"cannot infer the target format from {output!r} (no extension) — pass --to FORMAT_ID"
+        )
+    candidates = _writable_extensions(registry).get(ext, [])
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise _UsageError(
+            f"no writable format claims the extension {ext!r} — pass --to FORMAT_ID "
+            "(see `xtalate capabilities`)"
+        )
+    options = " or ".join(f"--to {c}" for c in candidates)
+    names = " and ".join(candidates)
+    raise _UsageError(f"{ext} matches {names} — pass {options}.")
+
+
 def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
     if args.batch:
         if args.file is not None:
@@ -190,8 +228,13 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
         return _cmd_convert_batch(args, registry)
     if args.file is None:
         raise _UsageError("convert needs FILE (or --batch MANIFEST)")
+    if args.to is None and args.output:
+        args.to = _infer_target(args.output, registry)
     if args.to is None:
-        raise _UsageError("convert needs --to FORMAT_ID (in batch mode the manifest carries it)")
+        raise _UsageError(
+            "convert needs --to FORMAT_ID or an -o path whose extension names one "
+            "(in batch mode the manifest carries it)"
+        )
     is_directory = Path(args.file).is_dir()
     result = None if is_directory else _convert_streamed(args, registry)
     streamed = result is not None
@@ -249,6 +292,9 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
         )
     else:
         print(render.render_conversion(report))
+        guidance = render.render_recovery_guidance(report)
+        if guidance:
+            print(guidance)
         if result.validation is not None:
             print()
             print(render.render_validation(result.validation))
@@ -502,6 +548,36 @@ def _cmd_validate(args: argparse.Namespace, registry: Registry) -> int:
         print(render.render_validation(report))
 
     return EXIT_VALIDATION_FAILED if report.status == "failed" else EXIT_OK
+
+
+def _cmd_scenarios(args: argparse.Namespace, registry: Registry) -> int:
+    from xtalate.cli.render import _offered_choices
+    from xtalate.recovery.scenarios import (
+        SCENARIO_HAZARD,
+        describe_choice,
+        describe_scenario,
+    )
+
+    names = list(SCENARIO_HAZARD)
+    if args.scenario:
+        if args.scenario not in SCENARIO_HAZARD:
+            raise _UsageError(
+                f"unknown scenario {args.scenario!r}; known scenarios: {sorted(SCENARIO_HAZARD)}"
+            )
+        names = [args.scenario]
+    if args.json:
+        payload = {
+            name: {
+                "hazard_class": SCENARIO_HAZARD[name].value,
+                "description": describe_scenario(name),
+                "choices": {c: describe_choice(name, c) for c in _offered_choices(name)},
+            }
+            for name in names
+        }
+        print(_json(payload))
+    else:
+        print(render.render_scenarios(names))
+    return EXIT_OK
 
 
 def _cmd_capabilities(args: argparse.Namespace, registry: Registry) -> int:
@@ -992,6 +1068,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_caps = sub.add_parser("capabilities", help="Print the Capability Matrix.")
     p_caps.add_argument("format_id", nargs="?", metavar="FORMAT_ID", help="Limit to one format.")
     p_caps.add_argument("--json", action="store_true", help="Print the matrix JSON.")
+
+    p_scen = sub.add_parser(
+        "scenarios", help="List the recovery scenarios and the choices that resolve them."
+    )
+    p_scen.add_argument("scenario", nargs="?", metavar="SCENARIO", help="Limit to one scenario.")
+    p_scen.add_argument("--json", action="store_true", help="Print the catalog as JSON.")
 
     return parser
 

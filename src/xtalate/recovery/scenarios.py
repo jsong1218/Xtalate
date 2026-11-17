@@ -274,3 +274,103 @@ def available_options(
         # or abort (Part 4 §3.3).
         return ["truncate", "abort"]
     return []
+
+
+#: Plain-language, one-sentence statement of what each scenario asks (Q1). Rendered by the CLI when
+#: a conversion refuses/pauses and by ``xtalate scenarios``. Every key of ``SCENARIO_HAZARD`` must
+#: appear here (``tests/recovery/test_scenario_descriptions.py`` fails otherwise), so a new
+#: scenario cannot ship without its explanation.
+SCENARIO_DESCRIPTIONS: dict[str, str] = {
+    "missing_lattice": (
+        "The target format needs a simulation cell (lattice) and the source has none."
+    ),
+    "missing_species": "The source has atoms but no element symbols; the target needs them.",
+    "missing_velocities": "The target stores velocities and the source has none.",
+    "missing_masses": "The target stores atomic masses and the source has none.",
+    "missing_energy": "The target requires a total energy and the source has none.",
+    "ambiguous_stress_convention": (
+        "The source carries a stress tensor whose sign convention is not declared."
+    ),
+    "ambiguous_units": "The source file does not declare its unit system.",
+    "ambiguous_periodicity": ("The source has a box but does not say whether it is periodic."),
+    "ambiguous_atom_style": "The source file does not declare its atom-style column layout.",
+    "frame_selection": "The source has several frames and the target holds exactly one.",
+    "truncate_corrupt_tail": "The source ends with a corrupt or incomplete trailing frame.",
+    "constraint_representation": (
+        "The source has atom constraints the target cannot represent exactly."
+    ),
+    "asedb_row_selection": "The source database holds several rows and one structure is needed.",
+}
+
+#: Plain-language statement of what each *choice* does (Q1), keyed ``(scenario, choice)``. Every
+#: choice any ``available_options`` call can offer must appear here (coverage test).
+CHOICE_DESCRIPTIONS: dict[tuple[str, str], str] = {
+    ("missing_lattice", "manual_input"): "Type in a 3x3 lattice yourself (parameter: lattice).",
+    ("missing_lattice", "upload_reference"): (
+        "Take the lattice from a second structure file (parameter: file=PATH)."
+    ),
+    ("missing_lattice", "bounding_box"): (
+        "Build an axis-aligned bounding box around the atoms plus padding (parameter: padding_ang)."
+    ),
+    ("missing_lattice", "non_periodic"): "Write an open (non-periodic) structure with no cell.",
+    ("missing_species", "species_map"): "Give the element symbols yourself, in atom order.",
+    ("missing_species", "upload_reference"): "Read the element symbols from a reference structure.",
+    ("missing_velocities", "zero_init"): "Write zero velocities for every atom.",
+    ("missing_velocities", "maxwell_boltzmann"): (
+        "Draw random velocities at a temperature (parameters: temperature_K, seed)."
+    ),
+    ("missing_velocities", "upload_reference"): "Take velocities from a second structure file.",
+    ("missing_velocities", "omit"): "Leave velocities out of the output.",
+    ("missing_masses", "standard_masses"): (
+        "Fill masses from standard atomic weights (ASE's table, ase.data.atomic_masses)."
+    ),
+    ("missing_masses", "manual_input"): "Type in one mass per atom yourself (parameter: masses).",
+    ("ambiguous_stress_convention", "tension_positive"): (
+        "The stress is tension-positive (ASE's convention and the canonical one); kept as written."
+    ),
+    ("ambiguous_stress_convention", "compression_positive"): (
+        "The stress is compression-positive; its sign is inverted to the canonical "
+        "tension-positive."
+    ),
+    ("ambiguous_periodicity", "periodic"): "Treat the box as periodic in all three directions.",
+    (
+        "ambiguous_periodicity",
+        "non_periodic",
+    ): "Treat the system as non-periodic (no boundary conditions).",
+    ("ambiguous_units", "metal"): "LAMMPS 'metal' units (Angstrom, picosecond, eV).",
+    ("ambiguous_units", "real"): "LAMMPS 'real' units (Angstrom, femtosecond, kcal/mol).",
+    ("ambiguous_units", "si"): "LAMMPS 'si' units (metre, second, joule).",
+    ("ambiguous_atom_style", "atomic"): "Columns are: id type x y z.",
+    ("ambiguous_atom_style", "charge"): "Columns are: id type q x y z.",
+    ("ambiguous_atom_style", "full"): "Columns are: id molecule-id type q x y z.",
+    ("frame_selection", "first"): "Keep only the first frame.",
+    ("frame_selection", "last"): "Keep only the last frame.",
+    ("frame_selection", "index"): "Keep one frame by position (parameter: frame_index, 0-based).",
+    ("frame_selection", "split_all"): "Write one output file per frame into a directory.",
+    ("truncate_corrupt_tail", "truncate"): "Keep the good frames and discard the corrupt tail.",
+    ("truncate_corrupt_tail", "abort"): "Stop; do not convert a damaged file.",
+    ("constraint_representation", "project"): (
+        "Keep the constraints the target can represent; list the rest as removed."
+    ),
+    ("constraint_representation", "drop_all"): "Drop every constraint and report it as removed.",
+    ("asedb_row_selection", "index"): "Convert one row by position (parameter: row, 0-based).",
+    ("asedb_row_selection", "all"): (
+        "Convert every row to its own output (batch conversion only; a single-file convert "
+        "refuses it)."
+    ),
+}
+
+_GENERIC_SCENARIO = (
+    "A choice is needed to continue (no description is registered for this scenario)."
+)
+_GENERIC_CHOICE = "No description is registered for this choice."
+
+
+def describe_scenario(scenario: str) -> str:
+    """Plain-language description of ``scenario``; a generic sentence for an unregistered one."""
+    return SCENARIO_DESCRIPTIONS.get(scenario, _GENERIC_SCENARIO)
+
+
+def describe_choice(scenario: str, choice: str) -> str:
+    """Plain-language description of ``choice``; a generic sentence for an unregistered one."""
+    return CHOICE_DESCRIPTIONS.get((scenario, choice), _GENERIC_CHOICE)
