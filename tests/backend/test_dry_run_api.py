@@ -139,3 +139,27 @@ def test_strict_dry_run_with_predicted_loss_and_no_ack_reports_refused(
     assert env["result"]["conversion_report"]["status"] == "refused"
     assert env["result"]["conversion_id"] is None
     assert repository.list_conversions(limit=100) == []
+
+
+def test_batch_convert_refuses_dry_run_in_shared_options(client: TestClient) -> None:
+    file_id = _upload(client, CO_IN_CELL, "co.extxyz")
+    resp = client.post(
+        "/v1/batch/convert",
+        json={"file_ids": [file_id], "target_format_id": "poscar", "options": {"dry_run": True}},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "MALFORMED_REQUEST"
+
+
+def test_batch_convert_refuses_dry_run_in_a_per_file_override(client: TestClient) -> None:
+    file_id = _upload(client, CO_IN_CELL, "co.extxyz")
+    resp = client.post(
+        "/v1/batch/convert",
+        json={
+            "file_ids": [file_id],
+            "target_format_id": "poscar",
+            "overrides": {file_id: {"dry_run": True}},
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "MALFORMED_REQUEST"

@@ -1199,7 +1199,14 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Capabilities V1 Capabilities Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -1230,7 +1237,14 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Capabilities For Format V1 Capabilities  Format Id  Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -1939,7 +1953,17 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Plugins V1 Plugins Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"

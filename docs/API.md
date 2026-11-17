@@ -528,7 +528,7 @@ pre-supplied choice the pause is still offered.
 an unresolved need shows as the report `status: "awaiting_recovery"` (and, in `strict` mode, a
 predicted unacknowledged loss as `status: "refused"`). It writes no output and no `Conversion`
 row, so it has no history entry and no download. It cannot be combined with `recovery_choices`
-(`400 MALFORMED_REQUEST`): a dry run applies no recovery choice.
+(`400 MALFORMED_REQUEST`): a dry run applies no recovery choice. It is a single-convert option: `dry_run: true` on `POST /v1/batch/convert` (shared options or a per-file override) is `400 MALFORMED_REQUEST`.
 
 **Caching.** `GET /v1/capabilities`, `/v1/capabilities/{format_id}`, `/v1/plugins` and `/v1/limits`
 return a strong `ETag` and `Cache-Control: public, max-age=300`, and honour `If-None-Match`

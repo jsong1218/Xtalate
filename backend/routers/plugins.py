@@ -80,7 +80,7 @@ def plugins_body(registry: Registry) -> dict[str, list[dict[str, Any]]]:
     return body
 
 
-@router.get("/plugins", tags=["plugins"])
+@router.get("/plugins", response_model=dict[str, list[dict[str, Any]]], tags=["plugins"])
 def plugins(request: Request, registry: Registry = Depends(get_registry)) -> Response:
     """Every installed plugin's kind, name, and version (format plugins add ``format_name``)."""
     return etag_response(request, plugins_body(registry))

@@ -632,6 +632,7 @@ def _run_convert(
                 source_sha256=upload.sha256,
                 target_filename=options.get("output_filename"),
                 mode=options.get("mode", "permissive"),
+                # Mirrors the service's single-file download sink (as the real run below).
                 output_multifile=False,
                 repairs=repairs,
                 parse_issues=parsed.issues,

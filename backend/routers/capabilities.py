@@ -72,13 +72,15 @@ def capabilities_body(registry: Registry) -> dict[str, dict[str, Any]]:
     return body
 
 
-@router.get("/capabilities", tags=["capabilities"])
+@router.get("/capabilities", response_model=dict[str, dict[str, Any]], tags=["capabilities"])
 def capabilities(request: Request, registry: Registry = Depends(get_registry)) -> Response:
     """Every format's read/write capability declaration (equals ``xtalate capabilities --json``)."""
     return etag_response(request, capabilities_body(registry))
 
 
-@router.get("/capabilities/{format_id}", tags=["capabilities"])
+@router.get(
+    "/capabilities/{format_id}", response_model=dict[str, dict[str, Any]], tags=["capabilities"]
+)
 def capabilities_for_format(
     format_id: str, request: Request, registry: Registry = Depends(get_registry)
 ) -> Response:

@@ -213,6 +213,14 @@ class BatchFileOverride(BaseModel):
     #: submit error, never a job the caller must poll to discover was doomed.
     _check_tolerance = field_validator("tolerance_profile")(validate_tolerance_profile)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _no_dry_run_override(cls, data: Any) -> Any:
+        # Unknown keys are otherwise ignored; dry_run must be refused, not silently dropped.
+        if isinstance(data, dict) and data.get("dry_run"):
+            raise ValueError("dry_run is a single-convert option and cannot be a batch override.")
+        return data
+
 
 class BatchConvertRequest(BaseModel):
     """``POST /v1/batch/convert`` body (Part 6 §2, v1.5 M58) — N uploaded ``file_id``s, one
@@ -232,6 +240,14 @@ class BatchConvertRequest(BaseModel):
     #: Per-file overrides keyed by ``file_id``; a key naming a file outside ``file_ids`` is a
     #: malformed request (``400 MALFORMED_REQUEST``), never silently ignored.
     overrides: dict[str, BatchFileOverride] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _no_dry_run(self) -> BatchConvertRequest:
+        # A dry run produces no Conversion; a batch child reporting "converted" for it would
+        # report a conversion that never happened (P1). Single-convert feature only.
+        if self.options.dry_run:
+            raise ValueError("dry_run is a single-convert option and is not supported on batch.")
+        return self
 
 
 class BatchConvertEntry(BaseModel):
