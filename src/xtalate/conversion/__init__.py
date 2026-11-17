@@ -27,6 +27,7 @@ from xtalate.conversion.engine import (
     CompletenessInvariantError,
     ConversionEngine,
     ConversionResult,
+    DryRun,
     RecoveryPreview,
     build_expected_object,
 )
@@ -66,6 +67,7 @@ __all__ = [
     "ParseRecovery",
     "PreflightDiff",
     "PreservedEntry",
+    "DryRun",
     "RecoveryPreview",
     "RemovedEntry",
     "ReportWarning",

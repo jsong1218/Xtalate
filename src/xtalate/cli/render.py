@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from pydantic import JsonValue
 
 from xtalate.conversion.batch import BatchReport
+from xtalate.conversion.engine import DryRun
 from xtalate.conversion.report import ConversionReport
 from xtalate.discovery.report import DiscoveryReport
 from xtalate.recovery.scenarios import describe_choice, describe_scenario
@@ -301,3 +302,29 @@ def _offered_choices(scenario: str) -> list[str]:
             if choice not in seen:
                 seen.append(choice)
     return seen
+
+
+def render_dry_run(dry: DryRun) -> str:
+    """Human summary of ``convert --dry-run``: what a real run would do, lose and ask for. Reads
+    the draft report; nothing here is a result and nothing was written."""
+    report = dry.report
+    lines = [
+        f"Dry run: {report.source.get('format_id')} -> {report.target.get('format_id')} "
+        "(nothing was written)."
+    ]
+    for applied in dry.applied:
+        lines.append(f"  would apply repair {applied.operation}: {applied.description}")
+        for hazard in applied.hazards:
+            lines.append(f"    ! [{hazard.code}] {hazard.message}")
+    if report.status == "completed":
+        lines.append("  A real run would complete with no recovery choice.")
+    else:
+        lines.append("  A real run would pause for a recovery choice:")
+        refusal = report.refusal if isinstance(report.refusal, dict) else {}
+        if refusal.get("message"):
+            lines.append(f"    {refusal['message']}")
+    lines.append(render_conversion(report))
+    guidance = render_recovery_guidance(report)
+    if guidance:
+        lines.append(guidance)
+    return "\n".join(lines)

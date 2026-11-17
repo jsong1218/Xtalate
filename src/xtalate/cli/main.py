@@ -221,6 +221,77 @@ def _infer_target(output: str, registry: Registry) -> str:
     raise _UsageError(f"{ext} matches {names} — pass {options}.")
 
 
+def _frames_repair(spec: str) -> RepairRequest:
+    """``--frames`` spec -> a ``select_frames`` repair. ``N`` (no colon) is the single frame N
+    (so ``-1`` is the last frame, which is how people read it); anything with a colon is a
+    Python slice. A step below 1 is refused here with a message naming the flag."""
+    text = spec.strip()
+    if not text:
+        raise _UsageError("--frames needs START:STOP[:STEP] or an integer N")
+    parts = text.split(":")
+    if len(parts) > 3:
+        raise _UsageError(f"--frames {spec!r} is not START:STOP[:STEP] or an integer N")
+    try:
+        if len(parts) == 1:
+            n = int(parts[0])
+            # `-1` is "the last frame": slice(-1, None). Any other N is slice(N, N + 1).
+            return RepairRequest(
+                operation="select_frames",
+                parameters={"start": n, "stop": None if n == -1 else n + 1, "step": 1},
+            )
+        values = [int(p) if p.strip() else None for p in parts]
+    except ValueError:
+        raise _UsageError(f"--frames {spec!r} is not START:STOP[:STEP] or an integer N") from None
+    step = values[2] if len(values) == 3 and values[2] is not None else 1
+    if step < 1:
+        raise _UsageError(f"--frames step must be >= 1, got {step}")
+    return RepairRequest(
+        operation="select_frames",
+        parameters={"start": values[0], "stop": values[1], "step": step},
+    )
+
+
+def _dry_run(
+    args: argparse.Namespace,
+    registry: Registry,
+    parsed: Any,
+    repairs: list[RepairRequest],
+) -> int:
+    """``convert --dry-run``: engine pre-flight on the (repaired) parsed object, nothing written."""
+    dry = ConversionEngine(registry).dry_run(
+        parsed.canonical,
+        source_format_id=parsed.format_id,
+        target_format_id=args.to,
+        source_filename=Path(args.file).name,
+        target_filename=Path(args.output).name if args.output else None,
+        mode=args.mode,
+        repairs=repairs or None,
+    )
+    if args.report:
+        _write_json(args.report, dry.report.model_dump(mode="json"))
+    if args.json:
+        print(
+            _json(
+                {
+                    "conversion_report": dry.report.model_dump(mode="json"),
+                    # Additive key (dry-run only): what each repair would do, with its hazards.
+                    "repairs": [
+                        {
+                            "operation": a.operation,
+                            "parameters": a.parameters,
+                            "description": a.description,
+                            "hazards": [{"code": h.code, "message": h.message} for h in a.hazards],
+                        }
+                        for a in dry.applied
+                    ],
+                }
+            )
+        )
+    else:
+        print(render.render_dry_run(dry))
+    return EXIT_REFUSED if dry.report.status == "awaiting_recovery" else EXIT_OK
+
+
 def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
     if args.batch:
         if args.file is not None:
@@ -235,6 +306,15 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
             "convert needs --to FORMAT_ID or an -o path whose extension names one "
             "(in batch mode the manifest carries it)"
         )
+    if args.dry_run and args.recover:
+        raise _UsageError(
+            "--dry-run cannot be combined with --recover: a dry run reports the recovery choices "
+            "a real run would ask for and never applies one (drop --recover, or drop --dry-run)"
+        )
+    if args.dry_run and args.validation_report:
+        raise _UsageError(
+            "--dry-run runs no validation, so --validation-report has nothing to write"
+        )
     is_directory = Path(args.file).is_dir()
     result = None if is_directory else _convert_streamed(args, registry)
     streamed = result is not None
@@ -247,6 +327,9 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
         # User-requested repairs (v1.7 M66; D255): the ordered list is parsed once, up front,
         # and applied by the engine between parse and pre-flight — see the engine-call below.
         repairs = _parse_repair(args.repair)
+        if args.frames is not None:
+            # Appended LAST so an explicit --repair list keeps its order.
+            repairs = [*repairs, _frames_repair(args.frames)]
         # parse-time recovery (missing_species / truncate_corrupt_tail) is applied here, before the
         # engine, if a matching preset was supplied; otherwise the recoverable parse error stands.
         parsed = parse_with_recovery(
@@ -258,6 +341,8 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
             directory_files=directory_files,
             dirname=Path(args.file).name if is_directory else None,
         )
+        if args.dry_run:
+            return _dry_run(args, registry, parsed, repairs)
         result = ConversionEngine(registry).convert(
             parsed.canonical,
             source_format_id=parsed.format_id,
@@ -387,6 +472,10 @@ def _BATCH_CONFLICTS(args: argparse.Namespace) -> list[str]:
         conflicts.append("--report")
     if args.validation_report is not None:
         conflicts.append("--validation-report")
+    if args.frames is not None:
+        conflicts.append("--frames")
+    if args.dry_run:
+        conflicts.append("--dry-run")
     return conflicts
 
 
@@ -448,8 +537,9 @@ def _convert_streamed(args: argparse.Namespace, registry: Registry) -> Any | Non
     """
     if not args.output or args.mode == "strict":
         return None
-    if args.repair:
-        # Repairs run on the materialized path only: the streaming engines predate v1.7
+    if args.repair or args.frames is not None or args.dry_run:
+        # --frames is a select_frames repair, and --dry-run must never run the writing streaming
+        # engine. Repairs run on the materialized path only: the streaming engines predate v1.7
         # repairs and are frozen for M66 (the one permitted engine-call change is the
         # `repairs=` argument on the materialized `convert`). Routing here is CLI logic.
         return None
@@ -988,7 +1078,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Write the converted file here (batch: a directory for per-file mode, a file "
         "for assemble mode).",
     )
-    p_convert.add_argument("--format", metavar="FORMAT_ID", help="Override source format sniffing.")
+    p_convert.add_argument(
+        "--format",
+        "--from",
+        dest="format",
+        metavar="FORMAT_ID",
+        help="Override source format sniffing (--from is an alias).",
+    )
     p_convert.add_argument("--mode", choices=("permissive", "strict"), default="permissive")
     p_convert.add_argument(
         "--recover",
@@ -1006,6 +1102,24 @@ def _build_parser() -> argparse.ArgumentParser:
         "(distance_threshold=ANGSTROM); species_reorder (optional permutation=…); "
         "select_frames (start=,stop=,step=: keep a Python-slice subset of frames). "
         "An explicit-coordinate [x, y, z] center target is not supported on the CLI yet.",
+    )
+    p_convert.add_argument(
+        "--frames",
+        metavar="START:STOP[:STEP]|N",
+        help=(
+            "Keep a Python-slice subset of frames (e.g. 0:100:5, ::2, --frames=-10:); a bare "
+            "integer N keeps only frame N (negative counts from the end). Same as --repair "
+            "select_frames. Write a leading-minus value with '=' (--frames=-1)."
+        ),
+    )
+    p_convert.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Parse, apply repairs and pre-flight only; write nothing. Exit 0 if the conversion "
+            "would run without a recovery choice, 2 if it needs one. Cannot be combined with "
+            "--recover (a dry run reports the choices a real run would ask for)."
+        ),
     )
     p_convert.add_argument("--acknowledge-loss", action="store_true")
     p_convert.add_argument("--acknowledge-parse-warnings", action="store_true")

@@ -151,6 +151,17 @@ class ConversionResult:
     output_dir: dict[str, bytes] | None = None
 
 
+@dataclass(frozen=True)
+class DryRun:
+    """Outcome of :meth:`ConversionEngine.dry_run` (QoL Q2): the draft report, what recovery the
+    real run would need, and what each repair would do. Nothing was written."""
+
+    report: ConversionReport
+    unresolved: list[UnresolvedScenario]
+    applied: list[AppliedRepair]
+    blocked: list[RepairBlock]
+
+
 class ConversionEngine:
     def __init__(self, registry: Registry) -> None:
         self._registry = registry
@@ -223,6 +234,91 @@ class ConversionEngine:
         )
         _assert_completeness(report, source)
         return report
+
+    def dry_run(
+        self,
+        source: CanonicalObject,
+        *,
+        source_format_id: str,
+        target_format_id: str,
+        source_filename: str | None = None,
+        source_sha256: str | None = None,
+        target_filename: str | None = None,
+        mode: str = "permissive",
+        output_multifile: bool = True,
+        repairs: list[RepairRequest] | None = None,
+    ) -> DryRun:
+        """Repairs + pre-flight with nothing written (QoL Q2).
+
+        Unlike :meth:`preflight` this applies ``repairs`` **strictly** (a blocked repair is
+        reported, never swallowed - P1) and returns the unresolved scenarios and the repairs'
+        descriptions alongside the draft report, so a caller can say exactly what a real run
+        would ask for and do. A malformed or empty-selection repair raises ``RepairError``
+        exactly as :meth:`convert` does. ``status`` is ``"awaiting_recovery"`` iff a real run
+        could not complete without the user choosing something; the ``refusal`` body then lists
+        the unresolved scenarios in the shape ``convert``'s own refusal uses. No recovery choice
+        is applied here (a dry run never fabricates data, P4)."""
+        applied: list[AppliedRepair] = []
+        blocked: list[RepairBlock] = []
+        obj = source
+        if repairs:
+            outcome = apply_repairs(source, repairs)
+            applied = list(outcome.applied)
+            blocked = list(outcome.blocked)
+            if outcome.canonical is not None:
+                obj = outcome.canonical
+        # The draft describes the repaired object (the one a real run would pre-flight); the
+        # repairs were already applied above, so none are passed on.
+        draft = self.preflight(
+            obj,
+            source_format_id=source_format_id,
+            target_format_id=target_format_id,
+            source_filename=source_filename,
+            source_sha256=source_sha256,
+            target_filename=target_filename,
+            mode=mode,
+            output_multifile=output_multifile,
+        )
+        matrix = self._registry.capability_matrix()
+        if blocked:
+            unresolved = _repair_block_scenarios(
+                blocked, matrix, target_format_id, output_multifile
+            )
+            message = (
+                f"the requested repair {blocked[0].operation!r} cannot run: {blocked[0].detail}"
+            )
+        else:
+            unresolved = list(
+                build_preflight(
+                    obj,
+                    matrix,
+                    target_format_id,
+                    output_multifile=output_multifile,
+                    source_format_id=source_format_id,
+                ).unresolved
+            )
+            message = "the conversion needs a recovery choice before it can run"
+        report = draft
+        if unresolved:
+            report = draft.model_copy(
+                update={
+                    "status": "awaiting_recovery",
+                    "refusal": {
+                        "code": "RECOVERY_REQUIRED",
+                        "message": message,
+                        "unresolved_scenarios": [
+                            {
+                                "scenario": s.scenario,
+                                "path": s.path,
+                                "detail": s.detail,
+                                "options": s.options,
+                            }
+                            for s in unresolved
+                        ],
+                    },
+                }
+            )
+        return DryRun(report=report, unresolved=unresolved, applied=applied, blocked=blocked)
 
     def convert(
         self,

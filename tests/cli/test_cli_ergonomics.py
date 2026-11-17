@@ -168,3 +168,135 @@ def test_api_only_choices_say_so_in_the_catalog(capsys: pytest.CaptureFixture[st
     assert main(["scenarios", "missing_lattice"]) == EXIT_OK
     out = capsys.readouterr().out
     assert "HTTP API" in out
+
+
+# --- --frames / --dry-run ---------------------------------------------------------------------
+
+
+def test_frames_flag_keeps_a_subset_and_records_the_repair(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The spec example: a 2-frame XYZ narrowed to its first frame while converting to extXYZ."""
+    out = tmp_path / "one.extxyz"
+    rc = main(["convert", WATER, "--to", "extxyz", "-o", str(out), "--frames", "0:1", "--json"])
+    payload = _json_out(capsys)
+    assert rc == EXIT_OK
+    lines = out.read_text().splitlines()
+    assert lines[0].strip() == "3" and len(lines) == 5  # exactly one 3-atom frame
+    rows = [
+        a for a in payload["conversion_report"]["assumptions"] if a["choice"] == "select_frames"
+    ]
+    assert rows and "dropped 1 frames" in rows[0]["description"]
+
+
+@pytest.mark.parametrize("spec", ["0:1", "::1", "--frames=-1", "0:2:1", "1", "0"])
+def test_frames_spec_forms_parse(
+    spec: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    flag = [spec] if spec.startswith("--frames=") else ["--frames", spec]
+    rc = main(["convert", WATER, "--to", "xyz", "-o", str(tmp_path / "o.xyz"), *flag])
+    assert rc == EXIT_OK, capsys.readouterr().err
+
+
+@pytest.mark.parametrize("spec", ["a", "1:2:3:4", "0:5:0", "0:5:-1", " ", "1.5"])
+def test_bad_frames_spec_is_a_usage_error(
+    spec: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rc = main(["convert", WATER, "--to", "xyz", "-o", str(tmp_path / "o.xyz"), f"--frames={spec}"])
+    assert rc == EXIT_USAGE
+    assert "--frames" in capsys.readouterr().err
+
+
+def test_empty_frames_selection_is_a_usage_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rc = main(["convert", WATER, "--to", "xyz", "-o", str(tmp_path / "o.xyz"), "--frames", "5:9"])
+    assert rc == EXIT_USAGE
+    assert "selects no frames" in capsys.readouterr().err
+
+
+def test_bare_n_means_frame_n_not_the_first_n(tmp_path: Path) -> None:
+    out = tmp_path / "last.xyz"
+    assert main(["convert", WATER, "--to", "xyz", "-o", str(out), "--frames=-1"]) == EXIT_OK
+    lines = out.read_text().splitlines()
+    assert len(lines) == 5 and lines[1].strip() == "frame 1"  # the LAST frame, one frame only
+
+
+def test_frames_forces_the_materialized_path_even_with_a_streamable_pair(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """xyz -> extxyz with -o is a streaming pair; --frames must still take the repair path."""
+    out = tmp_path / "s.extxyz"
+    rc = main(["convert", WATER, "--to", "extxyz", "-o", str(out), "--frames", "1:2", "--json"])
+    payload = _json_out(capsys)
+    assert rc == EXIT_OK
+    assert any(a["choice"] == "select_frames" for a in payload["conversion_report"]["assumptions"])
+    assert len(out.read_text().splitlines()) == 5
+
+
+def test_dry_run_complete_exits_0_and_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "x.poscar"
+    rc = main(["convert", CO_IN_CELL, "--to", "poscar", "-o", str(out), "--dry-run"])
+    text = capsys.readouterr().out
+    assert rc == EXIT_OK
+    assert not out.exists()
+    assert "dry run" in text.lower() and "would complete" in text.lower()
+
+
+def test_dry_run_on_a_streaming_pair_still_writes_nothing(tmp_path: Path) -> None:
+    out = tmp_path / "x.extxyz"
+    assert main(["convert", WATER, "--to", "extxyz", "-o", str(out), "--dry-run"]) == EXIT_OK
+    assert not out.exists() and list(tmp_path.iterdir()) == []
+
+
+def test_dry_run_needing_recovery_exits_2_with_guidance(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "x.poscar"
+    rc = main(["convert", WATER, "--to", "poscar", "-o", str(out), "--dry-run"])
+    text = capsys.readouterr().out
+    assert rc == EXIT_REFUSED
+    assert not out.exists()
+    assert "--recover frame_selection=first" in text
+
+
+def test_dry_run_with_frames_drops_the_frame_selection_need(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rc = main(["convert", WATER, "--to", "poscar", "--dry-run", "--frames", "0", "--json"])
+    payload = _json_out(capsys)
+    assert rc == EXIT_REFUSED  # the lattice is still needed
+    scenarios = {
+        s["scenario"] for s in payload["conversion_report"]["refusal"]["unresolved_scenarios"]
+    }
+    assert scenarios == {"missing_lattice"}
+    assert [r["operation"] for r in payload["repairs"]] == ["select_frames"]
+
+
+def test_dry_run_json_is_the_draft_report_and_the_repair_list(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rc = main(["convert", CO_IN_CELL, "--to", "poscar", "--dry-run", "--json"])
+    payload = _json_out(capsys)
+    assert rc == EXIT_OK
+    assert payload["conversion_report"]["stage"] == "preflight"
+    assert payload["conversion_report"]["status"] == "completed"
+    assert payload["repairs"] == []
+
+
+def test_dry_run_refuses_recover_presets(capsys: pytest.CaptureFixture[str]) -> None:
+    rc = main(
+        ["convert", WATER, "--to", "poscar", "--dry-run", "--recover", "frame_selection=first"]
+    )
+    assert rc == EXIT_USAGE
+    assert "--dry-run" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("flag", [["--dry-run"], ["--frames", "0"]])
+def test_dry_run_and_frames_are_rejected_in_batch_mode(
+    flag: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["convert", "--batch", "m.json", "-o", "out", *flag]) == EXIT_USAGE
+    assert "cannot be used with --batch" in capsys.readouterr().err
