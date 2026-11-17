@@ -290,6 +290,15 @@ class AseDbParser(ParserPlugin):
                 "ASEDB_MALFORMED", f"could not read the file as an ASE database: {exc}"
             ) from exc
 
+    def row_count(self, stream: BinaryIO) -> int:
+        """The number of rows in the database, from the **id column only** — no row is decoded
+        (reuses ``_spooled_db`` + ``_row_ids``). A cheap probe for callers that must know whether a
+        ``.db`` is a multi-structure container before deciding how to read it (the batch fan-out,
+        E5), which previously decoded every row just to count them. A file ``ase.db`` cannot open
+        raises the same ``ASEDB_MALFORMED`` ``ParseError`` as :meth:`parse`."""
+        with self._spooled_db(stream) as db:
+            return len(self._row_ids(db))
+
     def _select_row(self, db: Any, rid: int) -> Any:
         """Decode **one** row by id — used both for the whole-object read (one call per id) and
         for the single-row escape hatch, where full row materialization happens only for the row

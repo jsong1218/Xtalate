@@ -41,6 +41,8 @@ from xtalate.capabilities import Registry
 from xtalate.conversion.engine import ConversionEngine
 from xtalate.conversion.parse_recovery import parse_with_recovery
 from xtalate.conversion.report import ConversionReport
+from xtalate.discovery import Sniffer
+from xtalate.discovery.sniffer import HEAD_SIZE
 from xtalate.schema import CanonicalObject, Frame, TrajectoryMetadata
 from xtalate.sdk import AssembleContribution, ParseError
 from xtalate.validation.engine import ValidationEngine
@@ -454,12 +456,58 @@ def _convert_source(
     structure), now **re-triggered** by ``source_frame_count > 1`` on the detection parse instead
     of by catching the retired refusal. Lazy so ``fail_fast`` stops mid-container — the consumer
     breaks and the remaining rows are never converted."""
+    count = _probe_asedb_rows(registry, entry, shared_choices)
+    if count > 1:
+        # Detected without decoding a single row (E5): N decodes in total, not 2N.
+        for row in range(count):
+            yield _convert_one(engine, registry, entry, manifest, shared_choices, row=row)
+        return
     outcome = _convert_one(engine, registry, entry, manifest, shared_choices)
+    # Safety net, unchanged from M73-S5: a source the probe could not classify (unreadable, a
+    # pinned row, a parser without ``row_count``) still fans out from the detection parse's frame
+    # count, so behaviour never depends on the probe being available.
     if outcome.source_format_id == "ase_db" and (outcome.source_frame_count or 0) > 1:
         for row in range(outcome.source_frame_count or 0):
             yield _convert_one(engine, registry, entry, manifest, shared_choices, row=row)
         return
     yield outcome
+
+
+def _probe_asedb_rows(
+    registry: Registry,
+    entry: SourceEntry,
+    shared_choices: dict[str, dict[str, Any]],
+) -> int:
+    """The row count of a multi-row ASE ``.db`` source via the parser's id-only ``row_count``, or
+    ``0`` ("not a probed multi-row container: take the ordinary path") for anything else.
+
+    ``0`` is returned — never an error — for: a source not sniffed as ``ase_db``; one the caller
+    already pinned to a single row (``asedb_row_selection`` in the effective choices, per manifest
+    or per-source override); an unreadable file (the ordinary path reports ``SOURCE_UNREADABLE``);
+    a parser without ``row_count``; and a ``ParseError`` (the ordinary path reports the file's own
+    ``failed`` entry). The probe changes only *how the row count is found*; every per-row
+    conversion below it is the unchanged ``_convert_one(..., row=i)`` path, so each fanned report
+    stays byte-identical to the standalone row conversion (P1)."""
+    override = entry.override
+    choices = (
+        parse_recovery_presets(override.recovery_choices)
+        if override and override.recovery_choices is not None
+        else shared_choices
+    )
+    if "asedb_row_selection" in choices:
+        return 0
+    try:
+        with Path(entry.path).open("rb") as handle:
+            head = handle.read(HEAD_SIZE)
+            if Sniffer(registry).sniff(head, Path(entry.path).name).format_id != "ase_db":
+                return 0
+            handle.seek(0)
+            probe = getattr(registry.get_parser("ase_db"), "row_count", None)
+            if probe is None:
+                return 0
+            return int(probe(handle))
+    except (OSError, ParseError, KeyError):
+        return 0
 
 
 def _run_assemble(

@@ -15,6 +15,7 @@ which still catches a file that expires in the race between submit and run.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import uuid
 from typing import Any
@@ -94,6 +95,17 @@ def _require_live_upload(repository: Repository, file_id: str) -> None:
         )
 
 
+@functools.cache
+def _xtalate_version() -> str:
+    """The installed ``xtalate`` version, read from package metadata once per process."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("xtalate")
+    except PackageNotFoundError:  # pragma: no cover - non-installed tree only
+        return "0.0.0"
+
+
 def _registry_fingerprint(registry: Registry) -> str:
     """A stable fingerprint of the parser registry — an upgraded/added parser changes it (§2).
 
@@ -102,14 +114,8 @@ def _registry_fingerprint(registry: Registry) -> str:
     job. Built from the xtalate version + the sorted set of parser format ids (a plugin adding an
     eighth format flips the fingerprint).
     """
-    from importlib.metadata import PackageNotFoundError, version
-
-    try:
-        pkg = version("xtalate")
-    except PackageNotFoundError:  # pragma: no cover - non-installed tree only
-        pkg = "0.0.0"
     format_ids = ",".join(sorted(p.format_id for p in registry.parsers()))
-    return f"{pkg}|{format_ids}"
+    return f"{_xtalate_version()}|{format_ids}"
 
 
 def _inspect_idempotency_key(body: InspectRequest, registry: Registry) -> str:

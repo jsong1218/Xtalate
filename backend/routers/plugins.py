@@ -11,6 +11,7 @@ a human reads to see, at a glance, everything an instance can do.
 
 from __future__ import annotations
 
+import weakref
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -57,7 +58,28 @@ def _inventory(registry: Registry) -> list[dict[str, Any]]:
     return rows
 
 
+_Body = dict[str, list[dict[str, Any]]]
+_PLUGINS_CACHE: weakref.WeakKeyDictionary[Registry, tuple[tuple[int, ...], _Body]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def plugins_body(registry: Registry) -> dict[str, list[dict[str, Any]]]:
+    """The full ``/v1/plugins`` payload, built once per plugin set. Treat as read-only."""
+    token = (
+        tuple(id(p) for p in registry.parsers())
+        + tuple(id(e) for e in registry.exporters())
+        + tuple(id(a) for a in registry.analysis_plugins())
+    )
+    cached = _PLUGINS_CACHE.get(registry)
+    if cached is not None and cached[0] == token:
+        return cached[1]
+    body: _Body = {"plugins": _inventory(registry)}
+    _PLUGINS_CACHE[registry] = (token, body)
+    return body
+
+
 @router.get("/plugins", tags=["plugins"])
 def plugins(registry: Registry = Depends(get_registry)) -> dict[str, list[dict[str, Any]]]:
     """Every installed plugin's kind, name, and version (format plugins add ``format_name``)."""
-    return {"plugins": _inventory(registry)}
+    return plugins_body(registry)
