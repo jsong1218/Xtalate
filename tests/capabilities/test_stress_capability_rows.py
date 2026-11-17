@@ -71,12 +71,11 @@ def test_stress_carrying_parsers_name_the_carry_for_validation(
     ("format_id", "carry_key"),
     [("extxyz", "extxyz:stress"), ("ase_traj", "ase_traj:stress")],
 )
-def test_stress_carrying_exporter_declares_ase_output_convention(
+def test_stress_carrying_exporter_declares_tension_positive_output(
     format_id: str, carry_key: str
 ) -> None:
-    # The write declaration states the convention the exporter writes: ASE compression-positive,
-    # the inverse of the canonical tension-positive — the machine-readable half of the
-    # STRESS_SIGN_CONVENTION_CHANGED warning that lets validation compare the re-parse in
-    # canonical space (D151). Vocabulary is the scenario's option codes (terminology binding).
+    # The write declaration states the convention the exporter writes: ASE's own sign is
+    # tension-positive, identical to canonical, so validation compares the re-parse as-is (D151,
+    # A2). Vocabulary is the scenario's option codes (terminology binding).
     caps = default_registry().get_exporter(format_id).capabilities()
-    assert caps.stress_output_convention == "ase_sign_convention"
+    assert caps.stress_output_convention == "tension_positive"

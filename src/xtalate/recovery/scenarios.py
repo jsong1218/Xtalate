@@ -225,13 +225,16 @@ def available_options(
         # M8: IUPAC standard atomic weights (a reported default) or a caller-supplied list.
         return ["standard_masses", "manual_input"]
     if scenario == "ambiguous_stress_convention":
-        # M40: the two-option core — the source-declared sign convention of a carried extXYZ
-        # stress tensor (ASE's convention is compression-positive, the opposite of the canonical
-        # tension-positive, Part 2 §3.7.1). `virial` is the named cut line: it needs the cell
-        # volume for the virial↔stress volume-scaling relation, so it would be offered only when
+        # M40/A2: the two-option core — the source-declared sign convention of a carried extXYZ
+        # stress tensor. ASE's own get_stress() is TENSION-positive (verified against ASE 3.29
+        # with EMT), identical to the canonical convention (Part 2 §3.7.1), so the default
+        # reading is "as-is". `compression_positive` is for files written by producers that
+        # use the opposite sign (e.g. raw VASP/QE-style virials); it inverts the sign.
+        # `virial` is the named cut line: it needs the cell volume for the virial↔stress
+        # volume-scaling relation, so it would be offered only when
         # the frame volume is available, and it tracks to v1.1.1 — absent from the offered list
         # until then, so naming it refuses (never offered-then-refused, Part 4 §3.3).
-        return ["ase_sign_convention", "tension_positive"]
+        return ["tension_positive", "compression_positive"]
     if scenario == "ambiguous_units":
         # M46: exactly the three styles whose conversion factors are hand-verified (Å/ps/eV,
         # Å/fs/kcal-per-mol, m/s/J — the shared `_lammps` unit tables). The list starts at

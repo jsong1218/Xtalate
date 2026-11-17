@@ -15,11 +15,13 @@ from __future__ import annotations
 import io
 
 import numpy as np
+import pytest
 
 from xtalate.conversion import ConversionEngine, ConversionResult
 from xtalate.exporters.ase_traj import make_ase_traj_exporter
 from xtalate.parsers._common import build_provenance
 from xtalate.parsers.ase_traj import AseTrajParser
+from xtalate.recovery import RecoveryError
 from xtalate.registry import default_registry
 from xtalate.schema import CanonicalObject, Cell, Frame, UserMetadata
 from xtalate.schema.models import AtomsBlock
@@ -103,7 +105,7 @@ def test_ase_traj_stress_refuses_without_a_preset() -> None:
     assert res.report.refusal["code"] == "RECOVERY_REQUIRED"
     scenarios = res.report.refusal["unresolved_scenarios"]
     assert [s["scenario"] for s in scenarios] == ["ambiguous_stress_convention"]
-    assert scenarios[0]["options"] == ["ase_sign_convention", "tension_positive"]
+    assert scenarios[0]["options"] == ["tension_positive", "compression_positive"]
     assert _STRESS_KEY in scenarios[0]["detail"]
 
 
@@ -120,16 +122,23 @@ def test_ase_traj_stress_resolves_and_retires_the_carry() -> None:
     assert res.validation is not None and res.validation.status == "passed"
 
 
-def test_ase_sign_convention_negates_the_tensor() -> None:
-    # The second option keeps its existing sign semantics: ASE's convention is
-    # compression-positive, so reaching tension-positive negates (RF-9 keeps the semantics,
-    # only the format noun generalizes).
-    res = _convert(_stress_source(), target="extxyz", preset={"choice": "ase_sign_convention"})
+def test_compression_positive_negates_the_tensor() -> None:
+    # The second option inverts the sign: a source from a compression-positive producer needs
+    # the flip to reach the canonical tension-positive convention.
+    res = _convert(_stress_source(), target="extxyz", preset={"choice": "compression_positive"})
     assert res.report.status == "completed"
     assert res.canonical_out is not None
     stress = res.canonical_out.frames[0].electronic.stress
     assert stress is not None
     assert np.allclose(stress, -_TENSOR)
+
+
+def test_legacy_ase_sign_convention_is_refused() -> None:
+    # The removed choice is refused as unoffered (never silently reinterpreted), with a
+    # migration hint naming what to change.
+    with pytest.raises(RecoveryError, match="not an offered option") as exc:
+        _convert(_stress_source(), target="extxyz", preset={"choice": "ase_sign_convention"})
+    assert "compression_positive` reproduces the previous numbers" in str(exc.value)
 
 
 def test_assumption_names_the_ase_traj_source() -> None:

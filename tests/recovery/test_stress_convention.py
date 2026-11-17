@@ -2,7 +2,7 @@
 
 Covers the interpretive bright line (an Assumption with **no** `supplied` entry — the stress is
 genuine source data, only its sign convention is resolved), the sign-normalization resolver
-(`tension_positive` takes the tensor as-is, `ase_sign_convention` negates it), the custom-array
+(`tension_positive` takes the tensor as-is, `compression_positive` negates it), the custom-array
 retirement (the field lives in exactly one place after resolution), the refusal-without-preset
 default (no preset ⇒ `electronic.stress` stays `None`, the carry survives), the catalog shape
 (two-option core; the deferred `virial` option is absent so naming it refuses), and the **teeth
@@ -94,8 +94,8 @@ def test_interpretive_marker_and_two_option_core() -> None:
     assert is_interpretive("ambiguous_stress_convention")
     assert not is_interpretive("missing_lattice")  # a true fabricative is not interpretive.
     assert available_options("ambiguous_stress_convention") == [
-        "ase_sign_convention",
         "tension_positive",
+        "compression_positive",
     ]
     # `virial` is the named cut line (→ v1.1.1): absent from the offered list, so naming it
     # refuses — never offered-then-refused, the Part 4 §3.3 discipline.
@@ -143,23 +143,23 @@ def test_tension_positive_takes_the_tensor_as_is() -> None:
     assert "extxyz:stress" not in result.canonical.user_metadata.custom_per_frame
 
 
-def test_ase_sign_convention_negates_to_tension_positive() -> None:
+def test_compression_positive_negates_to_tension_positive() -> None:
     result = RecoveryEngine().resolve(
         _stress_source(),
         [_stress_scenario()],
-        recovery_choices={"ambiguous_stress_convention": {"choice": "ase_sign_convention"}},
+        recovery_choices={"ambiguous_stress_convention": {"choice": "compression_positive"}},
     )
     assert result.canonical is not None
     (assumption,) = result.assumptions
-    assert assumption.choice == "ase_sign_convention"
+    assert assumption.choice == "compression_positive"
     assert assumption.supplied == []
-    assert "ASE's sign convention" in assumption.description
+    assert "compression-positive" in assumption.description
     assert "sign inverted" in assumption.description
     assert "tension-positive" in assumption.description
     stress = result.canonical.frames[0].electronic.stress
     assert stress is not None
-    # ASE is compression-positive, the opposite of the canonical tension-positive: reaching the
-    # canonical convention requires the sign flip.
+    # A compression-positive source is the opposite of the canonical tension-positive: reaching
+    # the canonical convention requires the sign flip.
     assert np.allclose(stress, -np.asarray(_TENSOR))
 
 
@@ -176,7 +176,7 @@ def test_teeth_wrong_convention_sign_flips_the_tensor() -> None:
     neg = RecoveryEngine().resolve(
         _stress_source(),
         [_stress_scenario()],
-        recovery_choices={"ambiguous_stress_convention": {"choice": "ase_sign_convention"}},
+        recovery_choices={"ambiguous_stress_convention": {"choice": "compression_positive"}},
     )
     assert pos.canonical is not None and neg.canonical is not None
     pos_stress = pos.canonical.frames[0].electronic.stress
@@ -256,7 +256,7 @@ def test_no_preset_refuses_and_keeps_the_carry() -> None:
     (unresolved,) = result.unresolved
     assert unresolved.scenario == "ambiguous_stress_convention"
     assert unresolved.path == "electronic.stress"
-    assert unresolved.options == ["ase_sign_convention", "tension_positive"]
+    assert unresolved.options == ["tension_positive", "compression_positive"]
     # The safe state survives untouched: the carry and its value are still reported custom data
     # (today's honest state — the tensor stays where D18 put it).
     assert "extxyz:stress" in source.user_metadata.custom_per_frame
@@ -313,3 +313,14 @@ def test_resolver_refuses_when_no_carry_exists() -> None:
             [_stress_scenario()],
             recovery_choices={"ambiguous_stress_convention": {"choice": "tension_positive"}},
         )
+
+
+def test_legacy_ase_sign_convention_is_refused() -> None:
+    # The removed choice is not an alias: it is refused as unoffered (P4), with a migration hint.
+    with pytest.raises(RecoveryError, match="not an offered option") as exc:
+        RecoveryEngine().resolve(
+            _stress_source(),
+            [_stress_scenario()],
+            recovery_choices={"ambiguous_stress_convention": {"choice": "ase_sign_convention"}},
+        )
+    assert "compression_positive` reproduces the previous numbers" in str(exc.value)

@@ -264,8 +264,14 @@ def _choice_code(choice: dict[str, Any], scenario: UnresolvedScenario) -> str:
     offered = scenario.options or available_options(scenario.scenario)
     code = choice.get("choice")
     if not isinstance(code, str) or code not in offered:
+        hint = ""
+        if code == "ase_sign_convention":
+            hint = (
+                " (`ase_sign_convention` was removed: `compression_positive` reproduces the "
+                "previous numbers, `tension_positive` is what ASE actually writes)"
+            )
         raise RecoveryError(
-            f"{scenario.scenario!r}: choice {code!r} is not an offered option {offered!r}"
+            f"{scenario.scenario!r}: choice {code!r} is not an offered option {offered!r}{hint}"
         )
     return code
 
@@ -1060,14 +1066,14 @@ def _apply_stress_convention(
     (interpretive, M40/M42-S5, Part 4 §3.3).
 
     The stress values are **genuine source data** — the tensor exists in the file; only its
-    sign convention is unresolved (ASE's convention is compression-positive, the opposite of
-    the canonical tension-positive, Part 2 §3.7.1; DECISIONS.md D18). So this resolver
+    sign convention is unresolved (producers differ — ASE is tension-positive like the canonical
+    convention, Part 2 §3.7.1; DECISIONS.md D18). So this resolver
     interprets, never fabricates: per frame it reshapes the carried array — named by
     ``params['custom_key']``, any key of the shared stress-carry set (D163) — (Voigt-6 → full
     3×3 symmetric, in the (xx,yy,zz,yz,xz,xy) order §3.7.1 states — the order ASE itself
     writes) and applies the chosen sign normalization to reach the canonical tension-positive
     eV/Å³ convention: ``tension_positive`` takes the tensor as-is (the source is already
-    tension-positive); ``ase_sign_convention`` negates it. The custom array is then **retired**
+    tension-positive); ``compression_positive`` negates it. The custom array is then **retired**
     (popped from ``custom_per_frame``) so the field lives in exactly one place and the exporter
     never double-writes it.
 
@@ -1101,7 +1107,7 @@ def _apply_stress_convention(
             "to interpret — the scenario should not have fired"
         )
 
-    negate = code == "ase_sign_convention"
+    negate = code == "compression_positive"
     new_frames = []
     populated: list[int] = []
     for frame in canonical.frames:
@@ -1139,9 +1145,9 @@ def _apply_stress_convention(
             "change applied. The source file's stress values are genuine — only their sign "
             "convention was resolved, never guessed."
         )
-    else:  # ase_sign_convention
+    else:  # compression_positive
         description = (
-            f"Interpreted {format_name} stress as ASE's sign convention per your choice; sign "
+            f"Interpreted {format_name} stress as compression-positive per your choice; sign "
             "inverted to the canonical tension-positive convention (Part 2 §3.7.1). The source "
             "file's stress values are genuine — only their sign convention was resolved, never "
             "guessed."
@@ -1250,8 +1256,8 @@ def _stress_to_canonical(raw: np.ndarray, *, negate: bool) -> np.ndarray:
     ``voigt_6_to_full_3x3_stress`` — the exact inverse of the ordering ASE writes, so a
     round-tripped tensor's components land where the file put them ((xx,yy,zz,yz,xz,xy)). A
     ``(3, 3)`` carry (a file that spelled all nine components) is taken as-is. ``negate``
-    applies the ``ase_sign_convention`` flip (ASE is compression-positive, so reaching the
-    canonical tension-positive requires the sign change); the magnitude is already eV/Å³ for
+    applies the ``compression_positive`` flip (the source is compression-positive, so reaching
+    the canonical tension-positive requires the sign change); the magnitude is already eV/Å³ for
     an ASE-parsed extXYZ tensor, so no unit transform applies. Anything else is refused — an
     unexpected shape is not a stress tensor the resolver can honestly interpret."""
     if raw.shape == (6,):

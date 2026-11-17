@@ -91,7 +91,7 @@ def test_carry_to_stress_expressing_target_emits_the_scenario() -> None:
     assert scenario.path == "electronic.stress"
     # The option list is computed at detection time and carried on the scenario (P5) — the one
     # list the engine validates against and the refusal report echoes.
-    assert scenario.options == ["ase_sign_convention", "tension_positive"]
+    assert scenario.options == ["tension_positive", "compression_positive"]
     assert scenario.params == {"custom_key": "extxyz:stress"}
     detail = scenario.detail
     assert detail is not None
@@ -186,5 +186,5 @@ def test_preview_without_preset_lists_the_scenario_and_options() -> None:
     assert preview.assumptions == []
     (unresolved,) = preview.unresolved
     assert unresolved.scenario == "ambiguous_stress_convention"
-    assert unresolved.options == ["ase_sign_convention", "tension_positive"]
+    assert unresolved.options == ["tension_positive", "compression_positive"]
     assert unresolved.path == "electronic.stress"

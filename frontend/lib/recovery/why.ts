@@ -94,7 +94,7 @@ export const WHY_THIS_MATTERS: Record<string, WhyThisMatters> = {
   ambiguous_stress_convention: {
     question: QUESTION,
     stakes: [
-      "Your file carries a stress tensor, but its numbers are meaningless without a sign convention: some codes write compression as positive (ASE and VASP do), others write tension as positive. The file records the values, not which convention produced them, so the same tensor can mean opposite physical states.",
+      "Your file carries a stress tensor, but its numbers are meaningless without a sign convention: ASE and Xtalate treat tension as positive, while VASP-style pressure output treats compression as positive. The file records the values, not which convention produced them, so the same tensor can mean opposite physical states.",
       "This is not a value Xtalate invents or fills — the numbers are your file's own. What you are choosing is how to read them so they land in the canonical tension-positive convention: 'compression-positive' flips the sign, 'tension-positive' keeps it as written. Choose wrong and every stress in the output is negated, so the interpretation is recorded as an explicit assumption on the conversion rather than guessed.",
     ],
   },

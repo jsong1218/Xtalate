@@ -1,8 +1,8 @@
 """extXYZ stress round-trip through the Conversion Engine (M40-S2, Part 4, Part 5).
 
 After S2 a resolved extXYZ stress channel round-trips **extXYZ → Canonical → extXYZ** as a
-first-class field: the exporter writes from `electronic.stress` (reversed to the ASE convention)
-with a `STRESS_SIGN_CONVENTION_CHANGED` warning in the Conversion Report, and the value validates
+first-class field: the exporter writes `electronic.stress` verbatim (ASE and canonical are both
+tension-positive, so no `STRESS_SIGN_CONVENTION_CHANGED` warning), and the value validates
 within the stress tolerance base — the numeric-fidelity check compares the re-parsed carry back
 in canonical space (D151), never false-failing on "missing". An unresolved object refuses
 (`RECOVERY_REQUIRED` — an undeclared convention is never interpreted), and the streaming path
@@ -68,7 +68,7 @@ def _carry(obj: CanonicalObject) -> np.ndarray:
 # --- done means #1: the resolved round-trip is first-class, warned, validated -------------
 
 
-def test_resolved_round_trip_warns_and_validates(
+def test_resolved_round_trip_validates_without_sign_warning(
     engine: ConversionEngine, registry: Registry
 ) -> None:
     source = _source(registry)
@@ -76,7 +76,7 @@ def test_resolved_round_trip_warns_and_validates(
         source,
         source_format_id="extxyz",
         target_format_id="extxyz",
-        recovery_choices={"ambiguous_stress_convention": {"choice": "ase_sign_convention"}},
+        recovery_choices={"ambiguous_stress_convention": {"choice": "tension_positive"}},
         mode="permissive",
     )
     report = conv.report
@@ -90,13 +90,10 @@ def test_resolved_round_trip_warns_and_validates(
     assert any(e.path == "user_metadata.custom_per_frame['extxyz:stress']" for e in report.removed)
     assert report.supplied == []
     assert [(a.scenario, a.choice) for a in report.assumptions] == [
-        ("ambiguous_stress_convention", "ase_sign_convention")
+        ("ambiguous_stress_convention", "tension_positive")
     ]
-    # The exporter's sign reversal is in the report with the stable code (Part 2 §3.7.1), sourced
-    # from the exporter — this is the first time the contract fires for a real populated field.
-    assert any(
-        w.code == "STRESS_SIGN_CONVENTION_CHANGED" and w.source == "export" for w in report.warnings
-    )
+    # No sign change is applied on write any more (A2), so no sign-convention warning.
+    assert not any(w.code == "STRESS_SIGN_CONVENTION_CHANGED" for w in report.warnings)
     # The numeric-fidelity check compared the re-parsed carry back in canonical space (D151) —
     # the post-conversion diff passed within the stress tolerance base, not by skipping.
     numeric = next(c for c in conv.validation.checks if c.check_id == "numeric_field_fidelity")
@@ -109,15 +106,15 @@ def test_resolved_round_trip_warns_and_validates(
     max_diff = measured["max_abs_diff"]
     assert isinstance(max_diff, (int, float))
     assert max_diff <= _stress_fail_bound()
-    # The output's carry holds the exporter's declared convention (ASE): the negated canonical,
-    # Voigt-compressed (expanded back here via ASE's inverse for the comparison).
+    # The output's carry holds the canonical tensor as-is, Voigt-compressed
+    # (expanded back here via ASE's inverse for the comparison).
     output = conv.output
     canonical_out = conv.canonical_out
     assert output is not None and canonical_out is not None
     reparsed = registry.get_parser("extxyz").parse(io.BytesIO(output), filename=None).canonical
     canonical = np.asarray(canonical_out.frames[0].electronic.stress)
     carried = _carry(reparsed)[0]
-    assert np.allclose(voigt_6_to_full_3x3_stress(carried), -canonical)
+    assert np.allclose(voigt_6_to_full_3x3_stress(carried), canonical)
 
 
 def test_value_validated_within_the_stress_tolerance_base(
@@ -131,7 +128,7 @@ def test_value_validated_within_the_stress_tolerance_base(
         source,
         source_format_id="extxyz",
         target_format_id="extxyz",
-        recovery_choices={"ambiguous_stress_convention": {"choice": "ase_sign_convention"}},
+        recovery_choices={"ambiguous_stress_convention": {"choice": "tension_positive"}},
         mode="permissive",
     )
     output1 = conv1.output
@@ -142,7 +139,7 @@ def test_value_validated_within_the_stress_tolerance_base(
         reparsed,
         source_format_id="extxyz",
         target_format_id="extxyz",
-        recovery_choices={"ambiguous_stress_convention": {"choice": "ase_sign_convention"}},
+        recovery_choices={"ambiguous_stress_convention": {"choice": "tension_positive"}},
         mode="permissive",
     )
     canonical2_out = conv2.canonical_out
@@ -173,16 +170,13 @@ def test_tension_positive_choice_also_round_trips(
     assert canonical_out is not None
     # Tension-positive resolution: canonical equals the source tensor as-is (no sign flip on read;
     # the source carry is Voigt-6, expanded here via ASE's inverse for the comparison), and the
-    # exporter still reverses on write (ASE convention) with the warning.
+    # exporter writes it verbatim, with no sign warning.
     source_carry = _carry(source)[0]
     assert np.allclose(
         np.asarray(canonical_out.frames[0].electronic.stress),
         voigt_6_to_full_3x3_stress(source_carry),
     )
-    assert any(
-        w.code == "STRESS_SIGN_CONVENTION_CHANGED" and w.source == "export"
-        for w in conv.report.warnings
-    )
+    assert not any(w.code == "STRESS_SIGN_CONVENTION_CHANGED" for w in conv.report.warnings)
 
 
 # --- done means #2: an unresolved object refuses — never a silent pass-through -------------

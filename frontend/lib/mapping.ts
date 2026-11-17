@@ -125,8 +125,8 @@ export const CHOICE_LABELS: Record<string, Record<string, Labeled>> = {
     drop_all: { label: "Drop all constraints" },
   },
   ambiguous_stress_convention: {
-    ase_sign_convention: { label: "Read it as compression-positive (ASE / VASP convention)" },
-    tension_positive: { label: "Read it as tension-positive (canonical convention)" },
+    tension_positive: { label: "Read it as tension-positive (canonical convention; ASE's own sign)" },
+    compression_positive: { label: "Read it as compression-positive (invert the sign)" },
   },
   ambiguous_units: {
     metal: { label: "metal units (ångström, picoseconds, eV)" },

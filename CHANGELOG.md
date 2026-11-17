@@ -47,6 +47,16 @@ Schema version: 2.0.0
 
 ### Fixed
 
+- **Output-changing: ASE-family stress is tension-positive (verified against ASE 3.29/EMT).**
+  extXYZ/ASE `.traj`/ASE db now write `electronic.stress` verbatim and
+  `STRESS_SIGN_CONVENTION_CHANGED` is no longer emitted for them. The `ambiguous_stress_convention`
+  options are now `tension_positive` / `compression_positive`; the old `ase_sign_convention` choice
+  is refused as unoffered (`ase_sign_convention` was removed; `compression_positive` reproduces the
+  previous numbers, `tension_positive` is what ASE actually writes). Files previously exported by
+  Xtalate to extXYZ/ASE `.traj`/ASE db carry the OPPOSITE sign of the corrected output: re-convert
+  the original source (or re-run the conversion with the fixed version) rather than re-reading the
+  old output, and note that any old output re-read with `tension_positive` yields the negated
+  stress.
 - **Two coverage-guided-fuzzing crashes hardened into refusals, not silent exceptions.** A POSCAR
   whose atom-count line sums to zero (e.g. `H O` species with counts `0 0`) crashed in the
   Cartesian-conversion matmul instead of being refused; `PoscarParser` now raises `POSCAR_MALFORMED`

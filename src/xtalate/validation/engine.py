@@ -735,10 +735,11 @@ def _carried_to_canonical(value: Any, path: str, stress_output_convention: str) 
     expected object is canonical. For ``electronic.stress`` that means undoing both the Voigt-6
     compression ASE applies on write (via ASE's own ``voigt_6_to_full_3x3_stress``, the exact
     inverse of the ordering ASE writes — the same normalization the recovery resolver applies,
-    Part 2 §3.7.1) and the sign convention: an exporter declaring ``ase_sign_convention`` writes
-    compression-positive, the inverse of the canonical tension-positive, so the expanded tensor is
-    negated; ``tension_positive`` is written as-is. A ``(3, 3)`` carry (a file that spelled all
-    nine components) is taken as-is. Every other carried path (none in v0.1) compares as-is. The
+    Part 2 §3.7.1) and the sign convention: an exporter declaring ``compression_positive`` (or its
+    deprecated spelling ``ase_sign_convention``) writes compression-positive, the inverse of the
+    canonical tension-positive, so the expanded tensor is negated; ``tension_positive`` is written
+    as-is. A ``(3, 3)`` carry (a file that spelled all nine components) is taken as-is. Every other
+    carried path (none in v0.1) compares as-is. The
     reversal is the documented inverse of a machine-readable declaration — not the parser
     interpreting the value (D18 stands: the parser still never maps stress on read).
     """
@@ -746,7 +747,7 @@ def _carried_to_canonical(value: Any, path: str, stress_output_convention: str) 
     if path == "electronic.stress":
         if arr.shape == (6,):
             arr = np.asarray(voigt_6_to_full_3x3_stress(arr), dtype=np.float64)
-        if stress_output_convention == "ase_sign_convention":
+        if stress_output_convention in ("compression_positive", "ase_sign_convention"):
             return -arr
     return arr
 

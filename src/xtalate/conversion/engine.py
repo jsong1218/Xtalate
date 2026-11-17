@@ -669,8 +669,8 @@ class ConversionEngine:
         # Warnings echo parse warnings (Part 3 §5 rule 5) alongside capability caveats (already in
         # diff.warnings). Export-time transformation warnings come from the exporter itself via the
         # additive `export_warnings` hook (Part 4 §1 rule 3, Part 2 §3.7.1; D151): the exporter owns
-        # the representation changes it applies — e.g. extXYZ reversing a populated
-        # `electronic.stress` to the compression-positive convention — and the engine reports them
+        # the representation changes it applies — e.g. an exporter whose format mandates the
+        # opposite stress sign convention — and the engine reports them
         # with source="export". The v0.1 POSCAR exporter applies none, so this is usually empty.
         warnings = [
             # A repair's transformative-hazard statements (D251) lead: they are the one part of

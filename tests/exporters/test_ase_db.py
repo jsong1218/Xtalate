@@ -187,23 +187,22 @@ def test_foreign_namespace_key_is_not_written() -> None:
 # --- dual-source stress (D163) --------------------------------------------------------
 
 
-def test_populated_stress_writes_voigt6_and_reverses_the_sign() -> None:
-    # A resolved electronic.stress is written negated (canonical tension-positive → ASE
-    # compression-positive) and as Voigt-6, which a .db round-trips as (6,). The re-parse parks it
-    # under ase_db:stress verbatim (D18); reversing the sign convention recovers the source tensor.
+def test_populated_stress_writes_voigt6_verbatim() -> None:
+    # A resolved electronic.stress is written verbatim (canonical and ASE are both
+    # tension-positive) as Voigt-6, which a .db round-trips as (6,). The re-parse parks it under
+    # ase_db:stress verbatim (D18); expanding the Voigt-6 recovers the source tensor.
     frame = _frame(electronic=Electronic(stress=_TENSOR))
     rp = _reparse(_export(_obj([frame])))
     assert rp.frames[0].electronic.stress is None  # parser never maps stress on read
     carried = np.asarray(rp.user_metadata.custom_per_frame[_STRESS_KEY][0], dtype=float)
     assert carried.shape == (6,)
     full = np.asarray(voigt_6_to_full_3x3_stress(carried), dtype=float)
-    assert np.allclose(-full, _TENSOR)  # undo the ase_sign_convention negation
+    assert np.allclose(full, _TENSOR)
 
 
-def test_populated_stress_fires_the_sign_convention_warning() -> None:
+def test_populated_stress_fires_no_sign_convention_warning() -> None:
     frame = _frame(electronic=Electronic(stress=_TENSOR))
-    warnings = make_ase_db_exporter().export_warnings(_obj([frame]))
-    assert [w.code for w in warnings] == ["STRESS_SIGN_CONVENTION_CHANGED"]
+    assert make_ase_db_exporter().export_warnings(_obj([frame])) == []
 
 
 def test_opaque_stress_carry_passes_through_verbatim() -> None:
@@ -220,15 +219,12 @@ def test_opaque_stress_carry_passes_through_verbatim() -> None:
 
 def test_carry_dropped_warning_when_field_and_differing_carry_coexist() -> None:
     # A populated electronic.stress alongside a *differing* ase_db:stress carry: the field wins and
-    # the carry's numbers are dropped — both warnings fire (the sign change and the drop).
+    # the carry's numbers are dropped — the drop is reported.
     other = np.array([[9.0, 0.0, 0.0], [0.0, 9.0, 0.0], [0.0, 0.0, 9.0]])
     frame = _frame(electronic=Electronic(stress=_TENSOR))
     meta = UserMetadata(custom_per_frame={_STRESS_KEY: np.array([other])})
     warnings = make_ase_db_exporter().export_warnings(_obj([frame], meta))
-    assert {w.code for w in warnings} == {
-        "STRESS_SIGN_CONVENTION_CHANGED",
-        "STRESS_CARRY_DROPPED",
-    }
+    assert {w.code for w in warnings} == {"STRESS_CARRY_DROPPED"}
 
 
 def test_length9_flattened_stress_carry_does_not_crash_export_warnings() -> None:
@@ -236,13 +232,13 @@ def test_length9_flattened_stress_carry_does_not_crash_export_warnings() -> None
     # length-9 array on write, so an externally produced .db can carry exactly that shape. It
     # cannot be judged against the written (3, 3) tensor — the drop-check must skip it, never
     # broadcast-crash (export_warnings runs unguarded from the conversion engine, so a raw
-    # exception would abort the whole conversion). The sign-change warning still fires (the
-    # field is populated); no STRESS_CARRY_DROPPED is claimed for an uncomparable carry.
+    # exception would abort the whole conversion). No warning fires: the
+    # sign is unchanged and no STRESS_CARRY_DROPPED is claimed for an uncomparable carry.
     flat9 = np.arange(9, dtype=float) + 1.0
     frame = _frame(electronic=Electronic(stress=_TENSOR))
     meta = UserMetadata(custom_per_frame={_STRESS_KEY: np.array([flat9])})
     warnings = make_ase_db_exporter().export_warnings(_obj([frame], meta))
-    assert [w.code for w in warnings] == ["STRESS_SIGN_CONVENTION_CHANGED"]
+    assert warnings == []
 
 
 # --- capabilities ---------------------------------------------------------------------
@@ -266,4 +262,4 @@ def test_capabilities_declare_write_direction_and_single_frame() -> None:
     caps = make_ase_db_exporter().capabilities()
     assert caps.direction == "write"
     assert caps.max_frames == 1
-    assert caps.stress_output_convention == "ase_sign_convention"
+    assert caps.stress_output_convention == "tension_positive"

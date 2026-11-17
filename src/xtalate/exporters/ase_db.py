@@ -163,20 +163,19 @@ class AseDbExporter(ExporterPlugin):
             )
         self._apply_constraints(atoms, frame)
 
-        # Stress (Part 2 §3.7.1, D163): dual-source, mirroring ase_traj's M42-S5 write side. A
-        # resolved `electronic.stress` is written from the field, reversing the canonical
-        # tension-positive normalization to the exporter's declared target convention — ASE
-        # compression-positive, `stress_output_convention="ase_sign_convention"` — and reported
-        # by `export_warnings`, never silently. An unresolved object falls back to the verbatim
-        # `ase_db:stress` carry so an opaque .db→.db pass-through round-trips the numbers exactly.
+        # Stress (Part 2 §3.7.1, D163 / A2): dual-source, mirroring ase_traj's write side. A
+        # resolved `electronic.stress` is written verbatim from the field (canonical and ASE are
+        # both tension-positive: no sign change, no warning). An unresolved object falls back to
+        # the verbatim `ase_db:stress` carry so an opaque .db→.db pass-through round-trips the
+        # numbers exactly.
         stress = None
         if frame.electronic.stress is not None:
-            # Negate to ASE's compression-positive convention, then compress to Voigt-6 — ASE's
+            # Compress to Voigt-6 (no sign change) — ASE's
             # native stress representation, which a .db round-trips as a (6,) vector. A full 3x3 is
             # flattened to (9,) by the SQLite schema on read and would not reshape back to a tensor,
             # so writing Voigt-6 is what keeps the carry comparable. Validation reverses the (6,)
             # carry to a (3,3) tension-positive tensor via the declared stress_output_convention.
-            stress = full_3x3_to_voigt_6_stress(-np.asarray(frame.electronic.stress, dtype=float))
+            stress = full_3x3_to_voigt_6_stress(np.asarray(frame.electronic.stress, dtype=float))
         else:
             carried = per_frame_custom.get(_STRESS_KEY)
             if carried is not None:
@@ -269,9 +268,8 @@ class AseDbExporter(ExporterPlugin):
                 "electronic.stress": FieldCapability(
                     level=partial,
                     notes="Written only when the stress sign convention is resolved via the "
-                    "ambiguous_stress_convention recovery: from electronic.stress, sign-reversed "
-                    "to the compression-positive convention ASE-native databases carry "
-                    "(STRESS_SIGN_CONVENTION_CHANGED warning). An unresolved object's "
+                    "ambiguous_stress_convention recovery: from electronic.stress, verbatim "
+                    "(tension-positive, as ASE writes it). An unresolved object's "
                     "ase_db:stress carry is written verbatim.",
                 ),
                 "user_metadata.custom_global": FieldCapability(
@@ -316,41 +314,22 @@ class AseDbExporter(ExporterPlugin):
             representable_constraint_kinds=["fixed_atoms"],
             native_coordinate_system="cartesian",
             lossy_notes=[],
-            # The stress this exporter writes is in ASE's compression-positive convention — the
-            # inverse of the canonical tension-positive (Part 2 §3.7.1) — so the Validation Engine
-            # can compare a re-parsed carry back in canonical space (D151, D163).
-            stress_output_convention="ase_sign_convention",
+            # The stress this exporter writes is tension-positive, identical to canonical
+            # (Part 2 §3.7.1; ASE's own get_stress() is tension-positive, A2).
+            stress_output_convention="tension_positive",
         )
 
     def export_warnings(self, canonical: CanonicalObject) -> list[ExporterWarning]:
         """Report the stress transformations this exporter applies on write (Part 2 §3.7.1,
-        D163), mirroring ase_traj's M42-S5 write side. Two warnings, each firing only when its
-        trigger is present:
+        D163 / A2). Sign is no longer changed, so the only warning is:
 
-        * ``STRESS_SIGN_CONVENTION_CHANGED`` — a populated ``electronic.stress`` is reversed from
-          the canonical tension-positive convention to the compression-positive convention
-          ASE-native databases carry (never silent).
         * ``STRESS_CARRY_DROPPED`` — the frame carries **both** a populated ``electronic.stress``
           and a *differing* ``ase_db:stress`` carry; the field wins and the carry's numbers are
           dropped. Fires only when the dropped numbers actually differ from what was written.
 
         An unresolved object (only the legacy carry, no populated field) is written verbatim and
-        warrants neither warning."""
+        warrants no warning."""
         warnings: list[ExporterWarning] = []
-        populated = [f.index for f in canonical.frames if f.electronic.stress is not None]
-        if populated:
-            frames_desc = f"frame(s) {populated}" if len(populated) > 1 else f"frame {populated[0]}"
-            warnings.append(
-                ExporterWarning(
-                    code="STRESS_SIGN_CONVENTION_CHANGED",
-                    message=(
-                        "stress reversed from the canonical tension-positive convention to the "
-                        "compression-positive convention ASE-native databases carry "
-                        f"({frames_desc}); the output's stress tensor has the opposite sign of "
-                        "the canonical value"
-                    ),
-                )
-            )
         carry_values = canonical.user_metadata.custom_per_frame.get(_STRESS_KEY)
         dropped: list[int] = []
         if carry_values is not None:
@@ -360,7 +339,7 @@ class AseDbExporter(ExporterPlugin):
                 carried = carry_values[frame.index]
                 if carried is None:
                     continue
-                written = -np.asarray(frame.electronic.stress, dtype=float)
+                written = np.asarray(frame.electronic.stress, dtype=float)
                 carried_arr = np.asarray(carried, dtype=float)
                 # Only the two shapes the ASE-backed formats write are comparable (Voigt-6 or
                 # full 3×3). ASE itself can flatten a full 3×3 calculator stress to a bare
