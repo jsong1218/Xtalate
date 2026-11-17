@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
@@ -1070,6 +1071,7 @@ class ConversionEngine:
         acknowledge_loss: bool = False,
         validate: bool = True,
         max_frames: int | None = None,
+        progress: Callable[[int], None] | None = None,
     ) -> ConversionResult:
         """Stream a recovery-free conversion end to end with memory bounded by one frame (M12).
 
@@ -1091,6 +1093,10 @@ class ConversionEngine:
         (``validation.streaming``) — the expected side re-reads and filters the source on the fly,
         the actual side re-parses the output as a stream — so validation is memory-bounded too and
         the whole path stays sub-linear in frames (M12 deliverable 4).
+
+        ``progress`` is called with the running count of source frames consumed; it must be cheap
+        and must not raise (an exception propagates and aborts the conversion). ``None`` (default)
+        is the existing behaviour.
 
         ``max_frames`` (optional, default ``None`` = current behaviour) makes the frame cap a real
         gate (M39-S3, F1): the streamed frame count is checked **as it streams**, and once it
@@ -1168,6 +1174,8 @@ class ConversionEngine:
                 # caller translates the exception (the service: 422 FRAME_LIMIT_EXCEEDED).
                 if max_frames is not None and counters["frames"] > max_frames:
                     raise FrameLimitExceeded(frame_count=counters["frames"], max_frames=max_frames)
+                if progress is not None:
+                    progress(counters["frames"])
                 yield _filter_stream_frame(sf, write_plan)
 
         # The exporter writes each planned frame as it is yielded — the single streamed pass. A
@@ -1328,6 +1336,7 @@ class ConversionEngine:
         tolerance_profile: str | ToleranceProfile = "default",
         acknowledge_loss: bool = False,
         validate: bool = True,
+        progress: Callable[[int], None] | None = None,
     ) -> ConversionResult:
         """Stream a multi-frame source into a single-structure target under a ``frame_selection``
         reduction, holding one frame resident (M13; DECISIONS.md D56 — the recovery interplay M12
@@ -1343,6 +1352,9 @@ class ConversionEngine:
         same file (standing rule 3). The frame_selection accounting itself is produced by the shared
         ``recovery.frame_selection_stream_records``, driven by the accumulated presence, so the
         dropped-frame ``removed`` entries match the materialized recovery to the byte.
+
+        ``progress`` is called with the running count of source frames scanned (after each frame);
+        it must be cheap and must not raise (an exception propagates and aborts the conversion).
 
         Only ``frame_selection_streaming_eligible`` pairs and the ``first``/``last``/``index``
         choices are accepted. ``split_all`` (one output file per frame) and any file whose retained
@@ -1396,6 +1408,8 @@ class ConversionEngine:
             if want_index is not None and n == want_index:
                 indexed_frame = sf
             n += 1
+            if progress is not None:
+                progress(n)
         presence = acc.result()
 
         # A source carrying constraints against a PARTIAL target would need

@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """The ``xtalate`` command-line interface (MASTER_SPEC Appendix A).
 
 A thin presenter over the engines (Part 1 §2): it parses arguments, calls the library, and either
@@ -27,8 +28,10 @@ import json
 import os
 import sys
 import tempfile
+import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import yaml
 
@@ -80,6 +83,7 @@ class _Parser(argparse.ArgumentParser):
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
+    _maybe_autocomplete(parser)
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):
         parser.print_help()
@@ -294,7 +298,9 @@ def _dry_run(
             )
         )
     else:
-        print(render.render_dry_run(dry), file=sys.stderr if args.output == "-" else sys.stdout)
+        _say(
+            args, render.render_dry_run(dry), file=sys.stderr if args.output == "-" else sys.stdout
+        )
     return EXIT_OK if dry.report.status == "completed" else EXIT_REFUSED
 
 
@@ -432,6 +438,16 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
             tolerance_profile=tolerance,
         )
     report = result.report
+    _note(args, f"parsed as {report.source.get('format_id')}")
+    if report.repairs:
+        _note(args, "repairs: " + ", ".join(a.choice for a in report.repairs))
+    _note(
+        args,
+        f"conversion: {report.status} ({len(report.preserved)} preserved, "
+        f"{len(report.removed)} removed, {len(report.supplied)} supplied)",
+    )
+    if result.validation is not None:
+        _note(args, f"validated: {result.validation.status}")
 
     if args.report:
         _write_json(args.report, report.model_dump(mode="json"))
@@ -451,20 +467,21 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
         )
     else:
         say = sys.stderr if to_stdout else sys.stdout
-        print(render.render_conversion(report), file=say)
+        _say(args, render.render_conversion(report), file=say)
         guidance = render.render_recovery_guidance(report)
         if guidance:
-            print(guidance, file=say)
+            _say(args, guidance, file=say)
         if result.validation is not None:
-            print(file=say)
-            print(render.render_validation(result.validation), file=say)
+            _say(args, "", file=say)
+            _say(args, render.render_validation(result.validation), file=say)
 
     # The output file is written regardless of --json — the reports and the artifact are
     # independent outputs. In --json mode only the stdout dump is suppressed (it would corrupt the
     # JSON stream); the file-write notice always goes to stderr so stdout stays pure.
     if streamed:
         # The streaming engine already wrote the artifact frame by frame; only the notice remains.
-        print(f"Wrote {args.to} output to {args.output}", file=sys.stderr)
+        _say(args, f"Wrote {args.to} output to {args.output}", file=sys.stderr)
+        _note(args, f"exported to {args.output}")
     else:
         _emit_output(args, result, human=not args.json)
 
@@ -561,7 +578,7 @@ def _convert_many(args: argparse.Namespace, registry: Registry, inputs: list[Pat
             }
         )
         if not args.json:
-            print(f"{path.name} -> {name}  {status}")
+            _say(args, f"{path.name} -> {name}  {status}")
     if args.json:
         print(_json(results))
     _ring_completion_bell(args)
@@ -758,7 +775,11 @@ def _convert_streamed(args: argparse.Namespace, registry: Registry) -> Any | Non
         return None  # unwritable target directory: fail exactly as the materialized write would
     tmp_path: str | None = tmp_name
     try:
-        with source_path.open("rb") as source, os.fdopen(fd, "w+b") as output:
+        with (
+            source_path.open("rb") as source,
+            os.fdopen(fd, "w+b") as output,
+            _Progress(enabled=not args.quiet) as progress,
+        ):
             try:
                 if frame_selection is None:
                     result = engine.convert_stream(
@@ -771,6 +792,7 @@ def _convert_streamed(args: argparse.Namespace, registry: Registry) -> Any | Non
                         mode=args.mode,
                         tolerance_profile=_resolve_tolerance(args.tolerance_profile),
                         acknowledge_loss=args.acknowledge_loss,
+                        progress=progress,
                     )
                 else:
                     result = engine.convert_stream_select(
@@ -784,6 +806,7 @@ def _convert_streamed(args: argparse.Namespace, registry: Registry) -> Any | Non
                         mode=args.mode,
                         tolerance_profile=_resolve_tolerance(args.tolerance_profile),
                         acknowledge_loss=args.acknowledge_loss,
+                        progress=progress,
                     )
             except RecoveryError:
                 raise  # a caller error (bad frame_selection preset), identical either path
@@ -808,7 +831,7 @@ def _cmd_validate(args: argparse.Namespace, registry: Registry) -> int:
     if args.json:
         print(_json(report.model_dump(mode="json")))
     else:
-        print(render.render_validation(report))
+        _say(args, render.render_validation(report))
 
     return EXIT_VALIDATION_FAILED if report.status == "failed" else EXIT_OK
 
@@ -1092,6 +1115,71 @@ def _resolve_tolerance(value: str | None) -> ToleranceProfile:
         raise _UsageError(f"invalid tolerance-table file {value!r}: {exc}") from exc
 
 
+_PROGRESS_INTERVAL_S = 0.25  # ~4 Hz
+
+
+class _Progress:
+    """Frame counter on stderr for streamed conversions. It writes only when its stream is a TTY
+    and it is enabled, throttled to ~4 Hz, and clears its line on exit so it never interleaves
+    with real output — piped runs, redirected runs and tests see nothing."""
+
+    def __init__(
+        self,
+        *,
+        stream: TextIO | None = None,
+        enabled: bool = True,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._stream = stream if stream is not None else sys.stderr
+        self._active = enabled and self._stream.isatty()
+        self._clock = clock
+        self._last = float("-inf")
+        self._width = 0
+
+    def __call__(self, frames: int) -> None:
+        if not self._active:
+            return
+        now = self._clock()
+        if now - self._last < _PROGRESS_INTERVAL_S:
+            return
+        self._last = now
+        text = f"{frames} frames"
+        self._width = max(self._width, len(text))
+        self._stream.write("\r" + text)
+        self._stream.flush()
+
+    def __enter__(self) -> _Progress:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._active and self._width:
+            self._stream.write("\r" + " " * self._width + "\r")
+            self._stream.flush()
+
+
+def _say(args: argparse.Namespace, text: str = "", *, file: TextIO | None = None) -> None:
+    """Status/report text for a human: printed unless ``--quiet``. Errors, ``--json`` payloads
+    and requested output bytes never go through here."""
+    if not args.quiet:
+        print(text, file=file)
+
+
+def _note(args: argparse.Namespace, text: str) -> None:
+    """A ``--verbose`` stage note: stderr only, so stdout stays the result."""
+    if args.verbose:
+        print(text, file=sys.stderr)
+
+
+def _maybe_autocomplete(parser: argparse.ArgumentParser) -> None:
+    """Hook argcomplete when the optional ``completion`` extra is installed; otherwise a no-op.
+    It must run before ``parse_args`` and a missing extra is never an error."""
+    try:
+        import argcomplete
+    except ImportError:
+        return
+    argcomplete.autocomplete(parser)
+
+
 def _ring_completion_bell(args: argparse.Namespace) -> None:
     """The completion signal (v1.1 M39-S4, C2): a terminal bell when ``xtalate convert`` finishes.
 
@@ -1147,7 +1235,8 @@ def _emit_output(args: argparse.Namespace, result: Any, *, human: bool) -> None:
             target = directory / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-        print(f"Wrote {args.to} output to {directory}/", file=sys.stderr)
+        _say(args, f"Wrote {args.to} output to {directory}/", file=sys.stderr)
+        _note(args, f"exported to {directory}/")
         return
     output = result.output
     if output is None:
@@ -1155,7 +1244,8 @@ def _emit_output(args: argparse.Namespace, result: Any, *, human: bool) -> None:
     if args.output:
         Path(args.output).write_bytes(output)
         # Status line to stderr so a --json run keeps stdout as clean JSON.
-        print(f"Wrote {args.to} output to {args.output}", file=sys.stderr)
+        _say(args, f"Wrote {args.to} output to {args.output}", file=sys.stderr)
+        _note(args, f"exported to {args.output}")
     elif human:
         # No -o and human mode: dump the converted bytes to stdout for a quick look. In --json mode
         # with no -o there is nowhere clean to put the artifact, so it is simply not emitted.
@@ -1177,7 +1267,7 @@ def _emit_split_outputs(args: argparse.Namespace, outputs: list[bytes], *, human
     for i, chunk in enumerate(outputs):
         (directory / f"{stem}_{i:04d}{suffix}").write_bytes(chunk)
     # Status line to stderr so a --json run keeps stdout clean.
-    print(f"Wrote {len(outputs)} {args.to} file(s) to {directory}/", file=sys.stderr)
+    _say(args, f"Wrote {len(outputs)} {args.to} file(s) to {directory}/", file=sys.stderr)
 
 
 def _read_directory(path: str) -> dict[str, bytes]:
@@ -1222,8 +1312,20 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"xtalate {__version__}")
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
 
+    verbosity = _Parser(add_help=False)
+    group = verbosity.add_mutually_exclusive_group()
+    group.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress status output and progress (errors, exit codes and --json remain).",
+    )
+    group.add_argument(
+        "-v", "--verbose", action="store_true", help="Print pipeline stages to stderr (convert)."
+    )
+
     p_inspect = sub.add_parser(
-        "inspect", help="Run the Information Discovery Engine (✓/✗ inventory)."
+        "inspect", parents=[verbosity], help="Run the Information Discovery Engine (✓/✗ inventory)."
     )
     p_inspect.add_argument("file")
     p_inspect.add_argument("--format", metavar="FORMAT_ID", help="Override format sniffing.")
@@ -1231,7 +1333,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_inspect.add_argument("--json", action="store_true", help="Print the DiscoveryReport JSON.")
 
     p_convert = sub.add_parser(
-        "convert", help="Full pipeline: parse → pre-flight → recovery → export → validate."
+        "convert",
+        parents=[verbosity],
+        help="Full pipeline: parse → pre-flight → recovery → export → validate.",
     )
     p_convert.add_argument(
         "file",
@@ -1333,7 +1437,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     p_validate = sub.add_parser(
-        "validate", help="Offline re-parse re-validation, or re-threshold a stored report."
+        "validate",
+        parents=[verbosity],
+        help="Offline re-parse re-validation, or re-threshold a stored report.",
     )
     p_validate.add_argument(
         "--output", metavar="FILE", help="Converted output file (full re-parse mode)."
@@ -1357,7 +1463,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument("--json", action="store_true", help="Print the ValidationReport JSON.")
 
     p_analyze = sub.add_parser(
-        "analyze", help="Run one installed analysis plugin on a file (annotate its own namespace)."
+        "analyze",
+        parents=[verbosity],
+        help="Run one installed analysis plugin on a file (annotate its own namespace).",
     )
     p_analyze.add_argument("file")
     p_analyze.add_argument(
@@ -1371,12 +1479,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="Print {plugin, version, results} as JSON."
     )
 
-    p_caps = sub.add_parser("capabilities", help="Print the Capability Matrix.")
+    p_caps = sub.add_parser(
+        "capabilities", parents=[verbosity], help="Print the Capability Matrix."
+    )
     p_caps.add_argument("format_id", nargs="?", metavar="FORMAT_ID", help="Limit to one format.")
     p_caps.add_argument("--json", action="store_true", help="Print the matrix JSON.")
 
     p_scen = sub.add_parser(
-        "scenarios", help="List the recovery scenarios and the choices that resolve them."
+        "scenarios",
+        parents=[verbosity],
+        help="List the recovery scenarios and the choices that resolve them.",
     )
     p_scen.add_argument("scenario", nargs="?", metavar="SCENARIO", help="Limit to one scenario.")
     p_scen.add_argument("--json", action="store_true", help="Print the catalog as JSON.")

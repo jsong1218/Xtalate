@@ -49,6 +49,8 @@ Validation Report  [passed]  (tolerance: default)
 
 Leave out the `--recover` flags and the command **refuses**, printing the exact decisions it needs — a refusal is a reported outcome, never a silent default. Exit codes make it CI-native (`0` ok · `2` refused · `3` validation failed · `4` parse error · `5` strict-mode warnings · `1` usage), and `--json` on any command emits the report schema verbatim.
 
+Shell completion (optional): `pip install "xtalate[completion]"`, then `eval "$(register-python-argcomplete xtalate)"` in your shell profile.
+
 Full [CLI reference](docs/cli.md) · [library example](examples/convert_extxyz_to_poscar.py).
 
 ## Supported formats

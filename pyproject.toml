@@ -55,6 +55,8 @@ dependencies = [
 # require FastAPI (Part 9 §1.1). A deployment installs `xtalate[service]`. pydantic-settings is
 # the environment-only config reader (Part 9 §2); uvicorn is the ASGI server the image runs.
 # (DECISIONS.md D79.)
+# Optional shell completion for the CLI (QoL Q3). The import is guarded, so it is never required.
+completion = ["argcomplete>=3.1"]
 service = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -228,6 +230,11 @@ follow_imports = "skip"
 # types at the boundary, so `Any` never escapes; here we simply let the untyped import resolve.
 [[tool.mypy.overrides]]
 module = ["h5py.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = ["argcomplete.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
