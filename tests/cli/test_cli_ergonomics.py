@@ -300,3 +300,25 @@ def test_dry_run_and_frames_are_rejected_in_batch_mode(
 ) -> None:
     assert main(["convert", "--batch", "m.json", "-o", "out", *flag]) == EXIT_USAGE
     assert "cannot be used with --batch" in capsys.readouterr().err
+
+
+def test_strict_dry_run_on_a_lossy_conversion_exits_2(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rc = main(["convert", CO_IN_CELL, "--to", "xyz", "--mode", "strict", "--dry-run"])
+    text = capsys.readouterr().out
+    assert rc == EXIT_REFUSED
+    assert "would be refused" in text and "reductive loss must be acknowledged" in text
+    rc = main(
+        [
+            "convert",
+            CO_IN_CELL,
+            "--to",
+            "xyz",
+            "--mode",
+            "strict",
+            "--dry-run",
+            "--acknowledge-loss",
+        ]
+    )
+    assert rc == EXIT_OK

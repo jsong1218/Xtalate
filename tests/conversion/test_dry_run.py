@@ -12,6 +12,7 @@ from xtalate.conversion.engine import ConversionEngine, DryRun
 from xtalate.registry import default_registry
 from xtalate.repair import RepairError, RepairRequest
 from xtalate.schema import CanonicalObject
+from xtalate.sdk import ParseIssue
 
 GOLDEN = Path(__file__).parent.parent / "golden"
 WATER = GOLDEN / "xyz" / "water-traj" / "water_traj.xyz"  # 2 frames, no cell
@@ -127,3 +128,52 @@ def test_dry_run_does_not_mutate_the_source_object() -> None:
     )
     assert obj.model_dump(mode="json") == before
     assert obj.frame_count == 2
+
+
+def _strict(registry: Registry, obj: CanonicalObject, target: str, **kwargs: object) -> DryRun:
+    return ConversionEngine(registry).dry_run(
+        obj,
+        source_format_id="extxyz",
+        target_format_id=target,
+        mode="strict",
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
+def test_strict_unacknowledged_loss_is_refused() -> None:
+    registry, obj = _parse(CO_IN_CELL, "extxyz")
+    result = _strict(registry, obj, "xyz")  # extXYZ -> XYZ drops the cell
+    assert result.report.status == "refused"
+    assert result.report.refusal is not None
+    assert result.report.refusal["code"] == "UNACKNOWLEDGED_LOSS"
+    assert result.report.refusal["unresolved_scenarios"] == []
+
+
+def test_strict_acknowledged_loss_is_completed() -> None:
+    registry, obj = _parse(CO_IN_CELL, "extxyz")
+    result = _strict(registry, obj, "xyz", acknowledge_loss=True)
+    assert result.report.status == "completed"
+    assert result.report.refusal is None
+
+
+def test_permissive_loss_stays_completed() -> None:
+    registry, obj = _parse(CO_IN_CELL, "extxyz")
+    assert _dry(registry, obj, "extxyz", "xyz").report.status == "completed"
+
+
+def test_strict_parse_warning_is_refused_until_acknowledged() -> None:
+    registry, obj = _parse(CO_IN_CELL, "extxyz")
+    issues = [ParseIssue(severity="warning", code="X_WARN", message="odd")]
+    refused = _strict(registry, obj, "poscar", parse_issues=issues, acknowledge_loss=True)
+    assert refused.report.status == "refused"
+    assert refused.report.refusal is not None
+    assert refused.report.refusal["code"] == "UNACKNOWLEDGED_PARSE_WARNINGS"
+    ok = _strict(
+        registry,
+        obj,
+        "poscar",
+        parse_issues=issues,
+        acknowledge_loss=True,
+        acknowledge_parse_warnings=True,
+    )
+    assert ok.report.status == "completed"

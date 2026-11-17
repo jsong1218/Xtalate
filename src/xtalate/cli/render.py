@@ -319,8 +319,11 @@ def render_dry_run(dry: DryRun) -> str:
     if report.status == "completed":
         lines.append("  A real run would complete with no recovery choice.")
     else:
-        lines.append("  A real run would pause for a recovery choice:")
         refusal = report.refusal if isinstance(report.refusal, dict) else {}
+        if report.status == "refused":
+            lines.append("  A real run would be refused:")
+        else:
+            lines.append("  A real run would pause for a recovery choice:")
         if refusal.get("message"):
             lines.append(f"    {refusal['message']}")
     lines.append(render_conversion(report))

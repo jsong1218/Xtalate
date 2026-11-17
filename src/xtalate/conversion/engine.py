@@ -151,6 +151,17 @@ class ConversionResult:
     output_dir: dict[str, bytes] | None = None
 
 
+# One source of truth for the strict-mode refusal texts (convert, convert_stream*, dry_run).
+_UNACKNOWLEDGED_LOSS_MESSAGE = (
+    "strict mode: reductive loss must be acknowledged "
+    "(acknowledge_loss=True) before this conversion will proceed"
+)
+_UNACKNOWLEDGED_PARSE_WARNINGS_MESSAGE = (
+    "strict mode: parse warnings must be acknowledged "
+    "(acknowledge_parse_warnings=True) before this conversion will proceed"
+)
+
+
 @dataclass(frozen=True)
 class DryRun:
     """Outcome of :meth:`ConversionEngine.dry_run` (QoL Q2): the draft report, what recovery the
@@ -247,6 +258,9 @@ class ConversionEngine:
         mode: str = "permissive",
         output_multifile: bool = True,
         repairs: list[RepairRequest] | None = None,
+        parse_issues: list[ParseIssue] | None = None,
+        acknowledge_loss: bool = False,
+        acknowledge_parse_warnings: bool = False,
     ) -> DryRun:
         """Repairs + pre-flight with nothing written (QoL Q2).
 
@@ -257,7 +271,13 @@ class ConversionEngine:
         exactly as :meth:`convert` does. ``status`` is ``"awaiting_recovery"`` iff a real run
         could not complete without the user choosing something; the ``refusal`` body then lists
         the unresolved scenarios in the shape ``convert``'s own refusal uses. No recovery choice
-        is applied here (a dry run never fabricates data, P4)."""
+        is applied here (a dry run never fabricates data, P4).
+
+        In ``mode="strict"`` with nothing left unresolved, the strict acknowledgement gates are
+        mirrored in ``convert``'s order: predicted reductive loss without ``acknowledge_loss``
+        (``UNACKNOWLEDGED_LOSS``), then parse warnings in ``parse_issues`` without
+        ``acknowledge_parse_warnings`` (``UNACKNOWLEDGED_PARSE_WARNINGS``) make the dry run
+        ``status="refused"`` - a real run would refuse, so a caller must not read it as a go."""
         applied: list[AppliedRepair] = []
         blocked: list[RepairBlock] = []
         obj = source
@@ -318,6 +338,25 @@ class ConversionEngine:
                     },
                 }
             )
+        elif mode == "strict":
+            refusal: dict[str, Any] | None = None
+            if draft.removed and not acknowledge_loss:
+                refusal = {
+                    "code": "UNACKNOWLEDGED_LOSS",
+                    "message": _UNACKNOWLEDGED_LOSS_MESSAGE,
+                    "unresolved_scenarios": [],
+                }
+            elif (
+                any(i.severity == "warning" for i in (parse_issues or []))
+                and not acknowledge_parse_warnings
+            ):
+                refusal = {
+                    "code": "UNACKNOWLEDGED_PARSE_WARNINGS",
+                    "message": _UNACKNOWLEDGED_PARSE_WARNINGS_MESSAGE,
+                    "unresolved_scenarios": [],
+                }
+            if refusal is not None:
+                report = draft.model_copy(update={"status": "refused", "refusal": refusal})
         return DryRun(report=report, unresolved=unresolved, applied=applied, blocked=blocked)
 
     def convert(
@@ -680,8 +719,7 @@ class ConversionEngine:
                     fabricated_at_parse=fabricated,
                     refusal={
                         "code": "UNACKNOWLEDGED_LOSS",
-                        "message": "strict mode: reductive loss must be acknowledged "
-                        "(acknowledge_loss=True) before this conversion will proceed",
+                        "message": _UNACKNOWLEDGED_LOSS_MESSAGE,
                         "unresolved_scenarios": [],
                     },
                 )
@@ -704,8 +742,7 @@ class ConversionEngine:
                     fabricated_at_parse=fabricated,
                     refusal={
                         "code": "UNACKNOWLEDGED_PARSE_WARNINGS",
-                        "message": "strict mode: parse warnings must be acknowledged "
-                        "(acknowledge_parse_warnings=True) before this conversion will proceed",
+                        "message": _UNACKNOWLEDGED_PARSE_WARNINGS_MESSAGE,
                         "unresolved_scenarios": [],
                     },
                 )
@@ -1231,8 +1268,7 @@ class ConversionEngine:
                 warnings=diff.warnings,
                 refusal={
                     "code": "UNACKNOWLEDGED_LOSS",
-                    "message": "strict mode: reductive loss must be acknowledged "
-                    "(acknowledge_loss=True) before this conversion will proceed",
+                    "message": _UNACKNOWLEDGED_LOSS_MESSAGE,
                     "unresolved_scenarios": [],
                 },
             )
@@ -1452,8 +1488,7 @@ class ConversionEngine:
                 warnings=diff.warnings,
                 refusal={
                     "code": "UNACKNOWLEDGED_LOSS",
-                    "message": "strict mode: reductive loss must be acknowledged "
-                    "(acknowledge_loss=True) before this conversion will proceed",
+                    "message": _UNACKNOWLEDGED_LOSS_MESSAGE,
                     "unresolved_scenarios": [],
                 },
             )

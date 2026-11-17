@@ -266,6 +266,9 @@ def _dry_run(
         target_filename=Path(args.output).name if args.output else None,
         mode=args.mode,
         repairs=repairs or None,
+        parse_issues=list(parsed.issues),
+        acknowledge_loss=args.acknowledge_loss,
+        acknowledge_parse_warnings=args.acknowledge_parse_warnings,
     )
     if args.report:
         _write_json(args.report, dry.report.model_dump(mode="json"))
@@ -289,7 +292,7 @@ def _dry_run(
         )
     else:
         print(render.render_dry_run(dry))
-    return EXIT_REFUSED if dry.report.status == "awaiting_recovery" else EXIT_OK
+    return EXIT_OK if dry.report.status == "completed" else EXIT_REFUSED
 
 
 def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
@@ -1117,7 +1120,9 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Parse, apply repairs and pre-flight only; write nothing. Exit 0 if the conversion "
-            "would run without a recovery choice, 2 if it needs one. Cannot be combined with "
+            "would run without a recovery choice, 2 if it needs one or would be refused (in --mode "
+            "strict the acknowledgement gates are evaluated: pass --acknowledge-loss / "
+            "--acknowledge-parse-warnings to see the run as acknowledged). Cannot be combined with "
             "--recover (a dry run reports the choices a real run would ask for)."
         ),
     )
