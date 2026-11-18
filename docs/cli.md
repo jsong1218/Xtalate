@@ -1,13 +1,14 @@
 # CLI reference
 
 The `xtalate` command is a thin presenter over the library — the same engine the HTTP service uses.
-It has four subcommands:
+It has five subcommands:
 
 ```
 xtalate inspect       Run the Information Discovery Engine (✓/✗ inventory).
 xtalate convert       Full pipeline: parse → pre-flight → recovery → export → validate.
 xtalate validate      Offline re-parse re-validation, or re-threshold a stored report.
 xtalate capabilities  Print the Capability Matrix.
+xtalate scenarios     Print the recovery-scenario catalog (the choices `--recover` accepts).
 ```
 
 Global:
@@ -16,10 +17,13 @@ Global:
 xtalate --version     Print the version and exit.
 ```
 
+Every subcommand accepts `-q`/`--quiet` (suppress status output and progress; errors, exit codes and
+`--json` remain) and `-v`/`--verbose` (print pipeline stages to stderr; it affects `convert` only).
+
 Every command signals its outcome through the exit code (see [Exit codes](#exit-codes)) and can emit
 machine-readable JSON with `--json`.
 
-As of the v1.0 contract freeze, the CLI surface documented here — the four subcommands, their flags,
+As of the v1.0 contract freeze, the CLI surface documented here — the five subcommands, their flags,
 the `--json` convention, and the exit-code ladder below — is **frozen for the 1.x series**. Within
 1.x it evolves additively only: new flags and new formats may appear, but a documented flag is not
 removed, renamed, or given a new meaning, and the exit codes keep the meanings tabled here.
@@ -45,9 +49,11 @@ xtalate inspect FILE [--format FORMAT_ID] [--report PATH] [--json]
 Run the full pipeline and write the converted file plus its Conversion Report.
 
 ```
-xtalate convert FILE --to FORMAT_ID [-o PATH] [--format FORMAT_ID]
+xtalate convert FILE… --to FORMAT_ID [-o PATH] [--format|--from FORMAT_ID]
                 [--mode permissive|strict]
                 [--recover "SCENARIO=CHOICE[,param=value…]"]…
+                [--repair OPERATION[,param=value…]]… [--frames START:STOP[:STEP]|N]
+                [--dry-run]
                 [--acknowledge-loss] [--acknowledge-parse-warnings]
                 [--tolerance-profile NAME|FILE]
                 [--report PATH] [--validation-report PATH] [--json] [--no-bell]
@@ -55,10 +61,13 @@ xtalate convert FILE --to FORMAT_ID [-o PATH] [--format FORMAT_ID]
 
 | Flag | Meaning |
 |---|---|
-| `FILE` | The source file. |
-| `--to FORMAT_ID` | **Required.** Target format. |
-| `-o`, `--output PATH` | Write the converted file to `PATH`. |
-| `--format FORMAT_ID` | Override source-format sniffing. |
+| `FILE…` | Source file(s), glob(s) or a directory of files to convert into `-o DIR`; `-` reads stdin (needs `--from`). List all inputs before the options. Omit with `--batch`. |
+| `--to FORMAT_ID` | Target format. Required unless it can be inferred from the `-o` extension (see below); never inferred from `-o -`. |
+| `-o`, `--output PATH` | Write the converted file to `PATH` (a directory when converting several inputs). `-` writes the result to stdout (status text goes to stderr; a trajectory is then held in memory). |
+| `--format FORMAT_ID`, `--from FORMAT_ID` | Override source-format sniffing (`--from` is an alias). |
+| `--repair OPERATION[,param=value…]` | Apply a repair operation before export. Repeatable; applied in the order given. Operations: `wrap_into_cell` (no parameters); `center` (`reference=centroid\|cell_center`, `target=origin\|cell_center`); `deduplicate` (`distance_threshold=ANGSTROM`); `species_reorder` (optional `permutation=…`); `select_frames` (`start=`, `stop=`, `step=`: keep a Python-slice subset of frames). An explicit-coordinate `[x, y, z]` center target is not supported on the CLI yet. |
+| `--frames START:STOP[:STEP]\|N` | Keep a Python-slice subset of frames (e.g. `0:100:5`, `::2`, `--frames=-10:`); a bare integer `N` keeps only frame `N` (negative counts from the end). Same as `--repair select_frames`. Write a leading-minus value with `=` (`--frames=-1`). A range that selects no frames is refused (usage error), never an empty file. |
+| `--dry-run` | Parse, apply repairs and pre-flight only; write nothing. Exit `0` if the conversion would run without a recovery choice, `2` if it needs one or would be refused. In `--mode strict` the acknowledgement gates are evaluated (pass `--acknowledge-loss` / `--acknowledge-parse-warnings` to see the run as acknowledged); strict-mode refusals are predicted from predicted loss and parse warnings only, not from loss that appears at recovery time. Cannot be combined with `--recover` (a dry run reports the choices a real run would ask for) or with `--validation-report` (it runs no validation). |
 | `--mode permissive\|strict` | `strict` refuses on any predicted loss; `permissive` (default) reports it. |
 | `--recover "SCENARIO=CHOICE[,param=value…]"` | Preset a recovery choice for a required-but-missing field. Repeatable. Every choice is recorded as an Assumption. |
 | `--acknowledge-loss` | Proceed past reported loss non-interactively. |
@@ -68,6 +77,32 @@ xtalate convert FILE --to FORMAT_ID [-o PATH] [--format FORMAT_ID]
 | `--validation-report PATH` | Write the `ValidationReport` JSON. |
 | `--json` | Print both reports as one JSON object. |
 | `--no-bell` | Do not ring the terminal bell when the conversion finishes. |
+| `-q`, `--quiet` / `-v`, `--verbose` | Suppress status output and progress / print pipeline stages to stderr (mutually exclusive). |
+
+Refusals print the exact `--recover scenario=choice` lines needed, ready to copy (a choice that takes
+free text, such as `species_map`, is printed quoted: `--recover "missing_species=species_map,species=1:Si 2:O"`).
+`xtalate scenarios` lists every scenario and its choices.
+
+**Target inference.** When `--to` is omitted, the target is inferred from the `-o` extension if exactly
+one registered format claims it (`xtalate convert relax.vasp -o relax.cif`); an ambiguous extension such
+as `.xyz` still needs `--to`, and `-o -` never infers one.
+
+**Several inputs, directories, stdin.** Pass several files, globs or a directory and give `-o DIR`
+(with `--to`): each file converts independently into the directory. A directory that is not itself a
+recognised source directory (such as a DeePMD system) fans out per file; a file of unknown format
+exits `4` with a `parse error [UNKNOWN_FORMAT]` summary line. The process exit code is the worst
+per-file outcome (highest wins). `-` reads the source from stdin and needs `--from`;
+`-o -` writes the converted file to stdout.
+
+```bash
+xtalate convert runs/*.xyz --to extxyz -o out/
+cat POSCAR | xtalate convert - --from poscar --to cif -o -
+xtalate convert md.xyz --to extxyz -o subset.extxyz --frames 0:100:5
+xtalate convert md.traj --to extxyz --dry-run
+```
+
+**Progress.** For streamed conversions the CLI prints a frame-progress line to **stderr**, only when
+stderr is a terminal; `--quiet` suppresses it.
 
 A conversion that would need data the source lacks does not guess — it refuses unless you supply the
 value with `--recover`. See the [API reference](./api#12-convert) for the recovery scenarios and
@@ -171,6 +206,25 @@ xtalate capabilities [FORMAT_ID] [--json]
 |---|---|
 | `FORMAT_ID` | Limit output to a single format. |
 | `--json` | Print the matrix as JSON. |
+
+## scenarios
+
+Print the recovery-scenario catalog: every scenario, its choices and what each choice supplies, so you
+know what `--recover` accepts before a conversion refuses.
+
+```
+xtalate scenarios [SCENARIO] [--json]
+```
+
+| Flag | Meaning |
+|---|---|
+| `SCENARIO` | Limit output to one scenario (e.g. `ambiguous_stress_convention`). |
+| `--json` | Print the catalog as JSON. |
+
+## Shell completion
+
+Optional: `pip install "xtalate[completion]"`, then add `eval "$(register-python-argcomplete xtalate)"`
+to your shell profile.
 
 ## Exit codes
 

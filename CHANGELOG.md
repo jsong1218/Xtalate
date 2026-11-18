@@ -19,6 +19,14 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 2.0.0
 
+### Added
+
+- Validation compares constraints (selective dynamics), occupancies, space group and image flags by value where both formats carry them (`structural_fidelity` check).
+- `select_frames` repair operation (`start`/`stop`/`step`), exposed as `xtalate convert --frames START:STOP[:STEP]` and through the API `repairs` field. A range that selects zero frames is refused (`MALFORMED_REQUEST` over the API, a usage error on the CLI) rather than producing an empty file.
+- `xtalate convert --dry-run` (strict-mode refusals are predicted from predicted loss and parse warnings only, not recovery-time loss); `xtalate scenarios [SCENARIO] [--json]`; target format inferred from the `-o` extension when unambiguous (not from `-o -`); refusals print ready-to-copy `--recover scenario=choice` lines.
+- CLI: multiple / glob / directory inputs into `-o DIR`; `-` for stdin (with `--from`/`--format`) and stdout; `--quiet` on every subcommand and `--verbose` (stage notes on stderr, `convert` only); frame progress on stderr (TTY only) for streamed conversions; optional shell completion via `pip install "xtalate[completion]"`.
+- API: `options.dry_run` on `POST /v1/convert` (single convert only; `POST /v1/batch/convert` refuses it with `400 MALFORMED_REQUEST`, in the shared options and in a per-file override); ETag, `Cache-Control` and `304 Not Modified` on `/v1/capabilities`, `/v1/capabilities/{format}`, `/v1/plugins` and `/v1/limits`.
+
 ### Changed
 
 - **The Web UI is rebuilt as a desktop-style scientific workbench (VESTA/OVITO-inspired), and the
@@ -43,13 +51,6 @@ Schema version: 2.0.0
 - CLI: a directory that is not a recognised source directory now fans out per file; a file of unknown format exits 4 with a `parse error [UNKNOWN_FORMAT]` summary line.
 - DeePMD goldens were regenerated at schema `2.0.0` (only the parse note changed).
 
-### Security
-
-- **Upgraded `vitest` (and the transitive `@vitest/mocker`) to ≥ 4.1.11**, clearing the two open
-  Dependabot alerts for the path-traversal / arbitrary-file-read advisory (GHSA-82fw-gwwq-j7x9) via
-  the mocker's redirect handling. `vitest` is a frontend **dev** dependency — the advisory never
-  reached runtime, published artifacts, or the hosted demo; no product behaviour changes.
-
 ### Fixed
 
 - **Output-changing:** stress read from and written to extXYZ, ASE `.traj` and ASE database files is no longer negated. ASE's `get_stress()` is tension-positive, the same convention as Xtalate's canonical stress, so values now pass through unchanged. Files written by earlier Xtalate versions carry the opposite sign: previously written extXYZ / `.traj` / ASE-db stress is not corrected in place; re-convert from the original source file with this version (or negate the stress column) to obtain the corrected sign. The `ambiguous_stress_convention` recovery scenario now offers `tension_positive` and `compression_positive`; the old `ase_sign_convention` choice is refused as not offered (its old meaning, "negate", would now be wrong for ASE files, so it is not silently reinterpreted). A ground-truth test (ASE EMT on copper) pins the sign.
@@ -67,14 +68,14 @@ Schema version: 2.0.0
   instead of the parser's own error contract; `VasprunParser` now catches `LookupError` alongside
   `ET.ParseError` and raises `VASPRUN_MALFORMED_XML`. Both were found by the ClusterFuzzLite harness
   (D295) and are covered by new fuzz seeds and unit tests; neither changes any successful parse.
+- `species_map` is now settable through `--recover` (quoted, e.g. `--recover "missing_species=species_map,species=1:Si 2:O"`), and refusal guidance prints it ready to copy.
 
-### Added
+### Security
 
-- Validation compares constraints (selective dynamics), occupancies, space group and image flags by value where both formats carry them (`structural_fidelity` check).
-- `select_frames` repair operation (`start`/`stop`/`step`), exposed as `xtalate convert --frames START:STOP[:STEP]` and through the API `repairs` field. A range that selects zero frames is refused (`MALFORMED_REQUEST` over the API, a usage error on the CLI) rather than producing an empty file.
-- `xtalate convert --dry-run` (strict-mode refusals are predicted from predicted loss and parse warnings only, not recovery-time loss); `xtalate scenarios [SCENARIO] [--json]`; target format inferred from the `-o` extension when unambiguous (not from `-o -`); refusals print ready-to-copy `--recover scenario=choice` lines.
-- CLI: multiple / glob / directory inputs into `-o DIR`; `-` for stdin (with `--from`/`--format`) and stdout; `--quiet` / `--verbose` on every subcommand; frame progress on stderr (TTY only) for streamed conversions; optional shell completion via `pip install "xtalate[completion]"`.
-- API: `options.dry_run` on `POST /v1/convert` (single convert only; `POST /v1/batch/convert` refuses it with `400 MALFORMED_REQUEST`, in the shared options and in a per-file override); ETag, `Cache-Control` and `304 Not Modified` on `/v1/capabilities`, `/v1/capabilities/{format}`, `/v1/plugins` and `/v1/limits`.
+- **Upgraded `vitest` (and the transitive `@vitest/mocker`) to ≥ 4.1.11**, clearing the two open
+  Dependabot alerts for the path-traversal / arbitrary-file-read advisory (GHSA-82fw-gwwq-j7x9) via
+  the mocker's redirect handling. `vitest` is a frontend **dev** dependency — the advisory never
+  reached runtime, published artifacts, or the hosted demo; no product behaviour changes.
 
 _The next release accrues here._
 

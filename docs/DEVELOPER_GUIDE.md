@@ -545,8 +545,9 @@ are the proof each one landed.
    the carry into `electronic.stress`, and a later export writes it verbatim (canonical and ASE are
    both tension-positive, so no sign change and no warning). An exporter whose format mandates the
    opposite sign declares `stress_output_convention="compression_positive"` and reports
-   `STRESS_SIGN_CONVENTION_CHANGED`; the old `ase_sign_convention` spelling is a deprecated alias
-   of `compression_positive` for capability declarations only.
+   `STRESS_SIGN_CONVENTION_CHANGED`; `ase_sign_convention` survives only as a deprecated
+   spelling of `compression_positive` in the exporter capability field `stress_output_convention`; it is
+   not a recovery *choice* — naming it as a choice is refused as not offered.
 5. **Give it a catalog row and a preset form.** The Part 4 §3.3 table in `docs/MASTER_SPEC.md` is
    the normative contract — trigger, options (✳ where pair-conditional), and the non-interactive
    behavior without a preset — and `ambiguous_stress_convention`'s row states `refused`: an

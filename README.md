@@ -70,7 +70,7 @@ xtalate scenarios
 xtalate scenarios ambiguous_stress_convention
 ```
 
-`--quiet` / `--verbose` apply to every subcommand; frame progress is printed to stderr only on a TTY, for streamed conversions. `--dry-run` cannot be combined with `--recover` (a dry run applies no recovery choice), and a `--frames` range that selects no frames is refused rather than writing an empty file. `--to` is not inferred from `-o -`.
+`--quiet` is accepted on every subcommand (`--verbose`, which prints pipeline stages to stderr, affects `convert` only); frame progress is printed to stderr only on a TTY, for streamed conversions. `--dry-run` cannot be combined with `--recover` (a dry run applies no recovery choice), and a `--frames` range that selects no frames is refused rather than writing an empty file. `--to` is not inferred from `-o -`.
 
 Shell completion (optional): `pip install "xtalate[completion]"`, then `eval "$(register-python-argcomplete xtalate)"` in your shell profile.
 
