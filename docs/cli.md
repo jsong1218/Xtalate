@@ -67,7 +67,7 @@ xtalate convert FILE… --to FORMAT_ID [-o PATH] [--format|--from FORMAT_ID]
 | `--format FORMAT_ID`, `--from FORMAT_ID` | Override source-format sniffing (`--from` is an alias). |
 | `--repair OPERATION[,param=value…]` | Apply a repair operation before export. Repeatable; applied in the order given. Operations: `wrap_into_cell` (no parameters); `center` (`reference=centroid\|cell_center`, `target=origin\|cell_center`); `deduplicate` (`distance_threshold=ANGSTROM`); `species_reorder` (optional `permutation=…`); `select_frames` (`start=`, `stop=`, `step=`: keep a Python-slice subset of frames). An explicit-coordinate `[x, y, z]` center target is not supported on the CLI yet. |
 | `--frames START:STOP[:STEP]\|N` | Keep a Python-slice subset of frames (e.g. `0:100:5`, `::2`, `--frames=-10:`); a bare integer `N` keeps only frame `N` (negative counts from the end). Same as `--repair select_frames`. Write a leading-minus value with `=` (`--frames=-1`). A range that selects no frames is refused (usage error), never an empty file. |
-| `--dry-run` | Parse, apply repairs and pre-flight only; write nothing. Exit `0` if the conversion would run without a recovery choice, `2` if it needs one or would be refused. In `--mode strict` the acknowledgement gates are evaluated (pass `--acknowledge-loss` / `--acknowledge-parse-warnings` to see the run as acknowledged); strict-mode refusals are predicted from predicted loss and parse warnings only, not from loss that appears at recovery time. Cannot be combined with `--recover` (a dry run reports the choices a real run would ask for) or with `--validation-report` (it runs no validation). |
+| `--dry-run` | Parse, apply repairs and pre-flight only; write nothing. Exit `0` if the conversion would run without a recovery choice, `2` if it needs one or would be refused. In `--mode strict` the acknowledgement gates are evaluated (pass `--acknowledge-loss` / `--acknowledge-parse-warnings` to see the run as acknowledged); strict-mode refusals are predicted from predicted loss and parse warnings only, not from loss that appears at recovery time. When nothing needs a recovery choice, a value the target format cannot state (the exporter's `UNREPRESENTABLE_VALUE` refusal, such as per-axis periodicity written to `deepmd_npy`) is predicted too; such a refusal that would only arise after a recovery choice is applied cannot be predicted. Cannot be combined with `--recover` (a dry run reports the choices a real run would ask for) or with `--validation-report` (it runs no validation). |
 | `--mode permissive\|strict` | `strict` refuses on any predicted loss; `permissive` (default) reports it. |
 | `--recover "SCENARIO=CHOICE[,param=value…]"` | Preset a recovery choice for a required-but-missing field. Repeatable. Every choice is recorded as an Assumption. |
 | `--acknowledge-loss` | Proceed past reported loss non-interactively. |
@@ -91,7 +91,12 @@ as `.xyz` still needs `--to`, and `-o -` never infers one.
 (with `--to`): each file converts independently into the directory. A directory that is not itself a
 recognised source directory (such as a DeePMD system) fans out per file; a file of unknown format
 exits `4` with a `parse error [UNKNOWN_FORMAT]` summary line. The process exit code is the worst
-per-file outcome (highest wins). `-` reads the source from stdin and needs `--from`;
+per-file outcome (highest wins). Each output is named `<input stem>.<target extension>`. A planned
+output that would be one of the inputs themselves (for example `xtalate convert in/ -o in --to
+extxyz` with `in/foo.extxyz` among the inputs) is refused as a usage error (exit `1`) before anything
+is written; two inputs that would write the same output name are refused the same way. Any other
+file already in `-o DIR` under an output's name is overwritten, as a single `-o PATH` is. Under
+`--dry-run` each summary line reads `would complete`, `needs recovery` or `would refuse`. `-` reads the source from stdin and needs `--from`;
 `-o -` writes the converted file to stdout.
 
 ```bash

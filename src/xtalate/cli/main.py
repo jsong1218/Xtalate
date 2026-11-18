@@ -492,7 +492,9 @@ def _cmd_convert(args: argparse.Namespace, registry: Registry) -> int:
 def _status_word(report: dict[str, Any], validation: dict[str, Any] | None) -> str:
     """The one-word per-file outcome used in the fan-out summary line."""
     if report["stage"] == "preflight":  # --dry-run
-        return "would complete" if report["status"] == "completed" else "needs recovery"
+        if report["status"] == "completed":
+            return "would complete"
+        return "would refuse" if report["status"] == "refused" else "needs recovery"
     if report["status"] == "refused":
         return "refused"
     if validation is not None and validation["status"] == "failed":
@@ -525,10 +527,28 @@ def _convert_one_quiet(
     return code, report, validation, _status_word(report, validation)
 
 
+def _outputs_that_are_inputs(inputs: list[Path], outputs: list[Path]) -> list[str]:
+    """The planned outputs that resolve to the same file as an input (I3, D303): compared by
+    resolved path, and by ``samefile`` when the output already exists (a hard link or a
+    case-insensitive filesystem can name one file two ways)."""
+    resolved = {p.resolve() for p in inputs}
+    clashes: list[str] = []
+    for out in outputs:
+        if out.resolve() in resolved:
+            clashes.append(str(out))
+        elif out.exists() and any(os.path.samefile(out, p) for p in inputs if p.exists()):
+            clashes.append(str(out))
+    return clashes
+
+
 def _convert_many(args: argparse.Namespace, registry: Registry, inputs: list[Path]) -> int:
     """Convert each input into ``-o DIR`` as ``<stem>.<ext>``: one summary line per file, the
-    process exit code the highest per-file code. Collisions refuse up front (never an overwrite);
-    a per-file failure is a line, not a crash."""
+    process exit code the highest per-file code; a per-file failure is a line, not a crash.
+
+    Two cases refuse up front, before anything is written: two inputs that would write the same
+    output name, and a planned output that is one of the inputs themselves (``in/ -o in``), so a
+    fan-out never overwrites its own sources. Any *other* file already in ``-o DIR`` under an
+    output's name is overwritten, exactly as a single-file ``-o PATH`` is (docs/cli.md)."""
     if not args.output:
         raise _UsageError("converting several inputs needs -o DIR (and --to FORMAT_ID)")
     if args.to is None:
@@ -550,6 +570,12 @@ def _convert_many(args: argparse.Namespace, registry: Registry, inputs: list[Pat
         raise _UsageError(
             f"several inputs would write the same output name {duplicated}; rename an input or "
             "convert them separately"
+        )
+    overwrites = _outputs_that_are_inputs(inputs, [out_dir / n for n in names])
+    if overwrites:
+        raise _UsageError(
+            f"the output {overwrites[0]} would overwrite one of the inputs; choose an -o DIR "
+            "that does not hold the inputs, or a --to whose extension differs"
         )
     if not args.dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)

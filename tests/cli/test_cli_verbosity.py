@@ -199,3 +199,28 @@ def test_autocomplete_is_hooked_when_the_extra_is_present(
     parser = cli_main._build_parser()
     cli_main._maybe_autocomplete(parser)
     assert calls == [parser]
+
+
+# --- -o - keeps stdout to payload bytes under -q and -v (M3, D303) ----------------------------
+
+WATER = str(GOLDEN / "xyz" / "water-traj" / "water_traj.xyz")  # 2 frames; extxyz pair streams
+
+
+@pytest.mark.parametrize("flag", ["-q", "-v"])
+@pytest.mark.parametrize(("source", "target"), [(CO, "poscar"), (WATER, "extxyz")])
+def test_stdout_output_carries_only_the_payload(
+    flag: str, source: str, target: str, capsysbinary: pytest.CaptureFixture[bytes]
+) -> None:
+    from xtalate.registry import default_registry
+
+    rc = main(["convert", source, "--to", target, "-o", "-", flag])
+    captured = capsysbinary.readouterr()
+    assert rc == EXIT_OK
+    # The whole of stdout parses as the target format: no status line, note or report mixed in.
+    parsed = default_registry().get_parser(target).parse(io.BytesIO(captured.out), filename="o")
+    assert parsed.canonical.frames
+    assert b"Conversion Report" not in captured.out and b"Wrote" not in captured.out
+    if flag == "-v":
+        assert captured.err != b""  # the stage notes went to stderr
+    else:
+        assert captured.err == b""

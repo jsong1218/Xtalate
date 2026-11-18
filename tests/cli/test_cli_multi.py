@@ -275,3 +275,72 @@ def test_refused_stdout_conversion_writes_nothing_to_stdout(
 
 def test_batch_conflicts_with_stdout(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["convert", "--batch", "m.json", "-o", "-"]) == EXIT_USAGE
+
+
+# --- Fan-out dry-run wording and input protection (M1, I3; D303) ------------------------------
+
+SLAB_EXTXYZ = (
+    b'2\nLattice="5 0 0 0 5 0 0 0 5" Properties=species:S:1:pos:R:3 pbc="T T F"\nO 0 0 0\nH 0 0 1\n'
+)
+
+
+def test_fan_out_dry_run_says_would_refuse_for_a_refusal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = _stage(tmp_path, {"co.extxyz": CO})
+    (src / "slab.extxyz").write_bytes(SLAB_EXTXYZ)
+    rc = main(["convert", str(src), "--to", "deepmd_npy", "-o", str(tmp_path / "o"), "--dry-run"])
+    lines = {ln.split()[0]: ln for ln in capsys.readouterr().out.splitlines() if "->" in ln}
+    assert rc == EXIT_REFUSED
+    assert lines["co.extxyz"].endswith("would complete")
+    assert lines["slab.extxyz"].endswith("would refuse")
+    assert not (tmp_path / "o").exists()
+
+
+def test_fan_out_dry_run_keeps_needs_recovery_for_a_pause(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = _stage(tmp_path, {"co.extxyz": CO, "water.xyz": WATER})
+    rc = main(["convert", str(src), "--to", "poscar", "-o", str(tmp_path / "o"), "--dry-run"])
+    lines = {ln.split()[0]: ln for ln in capsys.readouterr().out.splitlines() if "->" in ln}
+    assert rc == EXIT_REFUSED
+    assert lines["co.extxyz"].endswith("would complete")
+    assert lines["water.xyz"].endswith("needs recovery")
+
+
+def test_fan_out_refuses_to_overwrite_one_of_its_inputs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `convert in/ -o in --to extxyz` would write in/foo.extxyz over the input in/foo.extxyz.
+    src = _stage(tmp_path, {"foo.extxyz": CO, "bar.xyz": WATER})
+    before = {p.name: p.read_bytes() for p in src.iterdir()}
+    rc = main(["convert", str(src), "-o", str(src), "--to", "extxyz"])
+    err = capsys.readouterr().err
+    assert rc == EXIT_USAGE
+    assert "foo.extxyz" in err and "input" in err
+    # Nothing was written: not even the non-colliding bar.extxyz.
+    assert {p.name: p.read_bytes() for p in src.iterdir()} == before
+
+
+def test_fan_out_input_protection_sees_through_a_relative_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = _stage(tmp_path, {"foo.extxyz": CO, "bar.extxyz": CO})
+    monkeypatch.chdir(src)
+    rc = main(
+        ["convert", "foo.extxyz", "bar.extxyz", "-o", str(src / ".." / "in"), "--to", "extxyz"]
+    )
+    assert rc == EXIT_USAGE
+    assert "input" in capsys.readouterr().err
+
+
+def test_fan_out_still_overwrites_an_existing_non_input_file(tmp_path: Path) -> None:
+    # Documented behaviour (docs/cli.md): only the inputs are protected; an existing file in -o DIR
+    # that is not an input is replaced, as a single-file -o PATH is.
+    src = _stage(tmp_path, {"a.extxyz": CO, "b.extxyz": CO})
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "a.poscar").write_text("stale\n")
+    rc = main(["convert", str(src), "--to", "poscar", "-o", str(out)])
+    assert rc == EXIT_OK
+    assert (out / "a.poscar").read_text() != "stale\n"

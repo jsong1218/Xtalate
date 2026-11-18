@@ -322,3 +322,49 @@ def test_strict_dry_run_on_a_lossy_conversion_exits_2(
         ]
     )
     assert rc == EXIT_OK
+
+
+# --- Exporter-level refusals in the dry run; quiet dry runs (I2, M3; D303) ----------------------
+
+# Periodic in a and b only: DeePMD can state a fully periodic or a fully non-periodic system, so
+# a real run refuses (UNREPRESENTABLE_VALUE) though the capability diff has nothing unresolved.
+SLAB_EXTXYZ = (
+    b'2\nLattice="5 0 0 0 5 0 0 0 5" Properties=species:S:1:pos:R:3 pbc="T T F"\nO 0 0 0\nH 0 0 1\n'
+)
+
+
+def test_dry_run_predicts_an_exporter_level_refusal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = tmp_path / "slab.extxyz"
+    src.write_bytes(SLAB_EXTXYZ)
+    out = tmp_path / "slab_out"
+    real = main(["convert", str(src), "--to", "deepmd_npy", "-o", str(out), "-q"])
+    assert real == EXIT_REFUSED
+    capsys.readouterr()
+    rc = main(["convert", str(src), "--to", "deepmd_npy", "-o", str(out), "--dry-run", "--json"])
+    payload = _json_out(capsys)
+    assert rc == EXIT_REFUSED
+    assert payload["conversion_report"]["status"] == "refused"
+    assert payload["conversion_report"]["refusal"]["code"] == "UNREPRESENTABLE_VALUE"
+    rc = main(["convert", str(src), "--to", "deepmd_npy", "-o", str(out), "--dry-run"])
+    assert rc == EXIT_REFUSED
+    assert "would be refused" in capsys.readouterr().out
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("case", ["refusing", "pausing"])
+def test_quiet_dry_run_exits_2_and_prints_nothing_to_stdout(
+    case: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    if case == "refusing":
+        src = tmp_path / "slab.extxyz"
+        src.write_bytes(SLAB_EXTXYZ)
+        argv = ["convert", str(src), "--to", "deepmd_npy", "-o", str(tmp_path / "o")]
+    else:
+        argv = ["convert", WATER, "--to", "poscar", "-o", str(tmp_path / "o.poscar")]
+    rc = main([*argv, "--dry-run", "-q"])
+    captured = capsys.readouterr()
+    assert rc == EXIT_REFUSED
+    assert captured.out == ""
+    assert list(p.name for p in tmp_path.iterdir() if p.name.startswith("o")) == []
