@@ -18,7 +18,8 @@ and how each cost is paid explicitly, never silently (P1/P4):
 
 * **No masses in the source.** extXYZ carries species and positions but no per-atom masses, and a
   pw.x input *requires* an ``ATOMIC_SPECIES`` mass column. The gap is filled by the explicit
-  ``missing_masses=standard_masses`` recovery — IUPAC standard atomic weights — and reported as a
+  ``missing_masses=standard_masses`` recovery — standard atomic weights from ASE's table
+  (``ase.data.atomic_masses``) — and reported as a
   ``supplied`` entry with its Assumption. (Masses have a legitimate generic fill; the *physics*
   below does not.)
 * **The physics is named, not invented.** The source carries no ``ecutwfc``, no k-points, and no
@@ -61,8 +62,9 @@ Fe 0.00 0.00 0.00
 """
 
 # The one recovery the write to a pw.x input needs, explicit and recorded as an Assumption: fill
-# the ATOMIC_SPECIES mass column extXYZ never carried (IUPAC standard atomic weights). The physics
-# gaps are *not* presets — they are reported as the QEIN_INCOMPLETE_INPUT warning, never invented.
+# the ATOMIC_SPECIES mass column extXYZ never carried (standard atomic weights from ASE's table).
+# The physics gaps are *not* presets — they are reported as the QEIN_INCOMPLETE_INPUT warning,
+# never invented.
 QE_RECOVERY: dict[str, dict[str, object]] = {
     "missing_masses": {"choice": "standard_masses", "parameters": {}},
 }
