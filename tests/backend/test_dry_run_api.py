@@ -163,3 +163,29 @@ def test_batch_convert_refuses_dry_run_in_a_per_file_override(client: TestClient
     )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "MALFORMED_REQUEST"
+
+
+# Periodic in a and b only: the DeePMD exporter refuses per-axis pbc (UNREPRESENTABLE_VALUE) after
+# the capability diff has nothing unresolved, so only an exporter-aware dry run predicts it.
+SLAB_EXTXYZ = (
+    b'2\nLattice="5 0 0 0 5 0 0 0 5" Properties=species:S:1:pos:R:3 pbc="T T F"\nO 0 0 0\nH 0 0 1\n'
+)
+
+
+def test_dry_run_predicts_an_exporter_level_refusal(
+    client: TestClient, repository: Repository
+) -> None:
+    file_id = _upload(client, SLAB_EXTXYZ, "slab.extxyz")
+    real = _job(client, _convert(client, file_id, "deepmd_npy", {}))
+    assert real["result"]["conversion_report"]["status"] == "refused"
+    real_refusal = real["result"]["conversion_report"]["refusal"]
+    assert real_refusal["code"] == "UNREPRESENTABLE_VALUE"
+
+    env = _job(client, _convert(client, file_id, "deepmd_npy", {"dry_run": True}))
+    assert env["state"] == "completed"
+    report = env["result"]["conversion_report"]
+    assert report["stage"] == "preflight"
+    assert report["status"] == "refused"
+    assert report["refusal"] == real_refusal
+    assert env["result"]["conversion_id"] is None
+    assert env["result"]["download"] is None

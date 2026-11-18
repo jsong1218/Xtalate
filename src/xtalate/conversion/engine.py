@@ -278,7 +278,13 @@ class ConversionEngine:
         mirrored in ``convert``'s order: predicted reductive loss without ``acknowledge_loss``
         (``UNACKNOWLEDGED_LOSS``), then parse warnings in ``parse_issues`` without
         ``acknowledge_parse_warnings`` (``UNACKNOWLEDGED_PARSE_WARNINGS``) make the dry run
-        ``status="refused"`` - a real run would refuse, so a caller must not read it as a go."""
+        ``status="refused"`` - a real run would refuse, so a caller must not read it as a go.
+
+        With nothing unresolved and no strict gate tripped, the target exporter's value-level
+        ``unrepresentable`` hook (D179) is consulted on the write-plan-filtered object, as
+        ``convert`` does; a value the format cannot state makes the dry run ``status="refused"``
+        with ``convert``'s ``UNREPRESENTABLE_VALUE`` code and message. A refusal that depends on a
+        recovery choice not yet made cannot be predicted here (no choice is applied)."""
         applied: list[AppliedRepair] = []
         blocked: list[RepairBlock] = []
         obj = source
@@ -301,6 +307,7 @@ class ConversionEngine:
             output_multifile=output_multifile,
         )
         matrix = self._registry.capability_matrix()
+        diff = None
         if blocked:
             unresolved = _repair_block_scenarios(
                 blocked, matrix, target_format_id, output_multifile
@@ -309,15 +316,14 @@ class ConversionEngine:
                 f"the requested repair {blocked[0].operation!r} cannot run: {blocked[0].detail}"
             )
         else:
-            unresolved = list(
-                build_preflight(
-                    obj,
-                    matrix,
-                    target_format_id,
-                    output_multifile=output_multifile,
-                    source_format_id=source_format_id,
-                ).unresolved
+            diff = build_preflight(
+                obj,
+                matrix,
+                target_format_id,
+                output_multifile=output_multifile,
+                source_format_id=source_format_id,
             )
+            unresolved = list(diff.unresolved)
             message = "the conversion needs a recovery choice before it can run"
         report = draft
         if unresolved:
@@ -358,6 +364,26 @@ class ConversionEngine:
                 }
             if refusal is not None:
                 report = draft.model_copy(update={"status": "refused", "refusal": refusal})
+        if not unresolved and report.refusal is None and diff is not None:
+            # The exporter's value-level gate (D179), consulted after the strict gates exactly as
+            # `convert` does, on the same write-plan-filtered object `convert` hands it (no
+            # recovery runs when nothing is unresolved, so the plan is the diff's). Without this a
+            # dry run reads "would complete" for a conversion the real run refuses (I2, D303).
+            canonical_out = _apply_write_plan(obj, set(diff.write_plan), target_format_id)
+            unrepresentable = self._registry.get_exporter(target_format_id).unrepresentable(
+                canonical_out
+            )
+            if unrepresentable is not None:
+                report = draft.model_copy(
+                    update={
+                        "status": "refused",
+                        "refusal": {
+                            "code": "UNREPRESENTABLE_VALUE",
+                            "message": unrepresentable,
+                            "unresolved_scenarios": [],
+                        },
+                    }
+                )
         return DryRun(report=report, unresolved=unresolved, applied=applied, blocked=blocked)
 
     def convert(

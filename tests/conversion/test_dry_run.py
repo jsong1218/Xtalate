@@ -177,3 +177,79 @@ def test_strict_parse_warning_is_refused_until_acknowledged() -> None:
         acknowledge_parse_warnings=True,
     )
     assert ok.report.status == "completed"
+
+
+# --- Exporter-level refusals are predicted too (I2, D303) ---------------------------------------
+
+# A slab: periodic in a and b only. DeePMD can state a fully periodic or a fully non-periodic
+# system, never per-axis pbc, so its exporter refuses the value (UNREPRESENTABLE_VALUE) after the
+# capability diff has already said "nothing unresolved".
+SLAB_EXTXYZ = (
+    b'2\nLattice="5 0 0 0 5 0 0 0 5" Properties=species:S:1:pos:R:3 pbc="T T F"\nO 0 0 0\nH 0 0 1\n'
+)
+
+
+# The same slab with an extra per-atom column DeePMD does not write: a reductive loss as well.
+LOSSY_SLAB_EXTXYZ = (
+    b"2\n"
+    b'Lattice="5 0 0 0 5 0 0 0 5" Properties=species:S:1:pos:R:3:vel:R:3 pbc="T T F"\n'
+    b"O 0 0 0 1 1 1\n"
+    b"H 0 0 1 1 1 1\n"
+)
+
+
+def _slab(data: bytes = SLAB_EXTXYZ) -> tuple[Registry, CanonicalObject]:
+    registry = default_registry()
+    parsed = registry.get_parser("extxyz").parse(io.BytesIO(data), filename="slab.extxyz")
+    return registry, parsed.canonical
+
+
+@pytest.mark.parametrize("mode", ["permissive", "strict"])
+def test_exporter_level_refusal_is_predicted_with_converts_code_and_message(mode: str) -> None:
+    registry, obj = _slab()
+    engine = ConversionEngine(registry)
+    real = engine.convert(
+        obj,
+        source_format_id="extxyz",
+        target_format_id="deepmd_npy",
+        mode=mode,
+        acknowledge_loss=True,
+    )
+    assert real.report.status == "refused"
+    assert real.report.refusal is not None
+    assert real.report.refusal["code"] == "UNREPRESENTABLE_VALUE"
+
+    dry = engine.dry_run(
+        obj,
+        source_format_id="extxyz",
+        target_format_id="deepmd_npy",
+        mode=mode,
+        acknowledge_loss=True,
+    )
+    assert dry.report.stage == "preflight"
+    assert dry.report.status == "refused"
+    assert dry.unresolved == []
+    assert dry.report.refusal == real.report.refusal
+
+
+def test_strict_gate_is_reported_ahead_of_an_exporter_level_refusal() -> None:
+    # convert checks the strict acknowledgement gates before the exporter's value check, so an
+    # unacknowledged loss names UNACKNOWLEDGED_LOSS even when the value is also unrepresentable.
+    registry, obj = _slab(LOSSY_SLAB_EXTXYZ)
+    engine = ConversionEngine(registry)
+    kwargs: dict[str, object] = {
+        "source_format_id": "extxyz",
+        "target_format_id": "deepmd_npy",
+        "mode": "strict",
+    }
+    real = engine.convert(obj, **kwargs)  # type: ignore[arg-type]
+    dry = engine.dry_run(obj, **kwargs)  # type: ignore[arg-type]
+    assert real.report.refusal is not None and dry.report.refusal is not None
+    assert real.report.refusal["code"] == "UNACKNOWLEDGED_LOSS"
+    assert dry.report.refusal == real.report.refusal
+    # Acknowledged, the exporter-level refusal is what both report next.
+    real_ack = engine.convert(obj, acknowledge_loss=True, **kwargs)  # type: ignore[arg-type]
+    dry_ack = engine.dry_run(obj, acknowledge_loss=True, **kwargs)  # type: ignore[arg-type]
+    assert real_ack.report.refusal is not None
+    assert real_ack.report.refusal["code"] == "UNREPRESENTABLE_VALUE"
+    assert dry_ack.report.refusal == real_ack.report.refusal
