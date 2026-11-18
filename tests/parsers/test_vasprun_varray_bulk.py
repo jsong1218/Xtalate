@@ -1,4 +1,4 @@
-"""The bulk ``_varray_rows`` path is bit-identical to the per-row path and keeps its errors."""
+"""``_varray_rows`` matches the per-row reading bit for bit and keeps its errors (T11, I1)."""
 
 from __future__ import annotations
 
