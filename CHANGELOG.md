@@ -69,6 +69,9 @@ Schema version: 2.0.0
   `ET.ParseError` and raises `VASPRUN_MALFORMED_XML`. Both were found by the ClusterFuzzLite harness
   (D295) and are covered by new fuzz seeds and unit tests; neither changes any successful parse.
 - `species_map` is now settable through `--recover` (quoted, e.g. `--recover "missing_species=species_map,species=1:Si 2:O"`), and refusal guidance prints it ready to copy.
+- CIF and other occupancy-capable targets silently dropped site occupancies during engine conversions while the report listed them as preserved. This is a pre-existing defect (since site occupancy became a first-class field in 1.0.0): the engine's write plan rebuilt each frame without the field. CIF output now carries the `_atom_site_occupancy` column, a site whose occupancy is unknown (`?`) stays unknown, and the `structural_fidelity` check now actually compares the column. A short occupancy, image-flag or constraint array in a re-read output now fails that check instead of crashing validation.
+- `--dry-run` (and the API's `dry_run`) now predicts the refusal a real run would raise when the target format cannot state a value (`UNREPRESENTABLE_VALUE`, e.g. per-axis periodicity written to `deepmd_npy`) instead of reporting that the conversion would complete. Its fan-out summary says `would refuse` for a predicted refusal rather than `needs recovery`.
+- `convert` with several inputs no longer overwrites one of its own inputs (e.g. `convert in/ -o in --to extxyz` with `in/a.extxyz` present): such a run is refused as a usage error (exit 1) before anything is written. Other existing files in `-o DIR` are still overwritten.
 
 ### Security
 
