@@ -37,6 +37,11 @@ Schema version: 2.0.0
   choice still wins — and the token-level AA contrast guard (`globals.contrast.test.ts`) is extended
   to the new chrome-on-surface pairs so both themes stay WCAG AA (color is never the sole carrier of
   meaning: loss states remain icon + text). (D300.)
+- Unit constants live in one module (`xtalate._constants`) with their provenance. QE's Bohr radius and the VASP kbar factor keep the values their goldens are pinned to (QE's own constant; CODATA 2014), documented beside the CODATA 2018 values.
+- The service spools uploads to disk and streams eligible conversions, so peak memory no longer grows with trajectory length (the temp disk needs about 2x `XTALATE_MAX_UPLOAD_BYTES` free per concurrent job); ASE and h5py are imported only when a format needs them; NumPy replaces per-atom Python loops in validation and the LAMMPS dump, XDATCAR and vasprun parsers (measured parser gains are small, and the vasprun varray bulk-parse measured about 6 percent slower on the 10k benchmark while lowering peak memory); ASE databases are decoded once per row in batch.
+- Batch conversion of a multi-row ASE database counts rows with an id-only probe and no longer decodes every row first; a multi-row `.db` whose whole-container detection parse used to fail now fans out into per-row entries (an undecodable row fails as its own entry, readable rows convert) instead of reporting one failed entry.
+- CLI: a directory that is not a recognised source directory now fans out per file; a file of unknown format exits 4 with a `parse error [UNKNOWN_FORMAT]` summary line.
+- DeePMD goldens were regenerated at schema `2.0.0` (only the parse note changed).
 
 ### Security
 
@@ -47,16 +52,13 @@ Schema version: 2.0.0
 
 ### Fixed
 
-- **Output-changing: ASE-family stress is tension-positive (verified against ASE 3.29/EMT).**
-  extXYZ/ASE `.traj`/ASE db now write `electronic.stress` verbatim and
-  `STRESS_SIGN_CONVENTION_CHANGED` is no longer emitted for them. The `ambiguous_stress_convention`
-  options are now `tension_positive` / `compression_positive`; the old `ase_sign_convention` choice
-  is refused as unoffered (`ase_sign_convention` was removed; `compression_positive` reproduces the
-  previous numbers, `tension_positive` is what ASE actually writes). Files previously exported by
-  Xtalate to extXYZ/ASE `.traj`/ASE db carry the OPPOSITE sign of the corrected output: re-convert
-  the original source (or re-run the conversion with the fixed version) rather than re-reading the
-  old output, and note that any old output re-read with `tension_positive` yields the negated
-  stress.
+- **Output-changing:** stress read from and written to extXYZ, ASE `.traj` and ASE database files is no longer negated. ASE's `get_stress()` is tension-positive, the same convention as Xtalate's canonical stress, so values now pass through unchanged. Files written by earlier Xtalate versions carry the opposite sign: previously written extXYZ / `.traj` / ASE-db stress is not corrected in place; re-convert from the original source file with this version (or negate the stress column) to obtain the corrected sign. The `ambiguous_stress_convention` recovery scenario now offers `tension_positive` and `compression_positive`; the old `ase_sign_convention` choice is refused as not offered (its old meaning, "negate", would now be wrong for ASE files, so it is not silently reinterpreted). A ground-truth test (ASE EMT on copper) pins the sign.
+- extXYZ output now declares that per-atom arrays are written with 8 decimal places; the pre-flight warns (`NUMERIC_PRECISION_LIMITED`) and validation uses the matching bound instead of zero.
+- LAMMPS data/dump writers name their box thresholds once (tilt `1e-12` Å, upper-triangle `1e-8` Å) and report any non-zero component written as zero (`TILT_BELOW_THRESHOLD_DROPPED`) instead of dropping it silently. Files that converted before still convert.
+- H5MD files without a `boundary` attribute no longer default to fully periodic: a new `ambiguous_periodicity` recovery scenario (`periodic` / `non_periodic`) asks. DeePMD systems honour the `nopbc` marker file, and the exporter writes it.
+- The mass-fill Assumption now names its real source: standard atomic weights from ASE's table (`ase.data.atomic_masses`).
+- The H5MD kJ/mol energy factor was wrong from the 9th significant digit; it is now derived from CODATA constants.
+- `--recover missing_lattice=non_periodic` was offered but the engine had no such branch and silently applied a bounding box; it now refuses with a clear error instead.
 - **Two coverage-guided-fuzzing crashes hardened into refusals, not silent exceptions.** A POSCAR
   whose atom-count line sums to zero (e.g. `H O` species with counts `0 0`) crashed in the
   Cartesian-conversion matmul instead of being refused; `PoscarParser` now raises `POSCAR_MALFORMED`
@@ -65,6 +67,14 @@ Schema version: 2.0.0
   instead of the parser's own error contract; `VasprunParser` now catches `LookupError` alongside
   `ET.ParseError` and raises `VASPRUN_MALFORMED_XML`. Both were found by the ClusterFuzzLite harness
   (D295) and are covered by new fuzz seeds and unit tests; neither changes any successful parse.
+
+### Added
+
+- Validation compares constraints (selective dynamics), occupancies, space group and image flags by value where both formats carry them (`structural_fidelity` check).
+- `select_frames` repair operation (`start`/`stop`/`step`), exposed as `xtalate convert --frames START:STOP[:STEP]` and through the API `repairs` field. A range that selects zero frames is refused (`MALFORMED_REQUEST` over the API, a usage error on the CLI) rather than producing an empty file.
+- `xtalate convert --dry-run` (strict-mode refusals are predicted from predicted loss and parse warnings only, not recovery-time loss); `xtalate scenarios [SCENARIO] [--json]`; target format inferred from the `-o` extension when unambiguous (not from `-o -`); refusals print ready-to-copy `--recover scenario=choice` lines.
+- CLI: multiple / glob / directory inputs into `-o DIR`; `-` for stdin (with `--from`/`--format`) and stdout; `--quiet` / `--verbose` on every subcommand; frame progress on stderr (TTY only) for streamed conversions; optional shell completion via `pip install "xtalate[completion]"`.
+- API: `options.dry_run` on `POST /v1/convert` (single convert only; `POST /v1/batch/convert` refuses it with `400 MALFORMED_REQUEST`, in the shared options and in a per-file override); ETag, `Cache-Control` and `304 Not Modified` on `/v1/capabilities`, `/v1/capabilities/{format}`, `/v1/plugins` and `/v1/limits`.
 
 _The next release accrues here._
 

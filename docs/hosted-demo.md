@@ -66,6 +66,11 @@ next request; bandwidth is ~5 GB/month. Fine for a small demo — the 10 MB uplo
 posture already implies a demo that may sleep; if the cold start ever bothers users, the fix is the
 paid starter plan (no spin-down), not a code change.
 
+**Upload spooling and disk.** The service spools each upload to disk and streams eligible conversions
+rather than holding a whole trajectory in memory. The instance's temp disk (`/tmp`) therefore needs
+roughly 2x `XTALATE_MAX_UPLOAD_BYTES` free per concurrent job (the spooled upload plus the streamed
+output); the demo's 10 MB cap keeps that small.
+
 ## Troubleshooting
 
 **Symptom: the public URL serves the backend's `{"error":{"code":"NOT_FOUND",…}}` JSON envelope at

@@ -844,6 +844,11 @@ convenient:
   local `.env` and referenced by name. (The current library + CLI has no network calls or
   credentials; this discipline is established ahead of the future Service layer.)
 
+### Constants and heavy imports
+
+- Unit and physical constants come from `xtalate._constants`; never define a conversion factor inline. Each constant there names its source (CODATA edition, or the program whose own constant defines its output).
+- Import ASE, h5py or any other heavy scientific dependency inside the function or method that needs it (type-only imports under `TYPE_CHECKING`). `tests/test_lazy_imports.py` fails if a plain XYZ conversion imports them.
+
 ## 7.5 The viewer: a read-only consumer seam (v1.6 M59–M63)
 
 The Web UI's Structure/Compare viewer is the first realized consumer of the §3.2 secondary goals: it
