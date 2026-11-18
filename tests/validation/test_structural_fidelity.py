@@ -136,3 +136,32 @@ def test_observation_accumulates_across_frames() -> None:
     tally.observe(good, good, None)
     tally.observe(good, frame_with(space_group="P2"), None)
     assert _status(tally.result(_TOL, 0.0, frozenset())) == "fail"
+
+
+# --- Malformed (short) arrays fail closed instead of raising (M6, D303) ----------------------
+
+
+def test_short_image_flags_array_fails_instead_of_raising() -> None:
+    flags = np.array([[0, 0, 1], [2, 0, 0]])
+    short = frame_with(image_flags=flags)
+    # Bypass validation to hand the tally an invalid object: one row of flags for two atoms.
+    short = short.model_copy(
+        update={"custom_per_atom": {k: v[:1] for k, v in short.custom_per_atom.items()}}
+    )
+    result = _run(short, frame_with(image_flags=flags), perm=[1, 0])
+    assert _status(result) == "fail"
+
+
+def test_short_selective_dynamics_mask_fails_instead_of_raising() -> None:
+    short_mask = [[True, False, True]]  # one row for two atoms
+    result = _run(
+        frame_with(constraints=selective(short_mask)),
+        frame_with(constraints=selective(short_mask)),
+        perm=[1, 0],
+    )
+    assert _status(result) == "fail"
+
+
+def test_out_of_range_permutation_fails_instead_of_raising() -> None:
+    e = frame_with(occupancies=[1.0, 0.5])
+    assert _status(_run(e, frame_with(occupancies=[1.0, 0.5]), perm=[0, 7])) == "fail"

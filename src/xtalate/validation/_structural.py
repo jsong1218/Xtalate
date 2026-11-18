@@ -39,6 +39,12 @@ def _source_index(perm: list[int] | None, n: int) -> list[int]:
     return [int(p) for p in perm]
 
 
+def _indexable(src: list[int], length: int) -> bool:
+    """Whether every source index addresses a row of a ``length``-row array. A malformed object (a
+    short per-atom array, an out-of-range permutation) fails closed rather than raising (M6)."""
+    return all(0 <= p < length for p in src)
+
+
 def _selective_mask(frame: Frame) -> np.ndarray | None:
     for con in frame.dynamics.constraints or []:
         if con.kind == "selective_dynamics" and "mask" in con.parameters:
@@ -78,7 +84,12 @@ class StructuralTally:
         if exp_occ is not None:
             self._seen.add(_OCC)
             got_occ = actual.atoms.occupancies
-            if got_occ is None or len(got_occ) != n or len(exp_occ) != n:
+            if (
+                got_occ is None
+                or len(got_occ) != n
+                or len(exp_occ) != n
+                or not _indexable(src, len(exp_occ))
+            ):
                 self._fail(_OCC)
             else:
                 bad = False
@@ -112,10 +123,14 @@ class StructuralTally:
             if got is None:
                 self._fail(_FLAGS)
             else:
-                e_arr = np.asarray(flags, dtype=np.float64)[src]
-                g_arr = np.asarray(got, dtype=np.float64)
-                if e_arr.shape != g_arr.shape or not bool(np.array_equal(e_arr, g_arr)):
+                e_all = np.asarray(flags, dtype=np.float64)
+                if e_all.ndim == 0 or e_all.shape[0] != n or not _indexable(src, n):
                     self._fail(_FLAGS)
+                else:
+                    e_arr = e_all[src]
+                    g_arr = np.asarray(got, dtype=np.float64)
+                    if e_arr.shape != g_arr.shape or not bool(np.array_equal(e_arr, g_arr)):
+                        self._fail(_FLAGS)
 
     @staticmethod
     def _constraints_match(expected: Frame, actual: Frame, src: list[int]) -> bool:
@@ -125,6 +140,9 @@ class StructuralTally:
         if exp_mask is not None:
             got_mask = _selective_mask(actual)
             if got_mask is None or got_mask.shape != exp_mask.shape:
+                return False
+            n = len(expected.atoms.symbols)
+            if exp_mask.ndim == 0 or exp_mask.shape[0] != n or not _indexable(src, n):
                 return False
             if not bool(np.array_equal(exp_mask[src], got_mask)):
                 return False

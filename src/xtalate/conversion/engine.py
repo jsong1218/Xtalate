@@ -2158,6 +2158,9 @@ def _filter_frame(frame: Frame, plan: set[str]) -> Frame:
         symbols=list(frame.atoms.symbols),
         positions=frame.atoms.positions,
         masses=frame.atoms.masses if "atoms.masses" in plan else None,
+        # Same rule as masses (C1, D303): before this, occupancies were never copied, so CIF -> CIF
+        # dropped the column while the report listed the field as preserved (pre-existing, M35).
+        occupancies=frame.atoms.occupancies if "atoms.occupancies" in plan else None,
     )
 
     cell = None
