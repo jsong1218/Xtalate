@@ -42,6 +42,12 @@ def test_stale_etag_gets_a_full_200(client: TestClient, path: str) -> None:
         ('"nope", {etag}', 304),
         ("W/{etag}", 304),
         ('"nope", W/"other"', 200),
+        # v2.1 M77: whitespace around list members, and a weak match after the first member.
+        ('"a", W/{etag}', 304),
+        ('"a",W/{etag}', 304),
+        ("  {etag}  ", 304),
+        ('"a" ,\t W/{etag}', 304),
+        ('"a" , W/"b"', 200),
     ],
 )
 def test_if_none_match_list_wildcard_and_weak_forms(

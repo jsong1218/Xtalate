@@ -206,6 +206,7 @@ def render_capabilities(declarations: dict[str, dict[str, FormatCapabilities]]) 
 #: edits*, never defaults the engine applies (P4): the engine still requires the flag to be passed.
 _RECOVER_EXAMPLES: dict[tuple[str, str], str] = {
     ("missing_lattice", "bounding_box"): "missing_lattice=bounding_box,padding_ang=5.0",
+    ("missing_lattice", "non_periodic"): "missing_lattice=non_periodic,padding_ang=5.0",
     ("frame_selection", "index"): "frame_selection=index,frame_index=0",
     ("asedb_row_selection", "index"): "asedb_row_selection=index,row=0",
     # The LAMMPS form (type:symbol pairs); the space is part of the value, so the flag is quoted.
@@ -237,7 +238,6 @@ _API_ONLY = "no --recover flag exists for this choice; use the Web UI or the HTT
 _NO_FLAG_HINTS: dict[tuple[str, str], str] = {
     ("missing_lattice", "manual_input"): _API_ONLY,
     ("missing_masses", "manual_input"): _API_ONLY,
-    ("missing_lattice", "non_periodic"): "not yet available in this version; it is refused",
     # `all` is valid only through --batch (a single-file convert refuses it).
     ("asedb_row_selection", "all"): "only available through --batch, not a single-file convert",
 }

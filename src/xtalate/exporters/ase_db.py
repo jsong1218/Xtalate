@@ -95,8 +95,10 @@ class AseDbExporter(ExporterPlugin):
         # the caller's stream (the parser spools the same way for the same reason).
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "out.db"
-            db = connect(path, use_lock_file=False)
-            db.write(atoms, key_value_pairs=key_value_pairs, data=data or None)
+            # ``with db:`` shares one connection and closes it on exit (see the parser's
+            # ``_spooled_db``); the bytes are read only after it has committed and closed.
+            with connect(path, use_lock_file=False) as db:
+                db.write(atoms, key_value_pairs=key_value_pairs, data=data or None)
             stream.write(path.read_bytes())
 
     def assemble(self, contributions: list[AssembleContribution], stream: BinaryIO) -> None:
@@ -117,10 +119,10 @@ class AseDbExporter(ExporterPlugin):
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "out.db"
-            db = connect(path, use_lock_file=False)
-            for contribution in contributions:
-                atoms, key_value_pairs, data = self._row_from(contribution.canonical)
-                db.write(atoms, key_value_pairs=key_value_pairs, data=data or None)
+            with connect(path, use_lock_file=False) as db:
+                for contribution in contributions:
+                    atoms, key_value_pairs, data = self._row_from(contribution.canonical)
+                    db.write(atoms, key_value_pairs=key_value_pairs, data=data or None)
             stream.write(path.read_bytes())
 
     def _row_from(self, canonical: CanonicalObject) -> tuple[Atoms, dict[str, Any], dict[str, Any]]:

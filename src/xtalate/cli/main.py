@@ -325,15 +325,31 @@ def _expand_inputs(patterns: list[str]) -> tuple[list[Path], bool]:
 
     Returns ``(paths, fan_out)``: ``fan_out`` is True when the request names several files (more
     than one path, or a directory that is not a recognised source). A glob that matches nothing,
-    or a directory with nothing to convert, is a usage error."""
+    or a directory with nothing to convert, is a usage error.
+
+    A glob match is kept when it is a file or a recognised source directory (a DeePMD system);
+    any other directory it matches is named on stderr as skipped, never dropped silently."""
     found: list[Path] = []
     fanned = False
     for pattern in patterns:
         path = Path(pattern)
         if any(c in pattern for c in _GLOB_CHARS) and not path.exists():
-            matches = [Path(m) for m in sorted(glob.glob(pattern)) if Path(m).is_file()]
+            matches: list[Path] = []
+            skipped: list[str] = []
+            for m in sorted(glob.glob(pattern)):
+                candidate = Path(m)
+                if candidate.is_file() or (candidate.is_dir() and _is_source_directory(candidate)):
+                    matches.append(candidate)
+                elif candidate.is_dir():
+                    skipped.append(m)
+            for name in skipped:
+                print(
+                    f"skipped {name}: a directory that is not a recognised source "
+                    "(name it directly to convert every file in it)",
+                    file=sys.stderr,
+                )
             if not matches:
-                raise _UsageError(f"{pattern!r} matched no files")
+                raise _UsageError(f"{pattern!r} matched no files to convert")
             found.extend(matches)
         elif path.is_dir() and not _is_source_directory(path):
             members = sorted(
@@ -506,11 +522,13 @@ def _status_word(report: dict[str, Any], validation: dict[str, Any] | None) -> s
 
 def _convert_one_quiet(
     args: argparse.Namespace, registry: Registry
-) -> tuple[int, dict[str, Any] | None, dict[str, Any] | None, str]:
+) -> tuple[int, dict[str, Any] | None, dict[str, Any] | None, str, str]:
     """Run one fan-out member through the single-file path with its output captured.
 
-    Returns ``(exit_code, conversion_report, validation_report, status_text)``. Per-file caller
-    mistakes and parse errors become a line and an exit code rather than ending the run."""
+    Returns ``(exit_code, conversion_report, validation_report, status_text, stderr_text)``.
+    Per-file caller mistakes and parse errors become a line and an exit code rather than ending
+    the run. ``stderr_text`` is everything the member wrote to stderr (its ``--verbose`` stage
+    notes among it), for the caller to replay under the member's name."""
     out, err = io.StringIO(), io.StringIO()
     try:
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -518,13 +536,23 @@ def _convert_one_quiet(
     except ParseError as exc:
         issue = exc.issues[0] if exc.issues else None
         detail = f" [{issue.code}]: {issue.message}" if issue is not None else ""
-        return EXIT_PARSE_ERROR, None, None, f"parse error{detail}"
+        return EXIT_PARSE_ERROR, None, None, f"parse error{detail}", err.getvalue()
     except (RepairError, RecoveryError, RecoveryPresetError, _UsageError) as exc:
-        return EXIT_USAGE, None, None, f"error: {exc}"
+        return EXIT_USAGE, None, None, f"error: {exc}", err.getvalue()
     payload = json.loads(out.getvalue())
     report = payload["conversion_report"]
     validation = payload.get("validation_report")
-    return code, report, validation, _status_word(report, validation)
+    return code, report, validation, _status_word(report, validation), err.getvalue()
+
+
+def _replay_member_diagnostics(name: str, text: str) -> None:
+    """Print one fan-out member's captured stderr under its name (``--verbose`` only)."""
+    lines = text.rstrip("\n").splitlines()
+    if not lines:
+        return
+    print(f"{name}:", file=sys.stderr)
+    for line in lines:
+        print(f"  {line}" if line else "", file=sys.stderr)
 
 
 def _outputs_that_are_inputs(inputs: list[Path], outputs: list[Path]) -> list[str]:
@@ -591,7 +619,7 @@ def _convert_many(args: argparse.Namespace, registry: Registry, inputs: list[Pat
                 "no_bell": True,
             }
         )
-        code, report, validation, status = _convert_one_quiet(sub, registry)
+        code, report, validation, status, diagnostics = _convert_one_quiet(sub, registry)
         codes.append(code)
         results.append(
             {
@@ -605,6 +633,8 @@ def _convert_many(args: argparse.Namespace, registry: Registry, inputs: list[Pat
         )
         if not args.json:
             _say(args, f"{path.name} -> {name}  {status}")
+        if args.verbose:
+            _replay_member_diagnostics(path.name, diagnostics)
     if args.json:
         print(_json(results))
     _ring_completion_bell(args)

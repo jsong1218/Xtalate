@@ -44,7 +44,8 @@ on the milestone:
   (``species_map``/``upload_reference``; ``truncate``/``abort``) are computed here so the refusal
   path can show them.
 * ``non_periodic`` (for ``missing_lattice``) is ✳-conditional: offered only when
-  ``target_can_be_nonperiodic`` (extXYZ yes; never POSCAR).
+  ``target_can_be_nonperiodic`` (among lattice-requiring targets, LAMMPS dump; never POSCAR). It
+  builds the ``bounding_box`` enclosure with ``pbc=(F,F,F)`` (D304).
 * ``missing_velocities``/``missing_masses`` register with their classification and refuse until M8;
   their fabricative choices land there (their only four-format trigger, the POSCAR velocity block).
 * ``missing_energy`` is deliberately **optionless** in v0.1's formats (no target requires per-frame
@@ -321,8 +322,9 @@ CHOICE_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "multi-frame source shares one box and one shift."
     ),
     ("missing_lattice", "non_periodic"): (
-        "Not yet available: offered for open-structure targets but not implemented, so choosing "
-        "it is refused. Use bounding_box instead."
+        "Enclose the atoms in the same box bounding_box builds (parameter: padding_ang) but mark "
+        "every axis non-periodic, so no periodic image is implied. Offered only for a target "
+        "that must state box bounds and can mark them non-periodic (LAMMPS dump)."
     ),
     ("missing_species", "species_map"): (
         "Give the element symbols yourself (parameter: species): type:symbol pairs for a LAMMPS "

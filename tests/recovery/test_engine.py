@@ -435,24 +435,3 @@ def test_split_all_keeps_every_frame_and_records_one_assumption() -> None:
     assert assumption.choice == "split_all"
     assert assumption.removed == []  # nothing dropped
     assert assumption.supplied == []  # nothing fabricated
-
-
-@pytest.mark.parametrize("parameters", [{}, {"padding_ang": 5.0}])
-def test_non_periodic_lattice_choice_is_refused_never_a_bounding_box(
-    parameters: dict[str, float],
-) -> None:
-    """``non_periodic`` is offered for open-structure targets but not implemented: it must raise,
-    never fall through to a silently fabricated bounding box (P4)."""
-    scenario = UnresolvedScenario(
-        scenario="missing_lattice",
-        path="cell.lattice_vectors",
-        options=["manual_input", "upload_reference", "bounding_box", "non_periodic"],
-    )
-    with pytest.raises(RecoveryError, match="not implemented"):
-        RecoveryEngine().resolve(
-            _source(),
-            [scenario],
-            recovery_choices={
-                "missing_lattice": {"choice": "non_periodic", "parameters": parameters}
-            },
-        )

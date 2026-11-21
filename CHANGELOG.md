@@ -19,6 +19,14 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 2.0.0
 
+### Changed (output-changing)
+
+- **Stress written to and read from ASE-family files no longer has its sign flipped.** Earlier versions assumed ASE stores stress compression-positive and negated it on the way in and out. ASE's `get_stress()` is in fact tension-positive, the same convention as Xtalate's canonical stress, so the negation was wrong. A ground-truth test (ASE EMT on copper: compressed cell negative, stretched cell positive) now pins the sign.
+  - **Writers changed:** extXYZ, ASE `.traj` and ASE database (`.db`) now write `electronic.stress` unchanged, and no longer emit `STRESS_SIGN_CONVENTION_CHANGED`.
+  - **Readers changed:** the `ambiguous_stress_convention` recovery now offers `tension_positive` (ASE's convention: kept as written) and `compression_positive` (negated). The old `ase_sign_convention` choice is refused as not offered rather than silently reinterpreted, because its meaning ("negate") is now wrong for ASE files.
+  - **Why no test caught it:** the reader and the writers made the same mistake, so a round trip through Xtalate alone negated twice and came back unchanged. The error only showed in files exchanged with other tools: stress Xtalate wrote was read by ASE and MLIP codes with the opposite sign, and stress those tools wrote was read by Xtalate with the opposite sign.
+  - **What to do:** files written by earlier versions are not corrected in place. Re-convert from the original source with this version, for example `xtalate convert OUTCAR --to extxyz -o structure.extxyz`. If only the old output survives, read it back as compression-positive to undo the flip: `xtalate convert old.extxyz --to extxyz -o fixed.extxyz --recover ambiguous_stress_convention=compression_positive` (use `--to ase_traj` or `--to ase_db` for those formats).
+
 ### Added
 
 - Validation compares constraints (selective dynamics), occupancies, space group and image flags by value where both formats carry them (`structural_fidelity` check).
@@ -26,6 +34,7 @@ Schema version: 2.0.0
 - `xtalate convert --dry-run` (strict-mode refusals are predicted from predicted loss and parse warnings only, not recovery-time loss); `xtalate scenarios [SCENARIO] [--json]`; target format inferred from the `-o` extension when unambiguous (not from `-o -`); refusals print ready-to-copy `--recover scenario=choice` lines.
 - CLI: multiple / glob / directory inputs into `-o DIR`; `-` for stdin (with `--from`/`--format`) and stdout; `--quiet` on every subcommand and `--verbose` (stage notes on stderr, `convert` only); frame progress on stderr (TTY only) for streamed conversions; optional shell completion via `pip install "xtalate[completion]"`.
 - API: `options.dry_run` on `POST /v1/convert` (single convert only; `POST /v1/batch/convert` refuses it with `400 MALFORMED_REQUEST`, in the shared options and in a per-file override); ETag, `Cache-Control` and `304 Not Modified` on `/v1/capabilities`, `/v1/capabilities/{format}`, `/v1/plugins` and `/v1/limits`.
+- `missing_lattice=non_periodic` (`padding_ang` parameter, offered for LAMMPS dump targets): encloses the atoms in the same box `bounding_box` builds, but writes every boundary as non-periodic (`BOX BOUNDS f f f`). The report records the box as an enclosure the format requires, not a crystal cell.
 
 ### Changed
 
@@ -65,13 +74,16 @@ Schema version: 2.0.0
 
 ### Fixed
 
-- **Output-changing:** stress read from and written to extXYZ, ASE `.traj` and ASE database files is no longer negated. ASE's `get_stress()` is tension-positive, the same convention as Xtalate's canonical stress, so values now pass through unchanged. Files written by earlier Xtalate versions carry the opposite sign: previously written extXYZ / `.traj` / ASE-db stress is not corrected in place; re-convert from the original source file with this version (or negate the stress column) to obtain the corrected sign. The `ambiguous_stress_convention` recovery scenario now offers `tension_positive` and `compression_positive`; the old `ase_sign_convention` choice is refused as not offered (its old meaning, "negate", would now be wrong for ASE files, so it is not silently reinterpreted). A ground-truth test (ASE EMT on copper) pins the sign.
 - extXYZ output now declares that per-atom arrays are written with 8 decimal places; the pre-flight warns (`NUMERIC_PRECISION_LIMITED`) and validation uses the matching bound instead of zero.
 - LAMMPS data/dump writers name their box thresholds once (tilt `1e-12` Å, upper-triangle `1e-8` Å) and report any non-zero component written as zero (`TILT_BELOW_THRESHOLD_DROPPED`) instead of dropping it silently. Files that converted before still convert.
 - H5MD files without a `boundary` attribute no longer default to fully periodic: a new `ambiguous_periodicity` recovery scenario (`periodic` / `non_periodic`) asks. DeePMD systems honour the `nopbc` marker file, and the exporter writes it.
 - The mass-fill Assumption now names its real source: standard atomic weights from ASE's table (`ase.data.atomic_masses`).
 - The H5MD kJ/mol energy factor was wrong from the 9th significant digit; it is now derived from CODATA constants.
-- `--recover missing_lattice=non_periodic` was offered but the engine had no such branch and silently applied a bounding box; it now refuses with a clear error instead.
+- `--recover missing_lattice=non_periodic` was offered but the engine had no such branch and silently applied a periodic bounding box. It is now implemented (see Added).
+- `missing_lattice=bounding_box` with `padding_ang=0` on a planar or linear structure, or a single atom, built a box with a zero-length side (no volume). It now refuses and names the flat axis.
+- `xtalate convert --verbose` with several inputs printed nothing: each file's stage notes were captured and discarded. They now print on stderr under each file's name, in input order.
+- A glob input that matched a recognised source directory (a DeePMD system) dropped it, and if nothing else matched it reported "matched no files", which was false. Such directories are now converted; any other directory a glob matches is named on stderr as skipped.
+- Reading or writing an ASE database left SQLite connections open until garbage collection. On Windows that keeps the temporary file locked. The connection is now closed before the temporary file is removed.
 - **Two coverage-guided-fuzzing crashes hardened into refusals, not silent exceptions.** A POSCAR
   whose atom-count line sums to zero (e.g. `H O` species with counts `0 0`) crashed in the
   Cartesian-conversion matmul instead of being refused; `PoscarParser` now raises `POSCAR_MALFORMED`

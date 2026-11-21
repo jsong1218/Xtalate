@@ -156,14 +156,6 @@ def test_every_emitted_recover_flag_is_accepted_by_the_real_parser() -> None:
     assert species_flag == '--recover "missing_species=species_map,species=1:Si 2:O"'
 
 
-def test_non_periodic_is_not_advertised_as_a_copyable_flag() -> None:
-    from xtalate.cli.render import _recover_flag
-    from xtalate.recovery.scenarios import describe_choice
-
-    assert _recover_flag("missing_lattice", "non_periodic") is None
-    assert "not yet available" in describe_choice("missing_lattice", "non_periodic").lower()
-
-
 def test_api_only_choices_say_so_in_the_catalog(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["scenarios", "missing_lattice"]) == EXIT_OK
     out = capsys.readouterr().out
