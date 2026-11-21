@@ -70,9 +70,14 @@ services:
       retries: 10
 
   minio:
-    # MinIO removed its images from Docker Hub (`minio/minio` now 404s); quay.io is the live
-    # registry and serves the byte-identical image (same sha256 as the former Docker Hub `:latest`).
-    image: quay.io/minio/minio:latest
+    # MinIO stopped publishing community images anonymously: Docker Hub `minio/minio` and
+    # quay.io `minio/minio` + `minio/mc` all 401 without a login. Chainguard's free `minio` image
+    # pulls anonymously from cgr.dev and is built from the upstream source. `latest-dev` (not
+    # `latest`) because it carries `sh` + `mc`, which the healthcheck below and `minio-init` need;
+    # its `mc` config already defines the `local` alias the healthcheck uses. It runs as non-root
+    # (uid 65532) — a `miniodata` volume left over from the old root-run image needs
+    # `docker compose down -v` once.
+    image: cgr.dev/chainguard/minio:latest-dev
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-xtalate}
@@ -96,8 +101,9 @@ services:
   # defaults are 24 h) — short enough to prove expiry locally. The record-retention window is a
   # different, much longer thing swept in-app (`backend.jobs.retention`), not a bucket rule.
   minio-init:
-    # See the minio service above: pulled from quay.io, not the removed Docker Hub `minio/mc`.
-    image: quay.io/minio/mc:latest
+    # The same image as the minio service above (it ships `sh` + `mc`), so the stack pulls one
+    # MinIO image, not two. The entrypoint below replaces the image's `minio` entrypoint.
+    image: cgr.dev/chainguard/minio:latest-dev
     depends_on:
       minio:
         condition: service_healthy

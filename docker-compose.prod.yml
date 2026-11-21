@@ -63,7 +63,7 @@ services:
   queue:
     # AWS ECR Public Docker Hub mirror, not Docker Hub itself, to avoid unauthenticated Docker Hub
     # pull rate limiting (the intermittent `connection reset by peer` seen in CI) — the byte-identical
-    # official image. Same intent as the MinIO→quay.io move in compose.yaml.
+    # official image. Same intent as the MinIO→cgr.dev move in compose.yaml.
     image: public.ecr.aws/docker/library/redis:7-alpine
     restart: unless-stopped
     healthcheck:
