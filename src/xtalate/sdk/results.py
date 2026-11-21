@@ -41,7 +41,8 @@ class ExporterWarning:
 
     An exporter may legitimately change representation for a target whose format mandates the
     opposite convention (Cartesian → fractional, eV/Å³ tension-positive stress → a
-    compression-positive file convention) — the change is fine, the *silence* is not. The
+    compression-positive file convention, for a format that mandates it) — the change is fine,
+    the *silence* is not. The
     exporter declares such transformations via ``ExporterPlugin.export_warnings``; the engine
     maps each to a ``ReportWarning`` with ``source="export"`` and the stable code the exporter
     names (e.g. ``STRESS_SIGN_CONVENTION_CHANGED``). Kept a plain dataclass — unlike

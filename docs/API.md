@@ -60,10 +60,10 @@ mode). Key options:
   `--recover missing_velocities=maxwell_boltzmann`, `--recover missing_masses=standard_masses`.
   With no preset for a decision the target requires, the conversion **refuses** rather than guessing.
 - **`--repair OPERATION[,param=value…]`** — request a repair (**v1.7 M66-S1**; repeatable). The
-  operations are the closed set of four: `wrap_into_cell` (no parameters), `center` (requires
+  operations are the closed set of five: `wrap_into_cell` (no parameters), `center` (requires
   `reference=centroid|cell_center` and `target=origin|cell_center` — the explicit `[x, y, z]`
   target is not reachable from the CLI in v1.7), `deduplicate` (requires
-  `distance_threshold=<Å>`), and `species_reorder` (no parameters). Flags are applied **in argument
+  `distance_threshold=<Å>`), `species_reorder` (no parameters), and `select_frames` (`start=`, `stop=`, `step=` — a Python-slice subset of trajectory frames; selective-reductive, so it warns `SELECT_FRAMES_DROPPED_FRAMES`; an empty selection is a usage error). Flags are applied **in argument
   order** — order is scientific meaning (wrap-then-center ≠ center-then-wrap), and the report's
   repair rows record the applied order. Repairs run between parse and pre-flight; a repair-only run
   is a same-format `convert`. A bad request (an unknown operation, a malformed spec, a missing or
@@ -496,8 +496,8 @@ here. This surface changes **no** library/CLI surface; it is the Web UI viewer's
 ### 5.6 Repairing on request (`POST /v1/convert` `options.repairs`, v1.7 M66-S2)
 
 `POST /v1/convert`'s `options` object accepts an additive **`repairs`** field: an ordered list of
-`{operation, parameters}` objects drawn from the closed set of four — `wrap_into_cell`, `center`,
-`deduplicate`, `species_reorder` — applied in list order between parse and pre-flight (the report's
+`{operation, parameters}` objects drawn from the closed set of five — `wrap_into_cell`, `center`,
+`deduplicate`, `species_reorder`, `select_frames` (`start`/`stop`/`step`; selective-reductive; an empty selection is a `MALFORMED_REQUEST`) — applied in list order between parse and pre-flight (the report's
 repair rows record the applied order). `parameters` are required up front: a malformed repair (an
 unknown operation, a missing or incoherent parameter) is a clean `MALFORMED_REQUEST` failed job —
 never a 500 and never an `awaiting_recovery` pause — while a *shape* malformation is the ordinary
@@ -519,6 +519,20 @@ resume is pinned by
 (the v1.7 re-pause behaviour it replaced was pinned by D259's renamed test); without
 `allow_recovery` the cell-less wrap still completes as a refused HTTP-200, and without a
 pre-supplied choice the pause is still offered.
+
+#### Dry run (`options.dry_run`)
+
+`options.dry_run: true` runs parse, repairs and pre-flight only. The job ends `completed` with
+`result.conversion_report.stage == "preflight"` and `result.conversion_id`, `result.download` and
+`result.validation_report` all `null`. A dry run never enters the `awaiting_recovery` *job* state:
+an unresolved need shows as the report `status: "awaiting_recovery"` (and, in `strict` mode, a
+predicted unacknowledged loss as `status: "refused"`). It writes no output and no `Conversion`
+row, so it has no history entry and no download. It cannot be combined with `recovery_choices`
+(`400 MALFORMED_REQUEST`): a dry run applies no recovery choice. It is a single-convert option: `dry_run: true` on `POST /v1/batch/convert` (shared options or a per-file override) is `400 MALFORMED_REQUEST`.
+
+**Caching.** `GET /v1/capabilities`, `/v1/capabilities/{format_id}`, `/v1/plugins` and `/v1/limits`
+return a strong `ETag` and `Cache-Control: public, max-age=300`, and honour `If-None-Match`
+(including weak tags, lists and `*`) with `304 Not Modified`. Error responses are never cached.
 
 ### 5.7 The analysis surface (`GET /v1/plugins`, `POST /v1/analyze`) — an additive read + job kind (v1.8 M70)
 

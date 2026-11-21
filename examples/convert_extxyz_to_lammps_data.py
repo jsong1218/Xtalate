@@ -19,7 +19,8 @@ shows exactly what that costs and how each cost is paid explicitly, never silent
   undeclared choice would refuse, never default — P4.)
 * **No masses in the source.** extXYZ carries species and positions but no per-atom masses, and a
   data file *requires* a ``Masses`` table. The gap is filled by the explicit
-  ``missing_masses=standard_masses`` recovery — IUPAC standard atomic weights — and reported as a
+  ``missing_masses=standard_masses`` recovery — standard atomic weights from ASE's table
+  (``ase.data.atomic_masses``) — and reported as a
   ``supplied`` entry with its Assumption, the plain-language "filled masses …" the mission promises.
   It is fabricated by a recorded choice, never invented behind the user's back.
 * **Atoms identified by number, not symbol.** A data file lists numeric atom *types*, so the

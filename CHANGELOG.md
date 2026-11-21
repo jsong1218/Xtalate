@@ -19,6 +19,14 @@ a required **`Schema version:`** line stating the canonical `schema_version` it 
 
 Schema version: 2.0.0
 
+### Added
+
+- Validation compares constraints (selective dynamics), occupancies, space group and image flags by value where both formats carry them (`structural_fidelity` check).
+- `select_frames` repair operation (`start`/`stop`/`step`), exposed as `xtalate convert --frames START:STOP[:STEP]` and through the API `repairs` field. A range that selects zero frames is refused (`MALFORMED_REQUEST` over the API, a usage error on the CLI) rather than producing an empty file.
+- `xtalate convert --dry-run` (strict-mode refusals are predicted from predicted loss and parse warnings only, not recovery-time loss); `xtalate scenarios [SCENARIO] [--json]`; target format inferred from the `-o` extension when unambiguous (not from `-o -`); refusals print ready-to-copy `--recover scenario=choice` lines.
+- CLI: multiple / glob / directory inputs into `-o DIR`; `-` for stdin (with `--from`/`--format`) and stdout; `--quiet` on every subcommand and `--verbose` (stage notes on stderr, `convert` only); frame progress on stderr (TTY only) for streamed conversions; optional shell completion via `pip install "xtalate[completion]"`.
+- API: `options.dry_run` on `POST /v1/convert` (single convert only; `POST /v1/batch/convert` refuses it with `400 MALFORMED_REQUEST`, in the shared options and in a per-file override); ETag, `Cache-Control` and `304 Not Modified` on `/v1/capabilities`, `/v1/capabilities/{format}`, `/v1/plugins` and `/v1/limits`.
+
 ### Changed
 
 - **Redesign foundation (pipeline bench S0).** The Web UI now self-hosts IBM Plex Sans, Mono and
@@ -49,16 +57,21 @@ Schema version: 2.0.0
   choice still wins — and the token-level AA contrast guard (`globals.contrast.test.ts`) is extended
   to the new chrome-on-surface pairs so both themes stay WCAG AA (color is never the sole carrier of
   meaning: loss states remain icon + text). (D300.)
-
-### Security
-
-- **Upgraded `vitest` (and the transitive `@vitest/mocker`) to ≥ 4.1.11**, clearing the two open
-  Dependabot alerts for the path-traversal / arbitrary-file-read advisory (GHSA-82fw-gwwq-j7x9) via
-  the mocker's redirect handling. `vitest` is a frontend **dev** dependency — the advisory never
-  reached runtime, published artifacts, or the hosted demo; no product behaviour changes.
+- Unit constants live in one module (`xtalate._constants`) with their provenance. QE's Bohr radius and the VASP kbar factor keep the values their goldens are pinned to (QE's own constant; CODATA 2014), documented beside the CODATA 2018 values.
+- The service spools uploads to disk and streams eligible conversions, so peak memory no longer grows with trajectory length (the temp disk needs about 2x `XTALATE_MAX_UPLOAD_BYTES` free per concurrent job); ASE and h5py are imported only when a format needs them; NumPy replaces per-atom Python loops in validation and the LAMMPS dump and XDATCAR parsers (measured parser gains are small, about 3 percent on the 10k benchmarks). The vasprun parser keeps its per-row loop: a bulk NumPy pass measured about 6 percent slower there and was reverted, so the 10k vasprun benchmark runs at its earlier speed (about 6.0 s); its lower peak memory (about 0.23 to 0.19 GiB) comes from the lazy ASE and h5py imports, not from the parser; ASE databases are decoded once per row in batch.
+- Batch conversion of a multi-row ASE database counts rows with an id-only probe and no longer decodes every row first; a multi-row `.db` whose whole-container detection parse used to fail now fans out into per-row entries (an undecodable row fails as its own entry, readable rows convert) instead of reporting one failed entry.
+- CLI: a directory that is not a recognised source directory now fans out per file; a file of unknown format exits 4 with a `parse error [UNKNOWN_FORMAT]` summary line.
+- DeePMD goldens were regenerated at schema `2.0.0` (only the parse note changed).
 
 ### Fixed
 
+- **Output-changing:** stress read from and written to extXYZ, ASE `.traj` and ASE database files is no longer negated. ASE's `get_stress()` is tension-positive, the same convention as Xtalate's canonical stress, so values now pass through unchanged. Files written by earlier Xtalate versions carry the opposite sign: previously written extXYZ / `.traj` / ASE-db stress is not corrected in place; re-convert from the original source file with this version (or negate the stress column) to obtain the corrected sign. The `ambiguous_stress_convention` recovery scenario now offers `tension_positive` and `compression_positive`; the old `ase_sign_convention` choice is refused as not offered (its old meaning, "negate", would now be wrong for ASE files, so it is not silently reinterpreted). A ground-truth test (ASE EMT on copper) pins the sign.
+- extXYZ output now declares that per-atom arrays are written with 8 decimal places; the pre-flight warns (`NUMERIC_PRECISION_LIMITED`) and validation uses the matching bound instead of zero.
+- LAMMPS data/dump writers name their box thresholds once (tilt `1e-12` Å, upper-triangle `1e-8` Å) and report any non-zero component written as zero (`TILT_BELOW_THRESHOLD_DROPPED`) instead of dropping it silently. Files that converted before still convert.
+- H5MD files without a `boundary` attribute no longer default to fully periodic: a new `ambiguous_periodicity` recovery scenario (`periodic` / `non_periodic`) asks. DeePMD systems honour the `nopbc` marker file, and the exporter writes it.
+- The mass-fill Assumption now names its real source: standard atomic weights from ASE's table (`ase.data.atomic_masses`).
+- The H5MD kJ/mol energy factor was wrong from the 9th significant digit; it is now derived from CODATA constants.
+- `--recover missing_lattice=non_periodic` was offered but the engine had no such branch and silently applied a bounding box; it now refuses with a clear error instead.
 - **Two coverage-guided-fuzzing crashes hardened into refusals, not silent exceptions.** A POSCAR
   whose atom-count line sums to zero (e.g. `H O` species with counts `0 0`) crashed in the
   Cartesian-conversion matmul instead of being refused; `PoscarParser` now raises `POSCAR_MALFORMED`
@@ -67,6 +80,17 @@ Schema version: 2.0.0
   instead of the parser's own error contract; `VasprunParser` now catches `LookupError` alongside
   `ET.ParseError` and raises `VASPRUN_MALFORMED_XML`. Both were found by the ClusterFuzzLite harness
   (D295) and are covered by new fuzz seeds and unit tests; neither changes any successful parse.
+- `species_map` is now settable through `--recover` (quoted, e.g. `--recover "missing_species=species_map,species=1:Si 2:O"`), and refusal guidance prints it ready to copy.
+- CIF and other occupancy-capable targets silently dropped site occupancies during engine conversions while the report listed them as preserved. This is a pre-existing defect (since site occupancy became a first-class field in 1.0.0): the engine's write plan rebuilt each frame without the field. CIF output now carries the `_atom_site_occupancy` column, a site whose occupancy is unknown (`?`) stays unknown, and the `structural_fidelity` check now actually compares the column. A short occupancy, image-flag or constraint array in a re-read output now fails that check instead of crashing validation.
+- `--dry-run` (and the API's `dry_run`) now predicts the refusal a real run would raise when the target format cannot state a value (`UNREPRESENTABLE_VALUE`, e.g. per-axis periodicity written to `deepmd_npy`) instead of reporting that the conversion would complete. Its fan-out summary says `would refuse` for a predicted refusal rather than `needs recovery`.
+- `convert` with several inputs no longer overwrites one of its own inputs (e.g. `convert in/ -o in --to extxyz` with `in/a.extxyz` present): such a run is refused as a usage error (exit 1) before anything is written. Other existing files in `-o DIR` are still overwritten.
+
+### Security
+
+- **Upgraded `vitest` (and the transitive `@vitest/mocker`) to ≥ 4.1.11**, clearing the two open
+  Dependabot alerts for the path-traversal / arbitrary-file-read advisory (GHSA-82fw-gwwq-j7x9) via
+  the mocker's redirect handling. `vitest` is a frontend **dev** dependency — the advisory never
+  reached runtime, published artifacts, or the hosted demo; no product behaviour changes.
 
 _The next release accrues here._
 

@@ -35,8 +35,12 @@
       "charge",
       "full"
     ],
+    "ambiguous_periodicity": [
+      "non_periodic",
+      "periodic"
+    ],
     "ambiguous_stress_convention": [
-      "ase_sign_convention",
+      "compression_positive",
       "tension_positive"
     ],
     "ambiguous_units": [
@@ -91,6 +95,7 @@
   ],
   "scenario_codes": [
     "ambiguous_atom_style",
+    "ambiguous_periodicity",
     "ambiguous_stress_convention",
     "ambiguous_units",
     "asedb_row_selection",
@@ -110,6 +115,7 @@
     "ambiguous_units",
     "ambiguous_atom_style",
     "asedb_row_selection",
+    "ambiguous_periodicity",
     "frame_selection",
     "constraint_representation",
     "missing_lattice",

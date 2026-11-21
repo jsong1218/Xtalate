@@ -36,15 +36,13 @@ recovery (M40) resolves it explicitly, never silently — see DECISIONS.md D18.
 
 from __future__ import annotations
 
+import functools
 import io
 import re
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 import numpy as np
-from ase import units as ase_units
-from ase.io import read as ase_read
-from ase.stress import voigt_6_to_full_3x3_stress
 from pydantic import JsonValue
 
 from xtalate.parsers._common import (
@@ -95,9 +93,18 @@ _RESERVED_ARRAYS = frozenset({"numbers", "positions", "momenta", "masses"})
 # to custom_per_frame so nothing is dropped silently (P1) — see _partition_calc.
 _MAPPED_CALC_KEYS = frozenset({"energy", "forces", "charges", "magmoms"})
 _EXTXYZ_MARKERS = ("Lattice=", "Properties=")
+
+
 # ASE's velocity unit is Å / (ASE time unit); ase.units.fs is "1 fs expressed in ASE time",
 # so multiplying an ASE-unit velocity by it yields Å/fs (verified by round-trip).
-_VEL_ASE_TO_ANG_PER_FS = ase_units.fs
+@functools.cache
+def _vel_ase_to_ang_per_fs() -> float:
+    """ASE velocity unit -> Angstrom/fs (lazy: importing ``ase`` is deferred to first use)."""
+    from ase import units as ase_units
+
+    return float(ase_units.fs)
+
+
 _PBC_KEY_RE = re.compile(r"\bpbc\s*=", re.IGNORECASE)
 
 
@@ -183,6 +190,8 @@ def _expand_voigt6_stress_line(comment: str, frame_index: int) -> str:
         return comment  # no stress=/virial= key; leave the line untouched
 
     def _rewrite(match: re.Match[str]) -> str:
+        from ase.stress import voigt_6_to_full_3x3_stress
+
         key = match.group("key")
         quote = match.group("quote")
         inner = quote[1:-1]
@@ -264,6 +273,8 @@ class ExtxyzParser(ParserPlugin):
         return 0.2  # parses as XYZ but shows no extXYZ markers: yield to the plain parser
 
     def parse(self, stream: BinaryIO, *, filename: str | None) -> ParseResult:
+        from ase.io import read as ase_read
+
         text = decode_text(stream.read(), format_id=FORMAT_ID)
         if text.strip() == "":
             raise _error("EXTXYZ_EMPTY", "file contains no frames")
@@ -496,7 +507,7 @@ class ExtxyzParser(ParserPlugin):
             # Laundering: ASE synthesises zero momenta for a file that declared none, so only
             # a real momenta column produces velocities (unit-converted ASE → Å/fs).
             velocities = (
-                np.asarray(atoms.get_velocities(), dtype=np.float64) * _VEL_ASE_TO_ANG_PER_FS
+                np.asarray(atoms.get_velocities(), dtype=np.float64) * _vel_ase_to_ang_per_fs()
             )
         forces = mapped.get("forces")
         return Dynamics(velocities=velocities, forces=forces)
@@ -724,6 +735,8 @@ def _iter_extxyz_blocks(stream: BinaryIO) -> Iterator[tuple[str, str]]:
 def _read_block(block: str, index: int) -> Atoms:
     """Parse one frame block into a single ASE ``Atoms``, normalising ASE's many exception types
     to the ``ParseError`` contract (§5) with the offending frame located."""
+    from ase.io import read as ase_read
+
     try:
         return ase_read(io.StringIO(block), format="extxyz", index=0)
     except Exception as exc:  # ASE raises many exception types; normalise to the contract

@@ -113,3 +113,13 @@ def test_inspect_a_deepmd_system_directory(tmp_path: Path) -> None:
     system = _write_dir(files, tmp_path / "in")
     rc = main(["inspect", str(system)])
     assert rc == EXIT_OK
+
+
+def test_cli_directory_read_keeps_the_nopbc_marker(tmp_path: Path) -> None:
+    files = write_system(coords=[H2O_COORDS], boxes=[BOX_FLAT], energy=H2O_ENERGY)
+    files["nopbc"] = b""
+    src = _write_dir(files, tmp_path / "src")
+    out = tmp_path / "out"
+    rc = main(["convert", str(src), "--to", "deepmd_npy", "-o", str(out)])
+    assert rc == EXIT_OK
+    assert (out / "nopbc").is_file()

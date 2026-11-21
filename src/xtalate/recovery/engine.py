@@ -30,10 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-import ase.data
 import numpy as np
-from ase import units as ase_units
-from ase.stress import voigt_6_to_full_3x3_stress
 
 from xtalate.recovery.scenarios import (
     SCENARIO_HAZARD,
@@ -264,8 +261,14 @@ def _choice_code(choice: dict[str, Any], scenario: UnresolvedScenario) -> str:
     offered = scenario.options or available_options(scenario.scenario)
     code = choice.get("choice")
     if not isinstance(code, str) or code not in offered:
+        hint = ""
+        if code == "ase_sign_convention":
+            hint = (
+                " (`ase_sign_convention` was removed: `compression_positive` reproduces the "
+                "previous numbers, `tension_positive` is what ASE actually writes)"
+            )
         raise RecoveryError(
-            f"{scenario.scenario!r}: choice {code!r} is not an offered option {offered!r}"
+            f"{scenario.scenario!r}: choice {code!r} is not an offered option {offered!r}{hint}"
         )
     return code
 
@@ -643,7 +646,17 @@ def _apply_missing_lattice(
             "source; pbc set to (T,T,T) as required by the target. The source file expressed no "
             "lattice — this cell is borrowed from the reference, not present in the source."
         )
-    else:  # "bounding_box"
+    elif code == "non_periodic":
+        # Offered for targets that can hold an open structure, but this resolver does not
+        # implement it. Refuse loudly: falling through to the bounding box would silently
+        # fabricate a cell the caller explicitly declined (P4).
+        raise RecoveryError(
+            "missing_lattice 'non_periodic' is offered but not implemented in this version; "
+            "choose bounding_box, manual_input or upload_reference"
+        )
+    elif code != "bounding_box":
+        raise RecoveryError(f"missing_lattice: unknown choice {code!r}")
+    else:
         padding = params.get("padding_ang")
         if not isinstance(padding, (int, float)) or padding < 0:
             raise RecoveryError(
@@ -805,7 +818,8 @@ def _apply_missing_masses(
     """Fabricate the per-atom masses a target requires, or that another recovery (Maxwell–Boltzmann)
     needs to seed a velocity draw (fabricative, Part 4 §3.1, §3.3).
 
-    ``standard_masses`` looks up IUPAC standard atomic weights (a *reported default*);
+    ``standard_masses`` looks up standard atomic weights from ASE's table,
+    ``ase.data.atomic_masses`` (a *reported default*);
     ``manual_input`` takes a caller-supplied list. Either way one ``Assumption`` and one
     ``SuppliedField('atoms.masses')`` are recorded — the masses did not exist in the source, so they
     are filed as created, never a silent fill (**P4**). ``scenario.params['emit']`` is ``False``
@@ -821,10 +835,8 @@ def _apply_missing_masses(
 
     if code == "standard_masses":
         masses = _standard_masses(symbols)
-        report_params: dict[str, Any] = {
-            "source": "ASE atomic_masses (IUPAC standard atomic weights)"
-        }
-        source_desc = "IUPAC standard atomic weights"
+        source_desc = "standard atomic weights from ASE's table (ase.data.atomic_masses)"
+        report_params: dict[str, Any] = {"source": source_desc}
     else:  # manual_input
         masses = _as_masses(params.get("masses"), n)
         report_params = {"masses_u": masses.tolist()}
@@ -959,6 +971,9 @@ def _maxwell_boltzmann(masses: np.ndarray, temperature_k: float, seed: int) -> n
     returned unchanged: no center-of-mass drift removal, no temperature rescaling (D43). The unit
     factor is ``ase.units.fs`` — the same ASE-velocity → Å/fs conversion the extXYZ parser uses — so
     no hand-rolled constant can drift from the rest of the codebase."""
+
+    from ase import units as ase_units
+
     rng = np.random.default_rng(seed)
     sigma = np.sqrt(ase_units.kB * temperature_k / masses) * ase_units.fs
     sample: np.ndarray = rng.standard_normal((masses.shape[0], 3)) * sigma[:, None]
@@ -966,9 +981,13 @@ def _maxwell_boltzmann(masses: np.ndarray, temperature_k: float, seed: int) -> n
 
 
 def _standard_masses(symbols: list[str]) -> np.ndarray:
-    """IUPAC standard atomic weights (u) for ``symbols`` from ``ase.data.atomic_masses`` (D44). The
+    """Standard atomic weights (u) for ``symbols`` from ``ase.data.atomic_masses`` (D44), not a
+    verbatim IUPAC table. The
     reserved unknown species ``"X"`` (Z = 0) has no standard weight and is refused — the caller must
     supply masses via ``manual_input``."""
+
+    import ase.data
+
     masses = np.empty(len(symbols), dtype=np.float64)
     for i, sym in enumerate(symbols):
         z = atomic_number(sym)
@@ -1060,14 +1079,14 @@ def _apply_stress_convention(
     (interpretive, M40/M42-S5, Part 4 §3.3).
 
     The stress values are **genuine source data** — the tensor exists in the file; only its
-    sign convention is unresolved (ASE's convention is compression-positive, the opposite of
-    the canonical tension-positive, Part 2 §3.7.1; DECISIONS.md D18). So this resolver
+    sign convention is unresolved (producers differ — ASE is tension-positive like the canonical
+    convention, Part 2 §3.7.1; DECISIONS.md D18). So this resolver
     interprets, never fabricates: per frame it reshapes the carried array — named by
     ``params['custom_key']``, any key of the shared stress-carry set (D163) — (Voigt-6 → full
     3×3 symmetric, in the (xx,yy,zz,yz,xz,xy) order §3.7.1 states — the order ASE itself
     writes) and applies the chosen sign normalization to reach the canonical tension-positive
     eV/Å³ convention: ``tension_positive`` takes the tensor as-is (the source is already
-    tension-positive); ``ase_sign_convention`` negates it. The custom array is then **retired**
+    tension-positive); ``compression_positive`` negates it. The custom array is then **retired**
     (popped from ``custom_per_frame``) so the field lives in exactly one place and the exporter
     never double-writes it.
 
@@ -1101,7 +1120,7 @@ def _apply_stress_convention(
             "to interpret — the scenario should not have fired"
         )
 
-    negate = code == "ase_sign_convention"
+    negate = code == "compression_positive"
     new_frames = []
     populated: list[int] = []
     for frame in canonical.frames:
@@ -1139,9 +1158,9 @@ def _apply_stress_convention(
             "change applied. The source file's stress values are genuine — only their sign "
             "convention was resolved, never guessed."
         )
-    else:  # ase_sign_convention
+    else:  # compression_positive
         description = (
-            f"Interpreted {format_name} stress as ASE's sign convention per your choice; sign "
+            f"Interpreted {format_name} stress as compression-positive per your choice; sign "
             "inverted to the canonical tension-positive convention (Part 2 §3.7.1). The source "
             "file's stress values are genuine — only their sign convention was resolved, never "
             "guessed."
@@ -1250,10 +1269,13 @@ def _stress_to_canonical(raw: np.ndarray, *, negate: bool) -> np.ndarray:
     ``voigt_6_to_full_3x3_stress`` — the exact inverse of the ordering ASE writes, so a
     round-tripped tensor's components land where the file put them ((xx,yy,zz,yz,xz,xy)). A
     ``(3, 3)`` carry (a file that spelled all nine components) is taken as-is. ``negate``
-    applies the ``ase_sign_convention`` flip (ASE is compression-positive, so reaching the
-    canonical tension-positive requires the sign change); the magnitude is already eV/Å³ for
+    applies the ``compression_positive`` flip (the source is compression-positive, so reaching
+    the canonical tension-positive requires the sign change); the magnitude is already eV/Å³ for
     an ASE-parsed extXYZ tensor, so no unit transform applies. Anything else is refused — an
     unexpected shape is not a stress tensor the resolver can honestly interpret."""
+
+    from ase.stress import voigt_6_to_full_3x3_stress
+
     if raw.shape == (6,):
         tensor = np.asarray(voigt_6_to_full_3x3_stress(raw), dtype=np.float64)
     elif raw.shape == (3, 3):

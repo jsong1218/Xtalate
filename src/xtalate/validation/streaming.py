@@ -31,6 +31,7 @@ from xtalate.validation._shared import AGGREGATE as _AGGREGATE
 from xtalate.validation._shared import NUMERIC_FIELDS as _NUMERIC_FIELDS
 from xtalate.validation._shared import RANK as _RANK
 from xtalate.validation._shared import require_supported_precision
+from xtalate.validation._structural import StructuralTally
 from xtalate.validation.engine import (
     ConversionReportView,
     _carried_to_canonical,
@@ -39,6 +40,7 @@ from xtalate.validation.engine import (
     _perm_for,
     _permuted,
     _representational_bound,
+    _with_structural,
 )
 from xtalate.validation.report import CheckResult, ValidationReport
 from xtalate.validation.tolerance import ToleranceProfile
@@ -74,6 +76,8 @@ class StreamingValidator:
         self._carried_field_keys = carried_field_keys if carried_field_keys is not None else {}
         self._stress_output_convention = stress_output_convention
         self._n = 0  # frame pairs compared
+        self._structural = StructuralTally()
+        self._occ_bound = _representational_bound(precision, "atoms.occupancies")
 
         # atom_count
         self._ac_exp0 = 0
@@ -141,6 +145,7 @@ class StreamingValidator:
         self._fold_positions(ef, af)
         self._fold_lattice(i, ef, af)
         self._fold_numeric(ef, af, actual.per_frame_custom)
+        self._structural.observe(ef, af, _perm_for(self._perm, len(ef.atoms.symbols)))
         self._n += 1
 
     def observe_expected_tail(self, expected: StreamFrame) -> None:
@@ -269,6 +274,14 @@ class StreamingValidator:
             self._absence_result(conversion_report),
             _report_consistency_result(conversion_report),
         ]
+        checks = _with_structural(
+            checks,
+            self._structural.result(
+                self._tol,
+                self._occ_bound,
+                frozenset(e.path for e in conversion_report.removed),
+            ),
+        )
         worst = max((_RANK[c.status] for c in checks), default=0)
         if reparse_issues and worst == 0:
             worst = 1

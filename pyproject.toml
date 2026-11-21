@@ -55,6 +55,8 @@ dependencies = [
 # require FastAPI (Part 9 §1.1). A deployment installs `xtalate[service]`. pydantic-settings is
 # the environment-only config reader (Part 9 §2); uvicorn is the ASGI server the image runs.
 # (DECISIONS.md D79.)
+# Optional shell completion for the CLI (QoL Q3). The import is guarded, so it is never required.
+completion = ["argcomplete>=3.1"]
 service = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -231,6 +233,11 @@ module = ["h5py.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
+[[tool.mypy.overrides]]
+module = ["argcomplete.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
 # atheris is the coverage-guided fuzzing engine (the `fuzz` extra, S7). It ships no type stubs and
 # does not install on every interpreter/OS (it links libFuzzer), so it is absent from the type-check
 # environment. The two harnesses (tests/fuzz/fuzz_*.py) confine it to `atheris.instrument_imports()`
@@ -271,7 +278,7 @@ source = ["xtalate"]
 # stubs and gains teeth as code lands.
 # The two root-level modules extend the Part 1 §5.1 graph (post-v0.3 review):
 # `registry` is the composition root that wires parsers/exporters into a Registry
-# (only `cli` sits above it), and `_time` is the dependency-free leaf any layer
+# (only `cli` sits above it), and `_time` / `_constants` are the dependency-free leaves any layer
 # may use — listing them means a future P2 inversion through either is caught.
 [tool.importlinter]
 # Two root packages from v0.5 M21: the library and the service. `backend` sits above `xtalate`
@@ -321,7 +328,7 @@ layers = [
     "xtalate.capabilities | xtalate.parsers | xtalate.exporters | xtalate.adapters",
     "xtalate.sdk",
     "xtalate.schema",
-    "xtalate._time",
+    "xtalate._time | xtalate._constants",
 ]
 
 # The CIF parser is the one format built as a package rather than a module (DECISIONS.md D65),
@@ -385,9 +392,10 @@ forbidden_modules = [
     "xtalate.cli",
     "xtalate.registry",
     "xtalate._time",
+    "xtalate._constants",
 ]
 # Direct imports only: the plugin imports `xtalate.sdk`, which legitimately reaches `schema` and
-# `_time` on its own — forbidding that transitive chain would forbid using the SDK at all. What
+# `_time` / `_constants` on its own — forbidding that transitive chain would forbid using the SDK at all. What
 # must not happen is the plugin importing an internal layer *directly*.
 allow_indirect_imports = true
 
@@ -411,7 +419,8 @@ forbidden_modules = [
     "xtalate.cli",
     "xtalate.registry",
     "xtalate._time",
+    "xtalate._constants",
 ]
 # Direct imports only, for the same reason as the M36 contract: the plugin imports `xtalate.sdk`,
-# which legitimately reaches `schema` and `_time` on its own.
+# which legitimately reaches `schema`, `_time` and `_constants` on its own.
 allow_indirect_imports = true

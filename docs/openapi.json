@@ -258,6 +258,11 @@
             "title": "Allow Recovery",
             "type": "boolean"
           },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
           "mode": {
             "default": "permissive",
             "title": "Mode",
@@ -979,7 +984,7 @@
         "type": "object"
       },
       "RepairSpec": {
-        "description": "One user-requested repair on the wire \u2014 the ordered-list analogue of a recovery choice\n(v1.7 M66-S2; D256).\n\n``operation`` names one of the closed set (``wrap_into_cell``, ``center``,\n``deduplicate``, ``species_reorder``); ``parameters`` are the operation's complete\nparameters. **Order is significant and preserved**: the list is applied in the order given\n(wrap-then-center \u2260 center-then-wrap) and the report records the applied order. Repair\nparameters are **required up front** \u2014 the user initiates a repair and therefore already\nknows what they are asking for, so a missing/incoherent parameter is a malformed request\n(the engine's ``RepairError`` \u2192 ``MALFORMED_REQUEST``), never an ``awaiting_recovery``\npause. The engine validates the operation name and parameters; this model only carries\nthem.",
+        "description": "One user-requested repair on the wire \u2014 the ordered-list analogue of a recovery choice\n(v1.7 M66-S2; D256).\n\n``operation`` names one of the closed set (``wrap_into_cell``, ``center``,\n``deduplicate``, ``species_reorder``, ``select_frames`` \u2014 a selective-reductive frame subset\ntaking ``start``/``stop``/``step``); ``parameters`` are the operation's complete\nparameters. **Order is significant and preserved**: the list is applied in the order given\n(wrap-then-center \u2260 center-then-wrap) and the report records the applied order. Repair\nparameters are **required up front** \u2014 the user initiates a repair and therefore already\nknows what they are asking for, so a missing/incoherent parameter is a malformed request\n(the engine's ``RepairError`` \u2192 ``MALFORMED_REQUEST``), never an ``awaiting_recovery``\npause. The engine validates the operation name and parameters; this model only carries\nthem.",
         "properties": {
           "operation": {
             "title": "Operation",

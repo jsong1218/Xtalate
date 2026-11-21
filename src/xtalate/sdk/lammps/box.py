@@ -43,6 +43,66 @@ from dataclasses import dataclass
 
 import numpy as np
 
+#: A lower-triangle box tilt (xy, xz, yz) with magnitude <= this is written as zero by the LAMMPS
+#: writers (no tilt line). Any non-zero value at or below it is reported, never dropped silently.
+RESTRICTED_TILT_EPS: float = 1e-12
+
+#: Upper-triangle lattice entries with magnitude <= this still count as a restricted-triclinic
+#: (LAMMPS-representable) box; they are written as zero and reported. Above it the box is refused.
+RESTRICTED_UPPER_ATOL: float = 1e-8
+
+
+def zeroed_box_components(lattice: np.ndarray) -> list[tuple[str, float]]:
+    """Non-zero lattice components the LAMMPS writers write as zero, as ``(name, value)``.
+
+    Upper-triangle entries ``a_y, a_z, b_z`` within ``RESTRICTED_UPPER_ATOL`` and lower-triangle
+    tilts ``xy, xz, yz`` within ``RESTRICTED_TILT_EPS``. An exact zero is not reported.
+    """
+    lat = np.asarray(lattice, dtype=float)
+    out: list[tuple[str, float]] = []
+    for name, (i, j) in (("a_y", (0, 1)), ("a_z", (0, 2)), ("b_z", (1, 2))):
+        v = float(lat[i, j])
+        if 0.0 < abs(v) <= RESTRICTED_UPPER_ATOL:
+            out.append((name, v))
+    tilts = [("xy", float(lat[1, 0])), ("xz", float(lat[2, 0])), ("yz", float(lat[2, 1]))]
+    # The writers' own decision: the tilt line is dropped only when ALL tilts are within eps;
+    # otherwise it is written verbatim and nothing is zeroed.
+    if max(abs(v) for _, v in tilts) <= RESTRICTED_TILT_EPS:
+        out.extend((name, v) for name, v in tilts if v != 0.0)
+    return out
+
+
+def _frame_ranges(indices: list[int]) -> str:
+    """``[0, 1, 2, 5]`` -> ``"0-2, 5"`` (sorted, consecutive runs collapsed)."""
+    runs: list[tuple[int, int]] = []
+    for k in sorted(indices):
+        if runs and k == runs[-1][1] + 1:
+            runs[-1] = (runs[-1][0], k)
+        else:
+            runs.append((k, k))
+    return ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in runs)
+
+
+def describe_zeroed_box_components(
+    by_frame: dict[int, list[tuple[str, float]]], n_frames: int
+) -> str | None:
+    """One audit sentence for every frame whose box components are written as zero, or ``None``
+    when no frame is affected. ``by_frame`` maps frame position -> ``zeroed_box_components``
+    result (frames with an empty result may be absent). Each component name is reported once with
+    its largest-magnitude value across the affected frames; the frame list is a range string, so
+    a later frame is never silently skipped (P1)."""
+    affected = {k: v for k, v in by_frame.items() if v}
+    if not affected:
+        return None
+    worst: dict[str, float] = {}
+    for components in affected.values():
+        for name, value in components:
+            if name not in worst or abs(value) > abs(worst[name]):
+                worst[name] = value
+    detail = ", ".join(f"{name}={value:g}" for name, value in worst.items())
+    where = f" in frame(s) {_frame_ranges(list(affected))}" if n_frames > 1 else ""
+    return f"Box components below the LAMMPS write threshold were written as zero{where}: {detail}."
+
 
 @dataclass(frozen=True)
 class Box:

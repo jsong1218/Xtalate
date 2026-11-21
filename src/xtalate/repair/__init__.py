@@ -8,8 +8,8 @@ parameters, (b) a plain-language statement of what changed, and (c) a
 ``ConversionRecord(operation="repair")`` in Provenance — so a conversion stays reproducible from
 its report alone (the version's contract: ``P4`` extended from recovery to modification).
 
-The operation set is **closed at four for the whole version** (wrap-into-cell, center,
-deduplicate, species reorder — Part 0 §4's "Not a molecular editor" boundary is held by
+The operation set is **closed at five** (select_frames added in the QoL release; wrap-into-cell,
+center, deduplicate, species reorder — Part 0 §4's "Not a molecular editor" boundary is held by
 enumeration). M64 lands **wrap-into-cell** only; M65 lands the remaining three on the same
 engine — species reorder first (S1, proving the shared per-atom reindex spine on the safe,
 non-destructive operation), then center (S2) and deduplicate (S3). ``identity`` exists solely
@@ -25,6 +25,7 @@ the Conversion Report. It never imports ``conversion`` or ``recovery``.
 from __future__ import annotations
 
 from xtalate.repair.contract import (
+    REPAIR_BLOCK_EMPTY_SELECTION,
     REPAIR_BLOCK_MISSING_LATTICE,
     SELECTIVE_REDUCTIVE_HAZARD,
     TRANSFORMATIVE_HAZARD,
@@ -37,9 +38,10 @@ from xtalate.repair.contract import (
     RepairRequest,
 )
 from xtalate.repair.engine import apply_repairs, get_operation
-from xtalate.repair.operations import builtin_repair_operations
+from xtalate.repair.operations import SelectFrames, builtin_repair_operations
 
 __all__ = [
+    "REPAIR_BLOCK_EMPTY_SELECTION",
     "REPAIR_BLOCK_MISSING_LATTICE",
     "SELECTIVE_REDUCTIVE_HAZARD",
     "TRANSFORMATIVE_HAZARD",
@@ -50,6 +52,7 @@ __all__ = [
     "RepairOperation",
     "RepairOutcome",
     "RepairRequest",
+    "SelectFrames",
     "apply_repairs",
     "builtin_repair_operations",
     "get_operation",

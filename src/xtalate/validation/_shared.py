@@ -47,9 +47,9 @@ def require_supported_precision(
     ``_representational_bound`` turns a declared decimal count *d* into ``0.5·10⁻ᵈ`` in the field's
     own units. For a Cartesian format those units are ångström and the checks compare ångström, so
     the bound is right. For a **fractional** format the decimals are fractional units, and Part 5
-    §4.2's ``× max‖Lᵢ‖`` scaling is what converts them — machinery that does not exist, because no
-    Phase 1 exporter declares reduced precision (all write full round-trip precision, so every
-    bound is 0.0 and the question never arises).
+    §4.2's ``× max‖Lᵢ‖`` scaling is what converts them — machinery that does not exist, because only
+    the extXYZ exporter declares reduced precision (A3, Cartesian); every fractional-native
+    exporter writes full precision, so every fractional bound is 0.0 and the question never arises).
 
     That makes this an easy trap to walk into: a future fractional exporter declaring four-decimal
     coordinates would get a tolerance ~|L| times too tight, silently, and its round-trips would

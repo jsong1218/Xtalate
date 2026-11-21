@@ -42,6 +42,7 @@ from xtalate.sdk.deepmd import (
     ENERGY_FILE,
     FORCE_FILE,
     FORMAT_ID,
+    NOPBC_FILE,
     TYPE_FILE,
     TYPE_MAP_FILE,
     VIRIAL_FILE,
@@ -233,6 +234,8 @@ class DeepmdNpyParser(ParserPlugin):
                 )
             )
 
+        nopbc = NOPBC_FILE in files
+        frame_pbc = (False, False, False) if nopbc else (True, True, True)
         cells = boxes.reshape((-1, 3, 3))
         cell_present = np.any(np.abs(cells) > 0, axis=(1, 2))
         if np.any(cell_present & (np.abs(np.linalg.det(cells)) <= 0)):
@@ -242,7 +245,7 @@ class DeepmdNpyParser(ParserPlugin):
         for index in range(frames):
             cell = None
             if cell_present[index]:
-                cell = Cell(lattice_vectors=cells[index], pbc=(True, True, True))
+                cell = Cell(lattice_vectors=cells[index], pbc=frame_pbc)
             object_frames.append(
                 Frame(
                     index=index,
@@ -263,16 +266,21 @@ class DeepmdNpyParser(ParserPlugin):
             "deepmd_npy:type_map": type_map_tokens,
             "deepmd_npy:type_indices": type_indices.tolist(),
         }
+        parse_notes = [
+            "DeePMD fixed-composition system read from a materialized NumPy directory layout.",
+            "virial.npy mapped deterministically to canonical tension-positive stress via "
+            "stress × volume.",
+        ]
+        if bool(np.any(cell_present)) and not nopbc:
+            parse_notes.append(
+                "DeePMD systems are periodic unless a nopbc file is present; none was found."
+            )
         provenance = build_provenance(
             format_id=FORMAT_ID,
             filename=dirname,
             original_coordinate_system="cartesian",
             source_units={"positions": "angstrom", "energy": "eV", "force": "eV/angstrom"},
-            parse_notes=[
-                "DeePMD fixed-composition system read from a materialized NumPy directory layout.",
-                "virial.npy mapped deterministically to canonical tension-positive stress via "
-                "stress × volume.",
-            ],
+            parse_notes=parse_notes,
             parser_version=_PARSER_VERSION,
         )
         return ParseResult(

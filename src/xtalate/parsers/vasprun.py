@@ -65,6 +65,7 @@ from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 from pydantic import JsonValue
 
+from xtalate._constants import K_BAR_PER_EV_A3
 from xtalate.parsers._common import build_provenance
 from xtalate.parsers._vasp import (
     TOTAL_ENERGY_TAG,
@@ -155,7 +156,12 @@ def _row_values(v: Element, where: str) -> list[float]:
 
 
 def _varray_rows(varray: Element) -> list[list[float]]:
-    """The float rows of a ``<varray>`` (one ``[float, ...]`` per ``<v>`` child)."""
+    """The float rows of a ``<varray>`` (one ``[float, ...]`` per ``<v>`` child).
+
+    A per-row ``float()`` loop on purpose (I1, D303): the callers want Python lists, and for
+    vasprun's narrow rows (3 floats) a bulk ``floats_from_tokens`` pass followed by
+    ``reshape().tolist()`` measured slower on the ``parse_vasprun_10k`` benchmark, not faster.
+    """
     where = f"<varray name={varray.get('name')!r}>"
     return [_row_values(v, where) for v in varray]
 
@@ -760,7 +766,7 @@ class VasprunParser(ParserPlugin):
                     level=full.level,
                     notes="Deterministic mapping (D161): VASP declares its convention, so the "
                     "kBar compression-positive tensor is sign-flipped to canonical "
-                    "tension-positive eV/Å³ and divided by the exact factor 1602.1766208; "
+                    f"tension-positive eV/Å³ and divided by the exact factor {K_BAR_PER_EV_A3}; "
                     "recorded in parse_notes. A step without a stress block reads None "
                     "(P3 — never a defaulted zero tensor).",
                 ),

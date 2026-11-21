@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.tolerance import validate_tolerance_profile
 from xtalate.conversion.batch import BatchError, BatchTallies
@@ -115,7 +115,8 @@ class RepairSpec(BaseModel):
     (v1.7 M66-S2; D256).
 
     ``operation`` names one of the closed set (``wrap_into_cell``, ``center``,
-    ``deduplicate``, ``species_reorder``); ``parameters`` are the operation's complete
+    ``deduplicate``, ``species_reorder``, ``select_frames`` — a selective-reductive frame subset
+    taking ``start``/``stop``/``step``); ``parameters`` are the operation's complete
     parameters. **Order is significant and preserved**: the list is applied in the order given
     (wrap-then-center ≠ center-then-wrap) and the report records the applied order. Repair
     parameters are **required up front** — the user initiates a repair and therefore already
@@ -157,11 +158,27 @@ class ConvertOptions(BaseModel):
     #: repair can cause is the genuine cell-less ``missing_lattice`` block, which pauses to
     #: ``awaiting_recovery`` iff ``allow_recovery`` and otherwise refuses at HTTP 200.
     repairs: list[RepairSpec] = Field(default_factory=list)
+    #: Run parse + repairs + pre-flight only. The job completes with the draft ConversionReport
+    #: (``stage="preflight"``; ``status`` ``completed``, ``awaiting_recovery`` or, in strict mode,
+    #: ``refused``), produces no output, no validation and no Conversion row, and never enters the
+    #: ``awaiting_recovery`` *job* state — it reports what a real run would ask for, it does not
+    #: wait for it. Incompatible with ``recovery_choices`` (a dry run applies none — refused
+    #: rather than silently ignored).
+    dry_run: bool = False
 
     #: An unknown profile name or a malformed custom table is a request error, caught here so it
     #: renders as ``400 MALFORMED_REQUEST`` (Part 6 §6) with the library's own actionable message —
     #: rather than as a job that is accepted, queued, and only then fails.
     _check_tolerance = field_validator("tolerance_profile")(validate_tolerance_profile)
+
+    @model_validator(mode="after")
+    def _dry_run_applies_no_recovery_choice(self) -> ConvertOptions:
+        if self.dry_run and self.recovery_choices:
+            raise ValueError(
+                "dry_run cannot be combined with recovery_choices: a dry run applies no "
+                "recovery choice (it reports what a real run would ask for)."
+            )
+        return self
 
 
 class ConvertRequest(BaseModel):
@@ -196,6 +213,14 @@ class BatchFileOverride(BaseModel):
     #: submit error, never a job the caller must poll to discover was doomed.
     _check_tolerance = field_validator("tolerance_profile")(validate_tolerance_profile)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _no_dry_run_override(cls, data: Any) -> Any:
+        # Unknown keys are otherwise ignored; dry_run must be refused, not silently dropped.
+        if isinstance(data, dict) and data.get("dry_run"):
+            raise ValueError("dry_run is a single-convert option and cannot be a batch override.")
+        return data
+
 
 class BatchConvertRequest(BaseModel):
     """``POST /v1/batch/convert`` body (Part 6 §2, v1.5 M58) — N uploaded ``file_id``s, one
@@ -215,6 +240,14 @@ class BatchConvertRequest(BaseModel):
     #: Per-file overrides keyed by ``file_id``; a key naming a file outside ``file_ids`` is a
     #: malformed request (``400 MALFORMED_REQUEST``), never silently ignored.
     overrides: dict[str, BatchFileOverride] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _no_dry_run(self) -> BatchConvertRequest:
+        # A dry run produces no Conversion; a batch child reporting "converted" for it would
+        # report a conversion that never happened (P1). Single-convert feature only.
+        if self.options.dry_run:
+            raise ValueError("dry_run is a single-convert option and is not supported on batch.")
+        return self
 
 
 class BatchConvertEntry(BaseModel):

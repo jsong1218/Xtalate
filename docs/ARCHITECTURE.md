@@ -43,13 +43,13 @@ canonical artifact) and stays read-only: measurement, selection, and rendering e
 omissions (a viewer, never an editor). **File Repair** (v1.7) is the first *modifying* consumer —
 an explicit, user-initiated, fully recorded Canonical Object → Canonical Object transform between
 parse and pre-flight (§8), held to the "not a molecular editor" boundary by enumeration: the
-operation set is closed at four, so byte-level repair remains the recovery engine's parse-time job
+operation set is closed at five, so byte-level repair remains the recovery engine's parse-time job
 (a file that cannot become a Canonical Object cannot be repaired, only recovered). The empty seam
 that remains — analysis overlays — belongs to future versions.
 
 Every augmentation Xtalate makes — a filled mass, an inferred symbol, a fabricated lattice,
 generated velocities — is recorded as an Assumption and rendered in plain language in the
-Conversion Report (e.g. *"Filled masses for 18 atoms using IUPAC standard atomic weights."*).
+Conversion Report (e.g. *"Filled masses for 18 atoms using standard atomic weights from ASE's table."*).
 There are no silent fills, and no unrequested transformation even when it is standard practice:
 recovery fabricates exactly what the user asked for and nothing more.
 
@@ -193,7 +193,7 @@ each is a *consumer* of an existing seam, never a modifier of it (P6):
 |---|---|
 | **New file formats** | A `ParserPlugin` and/or `ExporterPlugin` via the Plugin SDK plus the corresponding Capability Matrix declaration. A parser-only source deliberately supplies only the parser side — as `vasprun` and `outcar` do — while read+write formats supply both. Third-party formats are discovered through Python **entry points** (`xtalate.parsers` / `xtalate.exporters`) with no fork or edit to Xtalate. |
 | **Visualization** | **Present (v1.6, M59–M63, D232–D241):** the read-only viewer — the Structure tab (M60), trajectory scrubber (M61), and Compare tab (M62) — consumes the M59 read-only geometry endpoints and the reports; it renders the Canonical Object the engine already parsed and never re-derives a fact (measurement/selection/export are documented omissions; the reports are the accessible record, D241). |
-| **File Repair** | **Present (v1.7, M64–M67, D249–D259):** the Repair Engine (`repair/`) operates Canonical Object → Canonical Object **between parse and pre-flight** (D250), depends on `schema` + `sdk` only, and is orchestrated by `conversion` (the import-linter layer M64 added); each repair is recorded in Provenance and the Conversion Report (the D249 triple) — one pipeline, one report schema, repairs ride ordinary Conversion Reports — and the closed set of four (`wrap_into_cell`, `center`, `deduplicate`, `species_reorder`) sits beside the **transformative** fourth hazard class (Part 4 §3.1, D251). Deliberately **not** built in v1.7: third-party/plugin-provided repair operations — a future SDK surface (impl-plan §4 rule 4); the first-party set is enumerated explicitly. |
+| **File Repair** | **Present (v1.7, M64–M67, D249–D259):** the Repair Engine (`repair/`) operates Canonical Object → Canonical Object **between parse and pre-flight** (D250), depends on `schema` + `sdk` only, and is orchestrated by `conversion` (the import-linter layer M64 added); each repair is recorded in Provenance and the Conversion Report (the D249 triple) — one pipeline, one report schema, repairs ride ordinary Conversion Reports — and the closed set of five (`wrap_into_cell`, `center`, `deduplicate`, `species_reorder`, `select_frames`) sits beside the **transformative** fourth hazard class (Part 4 §3.1, D251). Deliberately **not** built in v1.7: third-party/plugin-provided repair operations — a future SDK surface (impl-plan §4 rule 4); the first-party set is enumerated explicitly. |
 | **Analysis** | **Present (v1.8, M68–M71, D267–D273):** an `AnalysisPlugin` reads a Canonical Object and emits results into namespaced `user_metadata` (never touching parsers or exporters), discovered through the `xtalate.analysis` entry-point group on equal footing with the built-ins. The `composition` reference plugin ships as its own installable distribution (`plugins/xtalate-analysis-composition/`), and the surface is exercised over HTTP (`GET /v1/plugins`, `POST /v1/analyze`) and in the Web UI's Analysis tab (M70). Absence honesty holds — an analysis never fills an absent field to compute a result (D270). |
 | **AI assistant** | A reader of the already-machine-readable Discovery/Conversion/Validation reports. |
 
@@ -244,7 +244,7 @@ schema stays `1.0.0` and no library/CLI surface changed.
 
 The v1.7 line is **File Repair** — explicit, chosen, recorded modification, never silent fixing.
 The Repair Engine (`src/xtalate/repair/`) adds the `RepairOperation` contract and the **closed set
-of four** (`wrap_into_cell`, `center`, `deduplicate`, `species_reorder`), applied by the Conversion
+of five** (`wrap_into_cell`, `center`, `deduplicate`, `species_reorder`, `select_frames`), applied by the Conversion
 Engine between parse and pre-flight and recorded with the D249 triple (an Assumption carrying the
 operation and its complete parameters, a plain-language statement of what changed, and a
 `ConversionRecord(operation="repair")` in Provenance), plus the **transformative** fourth hazard

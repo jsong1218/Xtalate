@@ -25,6 +25,12 @@ from xtalate.schema import CanonicalObject
 #: test asserts this constant stays in lockstep with ``SCENARIO_HAZARD`` so it can never drift.
 REPAIR_BLOCK_MISSING_LATTICE = "missing_lattice"
 
+#: Block reason for a ``select_frames`` request that selects no frame. Deliberately maps to **no**
+#: recovery scenario (nothing can be "recovered" into a selection the caller never made), so the
+#: engine's ``_repair_block_scenarios`` raises ``RepairError`` for it - exit 1 on the CLI,
+#: ``MALFORMED_REQUEST`` on the API - instead of a refusal with an empty option list.
+REPAIR_BLOCK_EMPTY_SELECTION = "empty_selection"
+
 #: The **transformative** hazard class — Part 4 §3.1's fourth class (v1.7 M64; D251). Wrap (and,
 #: in M65, center) fit none of the recovery taxonomy's three classes: they neither remove nor
 #: fabricate — they transform values in place, losing the originals. The class carries the same

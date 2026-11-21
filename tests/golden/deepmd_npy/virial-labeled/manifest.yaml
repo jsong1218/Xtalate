@@ -2,9 +2,9 @@ case: virial-labeled
 format_id: deepmd_npy
 source_file: system
 expected_canonical: expected.canonical.json
-canonical_schema_version: 1.0.0
+canonical_schema_version: 2.0.0
 sha256: c9665bc0288b7276a316cf2ad1ca5b13b62698b5a679a1029a1b23e96e2a7871
-expected_sha256: 2e8ca94a75dff9fc14115f4251621a182263f1756b18468f1eff287121b4f0e5
+expected_sha256: 72e0bbbaa818c21f33a4f2c7c0bbd34ec7d8249c9b04ad6c94e4e08f90ab68d8
 origin:
   kind: synthetic
   source: Hand-authored for M56-S1 via tests/golden/deepmd_npy/_generate.py (NumPy system-directory

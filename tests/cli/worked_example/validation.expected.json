@@ -167,6 +167,8 @@
     "masses_fail": 0.0001,
     "time_warn": 1e-06,
     "time_fail": 0.001,
+    "occupancies_warn": 1e-06,
+    "occupancies_fail": 0.0001,
     "k_warn": 2,
     "k_fail": 10,
     "representational_bound_floor": "enabled"

@@ -34,7 +34,7 @@ from typing import BinaryIO
 import numpy as np
 from pydantic import JsonValue
 
-from xtalate.parsers._common import build_provenance
+from xtalate.parsers._common import build_provenance, floats_from_tokens
 from xtalate.schema import SCHEMA_VERSION, AtomsBlock, Cell, Frame, TrajectoryMetadata
 from xtalate.schema.elements import is_valid_symbol
 from xtalate.sdk import (
@@ -637,42 +637,62 @@ def _read_configuration(
     are perfectly good science; the user chooses whether to keep them, and the choice is recorded
     as an Assumption rather than applied silently (P4).
     """
-    coords: list[list[float]] = []
-    for a in range(n_atoms):
-        line = lines.next()
+    taken: list[str] = []
+    pending: ParseError | None = None
+    ended = False
+    for _ in range(n_atoms):
+        try:
+            line = lines.next()
+        except ParseError as exc:
+            pending = exc
+            break
         if line is None or line.strip() == "":
-            raise _error(
-                "XDATCAR_TRUNCATED_CONFIGURATION",
-                f"configuration {index} declares {n_atoms} atoms but the block ended after {a}; "
-                "the file appears truncated mid-configuration",
-                location=f"frame {index}",
-                hint="truncate_at_last_valid_frame",
-            )
-        parts = line.split()
+            ended = True
+            break
+        taken.append(line)
+    split = [line.split() for line in taken]
+    raw: np.ndarray | None = None
+    if not ended and pending is None and split and all(len(p) >= 3 for p in split):
+        try:
+            raw = floats_from_tokens([tok for p in split for tok in p[:3]]).reshape(-1, 3)
+        except ValueError:
+            raw = None  # replay below to raise the exact per-row error
+    if raw is None:
         # A short or non-numeric coordinate row inside a configuration block is the *same* torn
         # write as a missing one — a process killed partway through a line leaves "0.1 0.0" or
         # "0.1 0.0 0.0000\x00" just as readily as it leaves the line out. Both therefore carry the
         # recoverable hint: the frames already read are unaffected, so keeping them is a choice the
         # user is entitled to make rather than a judgement the parser makes for them.
-        if len(parts) < 3:
+        coords: list[list[float]] = []
+        for line, parts in zip(taken, split, strict=True):
+            if len(parts) < 3:
+                raise _error(
+                    "XDATCAR_TRUNCATED_CONFIGURATION",
+                    f"coordinate line in configuration {index} has fewer than 3 components: "
+                    f"{line.strip()!r}; the line appears to have been truncated mid-write",
+                    location=f"frame {index}",
+                    hint="truncate_at_last_valid_frame",
+                )
+            try:
+                coords.append([float(parts[0]), float(parts[1]), float(parts[2])])
+            except ValueError as exc:
+                raise _error(
+                    "XDATCAR_TRUNCATED_CONFIGURATION",
+                    f"non-numeric coordinate in configuration {index}: {line.strip()!r}",
+                    location=f"frame {index}",
+                    hint="truncate_at_last_valid_frame",
+                ) from exc
+        if pending is not None:
+            raise pending
+        if ended:
             raise _error(
                 "XDATCAR_TRUNCATED_CONFIGURATION",
-                f"coordinate line in configuration {index} has fewer than 3 components: "
-                f"{line.strip()!r}; the line appears to have been truncated mid-write",
+                f"configuration {index} declares {n_atoms} atoms but the block ended after "
+                f"{len(taken)}; the file appears truncated mid-configuration",
                 location=f"frame {index}",
                 hint="truncate_at_last_valid_frame",
             )
-        try:
-            coords.append([float(parts[0]), float(parts[1]), float(parts[2])])
-        except ValueError as exc:
-            raise _error(
-                "XDATCAR_TRUNCATED_CONFIGURATION",
-                f"non-numeric coordinate in configuration {index}: {line.strip()!r}",
-                location=f"frame {index}",
-                hint="truncate_at_last_valid_frame",
-            ) from exc
-
-    raw = np.asarray(coords, dtype=float)
+        raw = np.asarray(coords, dtype=float)
     # Convert at the parser boundary (§4) using *this frame's* lattice — which is what makes the
     # NpT form read correctly: a frame's fractional coordinates mean nothing without its own cell.
     positions = raw @ block.lattice if block.fractional else raw * block.multiplier

@@ -47,15 +47,13 @@ laundering suite or the multi-row refusal.
 
 from __future__ import annotations
 
+import functools
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any, BinaryIO
 
-import ase
 import numpy as np
-from ase import units as ase_units
-from ase.db import connect
 from pydantic import JsonValue
 
 from xtalate import __version__
@@ -105,13 +103,26 @@ _RESERVED_ARRAYS = frozenset(
 # the calculator (stress, dipole, free_energy, …) is carried verbatim to custom_per_frame (P1,
 # D18).
 _MAPPED_CALC_KEYS = frozenset({"energy", "forces", "charges", "magmoms"})
+
+
 # ASE's velocity unit is Å / (ASE time unit); ase.units.fs is "1 fs in ASE time", so multiplying
 # an ASE-unit velocity by it yields Å/fs (mirrors extXYZ; the exporter divides by the same
 # factor).
-_VEL_ASE_TO_ANG_PER_FS: float = ase_units.fs
+@functools.cache
+def _vel_ase_to_ang_per_fs() -> float:
+    """ASE velocity unit -> Angstrom/fs (lazy: importing ``ase`` is deferred to first use)."""
+    from ase import units as ase_units
+
+    return float(ase_units.fs)
+
 
 #: parser_version string folding in the wrapped ASE version (D59).
-_PARSER_VERSION = f"{FORMAT_ID}-parser {__version__} (ase {ase.__version__})"
+@functools.cache
+def _parser_version() -> str:
+    """Parser version string; folds in the installed ASE version (lazy import)."""
+    import ase
+
+    return f"{FORMAT_ID}-parser {__version__} (ase {ase.__version__})"
 
 
 def _error(code: str, message: str, *, location: str | None = None) -> ParseError:
@@ -250,6 +261,8 @@ class AseDbParser(ParserPlugin):
         contract (§5). The handle stays open for the whole ``with`` block — the entire
         row-selection flow (count, then decode the chosen row) happens inside, so the temp file
         outlives every read of it."""
+        from ase.db import connect
+
         data = stream.read()
         with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
             tmp.write(data)
@@ -277,6 +290,15 @@ class AseDbParser(ParserPlugin):
                 "ASEDB_MALFORMED", f"could not read the file as an ASE database: {exc}"
             ) from exc
 
+    def row_count(self, stream: BinaryIO) -> int:
+        """The number of rows in the database, from the **id column only** — no row is decoded
+        (reuses ``_spooled_db`` + ``_row_ids``). A cheap probe for callers that must know whether a
+        ``.db`` is a multi-structure container before deciding how to read it (the batch fan-out,
+        E5), which previously decoded every row just to count them. A file ``ase.db`` cannot open
+        raises the same ``ASEDB_MALFORMED`` ``ParseError`` as :meth:`parse`."""
+        with self._spooled_db(stream) as db:
+            return len(self._row_ids(db))
+
     def _select_row(self, db: Any, rid: int) -> Any:
         """Decode **one** row by id — used both for the whole-object read (one call per id) and
         for the single-row escape hatch, where full row materialization happens only for the row
@@ -290,6 +312,8 @@ class AseDbParser(ParserPlugin):
         """The object-level provenance (built once — it depends only on the file and the ASE
         version, never on a row), recording that ASE's manufactured defaults were laundered to
         absence (P3)."""
+        import ase
+
         return build_provenance(
             format_id=FORMAT_ID,
             filename=filename,
@@ -300,7 +324,7 @@ class AseDbParser(ParserPlugin):
                 "(zero cell, derived masses, zeroed momenta, generated id/ctime/mtime/user) "
                 "laundered to absence (P3)."
             ],
-            parser_version=_PARSER_VERSION,
+            parser_version=_parser_version(),
         )
 
     def _build_object(self, rows: list[Any], filename: str | None) -> ParseResult:
@@ -609,7 +633,7 @@ def _build_velocities(atoms: Any) -> np.ndarray | None:
     if not atoms.has("momenta"):
         return None
     raw = np.asarray(atoms.get_velocities(), dtype=np.float64)
-    return raw * _VEL_ASE_TO_ANG_PER_FS
+    return raw * _vel_ase_to_ang_per_fs()
 
 
 def _partition_calc(

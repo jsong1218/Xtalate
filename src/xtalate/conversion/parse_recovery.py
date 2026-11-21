@@ -70,6 +70,8 @@ _HINT_TO_SCENARIO = {
     # entry is kept so `parse_recover`'s refusal path (the `all` choice on the single-file path)
     # is still classified as recoverable.
     "asedb_multiple_rows": "asedb_row_selection",
+    # M-A5: an H5MD box with no usable boundary attribute (absent or fewer than three entries).
+    "ambiguous_periodicity": "ambiguous_periodicity",
 }
 
 #: The parse-time recovery scenarios, in resolution-stage order (Part 4 §3.3). These resolve *ahead*
@@ -438,6 +440,27 @@ def _build_assumption(
                 "`# <style>` comment naming the layout. The columns are genuine source data — only "
                 "their meaning was resolved by this recorded choice, never guessed."
             ),
+        )
+    if scenario == "ambiguous_periodicity":
+        word = "periodic" if code == "periodic" else "non-periodic"
+        return AppliedAssumption(
+            id="A1",
+            scenario=scenario,
+            choice=code,
+            parameters={"periodicity": code},
+            origin="preset",
+            description=(
+                f"Treated the cell as {word} in all three directions because the H5MD file's box "
+                "has no usable boundary attribute (absent, or fewer than three entries; any "
+                "entries it did declare are replaced by this all-axes choice). The source never "
+                "stated its periodicity; this is a recorded choice, not a reading (**P4**)."
+            ),
+            supplied=[
+                SuppliedField(
+                    path="cell.pbc",
+                    detail=f"set to {word} on all three axes by the user's explicit choice",
+                )
+            ],
         )
     if scenario == "asedb_row_selection":
         # Selective reductive (D206), the frame_selection no-default logic applied to rows:

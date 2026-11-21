@@ -306,3 +306,35 @@ def test_assemble_dir_refuses_an_order_mismatch_as_separate_systems() -> None:
     out, systems = EXPORTER.assemble_dir(contributions)
     assert sorted({p.split("/", 1)[0] for p in out}) == ["system_000", "system_001"]
     assert systems == ["system_000", "system_001"]
+
+
+def _with_pbc(pbc: tuple[bool, bool, bool]) -> CanonicalObject:
+    """A one-frame boxed system whose every cell carries the given pbc."""
+    obj = _object(write_system(coords=[H2O_COORDS], boxes=[BOX_FLAT], energy=H2O_ENERGY))
+    frames = [
+        f.model_copy(
+            update={"cell": f.cell.model_copy(update={"pbc": pbc}) if f.cell is not None else None}
+        )
+        for f in obj.frames
+    ]
+    return obj.model_copy(update={"frames": frames})
+
+
+def test_all_false_pbc_writes_the_nopbc_marker() -> None:
+    out = EXPORTER.export_dir(_with_pbc((False, False, False)))
+    assert out["nopbc"] == b""
+    back = PARSER.parse_dir(out, dirname="sys").canonical
+    cell = back.frames[0].cell
+    assert cell is not None
+    assert cell.pbc == (False, False, False)
+
+
+def test_all_true_pbc_writes_no_nopbc_marker() -> None:
+    out = EXPORTER.export_dir(_with_pbc((True, True, True)))
+    assert "nopbc" not in out
+
+
+def test_per_axis_pbc_is_refused() -> None:
+    reason = EXPORTER.unrepresentable(_with_pbc((True, True, False)))
+    assert reason is not None
+    assert "pbc" in reason.lower()

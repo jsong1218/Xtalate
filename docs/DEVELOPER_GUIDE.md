@@ -525,7 +525,7 @@ are the proof each one landed.
    *pair-specific* choice codes — computed, never static (Part 4 §3.3): a choice that is not
    scientifically coherent for the concrete pair, or not implemented in this version, is absent from
    the offered list rather than offered and then refused. `ambiguous_stress_convention` returns
-   `["ase_sign_convention", "tension_positive"]`; `virial` is the named cut line — it needs the cell
+   `["tension_positive", "compression_positive"]`; `virial` is the named cut line — it needs the cell
    volume for the virial↔stress volume-scaling relation — so it is absent (naming it refuses) until
    v1.1.1. Do **not** document an option you have not built.
 3. **Detect it in the pre-flight diff.** `conversion/preflight.py` emits an `UnresolvedScenario`
@@ -542,9 +542,12 @@ are the proof each one landed.
    the chosen option, validates it against the computed list, records an `AppliedAssumption` (and,
    for a genuinely fabricative scenario, a `SuppliedField`), and returns the amended object. The
    resolver also decides what the choice *writes*: resolving `ambiguous_stress_convention` retires
-   the carry into `electronic.stress`, and a later export writes it back sign-reversed to the
-   compression-positive convention its ASE-native files carry, reporting a
-   `STRESS_SIGN_CONVENTION_CHANGED` warning.
+   the carry into `electronic.stress`, and a later export writes it verbatim (canonical and ASE are
+   both tension-positive, so no sign change and no warning). An exporter whose format mandates the
+   opposite sign declares `stress_output_convention="compression_positive"` and reports
+   `STRESS_SIGN_CONVENTION_CHANGED`; `ase_sign_convention` survives only as a deprecated
+   spelling of `compression_positive` in the exporter capability field `stress_output_convention`; it is
+   not a recovery *choice* — naming it as a choice is refused as not offered.
 5. **Give it a catalog row and a preset form.** The Part 4 §3.3 table in `docs/MASTER_SPEC.md` is
    the normative contract — trigger, options (✳ where pair-conditional), and the non-interactive
    behavior without a preset — and `ambiguous_stress_convention`'s row states `refused`: an
@@ -842,6 +845,11 @@ convenient:
   local `.env` and referenced by name. (The current library + CLI has no network calls or
   credentials; this discipline is established ahead of the future Service layer.)
 
+### Constants and heavy imports
+
+- Unit and physical constants come from `xtalate._constants`; never define a conversion factor inline. Each constant there names its source (CODATA edition, or the program whose own constant defines its output).
+- Import ASE, h5py or any other heavy scientific dependency inside the function or method that needs it (type-only imports under `TYPE_CHECKING`). `tests/test_lazy_imports.py` fails if a plain XYZ conversion imports them.
+
 ## 7.5 The viewer: a read-only consumer seam (v1.6 M59–M63)
 
 The Web UI's Structure/Compare viewer is the first realized consumer of the §3.2 secondary goals: it
@@ -860,8 +868,8 @@ File Repair is the second realized §3.2 consumer and the first *modifying* one.
 `src/xtalate/repair/` and depends on `schema` + `sdk` only (the import-linter layer M64 added); the
 Conversion Engine applies a user-supplied **ordered** list of `RepairRequest`s between parse and
 pre-flight (D250) — order is scientific meaning, and the report's repair rows record the applied
-order. The operation set is **closed at four** — `wrap_into_cell`, `center`, `deduplicate`,
-`species_reorder` — each a pure, deterministic Canonical Object → Canonical Object transform that
+order. The operation set is **closed at five** — `wrap_into_cell`, `center`, `deduplicate`,
+`species_reorder`, `select_frames` (a selective-reductive trajectory subset) — each a pure, deterministic Canonical Object → Canonical Object transform that
 records the D249 triple: an Assumption carrying the operation and its complete parameters, a
 plain-language statement of what changed, and a `ConversionRecord(operation="repair")` in
 Provenance. Every application is reproducible from its report alone — the property suite

@@ -54,7 +54,7 @@ export const WHY_THIS_MATTERS: Record<string, WhyThisMatters> = {
   missing_masses: {
     question: QUESTION,
     stakes: [
-      "Atomic masses are needed by the target but absent from your file. Filling them from a standard table (the IUPAC standard atomic weights for each element) is exact for ordinary chemistry.",
+      "Atomic masses are needed by the target but absent from your file. Filling them from a standard table (standard atomic weights from ASE's table for each element) is exact for ordinary chemistry.",
       "The filled masses are standard weights, not isotope-specific values from your system. If your work depends on a particular isotope, the standard weight is an assumption to check, not a measurement — and Xtalate records exactly which atoms were filled.",
     ],
   },
@@ -94,7 +94,7 @@ export const WHY_THIS_MATTERS: Record<string, WhyThisMatters> = {
   ambiguous_stress_convention: {
     question: QUESTION,
     stakes: [
-      "Your file carries a stress tensor, but its numbers are meaningless without a sign convention: some codes write compression as positive (ASE and VASP do), others write tension as positive. The file records the values, not which convention produced them, so the same tensor can mean opposite physical states.",
+      "Your file carries a stress tensor, but its numbers are meaningless without a sign convention: ASE and Xtalate treat tension as positive, while VASP-style pressure output treats compression as positive. The file records the values, not which convention produced them, so the same tensor can mean opposite physical states.",
       "This is not a value Xtalate invents or fills — the numbers are your file's own. What you are choosing is how to read them so they land in the canonical tension-positive convention: 'compression-positive' flips the sign, 'tension-positive' keeps it as written. Choose wrong and every stress in the output is negated, so the interpretation is recorded as an explicit assumption on the conversion rather than guessed.",
     ],
   },
@@ -117,6 +117,13 @@ export const WHY_THIS_MATTERS: Record<string, WhyThisMatters> = {
     stakes: [
       "An ASE database holds many independent structures, one per row — not the frames of a single trajectory. A single conversion produces one output, so it reads exactly one row; Xtalate will not silently pick one for you, nor fold the rows together into a structure that never existed in the file.",
       "This changes which structure you convert, nothing about the structure itself. Pick a row by its position to convert that one, or choose to convert every row — which runs the file through batch mode, one output per row. The row you selected is recorded on the conversion so the output is unambiguously traceable to its source row.",
+    ],
+  },
+  ambiguous_periodicity: {
+    question: QUESTION,
+    stakes: [
+      "The H5MD file has a simulation box but no usable boundary attribute (it is missing, or lists fewer than three directions), so it does not say whether the box is periodic. Xtalate will not assume either answer, and it will not pad a partly declared boundary.",
+      "This is a fact the file never stated, so your choice is recorded on the conversion as a supplied value rather than a reading of your data. Choose 'periodic' or 'non-periodic' to match how the data was produced; the wrong choice changes how every downstream tool wraps atoms and measures distances across the box.",
     ],
   },
 };

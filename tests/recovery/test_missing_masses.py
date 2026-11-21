@@ -1,7 +1,8 @@
 """`missing_masses` resolver tests (M8, MASTER_SPEC Part 4 §3.3).
 
-Covers the two fabricative choices — `standard_masses` (IUPAC standard atomic weights, a *reported
-default*) and `manual_input` — the Assumption + `supplied` shape each records, the `in_write_plan`
+Covers the two fabricative choices — `standard_masses` (standard atomic weights from ASE's table,
+a *reported default*) and `manual_input` — the Assumption + `supplied` shape each records, the
+`in_write_plan`
 flag that keeps chained masses out of the write plan for a target that cannot store them (D47), and
 the invalid-preset caller errors (distinct from a refusal).
 """
@@ -44,7 +45,7 @@ def _masses_scenario(*, emit: bool = True) -> UnresolvedScenario:
     )
 
 
-def test_standard_masses_supplies_iupac_weights() -> None:
+def test_standard_masses_supplies_ase_table_weights() -> None:
     result = RecoveryEngine().resolve(
         _obj(["O", "H", "H"]),
         [_masses_scenario()],
@@ -115,3 +116,18 @@ def test_emit_false_keeps_masses_out_of_the_write_plan_but_in_supplied() -> None
     assert result.canonical is not None
     (assumption,) = result.assumptions
     assert assumption.supplied[0].in_write_plan is False
+
+
+def test_standard_masses_wording_names_the_ase_table_not_iupac() -> None:
+    result = RecoveryEngine().resolve(
+        _obj(["H", "O"]),
+        [_masses_scenario()],
+        {"missing_masses": {"choice": "standard_masses"}},
+    )
+    (assumption,) = result.assumptions
+    wanted = "standard atomic weights from ASE's table (ase.data.atomic_masses)"
+    assert assumption.description is not None
+    assert wanted in assumption.description
+    assert "IUPAC" not in assumption.description
+    assert wanted in str(assumption.parameters["source"])
+    assert all("IUPAC" not in (s.detail or "") for s in assumption.supplied)

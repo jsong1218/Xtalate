@@ -67,3 +67,24 @@ def scientific_dump(obj: CanonicalObject) -> dict[str, Any]:
 
 def assert_scientifically_equal(a: CanonicalObject, b: CanonicalObject) -> None:
     assert scientific_dump(a) == scientific_dump(b)
+
+
+def parse_h5md_assuming_periodic(data: bytes, filename: str) -> CanonicalObject:
+    """Parse an H5MD fixture whose box states no ``boundary`` by resolving the recoverable
+    ``ambiguous_periodicity`` refusal with an explicit ``periodic`` choice (P4) — the committed
+    bytes stay untouched, so the golden source hash and expected canonical object are unchanged."""
+    from xtalate.parsers.h5md import make_h5md_parser
+
+    spec = {"ambiguous_periodicity": {"choice": "periodic", "parameters": {}}}
+    return (
+        make_h5md_parser()
+        .parse_recover(
+            io.BytesIO(data),
+            filename=filename,
+            hint="ambiguous_periodicity",
+            choice="periodic",
+            parameters={},
+            recovery_context=spec,
+        )
+        .canonical
+    )

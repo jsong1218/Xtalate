@@ -49,6 +49,31 @@ Validation Report  [passed]  (tolerance: default)
 
 Leave out the `--recover` flags and the command **refuses**, printing the exact decisions it needs — a refusal is a reported outcome, never a silent default. Exit codes make it CI-native (`0` ok · `2` refused · `3` validation failed · `4` parse error · `5` strict-mode warnings · `1` usage), and `--json` on any command emits the report schema verbatim.
 
+More ways to drive it:
+
+```bash
+# Target inferred from the extension (ambiguous ones such as .xyz still need --to)
+xtalate convert relax.vasp -o relax.cif
+
+# See what would be kept, lost or asked - writes nothing
+xtalate convert md.traj --to extxyz --dry-run
+
+# Every 5th frame of the first 100
+xtalate convert md.xyz --to extxyz -o subset.extxyz --frames 0:100:5
+
+# Many files at once, and pipes (list inputs before the options)
+xtalate convert runs/*.xyz --to extxyz -o out/
+cat POSCAR | xtalate convert - --from poscar --to cif -o -
+
+# Which recovery choices exist?
+xtalate scenarios
+xtalate scenarios ambiguous_stress_convention
+```
+
+`--quiet` is accepted on every subcommand (`--verbose`, which prints pipeline stages to stderr, affects `convert` only); frame progress is printed to stderr only on a TTY, for streamed conversions. `--dry-run` cannot be combined with `--recover` (a dry run applies no recovery choice), and a `--frames` range that selects no frames is refused rather than writing an empty file. `--to` is not inferred from `-o -`.
+
+Shell completion (optional): `pip install "xtalate[completion]"`, then `eval "$(register-python-argcomplete xtalate)"` in your shell profile.
+
 Full [CLI reference](docs/cli.md) · [library example](examples/convert_extxyz_to_poscar.py).
 
 ## Supported formats

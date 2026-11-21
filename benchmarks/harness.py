@@ -734,6 +734,92 @@ def _bench_parse_asedb_1k_rows(workdir: Path, scale: str) -> dict[str, float]:
     return {"rows": float(n_rows), "atoms": float(n_atoms)}
 
 
+def _service_runner_convert(workdir: Path, scale: str, multiple: int) -> dict[str, float]:
+    """The service's convert job (``execute_job``) over an extXYZ upload ``multiple`` x the base
+    size. ``service_runner_convert_{1,4,16}x`` run in separate children, so comparing their peak
+    RSS shows whether the worker's memory tracks the trajectory length (materialized: ~linear)
+    or one frame (streamed: ~flat). Measured-only — read the 16x / 1x peak-RSS ratio."""
+    import uuid
+
+    from alembic import command
+    from alembic.config import Config
+
+    from backend.config import Settings
+    from backend.db import Repository
+    from backend.db.engine import build_engine, build_sessionmaker
+    from backend.db.models import Job, Upload
+    from backend.jobs.runner import execute_job
+    from backend.storage import create_object_store
+
+    base = _sized(scale, full=Scale(1_000, 50), micro=Scale(10, 4))
+    sz = Scale(base.n_frames * multiple, base.n_atoms)
+    src = write_extxyz_trajectory(workdir / "in.extxyz", n_frames=sz.n_frames, n_atoms=sz.n_atoms)
+
+    db_url = f"sqlite+pysqlite:///{workdir / 'runner.db'}"
+    settings = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        environment="test",
+        docs_base_url="https://docs.test/api",
+        database_url=db_url,
+        object_store_root=str(workdir / "objects"),
+        max_frames=10_000_000,
+    )
+    cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    cfg.cmd_opts = type("_Opts", (), {"x": [f"db_url={db_url}"]})()
+    command.upgrade(cfg, "head")
+    engine = build_engine(settings)
+    repository = Repository(build_sessionmaker(engine))
+    object_store = create_object_store(settings)
+
+    file_id = uuid.uuid4().hex
+    key = f"uploads/{file_id}"
+    with src.open("rb") as fh:
+        stored = object_store.put(key, iter(lambda: fh.read(1 << 20), b""))
+    repository.add_upload(
+        Upload(
+            file_id=file_id,
+            filename=src.name,
+            sha256=stored.sha256,
+            size_bytes=stored.size,
+            storage_key=key,
+            format_override=None,
+        )
+    )
+    job_id = uuid.uuid4().hex
+    repository.add_job(
+        Job(
+            job_id=job_id,
+            kind="convert",
+            state="queued",
+            request={"file_id": file_id, "target_format_id": "extxyz", "options": {}},
+        )
+    )
+    execute_job(
+        job_id,
+        repository=repository,
+        object_store=object_store,
+        registry=default_registry(),
+        settings=settings,
+    )
+    job = repository.get_job(job_id)
+    if job is None or job.state != "completed":
+        raise AssertionError(f"service_runner_convert did not complete: {job and job.state}")
+    engine.dispose()
+    return {"frames": float(sz.n_frames), "atoms": float(sz.n_atoms)}
+
+
+def _bench_service_runner_convert_1x(workdir: Path, scale: str) -> dict[str, float]:
+    return _service_runner_convert(workdir, scale, 1)
+
+
+def _bench_service_runner_convert_4x(workdir: Path, scale: str) -> dict[str, float]:
+    return _service_runner_convert(workdir, scale, 4)
+
+
+def _bench_service_runner_convert_16x(workdir: Path, scale: str) -> dict[str, float]:
+    return _service_runner_convert(workdir, scale, 16)
+
+
 BENCHMARKS: tuple[Benchmark, ...] = (
     Benchmark(
         "parse_xdatcar_10k",
@@ -798,6 +884,9 @@ BENCHMARKS: tuple[Benchmark, ...] = (
     # "completes" is the whole bound — child exit 0 is the pass — so no threshold budget. Peak RSS
     # is recorded as a measured-only number (the sub-linear-memory demonstration).
     Benchmark("frame_limit_ceiling", _bench_frame_limit_ceiling, ()),
+    Benchmark("service_runner_convert_1x", _bench_service_runner_convert_1x, ()),
+    Benchmark("service_runner_convert_4x", _bench_service_runner_convert_4x, ()),
+    Benchmark("service_runner_convert_16x", _bench_service_runner_convert_16x, ()),
     # The M59-S3 spike: the S1 geometry endpoint at 10⁴-frame scale. server_rss_growth is the
     # flat-memory number (last − after-first ranged read); measured-not-gated like every budget.
     Benchmark(

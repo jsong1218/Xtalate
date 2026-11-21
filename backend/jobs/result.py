@@ -48,7 +48,18 @@ def _convert_result(
     job: Job, reports: Sequence[Report], repository: Repository, object_store: ObjectStore
 ) -> dict[str, Any] | None:
     conversion_report = _first(reports, "conversion")
-    if conversion_report is None or conversion_report.conversion_id is None:
+    if conversion_report is None:
+        return None
+    if conversion_report.conversion_id is None:
+        # A dry run (options.dry_run): report-only. The draft is the whole result — there is no
+        # Conversion row, no validation and nothing to download.
+        if conversion_report.body.get("stage") == "preflight":
+            return {
+                "conversion_id": None,
+                "conversion_report": conversion_report.body,
+                "validation_report": None,
+                "download": None,
+            }
         return None
     validation_report = _first(reports, "validation")
     conversion = repository.get_conversion(conversion_report.conversion_id)

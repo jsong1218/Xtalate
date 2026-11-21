@@ -27,6 +27,7 @@ from xtalate.exporters.lammps_dump import (
 from xtalate.parsers.lammps_dump import make_lammps_dump_parser
 from xtalate.schema import CanonicalObject
 from xtalate.sdk import ParseResult
+from xtalate.sdk.lammps import RESTRICTED_TILT_EPS, RESTRICTED_UPPER_ATOL
 
 GOLDEN = Path(__file__).parent.parent / "golden" / "lammps_dump"
 EXPORTER = make_lammps_dump_exporter()
@@ -273,3 +274,133 @@ def test_registered_as_full_axis(direction: str) -> None:
     )
     assert plugin is not None
     assert isinstance(plugin, LammpsDumpExporter) or direction == "read"
+
+
+def _with_lattice(obj: CanonicalObject, lattice: np.ndarray) -> CanonicalObject:
+    frame = obj.frames[0]
+    assert frame.cell is not None
+    return obj.model_copy(
+        update={
+            "frames": [
+                frame.model_copy(
+                    update={"cell": frame.cell.model_copy(update={"lattice_vectors": lattice})}
+                )
+            ]
+        }
+    )
+
+
+def _lattice(obj: CanonicalObject) -> np.ndarray:
+    cell = obj.frames[0].cell
+    assert cell is not None
+    return np.asarray(cell.lattice_vectors, dtype=float).copy()
+
+
+def _tilt_warnings(obj: CanonicalObject) -> list[str]:
+    return [
+        w.message for w in EXPORTER.export_warnings(obj) if w.code == "TILT_BELOW_THRESHOLD_DROPPED"
+    ]
+
+
+def test_thresholds_are_named_constants() -> None:
+    assert RESTRICTED_TILT_EPS == 1e-12
+    assert RESTRICTED_UPPER_ATOL == 1e-8
+
+
+def test_upper_triangle_noise_is_still_accepted_but_now_reported() -> None:
+    obj = _resolved(_METAL)
+    lat = _lattice(obj)
+    lat[0, 1] = 5e-10
+    noisy = _with_lattice(obj, lat)
+    _export(noisy)  # acceptance unchanged: must not raise
+    messages = _tilt_warnings(noisy)
+    assert len(messages) == 1 and "5e-10" in messages[0]
+
+
+def test_upper_triangle_above_atol_is_still_refused() -> None:
+    obj = _resolved(_METAL)
+    lat = _lattice(obj)
+    lat[0, 1] = 1e-6
+    with pytest.raises(ValueError, match="restricted triclinic"):
+        _export(_with_lattice(obj, lat))
+
+
+def test_lower_triangle_tilt_above_eps_is_written_without_warning() -> None:
+    obj = _resolved(_METAL)
+    lat = _lattice(obj)
+    lat[1, 0] = 5e-10
+    tilted = _with_lattice(obj, lat)
+    assert "xy xz yz" in _export(tilted).decode()
+    assert _tilt_warnings(tilted) == []
+
+
+def test_sub_eps_tilt_is_written_as_zero_and_reported() -> None:
+    obj = _resolved(_METAL)
+    lat = _lattice(obj)
+    lat[1, 0] = 5e-13
+    tilted = _with_lattice(obj, lat)
+    assert "xy xz yz" not in _export(tilted).decode()
+    messages = _tilt_warnings(tilted)
+    assert len(messages) == 1 and "xy" in messages[0] and "5e-13" in messages[0]
+
+
+def test_exact_zero_box_emits_no_tilt_warning() -> None:
+    assert _tilt_warnings(_resolved(_METAL)) == []
+
+
+def test_every_affected_frame_is_reported_not_just_the_first() -> None:
+    """Frame 0 is clean; frames 1 and 2 carry a sub-threshold tilt. One warning must name both
+    (a frame range), never stop at the first affected frame (P1)."""
+    obj = _resolved(_METAL)
+    base = obj.frames[0]
+    assert base.cell is not None
+    noisy_lattice = _lattice(obj)
+    noisy_lattice[1, 0] = 5e-13
+    noisy = base.model_copy(
+        update={"cell": base.cell.model_copy(update={"lattice_vectors": noisy_lattice})}
+    )
+    multi = obj.model_copy(
+        update={
+            "frames": [
+                base,
+                noisy.model_copy(update={"index": 1}),
+                noisy.model_copy(update={"index": 2}),
+            ]
+        }
+    )
+    messages = _tilt_warnings(multi)
+    assert len(messages) == 1
+    assert "frame(s) 1-2" in messages[0] and "xy" in messages[0] and "5e-13" in messages[0]
+
+
+def test_mixed_tilt_above_and_below_eps_is_written_verbatim_without_warning() -> None:
+    obj = _resolved(_METAL)
+    lat = _lattice(obj)
+    lat[1, 0] = 5e-10
+    lat[2, 0] = 5e-13
+    tilted = _with_lattice(obj, lat)
+    assert "xy xz yz" in _export(tilted).decode()
+    assert _tilt_warnings(tilted) == []
+
+
+def test_absent_cell_gives_no_tilt_warning_and_no_crash() -> None:
+    obj = _resolved(_METAL)
+    frame = obj.frames[0]
+    cellless = obj.model_copy(update={"frames": [frame.model_copy(update={"cell": None})]})
+    assert _tilt_warnings(cellless) == []
+
+
+def test_non_consecutive_frames_are_reported_as_ranges() -> None:
+    obj = _resolved(_METAL)
+    base = obj.frames[0]
+    assert base.cell is not None
+    noisy_lattice = _lattice(obj)
+    noisy_lattice[1, 0] = 5e-13
+    noisy = base.model_copy(
+        update={"cell": base.cell.model_copy(update={"lattice_vectors": noisy_lattice})}
+    )
+    frames = [base] + [
+        (noisy if k in (1, 2, 4) else base).model_copy(update={"index": k}) for k in range(1, 5)
+    ]
+    messages = _tilt_warnings(obj.model_copy(update={"frames": frames}))
+    assert len(messages) == 1 and "frame(s) 1-2, 4" in messages[0]

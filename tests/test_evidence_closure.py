@@ -25,6 +25,7 @@ import pytest
 from ase import Atoms
 from ase.db import connect
 
+from tests._format_helpers import parse_h5md_assuming_periodic
 from tests.roundtrip._matrix import FIXED_PRESETS
 from xtalate.conversion import ConversionEngine
 from xtalate.registry import default_registry
@@ -91,7 +92,12 @@ def test_retired_refusal_now_converts(
     label: str, source_fmt: str, loader: _Loader, tmp_path: Path
 ) -> None:
     data, filename = loader(tmp_path)
-    source = _REGISTRY.get_parser(source_fmt).parse(io.BytesIO(data), filename=filename).canonical
+    if source_fmt == "h5md":
+        source = parse_h5md_assuming_periodic(data, filename)
+    else:
+        source = (
+            _REGISTRY.get_parser(source_fmt).parse(io.BytesIO(data), filename=filename).canonical
+        )
     counts = {len(f.atoms.symbols) for f in source.frames}
     assert len(counts) > 1, f"{label}: source is not variable-N (counts {sorted(counts)})"
 
@@ -115,9 +121,7 @@ def test_retired_refusal_now_converts(
 
 @pytest.mark.parametrize("target", _CONSTANT_N_TARGETS)
 def test_constant_n_target_still_refuses_variable_n_with_reason(target: str) -> None:
-    source = (
-        _REGISTRY.get_parser("h5md").parse(io.BytesIO(_H5MD.read_bytes()), filename=_H5MD.name)
-    ).canonical
+    source = parse_h5md_assuming_periodic(_H5MD.read_bytes(), _H5MD.name)
     # Every gap resolved *except* the atom count, so a refusal can only be about variable N.
     presets = {k: v for k, v in FIXED_PRESETS.items() if k != "frame_selection"}
     result = _ENGINE.convert(

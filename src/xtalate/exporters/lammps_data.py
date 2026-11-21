@@ -76,7 +76,14 @@ from xtalate.sdk import (
     StreamHeader,
     stream_of,
 )
-from xtalate.sdk.lammps import edges_from_box, unit_style
+from xtalate.sdk.lammps import (
+    RESTRICTED_TILT_EPS,
+    RESTRICTED_UPPER_ATOL,
+    describe_zeroed_box_components,
+    edges_from_box,
+    unit_style,
+    zeroed_box_components,
+)
 from xtalate.sdk.lammps.units import UnitStyle
 
 FORMAT_ID = "lammps_data"
@@ -180,6 +187,14 @@ class LammpsDataExporter(ExporterPlugin):
                             "or malformed carried type numbering, so verify type-indexed sections"
                         ),
                     )
+                )
+        if frame.cell is not None and frame.cell.lattice_vectors is not None:
+            zeroed = describe_zeroed_box_components(
+                {0: zeroed_box_components(frame.cell.lattice_vectors)}, 1
+            )
+            if zeroed is not None:
+                warnings.append(
+                    ExporterWarning(code="TILT_BELOW_THRESHOLD_DROPPED", message=zeroed)
                 )
         return warnings
 
@@ -459,7 +474,7 @@ def _write_block(stream: BinaryIO, frame: Any, header: StreamHeader, style: Unit
     lines.append(f"{_fmt(0.0)} {_fmt(lx / distance)} xlo xhi")
     lines.append(f"{_fmt(0.0)} {_fmt(ly / distance)} ylo yhi")
     lines.append(f"{_fmt(0.0)} {_fmt(lz / distance)} zlo zhi")
-    if max(abs(xy), abs(xz), abs(yz)) > 1e-12:
+    if max(abs(xy), abs(xz), abs(yz)) > RESTRICTED_TILT_EPS:
         lines.append(f"{_fmt(xy / distance)} {_fmt(xz / distance)} {_fmt(yz / distance)} xy xz yz")
 
     # Masses: the verbatim carried section (a declared-but-unused type S1 preserved), or regenerated
@@ -730,9 +745,9 @@ def _is_restricted(lattice: np.ndarray) -> bool:
     """Whether ``lattice`` is in LAMMPS's restricted triclinic form (upper-triangle zeros: edge
     **a** along x, **b** in the xy-plane) — the one value-level geometry a data file can state."""
     return bool(
-        np.allclose(lattice[0, 1], 0.0)
-        and np.allclose(lattice[0, 2], 0.0)
-        and np.allclose(lattice[1, 2], 0.0)
+        abs(float(lattice[0, 1])) <= RESTRICTED_UPPER_ATOL
+        and abs(float(lattice[0, 2])) <= RESTRICTED_UPPER_ATOL
+        and abs(float(lattice[1, 2])) <= RESTRICTED_UPPER_ATOL
     )
 
 

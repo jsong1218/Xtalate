@@ -2,9 +2,9 @@ case: labeled-single-set
 format_id: deepmd_npy
 source_file: system
 expected_canonical: expected.canonical.json
-canonical_schema_version: 1.0.0
+canonical_schema_version: 2.0.0
 sha256: 046c2eff857dc6befc0c9cec6ee3706e522db49c4061a27a2a60e8f58d160cd7
-expected_sha256: 4ecb1971188dc266053fe9b2cec77c1127acd01754de5fadae1af630cf357e9f
+expected_sha256: b49e7d4b0629dfdf09e5c8f3cbfd03fb9b6a5af10afe12ceb88c950849f80a3b
 origin:
   kind: synthetic
   source: Hand-authored for M56-S1 via tests/golden/deepmd_npy/_generate.py (NumPy system-directory

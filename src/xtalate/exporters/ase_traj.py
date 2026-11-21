@@ -18,16 +18,11 @@ reason ``exporters.extxyz`` redefines its own velocity constant.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Iterator
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 import numpy as np
-from ase import Atoms
-from ase import units as ase_units
-from ase.calculators.singlepoint import SinglePointCalculator
-from ase.constraints import FixAtoms
-from ase.io.trajectory import TrajectoryWriter
-from ase.stress import voigt_6_to_full_3x3_stress
 
 from xtalate.schema import CanonicalObject, Frame
 from xtalate.sdk import (
@@ -40,14 +35,24 @@ from xtalate.sdk import (
     StreamHeader,
 )
 
+if TYPE_CHECKING:
+    from ase import Atoms
+
 FORMAT_ID = "ase_traj"
 _KEY_PREFIX = "ase_traj:"
 _STRESS_KEY = "ase_traj:stress"
 _CONSTRAINTS_KEY = "ase_traj:constraints"
+
+
 # (Å/fs) per one ASE internal velocity unit — i.e. ase_units.fs. Canonical Å/fs *divided by* this
 # yields ASE units (the exact inverse of the parser's multiply). Defined here, not imported, so the
 # exporter layer does not depend on the parser layer (P2; mirrors exporters.extxyz).
-_ANG_PER_FS_PER_ASE_VEL = ase_units.fs
+@functools.cache
+def _ang_per_fs_per_ase_vel() -> float:
+    """ASE velocity unit in Angstrom/fs (lazy: importing ``ase`` is deferred to first use)."""
+    from ase import units as ase_units
+
+    return float(ase_units.fs)
 
 
 class AseTrajExporter(ExporterPlugin):
@@ -56,6 +61,8 @@ class AseTrajExporter(ExporterPlugin):
     version = "0.1.0"
 
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
+        from ase.io.trajectory import TrajectoryWriter
+
         per_frame = canonical.user_metadata.custom_per_frame
         writer = TrajectoryWriter(stream, "w")
         for frame in canonical.frames:
@@ -77,6 +84,9 @@ class AseTrajExporter(ExporterPlugin):
         The per-atom ``custom_per_atom`` columns ride on each ``StreamFrame.frame`` (schema 2.0.0,
         M73), sized to that frame's own N; per-frame comment metadata rides on each ``StreamFrame``.
         Not closed, for the same reason as ``export``."""
+
+        from ase.io.trajectory import TrajectoryWriter
+
         writer = TrajectoryWriter(stream, "w")
         for sf in frames:
             writer.write(self._atoms_from(sf.frame, sf.frame.custom_per_atom, sf.per_frame_custom))
@@ -90,6 +100,10 @@ class AseTrajExporter(ExporterPlugin):
         """Rebuild one ASE ``Atoms`` from a canonical frame plus its object-level per-atom columns
         and this frame's per-frame comment metadata. Shared by ``export`` and ``export_stream`` so
         the two paths can never write a frame differently."""
+
+        from ase import Atoms
+        from ase.calculators.singlepoint import SinglePointCalculator
+
         atoms = Atoms(
             symbols=list(frame.atoms.symbols),
             positions=np.asarray(frame.atoms.positions, dtype=float),
@@ -100,7 +114,7 @@ class AseTrajExporter(ExporterPlugin):
             atoms.set_cell(np.asarray(frame.cell.lattice_vectors, dtype=float))
             atoms.set_pbc(frame.cell.pbc)
         if frame.dynamics.velocities is not None:
-            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ANG_PER_FS_PER_ASE_VEL
+            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ang_per_fs_per_ase_vel()
             atoms.set_velocities(v_ase)
         # electronic.charges/magmoms round-trip through ASE's per-atom initial_* arrays (the parser
         # reads them from there); the exporter writes them back to the same place.
@@ -128,16 +142,14 @@ class AseTrajExporter(ExporterPlugin):
                 continue  # carried-through non-FixAtoms constraint text; not re-materialisable
             atoms.info[_strip(key)] = value
 
-        # Stress (Part 2 §3.7.1, M42-S5 / D163): dual-source, mirroring extXYZ's M40 write side.
-        # A resolved `electronic.stress` is written from the field, reversing the canonical
-        # tension-positive normalization to the exporter's declared target convention — ASE
-        # compression-positive, `stress_output_convention="ase_sign_convention"` — and reported
-        # by `export_warnings`, never silently. An unresolved object (no populated field) falls
-        # back to the verbatim `ase_traj:stress` carry: an opaque .traj→.traj pass-through must
-        # round-trip the numbers exactly as they came in.
+        # Stress (Part 2 §3.7.1, M42-S5 / D163 / A2): dual-source, mirroring extXYZ's write side.
+        # A resolved `electronic.stress` is written verbatim from the field (canonical and ASE
+        # are both tension-positive: no sign change, no warning). An unresolved object (no
+        # populated field) falls back to the verbatim `ase_traj:stress` carry: an opaque
+        # .traj→.traj pass-through must round-trip the numbers exactly as they came in.
         stress = None
         if frame.electronic.stress is not None:
-            stress = -np.asarray(frame.electronic.stress, dtype=float)
+            stress = np.asarray(frame.electronic.stress, dtype=float)
         else:
             carried = per_frame_custom.get(_STRESS_KEY)
             if carried is not None:
@@ -159,6 +171,9 @@ class AseTrajExporter(ExporterPlugin):
         """Write ``fixed_atoms`` constraints back as ASE ``FixAtoms``. An empty/``None`` constraint
         list leaves ASE's default (no constraint); an unrepresentable kind is the Conversion
         Engine's to report as ``removed`` — this exporter writes only what it can express."""
+
+        from ase.constraints import FixAtoms
+
         constraints = frame.dynamics.constraints
         if not constraints:
             return
@@ -205,9 +220,8 @@ class AseTrajExporter(ExporterPlugin):
                 "electronic.stress": FieldCapability(
                     level=partial,
                     notes="Written only when the stress sign convention is resolved via the "
-                    "ambiguous_stress_convention recovery: from electronic.stress, sign-reversed "
-                    "to the compression-positive convention ASE-native .traj files carry "
-                    "(STRESS_SIGN_CONVENTION_CHANGED warning). An unresolved object's "
+                    "ambiguous_stress_convention recovery: from electronic.stress, verbatim "
+                    "(tension-positive, as ASE writes it). An unresolved object's "
                     "ase_traj:stress carry is written verbatim.",
                 ),
                 "user_metadata.custom_per_atom": FieldCapability(
@@ -229,20 +243,15 @@ class AseTrajExporter(ExporterPlugin):
             representable_constraint_kinds=["fixed_atoms"],
             native_coordinate_system="cartesian",
             lossy_notes=[],
-            # The stress this exporter writes is in ASE's compression-positive convention — the
-            # inverse of the canonical tension-positive (Part 2 §3.7.1) — so the Validation
-            # Engine can compare a re-parsed carry back in canonical space (D151, D163).
-            stress_output_convention="ase_sign_convention",
+            # The stress this exporter writes is tension-positive, identical to canonical
+            # (Part 2 §3.7.1; ASE's own get_stress() is tension-positive, A2).
+            stress_output_convention="tension_positive",
         )
 
     def export_warnings(self, canonical: CanonicalObject) -> list[ExporterWarning]:
         """Report the stress transformations this exporter applies on write (Part 2 §3.7.1,
-        M42-S5 / D163), mirroring extXYZ's M40 write side. Two warnings, each firing only when
-        its trigger is present:
+        M42-S5 / D163 / A2). Sign is no longer changed, so the only warning is:
 
-        * ``STRESS_SIGN_CONVENTION_CHANGED`` — a populated ``electronic.stress`` is reversed
-          from the canonical tension-positive convention to the compression-positive convention
-          ASE-native .traj files carry (never silent).
         * ``STRESS_CARRY_DROPPED`` — a frame carries **both** a populated ``electronic.stress``
           and a *differing* ``ase_traj:stress`` carry; the field wins and the carry's numbers
           are dropped (defensive dual-source guard, RF-3 analogue). Fires only when the dropped
@@ -250,26 +259,15 @@ class AseTrajExporter(ExporterPlugin):
           loss.
 
         An unresolved object (only the legacy carry, no populated field) is written verbatim and
-        warrants neither warning."""
+        warrants no warning."""
+
+        from ase.stress import voigt_6_to_full_3x3_stress
+
         warnings: list[ExporterWarning] = []
-        populated = [f.index for f in canonical.frames if f.electronic.stress is not None]
-        if populated:
-            frames_desc = f"frame(s) {populated}" if len(populated) > 1 else f"frame {populated[0]}"
-            warnings.append(
-                ExporterWarning(
-                    code="STRESS_SIGN_CONVENTION_CHANGED",
-                    message=(
-                        "stress reversed from the canonical tension-positive convention to the "
-                        "compression-positive convention ASE-native .traj files carry "
-                        f"({frames_desc}); the output's stress tensor has the opposite sign of "
-                        "the canonical value"
-                    ),
-                )
-            )
         # Dual-source guard (RF-3 analogue): when a populated field coexists with a stale carry,
         # `_atoms_from` writes the field and drops the carry — report a *differing* drop, never
-        # silently. Compare in the space actually written: the field is negated to the output
-        # convention, and the carry (Voigt-6 or full 3×3 as the source wrote it) is expanded
+        # silently. Compare in the space actually written: the field as-is,
+        # and the carry (Voigt-6 or full 3×3 as the source wrote it) is expanded
         # back to 3×3 with ASE's own inverse.
         carry_values = canonical.user_metadata.custom_per_frame.get(_STRESS_KEY)
         dropped: list[int] = []
@@ -280,7 +278,7 @@ class AseTrajExporter(ExporterPlugin):
                 carried = carry_values[frame.index]
                 if carried is None:
                     continue
-                written = -np.asarray(frame.electronic.stress, dtype=float)
+                written = np.asarray(frame.electronic.stress, dtype=float)
                 carried_arr = np.asarray(carried, dtype=float)
                 # Only the two shapes the ASE-backed formats write are comparable (Voigt-6 or
                 # full 3×3). ASE itself can flatten a full 3×3 calculator stress to a bare

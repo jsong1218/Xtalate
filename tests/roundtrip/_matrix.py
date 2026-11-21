@@ -159,8 +159,9 @@ FIXED_PRESETS: dict[str, dict[str, Any]] = {
     # M48: writing *to* lammps_data requires a ``Masses`` section, so a source that carries no
     # per-atom masses (XYZ, POSCAR, a dump/extXYZ without them) reaches the write-side
     # ``missing_masses`` gate — ``atoms.masses`` is a data-target ``required_field`` (D181).
-    # ``standard_masses`` fills IUPAC standard atomic weights from the (always-present) element
-    # symbols — deterministic and generic, unlike the *type-specific* ``missing_species`` map a data
+    # ``standard_masses`` fills standard atomic weights from ASE's table from the
+    # (always-present) element symbols — deterministic and generic, unlike the *type-specific*
+    # ``missing_species`` map a data
     # *source* needs, which is why the data target enrols on a fixed preset here but the data
     # *source* axis cannot (a data file declares neither units nor symbols, so it never bare-parses
     # — the matrix reads its sources with a bare ``parse``; the data source-and-target fidelity

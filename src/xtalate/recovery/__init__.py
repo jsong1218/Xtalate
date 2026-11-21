@@ -30,13 +30,19 @@ from xtalate.recovery.engine import (
     frame_selection_stream_records,
 )
 from xtalate.recovery.scenarios import (
+    CHOICE_DESCRIPTIONS,
+    SCENARIO_DESCRIPTIONS,
     SCENARIO_HAZARD,
     HazardClass,
     UnresolvedScenario,
     available_options,
+    describe_choice,
+    describe_scenario,
 )
 
 __all__ = [
+    "CHOICE_DESCRIPTIONS",
+    "SCENARIO_DESCRIPTIONS",
     "SCENARIO_HAZARD",
     "AppliedAssumption",
     "FrameDrop",
@@ -48,6 +54,8 @@ __all__ = [
     "SuppliedField",
     "UnresolvedScenario",
     "available_options",
+    "describe_choice",
+    "describe_scenario",
     "frame_selection_stream_index",
     "frame_selection_stream_records",
 ]

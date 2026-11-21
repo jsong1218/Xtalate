@@ -39,7 +39,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, BinaryIO, Literal
 
-import h5py
 import numpy as np
 
 from xtalate import __version__
@@ -51,6 +50,8 @@ from xtalate.sdk import (
 )
 
 if TYPE_CHECKING:
+    import h5py
+
     from xtalate.schema import CanonicalObject, Frame
 
 FORMAT_ID = "h5md"
@@ -80,6 +81,8 @@ class H5MDExporter(ExporterPlugin):
     version = "0.1.0"
 
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
+        import h5py
+
         frames = canonical.frames
         with h5py.File(stream, "w") as f:
             self._write_h5md_metadata(f)
@@ -133,6 +136,9 @@ class H5MDExporter(ExporterPlugin):
     def _write_positions(self, particles: h5py.Group, frames: list[Frame]) -> None:
         """``position/{step,time,value}`` with ``value`` a per-step VLEN of flattened (N_t*3,)
         float64 rows — the pinned variable-N mechanism (D-DEP)."""
+
+        import h5py
+
         group = particles.create_group("position")
         value = group.create_dataset(
             "value", shape=(len(frames),), dtype=h5py.vlen_dtype(np.float64)
@@ -145,6 +151,9 @@ class H5MDExporter(ExporterPlugin):
     def _write_species(self, particles: h5py.Group, frames: list[Frame]) -> None:
         """``species/{step,time,value}`` with ``value`` a per-step VLEN of int atomic numbers —
         time-dependent because the particle count (and thus the row length) varies per frame."""
+
+        import h5py
+
         group = particles.create_group("species")
         value = group.create_dataset("value", shape=(len(frames),), dtype=h5py.vlen_dtype(np.int64))
         for i, frame in enumerate(frames):
@@ -160,6 +169,9 @@ class H5MDExporter(ExporterPlugin):
         unit: str,
     ) -> None:
         """A per-atom 3-vector element (velocity, force) as a per-step VLEN of (N_t*3,) float64."""
+
+        import h5py
+
         group = particles.create_group(name)
         value = group.create_dataset(
             "value", shape=(len(frames),), dtype=h5py.vlen_dtype(np.float64)
@@ -179,6 +191,9 @@ class H5MDExporter(ExporterPlugin):
     ) -> None:
         """A per-atom scalar element (mass, charge) as a per-step VLEN of (N_t,) float64 — kept
         time-dependent so its length tracks each frame's own particle count."""
+
+        import h5py
+
         group = particles.create_group(name)
         value = group.create_dataset(
             "value", shape=(len(frames),), dtype=h5py.vlen_dtype(np.float64)

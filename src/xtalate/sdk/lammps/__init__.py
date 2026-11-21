@@ -14,11 +14,15 @@ primitives.
 from __future__ import annotations
 
 from xtalate.sdk.lammps.box import (
+    RESTRICTED_TILT_EPS,
+    RESTRICTED_UPPER_ATOL,
     Box,
     box_from_bounds,
     box_from_edges,
+    describe_zeroed_box_components,
     edges_from_box,
     scaled_to_cartesian,
+    zeroed_box_components,
 )
 from xtalate.sdk.lammps.columns import (
     COORDINATE_COLUMN_NAMES,
@@ -35,6 +39,8 @@ from xtalate.sdk.lammps.species import (
 from xtalate.sdk.lammps.units import UNIT_STYLES, UnitStyle, unit_style
 
 __all__ = [
+    "RESTRICTED_TILT_EPS",
+    "RESTRICTED_UPPER_ATOL",
     "Box",
     "COORDINATE_COLUMN_NAMES",
     "CoordinateColumns",
@@ -45,10 +51,12 @@ __all__ = [
     "box_from_bounds",
     "box_from_edges",
     "coordinate_note",
+    "describe_zeroed_box_components",
     "edges_from_box",
     "is_element_column",
     "resolve_coordinate_columns",
     "resolve_species",
     "scaled_to_cartesian",
     "unit_style",
+    "zeroed_box_components",
 ]

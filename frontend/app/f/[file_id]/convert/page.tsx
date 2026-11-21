@@ -69,6 +69,7 @@ export default function ConvertTabPage() {
           acknowledge_parse_warnings: false,
           allow_recovery: true,
           tolerance_profile: "default",
+          dry_run: false,
           // Additive (Part 6 §7): absent when no repair was requested, so a no-repair submit is
           // byte-identical to pre-v1.7. A cell-less wrap pauses to the recovery wizard the page
           // already has (allow_recovery is true); a malformed repair fails as a clean request

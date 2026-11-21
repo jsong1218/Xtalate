@@ -93,6 +93,7 @@ from typing import Any, BinaryIO
 
 import numpy as np
 
+from xtalate._constants import RYDBERG_EV
 from xtalate.parsers._common import build_provenance
 from xtalate.parsers._qe import (
     BOHR_TO_ANGSTROM,
@@ -1319,7 +1320,7 @@ class QePwOutParser(ParserPlugin):
                 "electronic.total_energy": FieldCapability(
                     level=full.level,
                     notes="The '!    total energy' line (Ry) → eV via QE's RYTOEV "
-                    "(13.605693122994), hand-pinned.",
+                    f"({RYDBERG_EV}), hand-pinned.",
                 ),
                 "electronic.stress": FieldCapability(
                     level=full.level,

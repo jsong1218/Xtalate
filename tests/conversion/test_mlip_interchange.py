@@ -18,11 +18,10 @@ Two properties of the current engine the proof pins:
   which can honor presets) plus ``output=None`` and ``validation=None``. Each message is pinned
   to its exact string, so the assertion fails loudly if the substantive fields ever diverge or
   either message drifts (M41 done-means #3; the M12 standing rule 3 scoping, Revision 1.40).
-* **The tension-positive convention is real, not cosmetic.** The exporter writes stress in the
-  compression-positive ASE convention its files carry, so a second pass that re-reads the
-  written file under the *same* ``tension_positive`` preset lands on the sign-flipped tensor —
-  the M40 teeth (a wrong choice is detectably wrong), stated here at the MLIP level rather than
-  asserted away.
+* **The tension-positive convention is real, not cosmetic.** ASE's own stress is tension-positive
+  and the exporter writes it verbatim, so a second pass that re-reads the written file under the
+  *same* ``tension_positive`` preset lands on the identical tensor; reading it as
+  ``compression_positive`` would be detectably sign-flipped (the M40 teeth).
 
 The golden case itself (``tests/golden/extxyz/mlip-labeled-2frame/``) is corpus-governed: a
 licensed manifest, hash tripwires, and a hand-verified ``expected.canonical.json`` holding the
@@ -164,9 +163,7 @@ def test_resolved_round_trip_all_three_labels_first_class(
     assert any(e.path == "dynamics.forces" for e in report.preserved)
     assert any(e.path == "electronic.total_energy" for e in report.preserved)
     assert any(e.path == "user_metadata.custom_per_frame['extxyz:stress']" for e in report.removed)
-    assert any(
-        w.code == "STRESS_SIGN_CONVENTION_CHANGED" and w.source == "export" for w in report.warnings
-    )
+    assert not any(w.code == "STRESS_SIGN_CONVENTION_CHANGED" for w in report.warnings)
     (assumption,) = report.assumptions
     assert "tension-positive per your choice" in assumption.description
 
@@ -196,12 +193,9 @@ def test_written_extxyz_reparses_and_converts_again(
 ) -> None:
     """The written extXYZ carries all three labels and converts again, green within tolerance.
 
-    The written file declares the compression-positive ASE convention (the exporter reverses the
-    canonical tensor), so the second pass under the *same* ``tension_positive`` preset lands on
-    the sign-flipped canonical tensor — the M40 teeth stated at the MLIP level: the convention is
-    the user's recorded choice, and a wrong choice is detectably wrong. Each conversion is
-    self-consistent and validates within the stress base; what must not be asserted is that the
-    two canonical tensors are equal under mismatched conventions.
+    The written file carries the canonical tension-positive tensor verbatim (ASE's own convention),
+    so the second pass under the *same* ``tension_positive`` preset lands on the identical tensor,
+    and each conversion validates within the stress base.
     """
     conv1 = engine.convert(
         source,
@@ -221,11 +215,11 @@ def test_written_extxyz_reparses_and_converts_again(
     assert [f.electronic.total_energy for f in reparsed.frames] == [-14.25, -14.31]
     assert reparsed.frames[0].dynamics.forces is not None
     assert "extxyz:stress" in reparsed.user_metadata.custom_per_frame
-    # The written carry is the canonical tensor reversed to the exporter's ASE convention.
+    # The written carry is the canonical tensor verbatim (ASE is tension-positive too).
     carried = _carry(reparsed)
     for i, frame in enumerate(canonical1.frames):
         assert np.allclose(
-            voigt_6_to_full_3x3_stress(carried[i]), -np.asarray(frame.electronic.stress)
+            voigt_6_to_full_3x3_stress(carried[i]), np.asarray(frame.electronic.stress)
         )
 
     # Re-parsed and converted again: completes and validates green within the bases.
@@ -241,24 +235,15 @@ def test_written_extxyz_reparses_and_converts_again(
     assert conv2.validation is not None and conv2.validation.status == "passed"
     assert canonical2 is not None
 
-    # Teeth: reading the ASE-convention output under tension-positive is detectably sign-flipped
-    # (a wrong interpretation is a wrong tensor), and the flip is the *only* difference — the
-    # magnitudes sit well inside the stress base after the reversal.
+    # No sign flip: the second pass reproduces the first pass's canonical tensor within the base.
     bound = _stress_fail_bound()
     for i in range(source.frame_count):
         assert np.allclose(
             np.asarray(canonical2.frames[i].electronic.stress),
-            -np.asarray(canonical1.frames[i].electronic.stress),
+            np.asarray(canonical1.frames[i].electronic.stress),
             atol=bound,
             rtol=0.0,
         )
-    assert (
-        np.abs(
-            np.asarray(canonical2.frames[0].electronic.stress)
-            + np.asarray(canonical1.frames[0].electronic.stress)
-        ).max()
-        <= bound
-    )
 
 
 # --- done means #3: the no-preset refusal, substantive-report-identical -----------------

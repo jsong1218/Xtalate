@@ -617,10 +617,8 @@ def test_fanned_per_file_outputs_are_row_qualified(tmp_path: Path) -> None:
 def test_multi_row_fanout_parses_the_container_minimally(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # BATCH-4: a 2-row .db is parsed exactly N+1 = 3 times — once for the detection parse that
-    # reads the container as a variable-N object and reports its frame count, then once per fanned
-    # row. The row count comes from that detection parse's frame count, never an extra re-parse
-    # (M73-S5 re-triggers the same N+1 posture the pre-R8 refusal count had).
+    # E5: a 2-row .db is parsed exactly N = 2 times — once per fanned row; the row count comes
+    # from the id-only `row_count` probe, never a detection parse.
     from xtalate.conversion import batch as batch_mod
     from xtalate.conversion.parse_recovery import parse_with_recovery as real_parse
 
@@ -634,7 +632,7 @@ def test_multi_row_fanout_parses_the_container_minimally(
     db = _multi_row_db(tmp_path, _co(), _water())
     report = run_batch(BatchManifest(sources=[str(db)], target="extxyz"), _registry())
     assert report.tallies.converted == 2
-    assert len(calls) == 3
+    assert len(calls) == 2
 
 
 def test_assemble_fans_multi_row_db_into_one_training_set(tmp_path: Path) -> None:

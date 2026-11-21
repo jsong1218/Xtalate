@@ -117,15 +117,17 @@ class FormatCapabilities(BaseModel):
     supports_variable_atom_count: bool = False
     # The sign convention of the `electronic.stress` tensor this exporter writes (write side;
     # Part 2 §3.7.1, DECISIONS.md D151). The canonical convention is tension-positive; an exporter
-    # whose files carry the opposite (compression-positive, e.g. ASE-native extXYZ) reverses the
-    # normalization on write and declares that here — the machine-readable half of the
-    # `STRESS_SIGN_CONVENTION_CHANGED` warning, letting validation compare the re-parsed carry
-    # back in canonical space. Vocabulary is the `ambiguous_stress_convention` scenario's option
-    # codes (Part 4 §3.3) so terminology stays binding: `tension_positive` = written as-is,
-    # `ase_sign_convention` = written negated. Irrelevant for an exporter that writes no stress.
-    stress_output_convention: Literal["tension_positive", "ase_sign_convention"] = (
-        "tension_positive"
-    )
+    # whose files carry the opposite (compression-positive) reverses the normalization on write
+    # and declares that here — the machine-readable half of the `STRESS_SIGN_CONVENTION_CHANGED`
+    # warning, letting validation compare the re-parsed carry back in canonical space.
+    # Vocabulary is the `ambiguous_stress_convention` scenario's option codes (Part 4 §3.3) so
+    # terminology stays binding: `tension_positive` = written as-is, `compression_positive` =
+    # written negated. `ase_sign_convention` is a DEPRECATED spelling of `compression_positive`,
+    # accepted only so third-party plugins that declared it keep working (A2: ASE itself is
+    # tension-positive). Irrelevant for an exporter that writes no stress.
+    stress_output_convention: Literal[
+        "tension_positive", "compression_positive", "ase_sign_convention"
+    ] = "tension_positive"
     # Whether this exporter can combine **N Canonical Objects into one native container** — the
     # batch ``assemble`` output mode (write side; v1.5 M55-S4, DECISIONS.md D208). An
     # assemble-capable exporter overrides ``ExporterPlugin.assemble`` and declares it here; the

@@ -70,6 +70,8 @@ Every knob and its default is documented in `.env.example`; the ones most operat
 | `XTALATE_REPORT_RETENTION_DAYS` | `30` | How long conversion **records and reports** are kept (empty = indefinite). Reports outlive bytes by design. |
 | `XTALATE_DOCS_BASE_URL` / `XTALATE_SELF_HOSTING_URL` | GitHub docs | Point these at **your** docs origin so the links the UI renders resolve on your running site. |
 
+> **Temp disk.** Uploads are spooled to disk and eligible conversions are streamed, so peak memory no longer grows with trajectory length. The worker's temp directory (`/tmp` in the image) needs roughly 2x `XTALATE_MAX_UPLOAD_BYTES` free per concurrent job (the spooled upload plus the streamed output).
+
 ## 2. Start the service
 
 ```bash

@@ -22,6 +22,7 @@ from xtalate.sdk.deepmd import (
     ENERGY_FILE,
     FORCE_FILE,
     FORMAT_ID,
+    NOPBC_FILE,
     TYPE_FILE,
     TYPE_MAP_FILE,
     VIRIAL_FILE,
@@ -72,6 +73,12 @@ class DeepmdNpyExporter(ExporterPlugin):
                     f"cell volume, but frame {index} has a stress paired with a degenerate "
                     "(zero-volume) lattice. Xtalate will not fabricate a volume to force a fit."
                 )
+        pbcs = {frame.cell.pbc for frame in canonical.frames if frame.cell is not None}
+        if pbcs and pbcs not in ({(True, True, True)}, {(False, False, False)}):
+            return (
+                "DeePMD can only express a fully periodic system or a fully non-periodic one "
+                "(the nopbc marker); this object has per-axis or frame-varying pbc."
+            )
         return None
 
     def export_dir(self, canonical: CanonicalObject) -> dict[str, bytes]:
@@ -93,6 +100,10 @@ class DeepmdNpyExporter(ExporterPlugin):
         output[TYPE_MAP_FILE] = type_map_raw
         output["set.000/" + COORD_FILE] = _npy(coords.reshape((n_frames, -1)))
         output["set.000/" + BOX_FILE] = _npy(boxes)
+        if any(f.cell is not None for f in canonical.frames) and all(
+            f.cell.pbc == (False, False, False) for f in canonical.frames if f.cell is not None
+        ):
+            output[NOPBC_FILE] = b""
         energies = [frame.electronic.total_energy for frame in canonical.frames]
         if all(value is not None for value in energies):
             output["set.000/" + ENERGY_FILE] = _npy(np.asarray(energies, dtype=np.float64))
@@ -161,7 +172,13 @@ class DeepmdNpyExporter(ExporterPlugin):
                 "atoms.symbols": partial,
                 "atoms.positions": FieldCapability(level=CapabilityLevel.FULL),
                 "cell.lattice_vectors": partial,
-                "cell.pbc": partial,
+                "cell.pbc": FieldCapability(
+                    level=CapabilityLevel.PARTIAL,
+                    notes=(
+                        "All-False pbc is written as an empty root nopbc file; per-axis or "
+                        "frame-varying pbc is refused."
+                    ),
+                ),
                 "dynamics.forces": partial,
                 "electronic.total_energy": partial,
                 "electronic.stress": partial,

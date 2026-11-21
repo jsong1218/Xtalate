@@ -34,17 +34,12 @@ temporary ``.db`` file whose bytes are then copied into the caller's stream.
 
 from __future__ import annotations
 
+import functools
 import tempfile
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 import numpy as np
-from ase import Atoms
-from ase import units as ase_units
-from ase.calculators.singlepoint import SinglePointCalculator
-from ase.constraints import FixAtoms
-from ase.db import connect
-from ase.stress import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
 
 from xtalate.schema import CanonicalObject, Frame
 from xtalate.sdk import (
@@ -56,6 +51,9 @@ from xtalate.sdk import (
     FormatCapabilities,
 )
 
+if TYPE_CHECKING:
+    from ase import Atoms
+
 FORMAT_ID = "ase_db"
 _KEY_PREFIX = "ase_db:"
 _STRESS_KEY = "ase_db:stress"
@@ -66,10 +64,19 @@ _DATA_KEY = "ase_db:data"
 # as ``poscar:comment`` fails the fullmatch and is reported ``removed``, never entered into the
 # write plan and then silently dropped (D69; the extXYZ per-atom precedent).
 _WRITABLE_CUSTOM_GLOBAL_PATTERN = rf"{_KEY_PREFIX}[^:]*"
+
+
 # (Å/fs) per one ASE internal velocity unit — i.e. ase_units.fs. Canonical Å/fs *divided by* this
 # yields ASE units (the exact inverse of the parser's multiply). Defined here, not imported, so the
 # exporter layer does not depend on the parser layer (P2; mirrors exporters.ase_traj).
-_ANG_PER_FS_PER_ASE_VEL = ase_units.fs
+@functools.cache
+def _ang_per_fs_per_ase_vel() -> float:
+    """ASE velocity unit in Angstrom/fs (lazy: importing ``ase`` is deferred to first use)."""
+    from ase import units as ase_units
+
+    return float(ase_units.fs)
+
+
 # Scalars ASE accepts as a key_value_pairs value (bool is an int subclass, hence listed explicitly
 # for intent; ASE stores it as an int). Anything else in custom_global is not a kv value.
 _KV_SCALARS = (str, bool, int, float)
@@ -81,6 +88,8 @@ class AseDbExporter(ExporterPlugin):
     version = "0.1.0"
 
     def export(self, canonical: CanonicalObject, stream: BinaryIO) -> None:
+        from ase.db import connect
+
         atoms, key_value_pairs, data = self._row_from(canonical)
         # ase.db opens a database only by real path, so write to a temp .db and copy its bytes into
         # the caller's stream (the parser spools the same way for the same reason).
@@ -103,6 +112,9 @@ class AseDbExporter(ExporterPlugin):
         dataset is content-identical to the same source converted alone (SQLite rows are
         independent; per-contribution validation keeps its meaning). ``ase.db`` opens a database
         only by real path, so the N rows go to one temp ``.db`` whose bytes are copied out."""
+
+        from ase.db import connect
+
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "out.db"
             db = connect(path, use_lock_file=False)
@@ -140,6 +152,11 @@ class AseDbExporter(ExporterPlugin):
         """Rebuild one ASE ``Atoms`` from a canonical frame plus this frame's per-frame carry — the
         exact inverse of the parser's row read. Charges/moments go to the per-atom ``initial_*``
         arrays (the parser's source), energy/forces/stress to a ``SinglePointCalculator``."""
+
+        from ase import Atoms
+        from ase.calculators.singlepoint import SinglePointCalculator
+        from ase.stress import full_3x3_to_voigt_6_stress
+
         atoms = Atoms(
             symbols=list(frame.atoms.symbols),
             positions=np.asarray(frame.atoms.positions, dtype=float),
@@ -150,7 +167,7 @@ class AseDbExporter(ExporterPlugin):
             atoms.set_cell(np.asarray(frame.cell.lattice_vectors, dtype=float))
             atoms.set_pbc(frame.cell.pbc)
         if frame.dynamics.velocities is not None:
-            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ANG_PER_FS_PER_ASE_VEL
+            v_ase = np.asarray(frame.dynamics.velocities, dtype=float) / _ang_per_fs_per_ase_vel()
             atoms.set_velocities(v_ase)
         # electronic.charges/magmoms round-trip through ASE's per-atom initial_* arrays (the parser
         # reads them from there); the exporter writes them back to the same place — the ase_traj
@@ -163,20 +180,19 @@ class AseDbExporter(ExporterPlugin):
             )
         self._apply_constraints(atoms, frame)
 
-        # Stress (Part 2 §3.7.1, D163): dual-source, mirroring ase_traj's M42-S5 write side. A
-        # resolved `electronic.stress` is written from the field, reversing the canonical
-        # tension-positive normalization to the exporter's declared target convention — ASE
-        # compression-positive, `stress_output_convention="ase_sign_convention"` — and reported
-        # by `export_warnings`, never silently. An unresolved object falls back to the verbatim
-        # `ase_db:stress` carry so an opaque .db→.db pass-through round-trips the numbers exactly.
+        # Stress (Part 2 §3.7.1, D163 / A2): dual-source, mirroring ase_traj's write side. A
+        # resolved `electronic.stress` is written verbatim from the field (canonical and ASE are
+        # both tension-positive: no sign change, no warning). An unresolved object falls back to
+        # the verbatim `ase_db:stress` carry so an opaque .db→.db pass-through round-trips the
+        # numbers exactly.
         stress = None
         if frame.electronic.stress is not None:
-            # Negate to ASE's compression-positive convention, then compress to Voigt-6 — ASE's
+            # Compress to Voigt-6 (no sign change) — ASE's
             # native stress representation, which a .db round-trips as a (6,) vector. A full 3x3 is
             # flattened to (9,) by the SQLite schema on read and would not reshape back to a tensor,
             # so writing Voigt-6 is what keeps the carry comparable. Validation reverses the (6,)
             # carry to a (3,3) tension-positive tensor via the declared stress_output_convention.
-            stress = full_3x3_to_voigt_6_stress(-np.asarray(frame.electronic.stress, dtype=float))
+            stress = full_3x3_to_voigt_6_stress(np.asarray(frame.electronic.stress, dtype=float))
         else:
             carried = per_frame_custom.get(_STRESS_KEY)
             if carried is not None:
@@ -198,6 +214,9 @@ class AseDbExporter(ExporterPlugin):
         """Write ``fixed_atoms`` constraints back as ASE ``FixAtoms`` (the ase_traj rule): an
         empty/``None`` list leaves ASE's default (no constraint); an unrepresentable kind is the
         Conversion Engine's to report as ``removed``."""
+
+        from ase.constraints import FixAtoms
+
         constraints = frame.dynamics.constraints
         if not constraints:
             return
@@ -269,9 +288,8 @@ class AseDbExporter(ExporterPlugin):
                 "electronic.stress": FieldCapability(
                     level=partial,
                     notes="Written only when the stress sign convention is resolved via the "
-                    "ambiguous_stress_convention recovery: from electronic.stress, sign-reversed "
-                    "to the compression-positive convention ASE-native databases carry "
-                    "(STRESS_SIGN_CONVENTION_CHANGED warning). An unresolved object's "
+                    "ambiguous_stress_convention recovery: from electronic.stress, verbatim "
+                    "(tension-positive, as ASE writes it). An unresolved object's "
                     "ase_db:stress carry is written verbatim.",
                 ),
                 "user_metadata.custom_global": FieldCapability(
@@ -316,41 +334,25 @@ class AseDbExporter(ExporterPlugin):
             representable_constraint_kinds=["fixed_atoms"],
             native_coordinate_system="cartesian",
             lossy_notes=[],
-            # The stress this exporter writes is in ASE's compression-positive convention — the
-            # inverse of the canonical tension-positive (Part 2 §3.7.1) — so the Validation Engine
-            # can compare a re-parsed carry back in canonical space (D151, D163).
-            stress_output_convention="ase_sign_convention",
+            # The stress this exporter writes is tension-positive, identical to canonical
+            # (Part 2 §3.7.1; ASE's own get_stress() is tension-positive, A2).
+            stress_output_convention="tension_positive",
         )
 
     def export_warnings(self, canonical: CanonicalObject) -> list[ExporterWarning]:
         """Report the stress transformations this exporter applies on write (Part 2 §3.7.1,
-        D163), mirroring ase_traj's M42-S5 write side. Two warnings, each firing only when its
-        trigger is present:
+        D163 / A2). Sign is no longer changed, so the only warning is:
 
-        * ``STRESS_SIGN_CONVENTION_CHANGED`` — a populated ``electronic.stress`` is reversed from
-          the canonical tension-positive convention to the compression-positive convention
-          ASE-native databases carry (never silent).
         * ``STRESS_CARRY_DROPPED`` — the frame carries **both** a populated ``electronic.stress``
           and a *differing* ``ase_db:stress`` carry; the field wins and the carry's numbers are
           dropped. Fires only when the dropped numbers actually differ from what was written.
 
         An unresolved object (only the legacy carry, no populated field) is written verbatim and
-        warrants neither warning."""
+        warrants no warning."""
+
+        from ase.stress import voigt_6_to_full_3x3_stress
+
         warnings: list[ExporterWarning] = []
-        populated = [f.index for f in canonical.frames if f.electronic.stress is not None]
-        if populated:
-            frames_desc = f"frame(s) {populated}" if len(populated) > 1 else f"frame {populated[0]}"
-            warnings.append(
-                ExporterWarning(
-                    code="STRESS_SIGN_CONVENTION_CHANGED",
-                    message=(
-                        "stress reversed from the canonical tension-positive convention to the "
-                        "compression-positive convention ASE-native databases carry "
-                        f"({frames_desc}); the output's stress tensor has the opposite sign of "
-                        "the canonical value"
-                    ),
-                )
-            )
         carry_values = canonical.user_metadata.custom_per_frame.get(_STRESS_KEY)
         dropped: list[int] = []
         if carry_values is not None:
@@ -360,7 +362,7 @@ class AseDbExporter(ExporterPlugin):
                 carried = carry_values[frame.index]
                 if carried is None:
                     continue
-                written = -np.asarray(frame.electronic.stress, dtype=float)
+                written = np.asarray(frame.electronic.stress, dtype=float)
                 carried_arr = np.asarray(carried, dtype=float)
                 # Only the two shapes the ASE-backed formats write are comparable (Voigt-6 or
                 # full 3×3). ASE itself can flatten a full 3×3 calculator stress to a bare

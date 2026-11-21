@@ -1,12 +1,12 @@
 """extXYZ exporter stress write tests (M40-S2, Part 2 §3.7.1, Part 4 §1).
 
 The exporter's stress channel is **dual-source**: a resolved `electronic.stress` is written from
-the field — reversed from the canonical tension-positive to the compression-positive convention
-ASE-native extXYZ files carry, and reported by `export_warnings` as `STRESS_SIGN_CONVENTION_CHANGED`
-— while an unresolved object's `extxyz:stress` carry is written **verbatim** (back-compat: an
-opaque extXYZ→extXYZ pass-through round-trips the numbers exactly as they came in, never silently
-normalized). The field is preferred defensively when both are present (no double-write; on a
-resolved object S1's resolver retires the carry, so in practice only one source exists).
+the field — verbatim (canonical and ASE are both tension-positive, so no sign change and no
+`STRESS_SIGN_CONVENTION_CHANGED` warning) — while an unresolved object's `extxyz:stress` carry is
+written **verbatim** (back-compat: an opaque extXYZ→extXYZ pass-through round-trips the numbers
+exactly as they came in, never silently normalized). The field is preferred defensively when both
+are present (no double-write; on a resolved object S1's resolver retires the carry, so in practice
+only one source exists).
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def _parse(reg: Registry, data: bytes) -> CanonicalObject:
 
 
 def _resolved(
-    reg: Registry, source: CanonicalObject, choice: str = "ase_sign_convention"
+    reg: Registry, source: CanonicalObject, choice: str = "tension_positive"
 ) -> CanonicalObject:
     """Resolve the carry into `electronic.stress` via the recovery (S1), retiring the carry."""
     result = RecoveryEngine().resolve(
@@ -95,41 +95,35 @@ def _carry_tensor(obj: CanonicalObject) -> np.ndarray:
 # --- write from the populated field (done means #1's write side) -----------------------
 
 
-def test_resolved_stress_written_from_field_reversed_to_ase_convention(reg: Registry) -> None:
-    resolved = _resolved(reg, _parse(reg, _STRESS_EXTXYZ), choice="ase_sign_convention")
-    buf = io.BytesIO()
-    _exporter(reg).export(resolved, buf)
-    reparsed = _reparse(reg, buf.getvalue())
-    # The output carries the tensor in the exporter's declared target convention: the canonical
-    # tension-positive value negated to ASE compression-positive (Part 2 §3.7.1). The Voigt-6
-    # carry expands back to the same 3×3 the field held, sign-reversed.
-    canonical = np.asarray(resolved.frames[0].electronic.stress)
-    carried = _carry(reparsed)[0]
-    assert carried.shape == (6,)  # ASE compresses the 3×3 to Voigt-6 on write
-    assert np.allclose(_carry_tensor(reparsed), -canonical)
-    assert not np.allclose(_carry_tensor(reparsed), canonical)  # the reversal really happened
-
-
-def test_tension_positive_resolution_is_written_reversed_too(reg: Registry) -> None:
-    # The exporter writes one declared convention regardless of how the source was resolved: even
-    # a tension-positive choice is reversed on write to the ASE convention, because that is the
-    # convention the output file carries (and the STRESS_SIGN_CONVENTION_CHANGED warning says so).
+def test_resolved_stress_written_verbatim(reg: Registry) -> None:
     resolved = _resolved(reg, _parse(reg, _STRESS_EXTXYZ), choice="tension_positive")
     buf = io.BytesIO()
     _exporter(reg).export(resolved, buf)
     reparsed = _reparse(reg, buf.getvalue())
+    # The output carries the canonical tension-positive tensor as-is (ASE is tension-positive
+    # too, Part 2 §3.7.1). The Voigt-6 carry expands back to the same 3×3 the field held.
     canonical = np.asarray(resolved.frames[0].electronic.stress)
-    assert np.allclose(_carry_tensor(reparsed), -canonical)
+    carried = _carry(reparsed)[0]
+    assert carried.shape == (6,)  # ASE compresses the 3×3 to Voigt-6 on write
+    assert np.allclose(_carry_tensor(reparsed), canonical)
 
 
-def test_export_warnings_fire_for_a_populated_field_only(reg: Registry) -> None:
+def test_compression_positive_resolution_is_written_verbatim_canonical(reg: Registry) -> None:
+    # The exporter writes the canonical (tension-positive) tensor whatever the source choice was:
+    # a compression-positive reading is negated into canonical by the resolver, then written as-is.
+    resolved = _resolved(reg, _parse(reg, _STRESS_EXTXYZ), choice="compression_positive")
+    buf = io.BytesIO()
+    _exporter(reg).export(resolved, buf)
+    reparsed = _reparse(reg, buf.getvalue())
+    canonical = np.asarray(resolved.frames[0].electronic.stress)
+    assert np.allclose(_carry_tensor(reparsed), canonical)
+
+
+def test_export_warnings_are_silent_for_a_populated_field(reg: Registry) -> None:
     exporter = _exporter(reg)
     resolved = _resolved(reg, _parse(reg, _STRESS_EXTXYZ))
-    warnings = exporter.export_warnings(resolved)
-    assert len(warnings) == 1
-    (warning,) = warnings
-    assert warning.code == "STRESS_SIGN_CONVENTION_CHANGED"
-    assert "tension-positive" in warning.message and "compression-positive" in warning.message
+    # No sign change any more, so a populated field warns about nothing.
+    assert exporter.export_warnings(resolved) == []
     # An unresolved object (only the legacy carry) is written verbatim — no transformation, no
     # warning.
     assert exporter.export_warnings(_parse(reg, _STRESS_EXTXYZ)) == []
@@ -152,7 +146,7 @@ def test_unresolved_object_writes_the_carry_verbatim(reg: Registry) -> None:
 def test_dual_source_prefers_the_populated_field(reg: Registry) -> None:
     # Defensive guard: if a resolved object somehow still holds the carry (S1 normally retires
     # it), the exporter writes the field — never both, never the stale carry.
-    resolved = _resolved(reg, _parse(reg, _STRESS_EXTXYZ), choice="ase_sign_convention")
+    resolved = _resolved(reg, _parse(reg, _STRESS_EXTXYZ), choice="tension_positive")
     um = resolved.user_metadata
     # A planted stale carry that differs from the field-derived value (Voigt [9,6,4,5,7,8] = a
     # [[9,7,8],[7,6,5],[8,5,4]] tensor).
@@ -167,7 +161,7 @@ def test_dual_source_prefers_the_populated_field(reg: Registry) -> None:
     _exporter(reg).export(both, buf)
     reparsed = _reparse(reg, buf.getvalue())
     canonical = np.asarray(resolved.frames[0].electronic.stress)
-    assert np.allclose(_carry_tensor(reparsed), -canonical)
+    assert np.allclose(_carry_tensor(reparsed), canonical)
     assert not np.allclose(
         _carry_tensor(reparsed), [[9.0, 7.0, 8.0], [7.0, 6.0, 5.0], [8.0, 5.0, 4.0]]
     )
@@ -195,7 +189,7 @@ def test_mixed_frames_write_stress_only_where_the_field_is_populated(reg: Regist
     assert raw[1] is None  # per-frame association kept (Part 2 §6.1): frame 1 never carried it
     canonical = np.asarray(resolved.frames[0].electronic.stress)
     assert np.allclose(
-        np.asarray(voigt_6_to_full_3x3_stress(np.asarray(raw[0], dtype=float))), -canonical
+        np.asarray(voigt_6_to_full_3x3_stress(np.asarray(raw[0], dtype=float))), canonical
     )
 
 
@@ -206,6 +200,43 @@ def test_write_declaration_is_partial_and_honest(reg: Registry) -> None:
     cap = _exporter(reg).capabilities().fields["electronic.stress"]
     assert cap.level is CapabilityLevel.PARTIAL
     assert cap.notes is not None
-    # The note names both behaviours: the populated-field write (with the sign reversal) and the
-    # verbatim carry fallback — never a claim the exporter cannot keep.
-    assert "STRESS_SIGN_CONVENTION_CHANGED" in cap.notes
+    # The note names both behaviours: the populated-field write (verbatim) and the verbatim
+    # carry fallback — never a claim the exporter cannot keep.
+    assert _exporter(reg).capabilities().stress_output_convention == "tension_positive"
+
+
+def test_extxyz_declares_eight_decimal_per_atom_precision() -> None:
+    from xtalate.exporters.extxyz import ExtxyzExporter
+
+    prec = ExtxyzExporter().capabilities().numeric_precision
+    assert prec == {
+        "atoms.positions": 8,
+        "dynamics.velocities": 8,
+        "dynamics.forces": 8,
+        "electronic.charges": 8,
+        "electronic.magnetic_moments": 8,
+        "atoms.masses": 8,
+        "user_metadata.custom_per_atom": 8,
+    }
+    # info scalars are written with str() (lossless) and must NOT be declared
+    assert "electronic.total_energy" not in prec
+    assert "electronic.stress" not in prec
+
+
+def test_ase_writes_custom_float_columns_at_eight_decimals() -> None:
+    """Empirical ground truth behind the `user_metadata.custom_per_atom` declaration: ASE's own
+    writer truncates a float per-atom column to 8 decimals but writes info scalars losslessly."""
+    import io as _io
+
+    import numpy as np
+    from ase import Atoms
+    from ase.io import write
+
+    atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 1.0]])
+    atoms.arrays["foo"] = np.array([0.123456789012345, 1.0])
+    atoms.info["bar"] = 0.123456789012345
+    buf = _io.StringIO()
+    write(buf, atoms, format="extxyz")
+    text = buf.getvalue()
+    assert "0.12345679" in text and "0.123456789012345" not in text.split("\n")[2]
+    assert "bar=0.123456789012345" in text

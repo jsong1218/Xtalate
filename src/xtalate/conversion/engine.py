@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
@@ -62,6 +63,7 @@ from xtalate.recovery import (
     frame_selection_stream_records,
 )
 from xtalate.repair import (
+    REPAIR_BLOCK_EMPTY_SELECTION,
     REPAIR_BLOCK_MISSING_LATTICE,
     AppliedRepair,
     RepairBlock,
@@ -150,6 +152,28 @@ class ConversionResult:
     output_dir: dict[str, bytes] | None = None
 
 
+# One source of truth for the strict-mode refusal texts (convert, convert_stream*, dry_run).
+_UNACKNOWLEDGED_LOSS_MESSAGE = (
+    "strict mode: reductive loss must be acknowledged "
+    "(acknowledge_loss=True) before this conversion will proceed"
+)
+_UNACKNOWLEDGED_PARSE_WARNINGS_MESSAGE = (
+    "strict mode: parse warnings must be acknowledged "
+    "(acknowledge_parse_warnings=True) before this conversion will proceed"
+)
+
+
+@dataclass(frozen=True)
+class DryRun:
+    """Outcome of :meth:`ConversionEngine.dry_run` (QoL Q2): the draft report, what recovery the
+    real run would need, and what each repair would do. Nothing was written."""
+
+    report: ConversionReport
+    unresolved: list[UnresolvedScenario]
+    applied: list[AppliedRepair]
+    blocked: list[RepairBlock]
+
+
 class ConversionEngine:
     def __init__(self, registry: Registry) -> None:
         self._registry = registry
@@ -222,6 +246,145 @@ class ConversionEngine:
         )
         _assert_completeness(report, source)
         return report
+
+    def dry_run(
+        self,
+        source: CanonicalObject,
+        *,
+        source_format_id: str,
+        target_format_id: str,
+        source_filename: str | None = None,
+        source_sha256: str | None = None,
+        target_filename: str | None = None,
+        mode: str = "permissive",
+        output_multifile: bool = True,
+        repairs: list[RepairRequest] | None = None,
+        parse_issues: list[ParseIssue] | None = None,
+        acknowledge_loss: bool = False,
+        acknowledge_parse_warnings: bool = False,
+    ) -> DryRun:
+        """Repairs + pre-flight with nothing written (QoL Q2).
+
+        Unlike :meth:`preflight` this applies ``repairs`` **strictly** (a blocked repair is
+        reported, never swallowed - P1) and returns the unresolved scenarios and the repairs'
+        descriptions alongside the draft report, so a caller can say exactly what a real run
+        would ask for and do. A malformed or empty-selection repair raises ``RepairError``
+        exactly as :meth:`convert` does. ``status`` is ``"awaiting_recovery"`` iff a real run
+        could not complete without the user choosing something; the ``refusal`` body then lists
+        the unresolved scenarios in the shape ``convert``'s own refusal uses. No recovery choice
+        is applied here (a dry run never fabricates data, P4).
+
+        In ``mode="strict"`` with nothing left unresolved, the strict acknowledgement gates are
+        mirrored in ``convert``'s order: predicted reductive loss without ``acknowledge_loss``
+        (``UNACKNOWLEDGED_LOSS``), then parse warnings in ``parse_issues`` without
+        ``acknowledge_parse_warnings`` (``UNACKNOWLEDGED_PARSE_WARNINGS``) make the dry run
+        ``status="refused"`` - a real run would refuse, so a caller must not read it as a go.
+
+        With nothing unresolved and no strict gate tripped, the target exporter's value-level
+        ``unrepresentable`` hook (D179) is consulted on the write-plan-filtered object, as
+        ``convert`` does; a value the format cannot state makes the dry run ``status="refused"``
+        with ``convert``'s ``UNREPRESENTABLE_VALUE`` code and message. A refusal that depends on a
+        recovery choice not yet made cannot be predicted here (no choice is applied)."""
+        applied: list[AppliedRepair] = []
+        blocked: list[RepairBlock] = []
+        obj = source
+        if repairs:
+            outcome = apply_repairs(source, repairs)
+            applied = list(outcome.applied)
+            blocked = list(outcome.blocked)
+            if outcome.canonical is not None:
+                obj = outcome.canonical
+        # The draft describes the repaired object (the one a real run would pre-flight); the
+        # repairs were already applied above, so none are passed on.
+        draft = self.preflight(
+            obj,
+            source_format_id=source_format_id,
+            target_format_id=target_format_id,
+            source_filename=source_filename,
+            source_sha256=source_sha256,
+            target_filename=target_filename,
+            mode=mode,
+            output_multifile=output_multifile,
+        )
+        matrix = self._registry.capability_matrix()
+        diff = None
+        if blocked:
+            unresolved = _repair_block_scenarios(
+                blocked, matrix, target_format_id, output_multifile
+            )
+            message = (
+                f"the requested repair {blocked[0].operation!r} cannot run: {blocked[0].detail}"
+            )
+        else:
+            diff = build_preflight(
+                obj,
+                matrix,
+                target_format_id,
+                output_multifile=output_multifile,
+                source_format_id=source_format_id,
+            )
+            unresolved = list(diff.unresolved)
+            message = "the conversion needs a recovery choice before it can run"
+        report = draft
+        if unresolved:
+            report = draft.model_copy(
+                update={
+                    "status": "awaiting_recovery",
+                    "refusal": {
+                        "code": "RECOVERY_REQUIRED",
+                        "message": message,
+                        "unresolved_scenarios": [
+                            {
+                                "scenario": s.scenario,
+                                "path": s.path,
+                                "detail": s.detail,
+                                "options": s.options,
+                            }
+                            for s in unresolved
+                        ],
+                    },
+                }
+            )
+        elif mode == "strict":
+            refusal: dict[str, Any] | None = None
+            if draft.removed and not acknowledge_loss:
+                refusal = {
+                    "code": "UNACKNOWLEDGED_LOSS",
+                    "message": _UNACKNOWLEDGED_LOSS_MESSAGE,
+                    "unresolved_scenarios": [],
+                }
+            elif (
+                any(i.severity == "warning" for i in (parse_issues or []))
+                and not acknowledge_parse_warnings
+            ):
+                refusal = {
+                    "code": "UNACKNOWLEDGED_PARSE_WARNINGS",
+                    "message": _UNACKNOWLEDGED_PARSE_WARNINGS_MESSAGE,
+                    "unresolved_scenarios": [],
+                }
+            if refusal is not None:
+                report = draft.model_copy(update={"status": "refused", "refusal": refusal})
+        if not unresolved and report.refusal is None and diff is not None:
+            # The exporter's value-level gate (D179), consulted after the strict gates exactly as
+            # `convert` does, on the same write-plan-filtered object `convert` hands it (no
+            # recovery runs when nothing is unresolved, so the plan is the diff's). Without this a
+            # dry run reads "would complete" for a conversion the real run refuses (I2, D303).
+            canonical_out = _apply_write_plan(obj, set(diff.write_plan), target_format_id)
+            unrepresentable = self._registry.get_exporter(target_format_id).unrepresentable(
+                canonical_out
+            )
+            if unrepresentable is not None:
+                report = draft.model_copy(
+                    update={
+                        "status": "refused",
+                        "refusal": {
+                            "code": "UNREPRESENTABLE_VALUE",
+                            "message": unrepresentable,
+                            "unresolved_scenarios": [],
+                        },
+                    }
+                )
+        return DryRun(report=report, unresolved=unresolved, applied=applied, blocked=blocked)
 
     def convert(
         self,
@@ -583,8 +746,7 @@ class ConversionEngine:
                     fabricated_at_parse=fabricated,
                     refusal={
                         "code": "UNACKNOWLEDGED_LOSS",
-                        "message": "strict mode: reductive loss must be acknowledged "
-                        "(acknowledge_loss=True) before this conversion will proceed",
+                        "message": _UNACKNOWLEDGED_LOSS_MESSAGE,
                         "unresolved_scenarios": [],
                     },
                 )
@@ -607,8 +769,7 @@ class ConversionEngine:
                     fabricated_at_parse=fabricated,
                     refusal={
                         "code": "UNACKNOWLEDGED_PARSE_WARNINGS",
-                        "message": "strict mode: parse warnings must be acknowledged "
-                        "(acknowledge_parse_warnings=True) before this conversion will proceed",
+                        "message": _UNACKNOWLEDGED_PARSE_WARNINGS_MESSAGE,
                         "unresolved_scenarios": [],
                     },
                 )
@@ -669,8 +830,8 @@ class ConversionEngine:
         # Warnings echo parse warnings (Part 3 §5 rule 5) alongside capability caveats (already in
         # diff.warnings). Export-time transformation warnings come from the exporter itself via the
         # additive `export_warnings` hook (Part 4 §1 rule 3, Part 2 §3.7.1; D151): the exporter owns
-        # the representation changes it applies — e.g. extXYZ reversing a populated
-        # `electronic.stress` to the compression-positive convention — and the engine reports them
+        # the representation changes it applies — e.g. an exporter whose format mandates the
+        # opposite stress sign convention — and the engine reports them
         # with source="export". The v0.1 POSCAR exporter applies none, so this is usually empty.
         warnings = [
             # A repair's transformative-hazard statements (D251) lead: they are the one part of
@@ -936,6 +1097,7 @@ class ConversionEngine:
         acknowledge_loss: bool = False,
         validate: bool = True,
         max_frames: int | None = None,
+        progress: Callable[[int], None] | None = None,
     ) -> ConversionResult:
         """Stream a recovery-free conversion end to end with memory bounded by one frame (M12).
 
@@ -958,15 +1120,19 @@ class ConversionEngine:
         the actual side re-parses the output as a stream — so validation is memory-bounded too and
         the whole path stays sub-linear in frames (M12 deliverable 4).
 
+        ``progress`` is called with the running count of source frames consumed; it must be cheap
+        and must not raise (an exception propagates and aborts the conversion). ``None`` (default)
+        is the existing behaviour.
+
         ``max_frames`` (optional, default ``None`` = current behaviour) makes the frame cap a real
         gate (M39-S3, F1): the streamed frame count is checked **as it streams**, and once it
         exceeds the cap the remaining frames are never read — :class:`FrameLimitExceeded` is raised
         mid-stream carrying the count-so-far and the cap, and the partial output is discarded like a
         mid-stream ``ParseError`` (``convert_stream`` returns no ConversionResult on failure). The
-        CLI passes no cap (a local trajectory has none). The HTTP service enforces its
-        ``settings.max_frames`` only through the materialized count-pass seams
-        (``parse_with_recovery`` / ``DiscoveryEngine.discover``); ``convert_stream``'s own cap
-        serves the CLI and the direct-SDK streaming path, which the service does not call.
+        CLI passes no cap (a local trajectory has none). The HTTP service passes its
+        ``settings.max_frames`` here for eligible permissive conversions
+        (``backend.jobs.runner._try_convert_streamed``) and enforces it through the materialized
+        count-pass seams (``parse_with_recovery`` / ``DiscoveryEngine.discover``) otherwise.
         """
         if not self.streaming_eligible(source_format_id, target_format_id):
             raise ValueError(
@@ -1034,6 +1200,8 @@ class ConversionEngine:
                 # caller translates the exception (the service: 422 FRAME_LIMIT_EXCEEDED).
                 if max_frames is not None and counters["frames"] > max_frames:
                     raise FrameLimitExceeded(frame_count=counters["frames"], max_frames=max_frames)
+                if progress is not None:
+                    progress(counters["frames"])
                 yield _filter_stream_frame(sf, write_plan)
 
         # The exporter writes each planned frame as it is yielded — the single streamed pass. A
@@ -1134,8 +1302,7 @@ class ConversionEngine:
                 warnings=diff.warnings,
                 refusal={
                     "code": "UNACKNOWLEDGED_LOSS",
-                    "message": "strict mode: reductive loss must be acknowledged "
-                    "(acknowledge_loss=True) before this conversion will proceed",
+                    "message": _UNACKNOWLEDGED_LOSS_MESSAGE,
                     "unresolved_scenarios": [],
                 },
             )
@@ -1195,6 +1362,7 @@ class ConversionEngine:
         tolerance_profile: str | ToleranceProfile = "default",
         acknowledge_loss: bool = False,
         validate: bool = True,
+        progress: Callable[[int], None] | None = None,
     ) -> ConversionResult:
         """Stream a multi-frame source into a single-structure target under a ``frame_selection``
         reduction, holding one frame resident (M13; DECISIONS.md D56 — the recovery interplay M12
@@ -1210,6 +1378,9 @@ class ConversionEngine:
         same file (standing rule 3). The frame_selection accounting itself is produced by the shared
         ``recovery.frame_selection_stream_records``, driven by the accumulated presence, so the
         dropped-frame ``removed`` entries match the materialized recovery to the byte.
+
+        ``progress`` is called with the running count of source frames scanned (after each frame);
+        it must be cheap and must not raise (an exception propagates and aborts the conversion).
 
         Only ``frame_selection_streaming_eligible`` pairs and the ``first``/``last``/``index``
         choices are accepted. ``split_all`` (one output file per frame) and any file whose retained
@@ -1263,6 +1434,8 @@ class ConversionEngine:
             if want_index is not None and n == want_index:
                 indexed_frame = sf
             n += 1
+            if progress is not None:
+                progress(n)
         presence = acc.result()
 
         # A source carrying constraints against a PARTIAL target would need
@@ -1355,8 +1528,7 @@ class ConversionEngine:
                 warnings=diff.warnings,
                 refusal={
                     "code": "UNACKNOWLEDGED_LOSS",
-                    "message": "strict mode: reductive loss must be acknowledged "
-                    "(acknowledge_loss=True) before this conversion will proceed",
+                    "message": _UNACKNOWLEDGED_LOSS_MESSAGE,
                     "unresolved_scenarios": [],
                 },
             )
@@ -1711,12 +1883,13 @@ def _repair_block_scenarios(
 ) -> list[UnresolvedScenario]:
     """Map blocked repairs onto the recovery scenarios they resolve through (D249/D250).
 
-    M64/M65's closed operation set knows two blocks, both cell-less: ``wrap_into_cell`` and a
+    M64/M65's closed operation set knows two cell-less blocks: ``wrap_into_cell`` and a
     ``center`` whose ``cell_center`` reference/target names a frame without one — both compose
     with the existing ``missing_lattice`` recovery — the scenario, canonical path, and
     pair-specific option list (computed for the concrete target, never static) come from the
     existing machinery, so the repair refuses exactly the way a target-required lattice would
-    (nothing new is invented). A block whose reason maps to no recovery scenario raises: the
+    (nothing new is invented). A third block, ``select_frames`` selecting no frame, is a caller
+    error raised as ``RepairError``. A block whose reason maps to no recovery scenario raises: the
     engine can neither refuse it through recovery nor honestly proceed."""
     caps = matrix.get(target_format_id, "write")
     scenarios: list[UnresolvedScenario] = []
@@ -1733,6 +1906,13 @@ def _repair_block_scenarios(
                         target_supports_multifile=output_multifile,
                     ),
                 )
+            )
+        elif block.reason == REPAIR_BLOCK_EMPTY_SELECTION:
+            # Nothing can be "recovered" into a selection the caller never made: a caller mistake
+            # (CLI exit 1, API MALFORMED_REQUEST), not a refusal with an empty option list.
+            raise RepairError(
+                f"repair {block.operation!r}: {block.detail} - correct the frame range "
+                "(there is nothing to recover into an empty selection)"
             )
         else:
             raise RepairError(
@@ -2004,6 +2184,9 @@ def _filter_frame(frame: Frame, plan: set[str]) -> Frame:
         symbols=list(frame.atoms.symbols),
         positions=frame.atoms.positions,
         masses=frame.atoms.masses if "atoms.masses" in plan else None,
+        # Same rule as masses (C1, D303): before this, occupancies were never copied, so CIF -> CIF
+        # dropped the column while the report listed the field as preserved (pre-existing, M35).
+        occupancies=frame.atoms.occupancies if "atoms.occupancies" in plan else None,
     )
 
     cell = None

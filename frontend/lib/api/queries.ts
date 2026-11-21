@@ -239,6 +239,7 @@ export async function submitConvert(
         acknowledge_parse_warnings: false,
         allow_recovery: true,
         tolerance_profile: options.toleranceProfile ?? "default",
+        dry_run: false,
       },
     },
   });

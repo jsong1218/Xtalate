@@ -128,8 +128,8 @@ def test_length9_flattened_stress_carry_does_not_crash_export_warnings() -> None
     # ASEDB-1 (review R4): ASE can flatten a full 3×3 calculator stress to a bare length-9
     # array on .traj write, so a carried value of that shape must not broadcast-crash the
     # drop-check against the written (3, 3) tensor — the comparison is skipped (export_warnings
-    # runs unguarded from the conversion engine). The sign-change warning still fires (the
-    # field is populated); no STRESS_CARRY_DROPPED is claimed for an uncomparable carry.
+    # runs unguarded from the conversion engine). No warning fires (sign is
+    # unchanged); no STRESS_CARRY_DROPPED is claimed for an uncomparable carry.
     tensor = np.array([[1.0, 0.5, 0.25], [0.5, 2.0, 0.75], [0.25, 0.75, 3.0]], dtype=float)
     flat9 = np.arange(9, dtype=float) + 1.0
     frame = Frame(
@@ -153,4 +153,4 @@ def test_length9_flattened_stress_carry_does_not_crash_export_warnings() -> None
         ),
     )
     warnings = make_ase_traj_exporter().export_warnings(obj)
-    assert [w.code for w in warnings] == ["STRESS_SIGN_CONVENTION_CHANGED"]
+    assert warnings == []

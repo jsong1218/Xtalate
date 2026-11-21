@@ -20,8 +20,13 @@ in the separate worker process, where it rebuilds the adapters from the environm
 
 from __future__ import annotations
 
+import os
+import tempfile
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from backend.db import as_utc, utcnow
@@ -64,12 +69,122 @@ def _error_body(
     ).model_dump(mode="json")
 
 
+_CHUNK = 1024 * 1024
+
+
+@contextmanager
+def _spooled(object_store: ObjectStore, key: str) -> Iterator[Path]:
+    """Spool an object to a temp file and yield its path; the file is removed on exit.
+
+    ``b"".join(chunks)`` holds the chunk list *and* the joined bytes at once (a 2x transient peak
+    per job); writing chunks to disk first means the upload costs its own size once when a job
+    needs bytes (``path.read_bytes()``) and nothing when the engine can stream from the file.
+    ``ObjectNotFound`` from ``open`` propagates unchanged (the runner maps it to FILE_NOT_FOUND)."""
+    fd, name = tempfile.mkstemp(prefix="xtalate-spool-")
+    path = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as handle, object_store.open(key) as chunks:
+            for chunk in chunks:
+                handle.write(chunk)
+        yield path
+    finally:
+        path.unlink(missing_ok=True)
+
+
 def _read_bytes(object_store: ObjectStore, key: str) -> bytes:
-    """Materialize an object's bytes. M22 reads the whole file (Tier 0 sizes); the streaming
-    convert path (frame-chunked, `M12`) wires through here in a later increment without a shape
-    change — the object store already yields chunks (**P6**)."""
-    with object_store.open(key) as chunks:
-        return b"".join(chunks)
+    """An object's bytes, read once from a spooled file (no chunk-list + joined-copy 2x peak).
+    The engine APIs behind inspect/analyze/revalidate take ``bytes``, so those jobs cannot stream;
+    convert streams through :func:`_try_convert_streamed` and only falls back to this."""
+    with _spooled(object_store, key) as path:
+        return path.read_bytes()
+
+
+def _file_chunks(path: Path) -> Iterator[bytes]:
+    with path.open("rb") as handle:
+        while chunk := handle.read(_CHUNK):
+            yield chunk
+
+
+def _try_convert_streamed(
+    engine: Any,
+    spool: Path,
+    *,
+    upload: Any,
+    target_format_id: str,
+    options: dict[str, Any],
+    recovery_choices: dict[str, Any],
+    repairs: list[Any],
+    resumed: bool,
+    output_key: str,
+    job_id: str,
+    repository: Repository,
+    object_store: ObjectStore,
+    registry: Registry,
+    settings: Settings,
+) -> tuple[Any, str] | None:
+    """Convert straight from the spooled file through ``ConversionEngine.convert_stream`` (one
+    frame resident), or return ``None`` so the caller runs the unchanged materialized path.
+
+    ``None`` is returned — before or after streaming — whenever the outcome could differ from the
+    materialized path's: strict mode, a dry run, any recovery choice or repair, a resumed pause, an
+    unsniffable or ineligible pair, an engine ``ValueError`` (a runtime exclusion), a mid-stream
+    ``ParseError`` (the materialized parse re-raises it with the same envelope), and a *refused*
+    streamed result (the data-dependent ``ambiguous_stress_convention`` refusal: the materialized
+    run owns the ``awaiting_recovery`` pause and the refusal report). The partial streamed output
+    is always discarded, so a fallback is a second pass, never a different answer.
+    ``FrameLimitExceeded`` is deliberately **not** caught: it maps to ``FRAME_LIMIT_EXCEEDED``."""
+    from xtalate.discovery import Sniffer
+    from xtalate.discovery.sniffer import HEAD_SIZE
+    from xtalate.sdk import ParseError
+
+    if (
+        options.get("mode", "permissive") != "permissive"
+        or options.get("dry_run")
+        or recovery_choices
+        or repairs
+        or resumed
+    ):
+        return None
+    with spool.open("rb") as head_stream:
+        head = head_stream.read(HEAD_SIZE)
+    fmt = Sniffer(registry).sniff(head, upload.filename).format_id
+    if fmt is None or fmt not in {p.format_id for p in registry.parsers()}:
+        return None
+    try:
+        if not engine.streaming_eligible(fmt, target_format_id):
+            return None
+    except KeyError:
+        return None  # unknown target: the materialized path surfaces its own error
+
+    repository.set_job_progress(job_id, {"phase": "converting"})
+    fd, name = tempfile.mkstemp(prefix="xtalate-out-")
+    out_path = Path(name)
+    try:
+        with os.fdopen(fd, "w+b") as output, spool.open("rb") as source:
+            try:
+                result = engine.convert_stream(
+                    source,
+                    source_format_id=fmt,
+                    target_format_id=target_format_id,
+                    output=output,
+                    source_filename=upload.filename,
+                    source_sha256=upload.sha256,
+                    target_filename=options.get("output_filename"),
+                    mode="permissive",
+                    tolerance_profile=resolve_tolerance_profile(
+                        options.get("tolerance_profile", "default")
+                    ),
+                    acknowledge_loss=options.get("acknowledge_loss", False),
+                    max_frames=settings.max_frames,
+                )
+            except (ValueError, ParseError):
+                return None
+        if result.report.status == "refused":
+            return None
+        object_store.put(output_key, _file_chunks(out_path))
+        return result, fmt
+    finally:
+        out_path.unlink(missing_ok=True)
 
 
 def execute_job(
@@ -461,109 +576,174 @@ def _run_convert(
     # absent on the initial submit, so preset choices stay ``origin: "preset"``.
     recovery_origin = "user" if request.get("recovery_resumed") else "preset"
 
-    data = _read_bytes(object_store, upload.storage_key)
-    parsed = parse_with_recovery(
-        registry,
-        data,
-        filename=upload.filename,
-        recovery_choices=recovery_choices,
-        # The frame cap is a service policy (M39-S3, F1): an over-cap trajectory is refused
-        # mid-stream (``FrameLimitExceeded`` → 422 ``FRAME_LIMIT_EXCEEDED``) without materializing.
-        max_frames=settings.max_frames,
-    )
-    repository.set_job_progress(job.job_id, {"phase": "converting"})
     engine = ConversionEngine(registry)
-    result = engine.convert(
-        parsed.canonical,
-        source_format_id=parsed.format_id,
-        target_format_id=target_format_id,
-        source_filename=upload.filename,
-        # The digest the upload computed over these exact bytes (Part 2 §3.7 Provenance). Without
-        # it the report names a *filename*, which is not evidence — two files may share one. This
-        # is the field that lets a reader prove which bytes a recorded conversion consumed, so the
-        # service passes the value it stored rather than leaving the report's `source.sha256` null.
-        source_sha256=upload.sha256,
-        target_filename=options.get("output_filename"),
-        mode=options.get("mode", "permissive"),
-        recovery_choices=recovery_choices,
-        recovery_origin=recovery_origin,
-        parse_recovery=parsed,
-        repairs=repairs,
-        acknowledge_loss=options.get("acknowledge_loss", False),
-        acknowledge_parse_warnings=options.get("acknowledge_parse_warnings", False),
-        # Resolved, not passed through: the engine takes a named profile *or* a built
-        # `ToleranceProfile`, and the wire also allows a custom §4.4 table — which only this
-        # resolver turns into one (the submit endpoint has already validated it).
-        tolerance_profile=resolve_tolerance_profile(options.get("tolerance_profile", "default")),
-        # The service serves a *single* download per conversion (Part 6 §4.4), so it declares a
-        # single-file output sink: `split_all` (one file per frame) is neither offered in the
-        # recovery pause nor accepted if posted directly — it fails the offered-set check and the
-        # conversion refuses, rather than completing with per-frame outputs the service cannot
-        # deliver (Part 4 §3.3, "offered when the job's output mode permits multiple files"). Per-
-        # frame splitting stays a CLI capability, which writes the files into a directory.
-        output_multifile=False,
-    )
+    conversion_id = _new_id("cnv")
+    output_key = f"outputs/{conversion_id}"
 
-    # Interactive recovery (Part 6 §3.2): a needed-but-unsupplied choice pauses rather than refuses,
-    # but only when the client opted in. The draft is the pre-flight preview; the option lists come
-    # from the trial convert's refusal (the authoritative, pair-specific computed set).
-    refusal = result.report.refusal  # a plain dict body (Part 4 §4), or None when not refused.
-    if (
-        allow_recovery
-        and result.report.status == "refused"
-        and isinstance(refusal, dict)
-        and refusal.get("code") == "RECOVERY_REQUIRED"
-    ):
-        draft = engine.preflight(
+    with _spooled(object_store, upload.storage_key) as spool:
+        streamed = _try_convert_streamed(
+            engine,
+            spool,
+            upload=upload,
+            target_format_id=target_format_id,
+            options=options,
+            recovery_choices=recovery_choices,
+            repairs=repairs,
+            resumed=bool(request.get("recovery_resumed")),
+            output_key=output_key,
+            job_id=job.job_id,
+            repository=repository,
+            object_store=object_store,
+            registry=registry,
+            settings=settings,
+        )
+        data = b"" if streamed is not None else spool.read_bytes()
+
+    output_available = False
+    output_expires_at: datetime | None = None
+    if streamed is not None:
+        result, source_format_id = streamed
+        output_available = True
+    else:
+        parsed = parse_with_recovery(
+            registry,
+            data,
+            filename=upload.filename,
+            recovery_choices=recovery_choices,
+            # The frame cap is a service policy (M39-S3, F1): an over-cap trajectory is refused
+            # mid-stream (``FrameLimitExceeded`` → 422 ``FRAME_LIMIT_EXCEEDED``) without
+            # materializing.
+            max_frames=settings.max_frames,
+        )
+        repository.set_job_progress(job.job_id, {"phase": "converting"})
+        source_format_id = parsed.format_id
+        if options.get("dry_run"):
+            # Preflight-only (QoL Q4): repairs applied strictly, nothing converted, validated or
+            # stored. A blocked need is a *report* (status awaiting_recovery), never a job pause —
+            # a dry run asks nothing of the caller. A malformed repair raises RepairError inside
+            # dry_run and fails the job MALFORMED_REQUEST through the same funnel as a real run.
+            # No Conversion row and no object-store bytes are written: only this Report row, with
+            # a NULL conversion_id, which build_job_result recognizes as a dry-run payload.
+            dry = engine.dry_run(
+                parsed.canonical,
+                source_format_id=parsed.format_id,
+                target_format_id=target_format_id,
+                source_filename=upload.filename,
+                source_sha256=upload.sha256,
+                target_filename=options.get("output_filename"),
+                mode=options.get("mode", "permissive"),
+                # Mirrors the service's single-file download sink (as the real run below).
+                output_multifile=False,
+                repairs=repairs,
+                parse_issues=parsed.issues,
+                acknowledge_loss=options.get("acknowledge_loss", False),
+                acknowledge_parse_warnings=options.get("acknowledge_parse_warnings", False),
+            )
+            repository.add_report(
+                Report(
+                    report_id=_new_id("rep"),
+                    job_id=job.job_id,
+                    conversion_id=None,
+                    kind="conversion",
+                    body=dry.report.model_dump(mode="json"),
+                )
+            )
+            return
+        result = engine.convert(
             parsed.canonical,
             source_format_id=parsed.format_id,
             target_format_id=target_format_id,
             source_filename=upload.filename,
-            # Carried on the draft too: the pause shows this report while it waits, and a preview
-            # that cannot say which bytes it describes is not the same document as the final one.
+            # The digest the upload computed over these exact bytes (Part 2 §3.7 Provenance).
+            # Without it the report names a *filename*, which is not evidence — two files may share
+            # one. This is the field that lets a reader prove which bytes a recorded conversion
+            # consumed, so the service passes the value it stored rather than leaving the report's
+            # `source.sha256` null.
             source_sha256=upload.sha256,
             target_filename=options.get("output_filename"),
             mode=options.get("mode", "permissive"),
-            # Same single-file sink as the trial convert above, so the pause offers exactly the
-            # option set the resume will honour (no `split_all`).
-            output_multifile=False,
-            # The pause draft must describe the *repaired* bytes the resume converts (D250's repair
-            # placement; REPAIR-H3) — the same ordered repair list the trial convert above applied.
+            recovery_choices=recovery_choices,
+            recovery_origin=recovery_origin,
+            parse_recovery=parsed,
             repairs=repairs,
+            acknowledge_loss=options.get("acknowledge_loss", False),
+            acknowledge_parse_warnings=options.get("acknowledge_parse_warnings", False),
+            # Resolved, not passed through: the engine takes a named profile *or* a built
+            # `ToleranceProfile`, and the wire also allows a custom §4.4 table — which only this
+            # resolver turns into one (the submit endpoint has already validated it).
+            tolerance_profile=resolve_tolerance_profile(
+                options.get("tolerance_profile", "default")
+            ),
+            # The service serves a *single* download per conversion (Part 6 §4.4), so it declares a
+            # single-file output sink: `split_all` (one file per frame) is neither offered in the
+            # recovery pause nor accepted if posted directly — it fails the offered-set check and
+            # the conversion refuses, rather than completing with per-frame outputs the service
+            # cannot deliver (Part 4 §3.3, "offered when the job's output mode permits multiple
+            # files"). Per- frame splitting stays a CLI capability, which writes the files into a
+            # directory.
+            output_multifile=False,
         )
-        raise RecoveryPause(
-            build_awaiting_block(
-                draft_report=draft.model_dump(mode="json"),
-                refusal=refusal,
+
+        # Interactive recovery (Part 6 §3.2): a needed-but-unsupplied choice pauses rather than
+        # refuses, but only when the client opted in. The draft is the pre-flight preview; the
+        # option lists come from the trial convert's refusal (the authoritative, pair-specific
+        # computed set).
+        refusal = result.report.refusal  # a plain dict body (Part 4 §4), or None when not refused.
+        if (
+            allow_recovery
+            and result.report.status == "refused"
+            and isinstance(refusal, dict)
+            and refusal.get("code") == "RECOVERY_REQUIRED"
+        ):
+            draft = engine.preflight(
+                parsed.canonical,
+                source_format_id=parsed.format_id,
+                target_format_id=target_format_id,
+                source_filename=upload.filename,
+                # Carried on the draft too: the pause shows this report while it waits, and a
+                # preview that cannot say which bytes it describes is not the same document as the
+                # final one.
+                source_sha256=upload.sha256,
+                target_filename=options.get("output_filename"),
+                mode=options.get("mode", "permissive"),
+                # Same single-file sink as the trial convert above, so the pause offers exactly the
+                # option set the resume will honour (no `split_all`).
+                output_multifile=False,
+                # The pause draft must describe the *repaired* bytes the resume converts (D250's
+                # repair placement; REPAIR-H3) — the same ordered repair list the trial convert
+                # above applied.
+                repairs=repairs,
             )
+            raise RecoveryPause(
+                build_awaiting_block(
+                    draft_report=draft.model_dump(mode="json"),
+                    refusal=refusal,
+                )
+            )
+
+        # Store the output bytes (unless refused, which produces none). The record row carries the
+        # storage key and a byte-expiry horizon; when the output-byte lifecycle sweep clears the
+        # bytes (a bucket rule in Tier 1, Part 9 §5.2) the record and its reports still resolve — a
+        # download past ``output_expires_at`` is a ``410 OUTPUT_EXPIRED`` while the reports stay
+        # retrievable (reports-outlive-bytes). The horizon matches the storage lifecycle window
+        # (``output_retention_hours``) so the record's own clock agrees with the platform's sweep.
+        #
+        # Defence in depth: this stores the single ``result.output`` only. A ``split_all``
+        # conversion instead populates ``result.outputs`` (one file per frame) and leaves
+        # ``output`` ``None`` — which this path would silently drop, completing a conversion with
+        # no downloadable bytes. The service forbids that upstream (it converts with
+        # ``output_multifile=False``, so ``split_all`` is never offered or accepted), and this
+        # assertion pins the invariant: if a future change let a multi-file result reach here, fail
+        # loudly rather than lose the outputs (P1, no silent loss).
+        assert result.outputs is None, (
+            "multi-file (split_all) output reached the single-download service runner; "
+            "the HTTP path must convert with output_multifile=False"
         )
+        if result.output is not None:
+            object_store.put(output_key, [result.output])
+            output_available = True
 
-    conversion_id = _new_id("cnv")
-
-    # Store the output bytes (unless refused, which produces none). The record row carries the
-    # storage key and a byte-expiry horizon; when the output-byte lifecycle sweep clears the bytes
-    # (a bucket rule in Tier 1, Part 9 §5.2) the record and its reports still resolve — a download
-    # past ``output_expires_at`` is a ``410 OUTPUT_EXPIRED`` while the reports stay retrievable
-    # (reports-outlive-bytes). The horizon matches the storage lifecycle window
-    # (``output_retention_hours``) so the record's own clock agrees with the platform's sweep.
-    #
-    # Defence in depth: this stores the single ``result.output`` only. A ``split_all`` conversion
-    # instead populates ``result.outputs`` (one file per frame) and leaves ``output`` ``None`` —
-    # which this path would silently drop, completing a conversion with no downloadable bytes. The
-    # service forbids that upstream (it converts with ``output_multifile=False``, so ``split_all``
-    # is never offered or accepted), and this assertion pins the invariant: if a future change let
-    # a multi-file result reach here, fail loudly rather than lose the outputs (P1, no silent loss).
-    assert result.outputs is None, (
-        "multi-file (split_all) output reached the single-download service runner; "
-        "the HTTP path must convert with output_multifile=False"
-    )
-    output_key: str | None = None
-    output_available = False
-    output_expires_at: datetime | None = None
-    if result.output is not None:
-        output_key = f"outputs/{conversion_id}"
-        object_store.put(output_key, [result.output])
-        output_available = True
+    if output_available:
         output_expires_at = utcnow() + timedelta(hours=settings.output_retention_hours)
 
     validation_status = result.validation.status if result.validation else None
@@ -572,9 +752,9 @@ def _run_convert(
             conversion_id=conversion_id,
             job_id=job.job_id,
             source_file_id=upload.file_id,
-            source_format=parsed.format_id,
+            source_format=source_format_id,
             target_format=target_format_id,
-            output_storage_key=output_key,
+            output_storage_key=output_key if output_available else None,
             output_available=output_available,
             output_expires_at=output_expires_at,
             conversion_status=result.report.status,

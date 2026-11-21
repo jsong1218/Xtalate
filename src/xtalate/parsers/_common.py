@@ -9,8 +9,10 @@ that boilerplate so each format module stays focused on its grammar. It imports 
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
+import numpy as np
 from pydantic import TypeAdapter
 
 from xtalate import __version__
@@ -127,3 +129,20 @@ def build_provenance(
         parse_notes=list(parse_notes),
         history=[parse_record(format_id, parser_version=parser_version)],
     )
+
+
+def floats_from_tokens(tokens: Sequence[str]) -> np.ndarray:
+    """Convert string tokens to a 1-D ``float64`` array with exactly ``float()`` semantics.
+
+    A convenience for callers that want an ``ndarray`` (the XDATCAR and LAMMPS dump readers),
+    not a fast path: NumPy still converts each string element by element, and for a caller
+    that needs Python lists a plain ``float()`` loop measured faster (vasprun, I1/D303). The
+    token-acceptance investigation (``1_0``, ``nan``, ``inf``, ``-Infinity``, ``1e5``,
+    ``0x10``, ``1,5``, leading space, ``1d5``, non-ASCII digits, ``1e``, empty, ``--1``) found
+    numpy's string conversion agreeing with ``float()`` on every probe. Raises ``ValueError``
+    if any token is not a valid float; callers that need a *located* error message (parsers)
+    catch it and replay a per-token loop to name the offending token, so the message text is
+    theirs, never this helper's (error-message stability, spec E4).
+    """
+    out: np.ndarray = np.array(list(tokens), dtype=np.float64)
+    return out

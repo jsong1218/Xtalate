@@ -127,6 +127,9 @@ SCENARIO_HAZARD: dict[str, HazardClass] = {
     # exactly like ambiguous_units. A style *outside* the supported set is not an ambiguity to
     # resolve — the parser refuses it as unsupported, never offers it here.
     "ambiguous_atom_style": HazardClass.FABRICATIVE,
+    # M-A5: the source stated no (or an incomplete) boundary; the periodicity is a value the file
+    # never said, so it is a recorded fabrication with a `cell.pbc` supplied entry (P3/P4).
+    "ambiguous_periodicity": HazardClass.FABRICATIVE,
     "frame_selection": HazardClass.SELECTIVE_REDUCTIVE,
     "truncate_corrupt_tail": HazardClass.SELECTIVE_REDUCTIVE,
     "constraint_representation": HazardClass.SELECTIVE_REDUCTIVE,
@@ -222,16 +225,19 @@ def available_options(
             options.append("omit")
         return options
     if scenario == "missing_masses":
-        # M8: IUPAC standard atomic weights (a reported default) or a caller-supplied list.
+        # M8: standard atomic weights from ASE's table (a reported default) or a caller list.
         return ["standard_masses", "manual_input"]
     if scenario == "ambiguous_stress_convention":
-        # M40: the two-option core — the source-declared sign convention of a carried extXYZ
-        # stress tensor (ASE's convention is compression-positive, the opposite of the canonical
-        # tension-positive, Part 2 §3.7.1). `virial` is the named cut line: it needs the cell
-        # volume for the virial↔stress volume-scaling relation, so it would be offered only when
+        # M40/A2: the two-option core — the source-declared sign convention of a carried extXYZ
+        # stress tensor. ASE's own get_stress() is TENSION-positive (verified against ASE 3.29
+        # with EMT), identical to the canonical convention (Part 2 §3.7.1), so the default
+        # reading is "as-is". `compression_positive` is for files written by producers that
+        # use the opposite sign (e.g. raw VASP/QE-style virials); it inverts the sign.
+        # `virial` is the named cut line: it needs the cell volume for the virial↔stress
+        # volume-scaling relation, so it would be offered only when
         # the frame volume is available, and it tracks to v1.1.1 — absent from the offered list
         # until then, so naming it refuses (never offered-then-refused, Part 4 §3.3).
-        return ["ase_sign_convention", "tension_positive"]
+        return ["tension_positive", "compression_positive"]
     if scenario == "ambiguous_units":
         # M46: exactly the three styles whose conversion factors are hand-verified (Å/ps/eV,
         # Å/fs/kcal-per-mol, m/s/J — the shared `_lammps` unit tables). The list starts at
@@ -249,6 +255,8 @@ def available_options(
         # documented atom-style list. A style beyond these three is not an ambiguity to resolve —
         # the parser refuses it as unsupported rather than offering it here.
         return ["atomic", "charge", "full"]
+    if scenario == "ambiguous_periodicity":
+        return ["periodic", "non_periodic"]
     if scenario == "asedb_row_selection":
         # M55/M73-S5: `index` re-parses exactly one row as a standalone structure (parameter
         # `row`, a 0-based ordinal in the database's insertion order — the ids the message lists
@@ -266,3 +274,139 @@ def available_options(
         # or abort (Part 4 §3.3).
         return ["truncate", "abort"]
     return []
+
+
+#: Plain-language, one-sentence statement of what each scenario asks (Q1). Rendered by the CLI when
+#: a conversion refuses/pauses and by ``xtalate scenarios``. Every key of ``SCENARIO_HAZARD`` must
+#: appear here (``tests/recovery/test_scenario_descriptions.py`` fails otherwise), so a new
+#: scenario cannot ship without its explanation.
+SCENARIO_DESCRIPTIONS: dict[str, str] = {
+    "missing_lattice": (
+        "The target format needs a simulation cell (lattice) and the source has none."
+    ),
+    "missing_species": "The source has atoms but no element symbols; the target needs them.",
+    "missing_velocities": "The target stores velocities and the source has none.",
+    "missing_masses": "The target stores atomic masses and the source has none.",
+    "missing_energy": "The target requires a total energy and the source has none.",
+    "ambiguous_stress_convention": (
+        "The source carries a stress tensor whose sign convention is not declared."
+    ),
+    "ambiguous_units": "A LAMMPS unit system is not declared; one must be named.",
+    "ambiguous_periodicity": ("The source has a box but does not say whether it is periodic."),
+    "ambiguous_atom_style": (
+        "A LAMMPS atom style (column layout) is not declared; one must be named."
+    ),
+    "frame_selection": "The source has several frames and the target holds exactly one.",
+    "truncate_corrupt_tail": "The source ends with a corrupt or incomplete trailing frame.",
+    "constraint_representation": (
+        "The source has atom constraints the target cannot represent exactly."
+    ),
+    "asedb_row_selection": "The source database holds several rows and one structure is needed.",
+}
+
+#: Plain-language statement of what each *choice* does (Q1), keyed ``(scenario, choice)``. Every
+#: choice any ``available_options`` call can offer must appear here (coverage test).
+CHOICE_DESCRIPTIONS: dict[tuple[str, str], str] = {
+    ("missing_lattice", "manual_input"): (
+        "Supply a 3x3 lattice yourself (parameter: lattice). Not settable with --recover; "
+        "available through the Web UI or the HTTP API."
+    ),
+    ("missing_lattice", "upload_reference"): (
+        "Take the lattice from a second structure file (parameter: file=PATH)."
+    ),
+    ("missing_lattice", "bounding_box"): (
+        "Build an axis-aligned bounding box around the atoms plus padding "
+        "(parameter: padding_ang). "
+        "The atoms are rigidly translated into the box (interatomic distances are unchanged); a "
+        "multi-frame source shares one box and one shift."
+    ),
+    ("missing_lattice", "non_periodic"): (
+        "Not yet available: offered for open-structure targets but not implemented, so choosing "
+        "it is refused. Use bounding_box instead."
+    ),
+    ("missing_species", "species_map"): (
+        "Give the element symbols yourself (parameter: species): type:symbol pairs for a LAMMPS "
+        "source (e.g. '1:Si 2:O'), otherwise the symbols in order."
+    ),
+    ("missing_species", "upload_reference"): "Read the element symbols from a reference structure.",
+    ("missing_velocities", "zero_init"): "Write zero velocities for every atom.",
+    ("missing_velocities", "maxwell_boltzmann"): (
+        "Draw random velocities at a temperature (parameters: temperature_K, seed). Needs masses: "
+        "if the source has none, also pass missing_masses=standard_masses."
+    ),
+    ("missing_velocities", "upload_reference"): "Take velocities from a second structure file.",
+    ("missing_velocities", "omit"): "Leave velocities out of the output.",
+    ("missing_masses", "standard_masses"): (
+        "Fill masses from standard atomic weights (ASE's table, ase.data.atomic_masses)."
+    ),
+    ("missing_masses", "manual_input"): (
+        "Supply one mass per atom yourself (parameter: masses). Not settable with --recover; "
+        "available through the Web UI or the HTTP API."
+    ),
+    ("ambiguous_stress_convention", "tension_positive"): (
+        "The stress is tension-positive (ASE's convention and the canonical one); kept as written."
+    ),
+    ("ambiguous_stress_convention", "compression_positive"): (
+        "The stress is compression-positive; its sign is inverted to the canonical "
+        "tension-positive."
+    ),
+    ("ambiguous_periodicity", "periodic"): "Treat the box as periodic in all three directions.",
+    (
+        "ambiguous_periodicity",
+        "non_periodic",
+    ): "Treat the system as non-periodic (no boundary conditions).",
+    ("ambiguous_units", "metal"): (
+        "Use LAMMPS 'metal' units (Angstrom, picosecond, eV): used to interpret the input "
+        "when reading a LAMMPS file, and written as the unit system when writing one."
+    ),
+    ("ambiguous_units", "real"): (
+        "Use LAMMPS 'real' units (Angstrom, femtosecond, kcal/mol): used to interpret the input "
+        "when reading a LAMMPS file, and written as the unit system when writing one."
+    ),
+    ("ambiguous_units", "si"): (
+        "Use LAMMPS 'si' units (metre, second, joule): used to interpret the input "
+        "when reading a LAMMPS file, and written as the unit system when writing one."
+    ),
+    ("ambiguous_atom_style", "atomic"): (
+        "Atom style 'atomic' (columns: id type x y z), used to interpret the atom columns "
+        "when reading a LAMMPS data file."
+    ),
+    ("ambiguous_atom_style", "charge"): (
+        "Atom style 'charge' (columns: id type q x y z), used to interpret the atom columns "
+        "when reading a LAMMPS data file."
+    ),
+    ("ambiguous_atom_style", "full"): (
+        "Atom style 'full' (columns: id molecule-id type q x y z), used to interpret the atom "
+        "columns when reading a LAMMPS data file."
+    ),
+    ("frame_selection", "first"): "Keep only the first frame.",
+    ("frame_selection", "last"): "Keep only the last frame.",
+    ("frame_selection", "index"): "Keep one frame by position (parameter: frame_index, 0-based).",
+    ("frame_selection", "split_all"): "Write one output file per frame into a directory.",
+    ("truncate_corrupt_tail", "truncate"): "Keep the good frames and discard the corrupt tail.",
+    ("truncate_corrupt_tail", "abort"): "Stop; do not convert a damaged file.",
+    ("constraint_representation", "project"): (
+        "Keep the constraints the target can represent; list the rest as removed."
+    ),
+    ("constraint_representation", "drop_all"): "Drop every constraint and report it as removed.",
+    ("asedb_row_selection", "index"): "Convert one row by position (parameter: row, 0-based).",
+    ("asedb_row_selection", "all"): (
+        "Convert every row to its own output (batch conversion only; a single-file convert "
+        "refuses it)."
+    ),
+}
+
+_GENERIC_SCENARIO = (
+    "A choice is needed to continue (no description is registered for this scenario)."
+)
+_GENERIC_CHOICE = "No description is registered for this choice."
+
+
+def describe_scenario(scenario: str) -> str:
+    """Plain-language description of ``scenario``; a generic sentence for an unregistered one."""
+    return SCENARIO_DESCRIPTIONS.get(scenario, _GENERIC_SCENARIO)
+
+
+def describe_choice(scenario: str, choice: str) -> str:
+    """Plain-language description of ``choice``; a generic sentence for an unregistered one."""
+    return CHOICE_DESCRIPTIONS.get((scenario, choice), _GENERIC_CHOICE)

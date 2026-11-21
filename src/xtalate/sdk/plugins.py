@@ -192,9 +192,9 @@ class ExporterPlugin(ABC):
 
         Additive and optional, like ``atom_permutation`` (DECISIONS.md D23) and streaming (D56):
         the default returns no warnings, so existing/third-party exporters keep working unchanged.
-        An exporter overrides it only when writing can change *representation* — e.g. extXYZ
-        reverses the canonical tension-positive stress to the compression-positive convention its
-        ASE-native files carry, and reports ``STRESS_SIGN_CONVENTION_CHANGED``. The engine calls
+        An exporter overrides it only when writing can change *representation* — e.g. an
+        exporter whose format mandates the opposite stress sign convention would report
+        ``STRESS_SIGN_CONVENTION_CHANGED``. The engine calls
         this once per conversion with the write-plan-filtered object (``canonical′``) and maps the
         result to ``ReportWarning(source="export")``; the exporter owns the decision, never the
         engine (the engine cannot know which transformations a foreign exporter applies).

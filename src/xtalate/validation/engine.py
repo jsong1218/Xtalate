@@ -26,7 +26,6 @@ from io import BytesIO
 from typing import Any, Protocol
 
 import numpy as np
-from ase.stress import voigt_6_to_full_3x3_stress
 
 from xtalate._time import utc_now
 from xtalate.capabilities import Registry
@@ -36,6 +35,7 @@ from xtalate.validation._shared import AGGREGATE as _AGGREGATE
 from xtalate.validation._shared import NUMERIC_FIELDS as _NUMERIC_FIELDS
 from xtalate.validation._shared import RANK as _RANK
 from xtalate.validation._shared import require_supported_precision
+from xtalate.validation._structural import StructuralTally
 from xtalate.validation.report import CheckResult, ValidationReport
 from xtalate.validation.tolerance import ToleranceProfile
 
@@ -204,6 +204,10 @@ class ValidationEngine:
             ),
             _check_report_consistency(conversion_report),
         ]
+        checks = _with_structural(
+            checks,
+            _check_structural(expected, canonical, perm, tolerance, precision, conversion_report),
+        )
         return self._finalize(
             conversion_report,
             expected.schema_version,
@@ -254,6 +258,17 @@ class ValidationEngine:
             ),
             _check_report_consistency(conversion_report),
         ]
+        checks = _with_structural(
+            checks,
+            _check_structural(
+                expected,
+                actual,
+                exporter.atom_permutation(expected),
+                tolerance,
+                write_caps.numeric_precision,
+                conversion_report,
+            ),
+        )
         return self._finalize(
             conversion_report,
             expected.schema_version,
@@ -336,8 +351,10 @@ def _check_species(
             mismatches += max(len(exp), len(got))
             continue
         fp = _perm_for(perm, len(exp))
-        order = fp if fp is not None else list(range(len(exp)))
-        mismatches += sum(1 for j in range(len(got)) if exp[order[j]] != got[j])
+        exp_arr = np.asarray(exp)
+        if fp is not None:
+            exp_arr = exp_arr[np.asarray(fp)]
+        mismatches += int(np.count_nonzero(exp_arr != np.asarray(got)))
     status = "fail" if mismatches else "pass"
     measured: dict[str, Any] = {
         "permutation_map": perm if perm is not None else "identity",
@@ -624,6 +641,38 @@ def _check_metadata(expected: CanonicalObject, canonical: CanonicalObject) -> Ch
     )
 
 
+def _check_structural(
+    expected: CanonicalObject,
+    canonical: CanonicalObject,
+    perm: list[int] | None,
+    tolerance: ToleranceProfile,
+    precision: dict[str, int | None],
+    report: ConversionReportView,
+) -> CheckResult | None:
+    """The conditional ``structural_fidelity`` check (``None`` = nothing structural to judge)."""
+    tally = StructuralTally()
+    n = min(len(expected.frames), len(canonical.frames))
+    for i in range(n):
+        ef, af = expected.frames[i], canonical.frames[i]
+        tally.observe(ef, af, _perm_for(perm, len(ef.atoms.symbols)))
+    return tally.result(
+        tolerance,
+        _representational_bound(precision, "atoms.occupancies"),
+        frozenset(e.path for e in report.removed),
+    )
+
+
+def _with_structural(
+    checks: list[CheckResult], structural: CheckResult | None
+) -> list[CheckResult]:
+    """Insert the conditional check immediately after ``metadata_preservation`` (shared by the batch
+    and streaming validators so their check order agrees)."""
+    if structural is None:
+        return checks
+    at = next(i for i, c in enumerate(checks) if c.check_id == "metadata_preservation") + 1
+    return [*checks[:at], structural, *checks[at:]]
+
+
 def _check_absence(
     canonical: CanonicalObject, report: ConversionReportView, *, carried_field_keys: dict[str, str]
 ) -> CheckResult:
@@ -735,18 +784,22 @@ def _carried_to_canonical(value: Any, path: str, stress_output_convention: str) 
     expected object is canonical. For ``electronic.stress`` that means undoing both the Voigt-6
     compression ASE applies on write (via ASE's own ``voigt_6_to_full_3x3_stress``, the exact
     inverse of the ordering ASE writes — the same normalization the recovery resolver applies,
-    Part 2 §3.7.1) and the sign convention: an exporter declaring ``ase_sign_convention`` writes
-    compression-positive, the inverse of the canonical tension-positive, so the expanded tensor is
-    negated; ``tension_positive`` is written as-is. A ``(3, 3)`` carry (a file that spelled all
-    nine components) is taken as-is. Every other carried path (none in v0.1) compares as-is. The
+    Part 2 §3.7.1) and the sign convention: an exporter declaring ``compression_positive`` (or its
+    deprecated spelling ``ase_sign_convention``) writes compression-positive, the inverse of the
+    canonical tension-positive, so the expanded tensor is negated; ``tension_positive`` is written
+    as-is. A ``(3, 3)`` carry (a file that spelled all nine components) is taken as-is. Every other
+    carried path (none in v0.1) compares as-is. The
     reversal is the documented inverse of a machine-readable declaration — not the parser
     interpreting the value (D18 stands: the parser still never maps stress on read).
     """
+
+    from ase.stress import voigt_6_to_full_3x3_stress
+
     arr = np.asarray(value, dtype=float)
     if path == "electronic.stress":
         if arr.shape == (6,):
             arr = np.asarray(voigt_6_to_full_3x3_stress(arr), dtype=np.float64)
-        if stress_output_convention == "ase_sign_convention":
+        if stress_output_convention in ("compression_positive", "ase_sign_convention"):
             return -arr
     return arr
 
@@ -764,8 +817,9 @@ def _representational_bound(precision: dict[str, int | None], path: str) -> floa
     It is unimplemented because nothing needs it. The bound this returns is in the *field's own*
     units, which is correct whenever a format writes coordinates at full round-trip precision — and
     every Phase 1 exporter does, including both fractional ones (``_fmt`` is ``repr(float(x))``).
-    So no exporter declares ``numeric_precision``, every bound is 0.0, and the §4.3 base tolerances
-    govern unchanged. Building the scaling now would be speculative machinery for a case no format
+    The extXYZ exporter declares 8 decimals for its per-atom columns (A3); every other exporter
+    currently declares none, so the bound is 0.0 for them and the §4.3 base tolerances govern
+    unchanged. Building the scaling now would be speculative machinery for a case no format
     reaches (**P6**); ``require_supported_precision`` is the guard that makes its absence loud
     rather than silent if one ever does.
     """
