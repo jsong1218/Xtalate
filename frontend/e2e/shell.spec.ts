@@ -37,20 +37,28 @@ test("the toolbar carries the primary navigation on every page", async ({ page }
 });
 
 /**
- * The theme toggle (addendum S1 mechanism, S2 mount; default flipped to dark by the v2.0 addendums
- * Steel workbench theme, Task 6): flips `data-theme` on <html> and persists the choice across a
- * reload. The token-level contrast of both themes is guarded in vitest; this proves the switch is
- * wired into the running app and sticks.
+ * The theme control (redesign D-B7): three states, System · Light · Dark. With no stored choice the
+ * page follows the OS scheme live; an explicit choice pins the theme and persists across a reload
+ * (applied before paint by the no-flash script). Playwright emulates the OS scheme.
  */
-test("the theme toggle switches to light and the choice persists", async ({ page }) => {
+test("the theme follows the system until a choice is made, and the choice persists", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
+  // Hydration attaches the live `change` listener; wait for it before flipping the OS scheme.
+  await page.waitForLoadState("networkidle");
   const html = page.locator("html");
-  await expect(html).toHaveAttribute("data-theme", "dark");
-
-  await page.getByRole("button", { name: /switch to light mode/i }).click();
   await expect(html).toHaveAttribute("data-theme", "light");
 
-  // Persisted: a reload comes back light, with no flash of dark (the no-FOUC script applies it).
+  // Live OS change while the preference is "system".
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(html).toHaveAttribute("data-theme", "dark");
+
+  // An explicit choice pins the theme regardless of the OS…
+  await page.getByRole("group", { name: "Theme" }).getByRole("button", { name: "Use light theme" }).click();
+  await expect(html).toHaveAttribute("data-theme", "light");
+  await expect(page.getByRole("button", { name: "Use light theme" })).toHaveAttribute("aria-pressed", "true");
+
+  // …and persists: a reload under a dark OS comes back light with no flash.
   await page.reload();
   await expect(html).toHaveAttribute("data-theme", "light");
 });

@@ -94,6 +94,12 @@ per-package license report from it with any standard tool (e.g. `npx license-che
 | remark-gfm | `^4.0.1` | MIT |
 | rehype-slug | `^6.0.0` | MIT |
 | molstar | `5.11.0` (pinned — the v1.6 M59-S2 geometry viewer, D233) | MIT |
+| lucide-react | `^1.73.0` (the redesign's icon set, through `components/ui/Icon.tsx`) | ISC |
+
+The redesign also self-hosts **IBM Plex Sans, Mono and Serif** (Latin1 subset woff2 under
+`frontend/app/fonts/`, loaded with `next/font/local`, no runtime fetch). They are not npm
+dependencies; the files are copied from the `@ibm/plex-sans`, `@ibm/plex-mono` and `@ibm/plex-serif`
+packages and are licensed under the SIL Open Font License 1.1 (`frontend/app/fonts/LICENSE-OFL.txt`).
 
 ## Test data
 

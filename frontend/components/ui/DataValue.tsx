@@ -13,6 +13,6 @@ export function DataValue({
   children: ReactNode;
   className?: string;
 }) {
-  const base = "font-mono text-strong";
+  const base = "font-mono tabular-nums text-strong";
   return <span className={className ? `${base} ${className}` : base}>{children}</span>;
 }

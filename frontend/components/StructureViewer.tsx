@@ -36,8 +36,12 @@ import {
 } from "@/lib/geometry/useTrajectoryWindow";
 import { TrajectoryScrubber } from "./TrajectoryScrubber";
 import { LossTag } from "@/components/loss/icons";
-import { StructureLegend } from "./StructureLegend";
 import type { CameraControls, ViewerControls } from "./StructureViewerMolstar";
+
+// StructureLegend pulls Mol* colour modules (~213 kB gzip); load it lazily so they stay out of route chunks.
+const StructureLegend = dynamic(() => import("./StructureLegend").then((m) => m.StructureLegend), {
+  ssr: false,
+});
 
 const MolstarView = dynamic(() => import("./StructureViewerMolstar"), {
   ssr: false,

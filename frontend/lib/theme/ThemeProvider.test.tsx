@@ -1,99 +1,129 @@
-import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it } from "vitest";
-import { ThemeProvider, ThemeToggle, THEME_STORAGE_KEY, useOptionalTheme, useTheme } from "./ThemeProvider";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  readStoredPreference,
+  resolveTheme,
+  ThemeProvider,
+  THEME_STORAGE_KEY,
+  useOptionalTheme,
+  useTheme,
+} from "./ThemeProvider";
 
 /**
- * The theme system (pre-M36 addendum, Slice S1; default flipped to dark by v2.0 addendums Task 6,
- * the Steel workbench palette). A persisted light/dark toggle that flips `data-theme` on <html> —
- * the attribute the CSS palette (globals.css) and Tailwind's selector dark-mode key off. Default is
- * dark; the user's explicit choice is remembered in localStorage.
+ * The theme system after the redesign (D-B7, reversing the D300 dark-first default): the preference
+ * is `system | light | dark`, persisted under the existing key; the resolved theme follows the OS
+ * while the preference is `system` and is pinned otherwise. `data-theme` on <html> is what the CSS
+ * palette and Tailwind's selector dark mode key off, so every path must land there.
  */
+
+type Listener = (e: { matches: boolean }) => void;
+let systemDark = false;
+const listeners = new Set<Listener>();
+
+function installMatchMedia() {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query.includes("dark") ? systemDark : !systemDark,
+    media: query,
+    addEventListener: (_: "change", cb: Listener) => listeners.add(cb),
+    removeEventListener: (_: "change", cb: Listener) => listeners.delete(cb),
+  })) as unknown as typeof window.matchMedia;
+}
+function flipSystem(dark: boolean) {
+  systemDark = dark;
+  listeners.forEach((cb) => cb({ matches: dark }));
+}
 
 function wrapper({ children }: { children: ReactNode }) {
   return <ThemeProvider>{children}</ThemeProvider>;
 }
 
+beforeEach(() => {
+  systemDark = false;
+  listeners.clear();
+  installMatchMedia();
+});
 afterEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
 });
 
+describe("resolveTheme / readStoredPreference", () => {
+  it("system follows the OS; explicit choices pin", () => {
+    expect(resolveTheme("system", "dark")).toBe("dark");
+    expect(resolveTheme("system", "light")).toBe("light");
+    expect(resolveTheme("light", "dark")).toBe("light");
+    expect(resolveTheme("dark", "light")).toBe("dark");
+  });
+
+  it("treats absent or invalid storage as system", () => {
+    expect(readStoredPreference()).toBe("system");
+    localStorage.setItem(THEME_STORAGE_KEY, "sepia");
+    expect(readStoredPreference()).toBe("system");
+    localStorage.setItem(THEME_STORAGE_KEY, "dark");
+    expect(readStoredPreference()).toBe("dark");
+  });
+});
+
 describe("useTheme", () => {
-  it("defaults to dark when nothing is persisted", () => {
+  it("defaults to the system preference and resolves from the OS", () => {
+    systemDark = true;
     const { result } = renderHook(() => useTheme(), { wrapper });
+    expect(result.current.preference).toBe("system");
     expect(result.current.theme).toBe("dark");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
-  it("adopts a persisted light choice on mount and applies it to <html>", () => {
+  it("follows an OS change while the preference is system", () => {
+    const { result } = renderHook(() => useTheme(), { wrapper });
+    expect(result.current.theme).toBe("light");
+    act(() => flipSystem(true));
+    expect(result.current.theme).toBe("dark");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+  });
+
+  it("adopts a persisted explicit choice and ignores the OS afterwards", () => {
     localStorage.setItem(THEME_STORAGE_KEY, "light");
+    systemDark = true;
     const { result } = renderHook(() => useTheme(), { wrapper });
+    expect(result.current.preference).toBe("light");
     expect(result.current.theme).toBe("light");
-    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    act(() => flipSystem(false));
+    act(() => flipSystem(true));
+    expect(result.current.theme).toBe("light");
   });
 
-  it("toggle() flips the theme, sets data-theme, and persists the choice", () => {
+  it("setPreference persists, resolves, and re-arms the OS listener for system", () => {
     const { result } = renderHook(() => useTheme(), { wrapper });
-
-    act(() => result.current.toggle());
-    expect(result.current.theme).toBe("light");
-    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
-
-    act(() => result.current.toggle());
-    expect(result.current.theme).toBe("dark");
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    act(() => result.current.setPreference("dark"));
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
-  });
-});
-
-describe("ThemeToggle", () => {
-  it("renders an accessible switch and toggles the theme when clicked", () => {
-    render(
-      <ThemeProvider>
-        <ThemeToggle />
-      </ThemeProvider>,
-    );
-    const button = screen.getByRole("button", { name: /light mode|dark mode|theme/i });
-    // Default is dark, so the initial affordance offers to switch to light.
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
-    expect(button).toHaveAttribute("aria-pressed", "true");
+    act(() => result.current.setPreference("system"));
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("system");
+    expect(result.current.theme).toBe("light");
+    act(() => flipSystem(true));
+    expect(result.current.theme).toBe("dark");
+  });
 
-    fireEvent.click(button);
-    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
-    expect(button).toHaveAttribute("aria-pressed", "false");
+  it("throws outside the provider", () => {
+    expect(() => renderHook(() => useTheme())).toThrow(/ThemeProvider/);
   });
 });
-
-function ThemeProbe() {
-  return <span data-testid="probe">{useOptionalTheme()}</span>;
-}
 
 describe("useOptionalTheme", () => {
-  it("returns dark with no provider and no data-theme attribute", () => {
-    document.documentElement.removeAttribute("data-theme");
-    const { getByTestId } = render(<ThemeProbe />);
-    expect(getByTestId("probe").textContent).toBe("dark");
+  it("falls back to dark with no provider and no attribute", () => {
+    const { result } = renderHook(() => useOptionalTheme());
+    expect(result.current).toBe("dark");
   });
-
-  it("reads the data-theme attribute when there is no provider", () => {
+  it("reads data-theme when there is no provider", () => {
     document.documentElement.setAttribute("data-theme", "light");
-    const { getByTestId } = render(<ThemeProbe />);
-    expect(getByTestId("probe").textContent).toBe("light");
-    document.documentElement.removeAttribute("data-theme");
+    const { result } = renderHook(() => useOptionalTheme());
+    expect(result.current).toBe("light");
   });
-
-  it("prefers the provider's theme when wrapped", () => {
-    // Set the attribute to "light", but the provider will initialize to "dark" (default, no
-    // localStorage). If the hook reads the attribute, it returns "light"; if it reads context, it
-    // returns "dark". This discriminates the two implementations.
+  it("prefers the provider's resolved theme", () => {
     document.documentElement.setAttribute("data-theme", "light");
-    const { getByTestId } = render(
-      <ThemeProvider>
-        <ThemeProbe />
-      </ThemeProvider>,
-    );
-    expect(getByTestId("probe").textContent).toBe("dark");
-    document.documentElement.removeAttribute("data-theme");
+    systemDark = true;
+    const { result } = renderHook(() => useOptionalTheme(), { wrapper });
+    expect(result.current).toBe("dark");
   });
 });

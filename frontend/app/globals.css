@@ -15,10 +15,11 @@
  *      `text-body` / `border-default` (aliased in tailwind.config.ts) instead of hard-coding
  *      `bg-white` / `text-slate-900`, so a single theme flip re-skins the whole app.
  *
- * **Two themes, dark-first (v2.0 addendums Task 6 retuned the palette and flipped the default).**
+ * **Two themes, three-state control (system / light / dark).**
  * The base `:root {…}` block is the light theme; `:root[data-theme="dark"] {…}` overrides it for
- * dark. The theme is selected by a `data-theme` attribute on <html> (default **dark**, opt-in
- * toggle persisted in localStorage) — NOT by `prefers-color-scheme`. This overrides D96, which
+ * dark. The theme is selected by a `data-theme` attribute on <html>, resolved before first paint:
+ * a persisted explicit light/dark choice (localStorage `xtalate-theme`) wins, otherwise it follows
+ * `prefers-color-scheme` (the "system" default). This overrides D96, which
  * deferred dark mode on the grounds that lightening the loss foregrounds while the panels stayed
  * `bg-white` would *lower* contrast: the fix is exactly this — dark surfaces AND surface-aware
  * `--cb-*` values, so every pair clears AA on the surface it actually renders on.
@@ -26,19 +27,36 @@
  * rendered pair below AA in either theme fails CI. The palette stays distinguishable under common
  * color-vision deficiencies (meaning carried by glyph + label + lightness, not hue alone).
  *
- * **Palette identity (v2.0 addendums, design spec "Theme system").** The workbench is dark-by-
- * default in a cool blue-gray "Steel" palette with a cyan-teal chrome accent, VESTA/OVITO-style;
- * the light theme is a neutral-gray Qt-style desktop rather than the earlier plain white. The
+ * **Palette identity (v2.0 addendums, design spec "Theme system").** The dark theme is a cool
+ * blue-gray "Steel" palette with a cyan-teal chrome accent, VESTA/OVITO-style; the light theme is
+ * a neutral-gray Qt-style desktop rather than the earlier plain white. Which one shows follows the
+ * OS by default (redesign S0, three-state control). The
  * loss-communication `--cb-*` foregrounds keep their §4 hues; only lightness was re-tuned where the
  * new Steel dark surface required it to hold AA.
  */
-:root {
+/*
+ * Paper (redesign §9, D-B7): the report stage renders on the light palette regardless of theme, so a
+ * printed or exported Conversion Report looks the same in every lab. This base block is the light
+ * theme AND the paper surface: a `[data-surface="paper"]` element re-declares every light token on
+ * itself, which overrides the values it would otherwise inherit from a dark `:root` regardless of
+ * specificity. One declaration list, nothing to keep in sync; the contrast guard parses it as the
+ * light theme.
+ */
+:root,
+[data-surface="paper"] {
   /* Native form controls (selects, number spinners, checkboxes) render with the UA's light
      widgets — the flip side of the B1 base rule below, which themes their text/background. */
   color-scheme: light;
 
   /* Neutral surface chrome (light) — a neutral-gray Qt-style desktop, not stark white. */
   --surface: #eceef1; /* page + panel background                 */
+  /* Radius scale (redesign §9): 2 / 4 / 6 px only. Tailwind `rounded-sm` / `rounded` / `rounded-md`. */
+  --radius-1: 2px;
+  --radius-2: 4px;
+  --radius-3: 6px;
+  /* Stage-state tokens (redesign §9), derived — never new hues. */
+  --stage-done-bg: var(--surface-muted);
+  --stage-current-line: var(--accent);
   --surface-raised: #f7f8fa; /* subtle raised/hover zones                */
   --surface-muted: #e3e6ea; /* chips / inert fills                      */
   --border-default: #c2c7cf; /* default hairline border                  */
@@ -47,7 +65,7 @@
   --text-strong: #20242b; /* headings, emphasis                       */
   --text-body: #3a4048; /* default paragraph text                   */
   --text-muted: #565e68; /* secondary text                           */
-  --text-faint: #626a76; /* hints, metadata (darkened from slate-500 for AA on the
+  --text-faint: #5e6671; /* hints, metadata (darkened from slate-500 for AA on the
                              neutral-gray #eceef1 surface, v2.0 addendums)     */
 
   /* The inverse surface — dark chip/button in light, light chip/button in dark. */
@@ -82,7 +100,7 @@
      theme's page surface moved from pure white to a neutral-gray desktop tone (`--surface:
      #eceef1`), which nudges several of these below AA; each affected value below is darkened by a
      hair (same hue, same §4 meaning) to hold >=4.5:1 on the new surface — never a hue change. */
-  --cb-preserve: #14793a; /* green  — present / preserved / check passed        */
+  --cb-preserve: #127036; /* green  — present / preserved / check passed        */
   /* Slate, not gray: on the capabilities grid (Part 7 §2.7) a ✓/✗ column of green vs pale gray was
      too low-contrast to scan (the v0.7 review). Darkened to slate so ✗ reads clearly against ✓ —
      still visually *calm* (not red: "the format cannot express this" is neutral, not a loss; red
@@ -117,6 +135,9 @@
 }
 
 :root[data-theme="dark"] {
+  /* Stage-state tokens (redesign §9), derived — never new hues. */
+  --stage-done-bg: var(--surface-muted);
+  --stage-current-line: var(--accent);
   /* Native form-control widgets (the select dropdown arrow, number spinners, the date/color
      pickers) render dark, matching the dark surface they sit on (v1.1 M39-S4, B1). */
   color-scheme: dark;
@@ -258,5 +279,29 @@
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
+  }
+}
+
+/*
+ * Print (redesign §9): the shell hides (`print:hidden` on the Toolbar, rail, strip, drawers and
+ * StatusBar — applied by the components), every stage expands, interactive controls disappear, and
+ * colours print as shown. Stage panels opt into expansion with `data-print-expand`.
+ */
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  [data-print-expand] {
+    display: block !important;
+  }
+  button,
+  select,
+  input,
+  [role="dialog"] {
+    display: none !important;
   }
 }

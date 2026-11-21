@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CommandPaletteTrigger } from "@/components/command/CommandPaletteTrigger";
 import { NotifyToggle } from "@/lib/notify/NotifyPreferenceProvider";
-import { ThemeToggle } from "@/lib/theme/ThemeProvider";
+import { ThemeControl } from "./ThemeControl";
+import { Wordmark } from "./Wordmark";
 
 /**
  * The workbench toolbar (v2.0 addendums, Task 8; design spec §"Shell architecture" — Toolbar row:
@@ -34,7 +35,7 @@ import { ThemeToggle } from "@/lib/theme/ThemeProvider";
  * Right cluster (design spec §"Shell architecture" — global destinations + toggles on the right,
  * not the left verb nav): the ⌘K palette trigger, then the three global destinations
  * (Formats/History/Docs, in their own `aria-label="Primary"` nav landmark — the same label
- * `AppHeader` used for its one nav), then the completion-signal mute toggle, then the theme toggle.
+ * `AppHeader` used for its one nav), then the completion-signal mute toggle, then the theme control.
  * Two distinctly-labeled nav landmarks ("File actions" left, "Primary" right) rather than one,
  * since the left verbs and the right destinations are no longer adjacent in the same list — this
  * still keeps the toolbar as a single `banner` with no duplicate *unlabeled* landmark.
@@ -103,12 +104,7 @@ export function Toolbar() {
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
         {/* Left cluster: brand + the per-file verbs. */}
         <div className="flex min-w-0 items-center gap-x-4">
-          <Link
-            href="/"
-            className="shrink-0 rounded-sm text-lg font-semibold tracking-tight text-strong transition-colors hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-wb-toolbar"
-          >
-            Xtalate
-          </Link>
+          <Wordmark />
           <nav
             aria-label="File actions"
             className="hidden items-center gap-x-4 gap-y-1 text-sm sm:flex sm:flex-wrap"
@@ -177,7 +173,7 @@ export function Toolbar() {
         </div>
 
         {/* Right cluster: ⌘K, the global destinations, then the toggles (design spec order). */}
-        <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm">
           {/* The ⌘K command palette (ported from AppHeader S4): visible button + global ⌘K/Ctrl-K. */}
           <CommandPaletteTrigger />
           <nav aria-label="Primary" className="flex items-center gap-x-4">
@@ -189,7 +185,7 @@ export function Toolbar() {
           </nav>
           <div className="flex items-center gap-2">
             <NotifyToggle />
-            <ThemeToggle />
+            <ThemeControl />
           </div>
         </div>
       </div>

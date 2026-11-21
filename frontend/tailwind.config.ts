@@ -13,8 +13,10 @@ import type { Config } from "tailwindcss";
  */
 const config: Config = {
   // Dark mode is selector-driven: the `data-theme="dark"` attribute on <html> (set by the
-  // ThemeProvider, default light) toggles the whole palette. Not `prefers-color-scheme` — the theme
-  // is an explicit, persisted user choice (see globals.css, which overrides D96).
+  // no-flash script in app/layout.tsx and the ThemeProvider) toggles the whole palette. The
+  // attribute itself follows `prefers-color-scheme` by default (three-state system/light/dark
+  // control, persisted as `xtalate-theme`, D-B7); Tailwind keys off the attribute, not the media
+  // query (see globals.css, which overrides D96).
   darkMode: ["selector", ':root[data-theme="dark"]'],
   content: [
     "./app/**/*.{ts,tsx}",
@@ -22,12 +24,36 @@ const config: Config = {
     "./lib/**/*.{ts,tsx}",
   ],
   theme: {
+    // Radius scale (redesign §9): 2 / 4 / 6 px, from the `--radius-*` tokens in globals.css.
+    // Deliberately *replaces* Tailwind's default so `rounded-lg` and larger do not exist; `full` is
+    // kept for status dots and progress tracks only (lib/designScale.test.ts polices the rest).
+    borderRadius: {
+      none: "0",
+      sm: "var(--radius-1)",
+      DEFAULT: "var(--radius-2)",
+      md: "var(--radius-3)",
+      full: "9999px",
+    },
     extend: {
+      // Type scale (redesign §9): 11–24 px. UI sizes use 1.4 line height, the two prose sizes
+      // (`base`, `md`) 1.55. Components never write an arbitrary `text-[Npx]`.
+      fontSize: {
+        xs2: ["11px", { lineHeight: "1.4" }],
+        xs: ["12px", { lineHeight: "1.4" }],
+        sm: ["13px", { lineHeight: "1.4" }],
+        base: ["14px", { lineHeight: "1.55" }],
+        md: ["16px", { lineHeight: "1.55" }],
+        lg: ["20px", { lineHeight: "1.4" }],
+        xl: ["24px", { lineHeight: "1.4" }],
+      },
       fontFamily: {
-        // Monospace for every value, count, and identifier (UI redesign S1, D243). System stack
-        // only — no web font (keeps the self-host lean and the CSP simple). Components write
-        // `font-mono`; the DataValue primitive applies it to scientific readouts.
+        // IBM Plex via next/font/local (redesign D-B6, reversing D-R7): `app/fonts.ts` sets the
+        // `--font-*` variables on <html>; each stack falls back to the system families and ends at
+        // the generic. Preflight applies `sans` to <html>; `DataValue` applies `mono`; `serif` is
+        // for the stage-5 editorial register and the wordmark only.
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: [
+          "var(--font-mono)",
           "ui-monospace",
           "SF Mono",
           "SFMono-Regular",
@@ -35,6 +61,7 @@ const config: Config = {
           "Consolas",
           "monospace",
         ],
+        serif: ["var(--font-serif)", "Iowan Old Style", "Palatino Linotype", "Georgia", "serif"],
       },
       colors: {
         // Semantic surface chrome — the neutral tokens every page is built from (globals.css).
@@ -74,6 +101,11 @@ const config: Config = {
           panel: "var(--wb-panel)", // bg-wb-panel
           status: "var(--wb-status)", // bg-wb-status
           hairline: "var(--wb-hairline)", // border-wb-hairline
+        },
+        // Stage-state tokens (redesign §9): the folded "done" row fill and the current-stage rule.
+        stage: {
+          done: "var(--stage-done-bg)", // bg-stage-done
+          current: "var(--stage-current-line)", // border-stage-current
         },
         cb: {
           // Foreground / icon colors, one per §4 meaning.

@@ -10,6 +10,7 @@
     "dev": "next dev -H ${XTALATE_DEV_HOST:-127.0.0.1}",
     "prebuild": "npm run gen:api",
     "build": "next build",
+    "size": "node scripts/size-budget.mjs",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.51.0",
+    "lucide-react": "^1.73.0",
     "molstar": "5.11.0",
     "next": "^15.5.25",
     "openapi-fetch": "^0.11.0",

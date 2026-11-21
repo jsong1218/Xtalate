@@ -26,8 +26,10 @@ import { describe, expect, it } from "vitest";
 
 // Every module allowed to statically value-import Mol*. The two geometry modules pull the full
 // runtime and are the dynamic-only leaves; `StructureLegend` is a deliberate, reviewed exception —
-// it reuses Mol*'s element-color helpers so its swatches cannot drift from the rendered pixels, and
-// those color/theme tables are small pure-data modules, not the WebGL plugin. `StructureViewerMolstar`
+// it reuses Mol*'s element-color helpers so its swatches cannot drift from the rendered pixels
+// (the single source of the rendered element colours). Those imports are NOT small — they pull
+// ~213 kB gzip — so every import site must load StructureLegend lazily (next/dynamic) to keep
+// them out of route and shell chunks. `StructureViewerMolstar`
 // (the ssr:false leaf) is permitted too but today reaches Mol* only through `molstarMount`, so it is
 // not currently a value-importer. Pinning to the actual set is what makes ANY new importer fail
 // review — the point of the guard.

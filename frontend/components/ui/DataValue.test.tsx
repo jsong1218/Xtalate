@@ -21,4 +21,9 @@ describe("DataValue", () => {
     expect(el.className).toContain("font-mono");
     expect(el.className).toContain("ml-2");
   });
+
+  it("aligns digits with tabular numerals", () => {
+    render(<DataValue>0.000e+00</DataValue>);
+    expect(screen.getByText("0.000e+00").className).toContain("tabular-nums");
+  });
 });

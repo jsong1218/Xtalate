@@ -74,6 +74,8 @@ describe("StructureViewer", () => {
   it("renders the species legend and no cell-less caption for a celled geometry", async () => {
     render(<StructureViewer geometry={fixture} />);
     await screen.findByTestId("molstar-mount");
+    // The legend is lazy (next/dynamic), so await its first row before asserting completeness.
+    await screen.findByTestId("legend-row-C", {}, { timeout: 5000 });
     // Legend completeness: exactly the species present, each with its label as text.
     expect(screen.getAllByTestId(/^legend-row-/)).toHaveLength(2);
     expect(screen.getByTestId("legend-row-C")).toHaveTextContent("C");
