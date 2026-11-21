@@ -344,3 +344,90 @@ def test_fan_out_still_overwrites_an_existing_non_input_file(tmp_path: Path) -> 
     rc = main(["convert", str(src), "--to", "poscar", "-o", str(out)])
     assert rc == EXIT_OK
     assert (out / "a.poscar").read_text() != "stale\n"
+
+
+# --- M77 follow-ups (v2.1): fan-out --verbose, globs that match a source directory -------------
+
+
+def test_fan_out_verbose_replays_each_members_diagnostics_in_input_order(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--verbose`` used to be a no-op in fan-out mode: each member's stage notes were captured
+    and never read. They now replay on stderr, each block headed by its member's name."""
+    src = _stage(tmp_path, {"a.extxyz": CO, "b.extxyz": CO})
+    out = tmp_path / "out"
+    rc = main(
+        ["convert", str(src / "a.extxyz"), str(src / "b.extxyz"), "--to", "poscar",
+         "-o", str(out), "--verbose"]
+    )  # fmt: skip
+    err = capsys.readouterr().err
+    assert rc == EXIT_OK
+    assert err.count("parsed as extxyz") == 2
+    a, b = err.index("a.extxyz"), err.index("b.extxyz")
+    assert a < err.index("parsed as extxyz") < b < err.rindex("parsed as extxyz")
+
+
+def test_fan_out_without_verbose_prints_no_member_diagnostics(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = _stage(tmp_path, {"a.extxyz": CO, "b.extxyz": CO})
+    rc = main(
+        ["convert", str(src / "a.extxyz"), str(src / "b.extxyz"), "--to", "poscar",
+         "-o", str(tmp_path / "out")]
+    )  # fmt: skip
+    assert rc == EXIT_OK
+    assert "parsed as" not in capsys.readouterr().err
+
+
+def test_fan_out_verbose_keeps_stdout_pure_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = _stage(tmp_path, {"a.extxyz": CO, "b.extxyz": CO})
+    rc = main(
+        ["convert", str(src / "a.extxyz"), str(src / "b.extxyz"), "--to", "poscar",
+         "-o", str(tmp_path / "out"), "--verbose", "--json"]
+    )  # fmt: skip
+    captured = capsys.readouterr()
+    assert rc == EXIT_OK
+    assert len(json.loads(captured.out)) == 2
+    assert captured.err.count("parsed as extxyz") == 2
+
+
+DEEPMD_SYSTEM = GOLDEN / "deepmd_npy" / "multi-set" / "system"
+
+
+def test_a_glob_that_matches_a_source_directory_keeps_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A glob match that is a recognised source directory (a DeePMD system) is an input, not
+    something to drop. Before, only files survived and a lone directory match read as
+    'matched no files', which was false."""
+    root = tmp_path / "systems"
+    root.mkdir()
+    shutil.copytree(DEEPMD_SYSTEM, root / "sys1")
+    rc = main(["convert", str(root / "sys*"), "--to", "extxyz", "-o", str(tmp_path / "o.extxyz")])
+    captured = capsys.readouterr()
+    assert rc == EXIT_OK, captured.err
+    assert (tmp_path / "o.extxyz").is_file()
+
+
+def test_a_glob_skips_a_plain_directory_by_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = _stage(tmp_path, {"a.extxyz": CO})
+    (src / "notes").mkdir()
+    rc = main(["convert", str(src / "*"), "--to", "poscar", "-o", str(tmp_path / "a.poscar")])
+    captured = capsys.readouterr()
+    assert rc == EXIT_OK, captured.err
+    assert "notes" in captured.err and "skipped" in captured.err
+    assert (tmp_path / "a.poscar").is_file()
+
+
+def test_a_glob_matching_only_plain_directories_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "d1").mkdir()
+    rc = main(["convert", str(tmp_path / "d*"), "--to", "poscar", "-o", str(tmp_path / "o")])
+    err = capsys.readouterr().err
+    assert rc == EXIT_USAGE
+    assert "d1" in err and "no files" in err

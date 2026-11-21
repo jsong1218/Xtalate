@@ -614,7 +614,9 @@ def _apply_missing_lattice(
     lattices were carried; reporting only ``preserved`` would hide a fabrication (P1, P4)."""
     code = _choice_code(choice, scenario)
     params = choice.get("parameters", {}) or {}
-    pbc = (True, True, True)
+    # Every lattice-requiring target is periodic except where it can state open boundaries; the
+    # one choice that uses that is `non_periodic` (D304), which marks every axis non-periodic.
+    pbc = (False, False, False) if code == "non_periodic" else (True, True, True)
 
     def _fabricate(lattice: np.ndarray, shift: np.ndarray | None = None) -> list[Frame]:
         # Only cell-less frames receive the fabricated lattice; frames with a real cell pass
@@ -646,21 +648,13 @@ def _apply_missing_lattice(
             "source; pbc set to (T,T,T) as required by the target. The source file expressed no "
             "lattice — this cell is borrowed from the reference, not present in the source."
         )
-    elif code == "non_periodic":
-        # Offered for targets that can hold an open structure, but this resolver does not
-        # implement it. Refuse loudly: falling through to the bounding box would silently
-        # fabricate a cell the caller explicitly declined (P4).
-        raise RecoveryError(
-            "missing_lattice 'non_periodic' is offered but not implemented in this version; "
-            "choose bounding_box, manual_input or upload_reference"
-        )
-    elif code != "bounding_box":
+    elif code not in ("bounding_box", "non_periodic"):
         raise RecoveryError(f"missing_lattice: unknown choice {code!r}")
     else:
         padding = params.get("padding_ang")
-        if not isinstance(padding, (int, float)) or padding < 0:
+        if not isinstance(padding, (int, float)) or isinstance(padding, bool) or padding < 0:
             raise RecoveryError(
-                f"missing_lattice 'bounding_box' needs a non-negative padding_ang, got {padding!r}"
+                f"missing_lattice {code!r} needs a non-negative padding_ang, got {padding!r}"
             )
         padding = float(padding)
         # Box is computed on the *first cell-less frame's* positions and, when the target keeps many
@@ -668,11 +662,11 @@ def _apply_missing_lattice(
         # One shift for the whole trajectory is the honest choice: it preserves every interatomic
         # distance *and* all relative motion between frames, where a per-frame box would silently
         # re-centre each frame and destroy the trajectory's displacement information. Atoms in
-        # later frames may therefore fall outside the box; under the pbc=(T,T,T) this recovery
-        # sets, that is well-defined (fractional coordinates outside [0,1)), and no position is
-        # altered.
+        # later frames may therefore fall outside the box; under pbc=(T,T,T) that is well-defined
+        # (fractional coordinates outside [0,1)), and under non_periodic the box is an enclosure
+        # of the computed frame only. No position is altered beyond the shift.
         boxed_frame = next(f for f in canonical.frames if f.cell is None)
-        lattice, shift = _bounding_box(boxed_frame.atoms.positions, padding)
+        lattice, shift = _bounding_box(boxed_frame.atoms.positions, padding, choice=code)
         new_frames = _fabricate(lattice, shift=shift)
         report_params = {"padding_ang": padding, "computed_on_frame": computed_on_frame}
         multi = sum(1 for f in canonical.frames if f.cell is None) > 1
@@ -682,13 +676,24 @@ def _apply_missing_lattice(
             if multi
             else ""
         )
-        description = (
-            f"Lattice constructed as the axis-aligned bounding box of frame {computed_on_frame}'s "
-            f"positions plus {padding} Å padding on each side; atoms rigidly translated into that "
-            "box (a shift preserves all interatomic distances)." + spans + " pbc set to (T,T,T) as "
-            "required by the target. The source expressed no lattice — this cell is a conversion "
-            "artifact, not simulation data."
+        box = (
+            f"axis-aligned bounding box of frame {computed_on_frame}'s positions plus {padding} Å "
+            "padding on each side; atoms rigidly translated into that box (a shift preserves all "
+            "interatomic distances)."
         )
+        if code == "bounding_box":
+            description = (
+                f"Lattice constructed as the {box}{spans} pbc set to (T,T,T) as required by the "
+                "target. The source expressed no lattice — this cell is a conversion artifact, "
+                "not simulation data."
+            )
+        else:
+            description = (
+                f"Box constructed as the {box}{spans} pbc set to (F,F,F): the structure is "
+                "marked non-periodic on every axis. The target must state box bounds, so this "
+                "box is an enclosure of the atoms, not a crystal cell, and no periodic image is "
+                "implied. The source expressed no lattice."
+            )
 
     updated = canonical.model_copy(update={"frames": new_frames})
     # Frames whose genuine cell was left alone. Non-empty only in the partial case above: a `mixed`
@@ -729,7 +734,12 @@ def _apply_missing_lattice(
             ),
             SuppliedField(
                 path="cell.pbc",
-                detail="(T, T, T) — required by the target; set by the same recovery choice.",
+                detail=(
+                    "(F, F, F) — set by the same recovery choice; every axis non-periodic, so "
+                    "the box implies no periodic image."
+                    if code == "non_periodic"
+                    else "(T, T, T) — required by the target; set by the same recovery choice."
+                ),
             ),
         ],
         preserved=preserved,
@@ -737,14 +747,27 @@ def _apply_missing_lattice(
     return updated, assumption
 
 
-def _bounding_box(positions: np.ndarray, padding: float) -> tuple[np.ndarray, np.ndarray]:
+def _bounding_box(
+    positions: np.ndarray, padding: float, *, choice: str = "bounding_box"
+) -> tuple[np.ndarray, np.ndarray]:
     """Return (orthorhombic lattice, translation) for an axis-aligned box of ``positions`` with
     ``padding`` on every side. Atoms are shifted by ``-min + padding`` so they sit inside the box
-    with a ``padding`` margin from each face; the box side per axis is ``extent + 2·padding``."""
+    with a ``padding`` margin from each face; the box side per axis is ``extent + 2·padding``.
+
+    A side of zero length (a planar or linear structure, or a single atom, with ``padding_ang=0``)
+    would give a lattice with no volume — not a realizable cell, and one no reader could invert.
+    That is refused by axis name rather than written (D304)."""
     lo = positions.min(axis=0)
     hi = positions.max(axis=0)
     extent = hi - lo
     side = extent + 2.0 * padding
+    flat = [axis for axis, length in zip("xyz", side, strict=True) if not length > 0.0]
+    if flat:
+        raise RecoveryError(
+            f"missing_lattice {choice!r} with padding_ang={padding} gives a box with no thickness "
+            f"along {', '.join(flat)} (the atoms have no extent there); choose a positive "
+            "padding_ang"
+        )
     lattice = np.diag(side).astype(np.float64)
     shift = padding - lo
     return lattice, shift

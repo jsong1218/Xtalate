@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 #: (The Part 6 §3.2 example JSON uses *illustrative* placeholder key names like ``vectors_ang``;
 #: the binding contract is the engine's own param names — ``lattice``/``reference`` — so those are
 #: what we advertise.) A ``(scenario, choice)`` absent from this map takes no parameters (``first``,
-#: ``last``, ``non_periodic``, ``project``, ``drop_all``, ``zero_init``, ``standard_masses``, …).
+#: ``last``, ``project``, ``drop_all``, ``zero_init``, ``standard_masses``, …).
 _PARAMETERS_SCHEMA: dict[tuple[str, str], dict[str, str]] = {
     ("frame_selection", "index"): {"frame_index": "integer, 0-based (0..frame_count-1)"},
     ("missing_lattice", "manual_input"): {"lattice": "3×3 float — row lattice vectors, Å"},
@@ -47,6 +47,7 @@ _PARAMETERS_SCHEMA: dict[tuple[str, str], dict[str, str]] = {
         "reference": "file_id of a same-atom-count structure (its lattice is read)"
     },
     ("missing_lattice", "bounding_box"): {"padding_ang": "float ≥ 0 — padding on each side, Å"},
+    ("missing_lattice", "non_periodic"): {"padding_ang": "float ≥ 0 — padding on each side, Å"},
     ("missing_masses", "manual_input"): {"masses": "list[float] — one mass per atom, amu"},
     ("missing_velocities", "maxwell_boltzmann"): {
         "temperature_K": "float > 0 — sampling temperature",

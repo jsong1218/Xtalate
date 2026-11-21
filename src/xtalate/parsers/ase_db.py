@@ -260,7 +260,12 @@ class AseDbParser(ParserPlugin):
         opens only by real path), normalising ASE's many exception types to the ParseError
         contract (§5). The handle stays open for the whole ``with`` block — the entire
         row-selection flow (count, then decode the chosen row) happens inside, so the temp file
-        outlives every read of it."""
+        outlives every read of it.
+
+        ``with db:`` holds one SQLite connection for the block and closes it on exit, before the
+        temp file is deleted. Without it ``ase.db`` opens a connection per operation and never
+        closes any (a ``sqlite3`` connection's context manager commits but does not close), which
+        on Windows keeps the temp file locked."""
         from ase.db import connect
 
         data = stream.read()
@@ -273,7 +278,8 @@ class AseDbParser(ParserPlugin):
                 raise _error(
                     "ASEDB_MALFORMED", f"could not open the file as an ASE database: {exc}"
                 ) from exc
-            yield db
+            with db:
+                yield db
 
     def _row_ids(self, db: Any) -> list[int]:
         """The database's row ids in insertion order — **id column only**:
